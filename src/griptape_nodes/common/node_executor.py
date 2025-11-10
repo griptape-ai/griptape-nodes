@@ -67,6 +67,46 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+LOOP_EVENTS_TO_SUPPRESS = [
+    "CreateFlowResultSuccess",
+    "CreateFlowResultFailure",
+    "ImportWorkflowAsReferencedSubFlowResultSuccess",
+    "ImportWorkflowAsReferencedSubFlowResultFailure",
+    "DeserializeNodeFromCommandsResultSuccess",
+    "DeserializeNodeFromCommandsResultFailure",
+    "CreateConnectionResultSuccess",
+    "CreateConnectionResultFailure",
+    "SetParameterValueResultSuccess",
+    "SetParameterValueResultFailure",
+    "SetLockNodeStateResultSuccess",
+    "SetLockNodeStateResultFailure",
+    "DeserializeFlowFromCommandsResultSuccess",
+    "DeserializeFlowFromCommandsResultFailure",
+]
+
+EXECUTION_EVENTS_TO_SUPPRESS = [
+    "CurrentControlNodeEvent",
+    "CurrentDataNodeEvent",
+    "SelectedControlOutputEvent",
+    "ParameterSpotlightEvent",
+    "ControlFlowResolvedEvent",
+    "ControlFlowCancelledEvent",
+    "NodeResolvedEvent",
+    "ParameterValueUpdateEvent",
+    "NodeUnresolvedEvent",
+    "NodeStartProcessEvent",
+    "NodeFinishProcessEvent",
+    "InvolvedNodesEvent",
+    "GriptapeEvent",
+    "PublishWorkflowProgressEvent",
+    "AgentStreamEvent",
+    "AlterElementEvent",
+    "RemoveElementEvent",
+    "ProgressEvent",
+    "StartLocalSubflowResultSuccess",
+    "StartLocalSubflowResultFailure",
+]
+
 
 class PublishLocalWorkflowResult(NamedTuple):
     """Result from publishing a local workflow."""
@@ -1053,7 +1093,7 @@ class NodeExecutor:
         # Suppress events during deserialization to prevent sending them to websockets
 
         event_manager = GriptapeNodes.EventManager()
-        with EventSuppressionContext(event_manager):
+        with EventSuppressionContext(event_manager, LOOP_EVENTS_TO_SUPPRESS):
             for iteration_index in range(total_iterations):
                 # Restore context before each deserialization to ensure all iteration flows
                 # are created at the same level (not as children of each other)
@@ -1135,15 +1175,16 @@ class NodeExecutor:
 
         async def run_single_iteration(flow_name: str, iteration_index: int, start_node_name: str) -> tuple[int, bool]:
             """Run a single iteration flow and return success status."""
-
-            start_subflow_request = StartLocalSubflowRequest(
-                flow_name=flow_name,
-                start_node=start_node_name,
-                pickle_control_flow_result=False,
-            )
-            start_subflow_result = await GriptapeNodes.ahandle_request(start_subflow_request)
-            success = isinstance(start_subflow_result, StartLocalSubflowResultSuccess)
-            return iteration_index, success
+            # Suppress execution events during parallel iteration to prevent flooding websockets
+            with EventSuppressionContext(event_manager, EXECUTION_EVENTS_TO_SUPPRESS):
+                start_subflow_request = StartLocalSubflowRequest(
+                    flow_name=flow_name,
+                    start_node=start_node_name,
+                    pickle_control_flow_result=False,
+                )
+                start_subflow_result = await GriptapeNodes.ahandle_request(start_subflow_request)
+                success = isinstance(start_subflow_result, StartLocalSubflowResultSuccess)
+                return iteration_index, success
 
         try:
             # Run all iterations concurrently
@@ -1195,7 +1236,7 @@ class NodeExecutor:
         finally:
             # Step 5: Cleanup - delete all iteration flows
             # Suppress events during deletion to prevent sending them to websockets
-            with EventSuppressionContext(event_manager):
+            with EventSuppressionContext(event_manager, ["DeleteFlowResultSuccess", "DeleteFlowResultFailure"]):
                 for iteration_index, flow_name, _ in deserialized_flows:
                     delete_request = DeleteFlowRequest(flow_name=flow_name)
                     delete_result = await GriptapeNodes.ahandle_request(delete_request)

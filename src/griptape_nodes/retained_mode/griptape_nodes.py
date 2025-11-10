@@ -189,7 +189,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         try:
             result_event = event_mgr.handle_request(request=request)
             # Only queue result event if not suppressed
-            if not event_mgr.should_suppress_events():
+            if not event_mgr.should_suppress_event(result_event):
                 event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
@@ -217,7 +217,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         try:
             result_event = await event_mgr.ahandle_request(request=request)
             # Only queue result event if not suppressed
-            if not event_mgr.should_suppress_events():
+            if not event_mgr.should_suppress_event(result_event):
                 await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
