@@ -77,7 +77,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         # Not a localhost workspace URL, return as-is
         return url
 
-    def _extract_value_from_artifact(self, value: Any) -> str:
+    def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
 
         Also resolves localhost URLs to workspace paths.

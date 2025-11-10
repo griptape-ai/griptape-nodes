@@ -24,7 +24,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.engine.file_operation_base import FileOperationBaseNode
+from griptape_nodes_library.files.file_operation_base import FileOperationBaseNode
 
 
 class MoveStatus(Enum):
