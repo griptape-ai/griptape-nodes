@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Literal
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -102,6 +103,28 @@ class AppInitializationComplete(AppPayload):
 @PayloadRegistry.register
 class AppConnectionEstablished(AppPayload):
     """Notification that a connection to the API has been established."""
+
+
+@dataclass
+@PayloadRegistry.register
+class EngineInitializationProgress(AppPayload):
+    """Real-time progress updates during engine initialization (libraries and workflows loading).
+
+    Args:
+        phase: Current initialization phase ('libraries' or 'workflows')
+        item_name: Name of the library or workflow being loaded
+        status: Current status of the item ('loading', 'complete', or 'failed')
+        current: Number of items completed so far
+        total: Total number of items to load
+        error: Error message if status is 'failed', None otherwise
+    """
+
+    phase: Literal["libraries", "workflows"]
+    item_name: str
+    status: Literal["loading", "complete", "failed"]
+    current: int
+    total: int
+    error: str | None = None
 
 
 @dataclass
