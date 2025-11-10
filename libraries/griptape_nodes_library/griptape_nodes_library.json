@@ -98,6 +98,15 @@
       }
     },
     {
+      "files": {
+        "color": "border-blue-500",
+        "title": "Files",
+        "description": "File and directory manipulation nodes",
+        "icon": "Folder",
+        "group": "create"
+      }
+    },
+    {
       "engine": {
         "color": "border-red-500",
         "title": "Engine",
@@ -2152,19 +2161,29 @@
     },
     {
       "class_name": "ListFiles",
-      "file_path": "griptape_nodes_library/engine/list_files.py",
+      "file_path": "griptape_nodes_library/files/list_files.py",
       "metadata": {
-        "category": "engine",
+        "category": "files",
         "description": "List files in a directory with optional pattern matching and recursive search",
         "display_name": "List Files",
         "icon": "FolderOpen"
       }
     },
     {
-      "class_name": "FilePathComponents",
-      "file_path": "griptape_nodes_library/engine/path.py",
+      "class_name": "DeleteFile",
+      "file_path": "griptape_nodes_library/files/delete_file.py",
       "metadata": {
-        "category": "engine",
+        "category": "files",
+        "description": "Delete a file or directory from the file system. Directories are deleted with all their contents.",
+        "display_name": "Delete File",
+        "icon": "Trash"
+      }
+    },
+    {
+      "class_name": "FilePathComponents",
+      "file_path": "griptape_nodes_library/files/path.py",
+      "metadata": {
+        "category": "files",
         "description": "Extract path components from a file path (filename, stem, extension, parent, query params)",
         "display_name": "FilePath Components",
         "icon": "FileText"
@@ -2172,9 +2191,9 @@
     },
     {
       "class_name": "PathJoin",
-      "file_path": "griptape_nodes_library/engine/path_join.py",
+      "file_path": "griptape_nodes_library/files/path_join.py",
       "metadata": {
-        "category": "engine",
+        "category": "files",
         "description": "Join multiple path components together to create a file path using appropriate path separators",
         "display_name": "Path Join",
         "icon": "Combine"
@@ -2182,12 +2201,42 @@
     },
     {
       "class_name": "PathAddExtension",
-      "file_path": "griptape_nodes_library/engine/path_add_extension.py",
+      "file_path": "griptape_nodes_library/files/path_add_extension.py",
       "metadata": {
-        "category": "engine",
+        "category": "files",
         "description": "Add or replace a file extension on a path, with option to strip query parameters",
         "display_name": "Path Add Extension",
         "icon": "FileText"
+      }
+    },
+    {
+      "class_name": "CopyFiles",
+      "file_path": "griptape_nodes_library/files/copy_files.py",
+      "metadata": {
+        "category": "files",
+        "description": "Copy files and/or directories from source to destination. Supports glob patterns and multiple sources.",
+        "display_name": "Copy Files",
+        "icon": "Copy"
+      }
+    },
+    {
+      "class_name": "MoveFiles",
+      "file_path": "griptape_nodes_library/files/move_files.py",
+      "metadata": {
+        "category": "files",
+        "description": "Move files and/or directories from source to destination. Implemented as copy + delete. Supports glob patterns and multiple sources.",
+        "display_name": "Move Files",
+        "icon": "ArrowRight"
+      }
+    },
+    {
+      "class_name": "RenameFile",
+      "file_path": "griptape_nodes_library/files/rename_file.py",
+      "metadata": {
+        "category": "files",
+        "description": "Rename a file or directory. Can rename to a new name in the same directory or to a full path.",
+        "display_name": "Rename File",
+        "icon": "Edit"
       }
     }
   ],
