@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -209,17 +209,11 @@ class RenameFile(FileOperationBaseNode):
             self._set_status_results(was_successful=False, result_details=msg)
             return
 
-        if not isinstance(rename_result, RenameFileResultSuccess):
-            msg = f"{self.name} received unexpected result type from rename operation"
-            self.set_parameter_value(self.old_path_output.name, "")
-            self.set_parameter_value(self.new_path_output.name, "")
-            self._set_status_results(was_successful=False, result_details=msg)
-            return
-
-        # SUCCESS: Set output parameters
-        self.set_parameter_value(self.old_path_output.name, rename_result.old_path)
-        self.set_parameter_value(self.new_path_output.name, rename_result.new_path)
-        self.parameter_output_values[self.old_path_output.name] = rename_result.old_path
-        self.parameter_output_values[self.new_path_output.name] = rename_result.new_path
+        # SUCCESS PATH AT END - result must be RenameFileResultSuccess (only two possible types)
+        success_result = cast("RenameFileResultSuccess", rename_result)
+        self.set_parameter_value(self.old_path_output.name, success_result.old_path)
+        self.set_parameter_value(self.new_path_output.name, success_result.new_path)
+        self.parameter_output_values[self.old_path_output.name] = success_result.old_path
+        self.parameter_output_values[self.new_path_output.name] = success_result.new_path
 
         self._set_status_results(was_successful=True, result_details="File renamed successfully")

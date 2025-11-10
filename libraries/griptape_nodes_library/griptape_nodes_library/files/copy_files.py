@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
@@ -12,17 +11,12 @@ from griptape_nodes.exe_types.param_components.progress_bar_component import Pro
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
     CopyFileResultFailure,
-    CopyFileResultSuccess,
     CopyTreeRequest,
     CopyTreeResultFailure,
-    CopyTreeResultSuccess,
-    ListDirectoryRequest,
-    ListDirectoryResultFailure,
-    ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.files.file_operation_base import FileOperationBaseNode
+from griptape_nodes_library.files.file_operation_base import BaseFileOperationInfo, FileOperationBaseNode
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +31,11 @@ class CopyStatus(Enum):
 
 
 @dataclass
-class CopyFileInfo:
+class CopyFileInfo(BaseFileOperationInfo):
     """Information about a file/directory copy attempt."""
 
-    source_path: str  # Workspace-relative path
-    destination_path: str  # Destination path
-    is_directory: bool
     status: CopyStatus = CopyStatus.PENDING
-    failure_reason: str | None = None
     copied_paths: list[str] = field(default_factory=list)  # Paths actually copied (from OS result)
-    explicitly_requested: bool = False  # True if user specified this path, False if discovered via glob
 
 
 class CopyFiles(FileOperationBaseNode):
@@ -120,7 +109,7 @@ class CopyFiles(FileOperationBaseNode):
             allow_property=False,
             output_type="list[str]",
             default_value=[],
-            tooltip="List of all destination paths that were copied.",
+            tooltip="List of all destination paths that were copied successfully.",
         )
         self.add_parameter(self.copied_paths_output)
 
@@ -133,97 +122,6 @@ class CopyFiles(FileOperationBaseNode):
             result_details_tooltip="Details about the copy result",
             result_details_placeholder="Details on the copy attempt will be presented here.",
             parameter_group_initially_collapsed=True,
-        )
-
-    def _expand_glob_pattern(self, path_str: str, all_targets: list[CopyFileInfo]) -> None:
-        """Expand a glob pattern using ListDirectoryRequest and add matches to all_targets.
-
-        Args:
-            path_str: Glob pattern (e.g., "/path/to/*.txt")
-            all_targets: List to append matching CopyFileInfo entries to
-        """
-        # Parse the pattern into directory and pattern parts
-        path = Path(path_str)
-
-        # If the pattern has multiple parts with wildcards, we need to handle parent resolution
-        # For now, we'll support patterns where only the last component has wildcards
-        if self._is_glob_pattern(str(path.parent)):
-            # Parent directory contains wildcards - this is more complex, treat as invalid
-            all_targets.append(
-                CopyFileInfo(
-                    source_path=path_str,
-                    destination_path="",
-                    is_directory=False,
-                    status=CopyStatus.INVALID,
-                    failure_reason="Glob patterns in parent directories are not supported",
-                )
-            )
-            return
-
-        # Directory is the parent, pattern is the name with wildcards
-        directory_path = str(path.parent)
-        pattern = path.name
-
-        # Use ListDirectoryRequest and filter manually with fnmatch
-        request = ListDirectoryRequest(directory_path=directory_path, show_hidden=True, workspace_only=False)
-        result = GriptapeNodes.handle_request(request)
-
-        if isinstance(result, ListDirectoryResultSuccess):
-            # Filter entries matching the pattern
-            matching_entries = [entry for entry in result.entries if fnmatch(entry.name, pattern)]
-            if not matching_entries:
-                # No matches found - treat as invalid
-                all_targets.append(
-                    CopyFileInfo(
-                        source_path=path_str,
-                        destination_path="",
-                        is_directory=False,
-                        status=CopyStatus.INVALID,
-                        failure_reason=f"No files match pattern '{pattern}'",
-                    )
-                )
-            else:
-                # Add all matching entries as PENDING (explicitly requested via glob pattern)
-                all_targets.extend(
-                    CopyFileInfo(
-                        source_path=entry.path,
-                        destination_path="",  # Will be set during copy operation
-                        is_directory=entry.is_dir,
-                        status=CopyStatus.PENDING,
-                        explicitly_requested=True,
-                    )
-                    for entry in matching_entries
-                )
-        else:
-            # Directory doesn't exist or can't be accessed
-            failure_msg = (
-                result.failure_reason.value if isinstance(result, ListDirectoryResultFailure) else "Unknown error"
-            )
-            all_targets.append(
-                CopyFileInfo(
-                    source_path=path_str,
-                    destination_path="",
-                    is_directory=False,
-                    status=CopyStatus.INVALID,
-                    failure_reason=failure_msg,
-                )
-            )
-
-    def _collect_all_copy_targets(self, paths: list[str]) -> list[CopyFileInfo]:
-        """Collect all files/directories that will be copied.
-
-        Handles both explicit paths and glob patterns (e.g., "/path/to/*.txt").
-        Glob patterns match individual files in a directory, not subdirectories.
-
-        Returns:
-            List of CopyFileInfo with status set (PENDING for valid paths, INVALID for invalid paths)
-        """
-        return self._collect_all_files(
-            paths=paths,
-            info_class=CopyFileInfo,
-            pending_status=CopyStatus.PENDING,
-            invalid_status=CopyStatus.INVALID,
-            expand_glob_pattern=self._expand_glob_pattern,
         )
 
     def _execute_copy(self, target: CopyFileInfo, destination_dir: str, *, overwrite: bool) -> None:
@@ -269,13 +167,6 @@ class CopyFiles(FileOperationBaseNode):
                 target.failure_reason = failure_msg
                 return
 
-            if not isinstance(result, CopyTreeResultSuccess):
-                target.status = CopyStatus.FAILED
-                failure_msg = f"{self.name}: Failed to copy directory '{target.source_path}' to '{destination_path}': Unexpected result type from copy operation"
-                logger.error(failure_msg)
-                target.failure_reason = failure_msg
-                return
-
             # SUCCESS PATH AT END
             target.status = CopyStatus.SUCCESS
             # For directories, we track the destination path
@@ -298,13 +189,6 @@ class CopyFiles(FileOperationBaseNode):
                 failure_msg = (
                     f"{self.name}: Failed to copy file '{target.source_path}' to '{destination_path}': {failure_reason}"
                 )
-                logger.error(failure_msg)
-                target.failure_reason = failure_msg
-                return
-
-            if not isinstance(result, CopyFileResultSuccess):
-                target.status = CopyStatus.FAILED
-                failure_msg = f"{self.name}: Failed to copy file '{target.source_path}' to '{destination_path}': Unexpected result type from copy operation"
                 logger.error(failure_msg)
                 target.failure_reason = failure_msg
                 return
@@ -361,11 +245,11 @@ class CopyFiles(FileOperationBaseNode):
         destination_dir = self.get_parameter_value("destination_path")
         overwrite = self.get_parameter_value("overwrite") or False
 
-        # FAILURE CASE: Empty source paths
+        # Handle empty paths as success with info message (consistent with delete_file)
         if not source_paths_raw:
-            msg = f"{self.name} attempted to copy with empty source paths. Failed due to no paths provided"
+            msg = "No files specified for copying"
             self.set_parameter_value(self.copied_paths_output.name, [])
-            self._set_status_results(was_successful=False, result_details=msg)
+            self._set_status_results(was_successful=True, result_details=msg)
             return
 
         # Normalize to list of strings (get_parameter_list_value flattens, but we need to ensure strings)
@@ -387,7 +271,12 @@ class CopyFiles(FileOperationBaseNode):
         # For now, just proceed with copy operations
 
         # Collect all targets (includes INVALID status for bad paths)
-        all_targets = self._collect_all_copy_targets(source_paths)
+        all_targets = self._collect_all_files(
+            paths=source_paths,
+            info_class=CopyFileInfo,
+            pending_status=CopyStatus.PENDING,
+            invalid_status=CopyStatus.INVALID,
+        )
 
         # Separate valid and invalid targets
         pending_targets = [t for t in all_targets if t.status == CopyStatus.PENDING]

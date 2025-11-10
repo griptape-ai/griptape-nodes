@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 from urllib.parse import urlparse
@@ -12,6 +13,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoRequest,
     GetFileInfoResultFailure,
     GetFileInfoResultSuccess,
+    ListDirectoryRequest,
+    ListDirectoryResultFailure,
+    ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -30,6 +34,21 @@ class FileOperationInfo(Protocol):
 
     source_path: str
     explicitly_requested: bool
+
+
+@dataclass
+class BaseFileOperationInfo:
+    """Base dataclass for file operation Info types.
+
+    Provides common fields shared by CopyFileInfo, MoveFileInfo, etc.
+    Subclasses should add operation-specific fields like status enum and result paths.
+    """
+
+    source_path: str  # Workspace-relative path
+    destination_path: str  # Destination path
+    is_directory: bool
+    failure_reason: str | None = None
+    explicitly_requested: bool = False
 
 
 @dataclass
@@ -330,13 +349,86 @@ class FileOperationBaseNode(SuccessFailureNode):
 
         return list(unique_targets.values())
 
+    def _expand_glob_pattern(
+        self,
+        path_str: str,
+        all_targets: list[T],
+        *,
+        create_invalid_info: Callable[[str, str], T],
+        create_pending_info: Callable[[str, str, bool], T],
+    ) -> None:
+        """Expand a glob pattern using ListDirectoryRequest and add matches to all_targets.
+
+        Generic implementation that works with any FileOperationInfo type.
+
+        Args:
+            path_str: Glob pattern (e.g., "/path/to/*.txt")
+            all_targets: List to append matching Info entries to
+            create_invalid_info: Factory function to create invalid Info object
+            create_pending_info: Factory function to create pending Info object (source_path, destination_path, is_directory)
+        """
+        # Parse the pattern into directory and pattern parts
+        path = Path(path_str)
+
+        # If the pattern has multiple parts with wildcards, we need to handle parent resolution
+        # For now, we'll support patterns where only the last component has wildcards
+        if self._is_glob_pattern(str(path.parent)):
+            # Parent directory contains wildcards - this is more complex, treat as invalid
+            all_targets.append(
+                create_invalid_info(
+                    path_str,
+                    "Glob patterns in parent directories are not supported",
+                )
+            )
+            return
+
+        # Directory is the parent, pattern is the name with wildcards
+        directory_path = str(path.parent)
+        pattern = path.name
+
+        # Use ListDirectoryRequest and filter manually with fnmatch
+        request = ListDirectoryRequest(directory_path=directory_path, show_hidden=True, workspace_only=False)
+        result = GriptapeNodes.handle_request(request)
+
+        if isinstance(result, ListDirectoryResultSuccess):
+            # Filter entries matching the pattern
+            matching_entries = [entry for entry in result.entries if fnmatch(entry.name, pattern)]
+            if not matching_entries:
+                # No matches found - treat as invalid
+                all_targets.append(
+                    create_invalid_info(
+                        path_str,
+                        f"No files match pattern '{pattern}'",
+                    )
+                )
+            else:
+                # Add all matching entries as PENDING (explicitly requested via glob pattern)
+                all_targets.extend(
+                    create_pending_info(
+                        entry.path,
+                        "",  # Will be set during operation
+                        entry.is_dir,
+                    )
+                    for entry in matching_entries
+                )
+        else:
+            # Directory doesn't exist or can't be accessed
+            failure_msg = (
+                result.failure_reason.value if isinstance(result, ListDirectoryResultFailure) else "Unknown error"
+            )
+            all_targets.append(
+                create_invalid_info(
+                    path_str,
+                    failure_msg,
+                )
+            )
+
     def _collect_all_files(
         self,
         paths: list[str],
         info_class: type[Any],  # Dataclass type (e.g., CopyFileInfo, MoveFileInfo)
         pending_status: Enum,
         invalid_status: Enum,
-        expand_glob_pattern: Callable[[str, list[T]], None],
     ) -> list[T]:
         """Generic method to collect all files/directories that will be operated on.
 
@@ -348,14 +440,13 @@ class FileOperationBaseNode(SuccessFailureNode):
             info_class: The Info dataclass class (e.g., CopyFileInfo, MoveFileInfo)
             pending_status: The PENDING status enum value (e.g., CopyStatus.PENDING)
             invalid_status: The INVALID status enum value (e.g., CopyStatus.INVALID)
-            expand_glob_pattern: Function to expand glob patterns and add matches to all_targets
 
         Returns:
             List of Info objects with status set (PENDING for valid paths, INVALID for invalid paths)
         """
         all_targets: list[T] = []
 
-        def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> T:
+        def create_pending_info(source_path: str, destination_path: str, is_directory: bool) -> T:
             # info_class is a dataclass with these fields (CopyFileInfo, MoveFileInfo, etc.)
             return info_class(  # type: ignore[call-arg]
                 source_path=source_path,
@@ -373,6 +464,14 @@ class FileOperationBaseNode(SuccessFailureNode):
                 is_directory=False,
                 status=invalid_status,
                 failure_reason=failure_reason,
+            )
+
+        def expand_glob_pattern(path_str: str, targets: list[T]) -> None:
+            self._expand_glob_pattern(
+                path_str,
+                targets,
+                create_invalid_info=create_invalid_info,
+                create_pending_info=create_pending_info,
             )
 
         return self._collect_all_targets(
