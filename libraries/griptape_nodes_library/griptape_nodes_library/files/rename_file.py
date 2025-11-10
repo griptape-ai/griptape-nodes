@@ -92,6 +92,37 @@ class RenameFile(FileOperationBaseNode):
             parameter_group_initially_collapsed=True,
         )
 
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate that required parameters are provided."""
+        exceptions = []
+
+        # Get parameter values
+        old_path = self.get_parameter_value("old_path")
+        new_path = self.get_parameter_value("new_path")
+
+        # FAILURE CASE: Empty old_path
+        if not old_path:
+            exceptions.append(
+                ValueError(
+                    f"{self.name} attempted to rename but old_path is empty. Failed due to no source path provided"
+                )
+            )
+
+        # FAILURE CASE: Empty new_path
+        if not new_path:
+            exceptions.append(
+                ValueError(
+                    f"{self.name} attempted to rename but new_path is empty. Failed due to no destination path provided"
+                )
+            )
+
+        # Call parent validation
+        parent_exceptions = super().validate_before_node_run()
+        if parent_exceptions:
+            exceptions.extend(parent_exceptions)
+
+        return exceptions if exceptions else None
+
     def _resolve_new_path(self, old_path: str, new_path: str) -> str:
         """Resolve the full new path.
 
@@ -133,22 +164,6 @@ class RenameFile(FileOperationBaseNode):
         old_path = self.get_parameter_value("old_path")
         new_path_input = self.get_parameter_value("new_path")
         overwrite = self.get_parameter_value("overwrite") or False
-
-        # FAILURE CASE: Empty old_path
-        if not old_path:
-            msg = f"{self.name} attempted to rename but old_path is empty. Failed due to no source path provided"
-            self.set_parameter_value(self.old_path_output.name, "")
-            self.set_parameter_value(self.new_path_output.name, "")
-            self._set_status_results(was_successful=False, result_details=msg)
-            return
-
-        # FAILURE CASE: Empty new_path
-        if not new_path_input:
-            msg = f"{self.name} attempted to rename but new_path is empty. Failed due to no destination path provided"
-            self.set_parameter_value(self.old_path_output.name, "")
-            self.set_parameter_value(self.new_path_output.name, "")
-            self._set_status_results(was_successful=False, result_details=msg)
-            return
 
         # Resolve new path
         new_path = self._resolve_new_path(old_path, new_path_input)
