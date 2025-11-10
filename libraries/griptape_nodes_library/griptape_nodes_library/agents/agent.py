@@ -200,6 +200,7 @@ class Agent(ControlNode):
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
+                ui_options={"hide_property": True},
             )
         )
 
@@ -464,7 +465,7 @@ class Agent(ControlNode):
             try:
                 pydantic_schema = create_model(output_schema)
             except Exception as e:
-                msg = f"[ERROR]: Unable to create output schema model: {e}"
+                msg = f"[ERROR]: Unable to create output schema model: {e}. Try using the `Create Agent Schema` node to generate a schema."
                 self.append_value_to_parameter("logs", msg + "\n")
                 logger.error(msg)
                 raise

@@ -934,6 +934,17 @@
       }
     },
     {
+      "class_name": "CreateAgentSchema",
+      "file_path": "griptape_nodes_library/json/json_schema_from_example.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Generate a JSON schema from an example JSON structure for Agent nodes. Provide an example of the data structure you want, and this node will automatically create a schema that can be used with Agent nodes for structured output validation.",
+        "display_name": "Create Agent Schema",
+        "icon": "file-code",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "DisplayJson",
       "file_path": "griptape_nodes_library/json/display_json.py",
       "metadata": {
