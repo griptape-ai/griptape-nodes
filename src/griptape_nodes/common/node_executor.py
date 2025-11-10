@@ -25,15 +25,28 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
     StartNode,
 )
+from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
+from griptape_nodes.retained_mode.events.execution_events import (
+    StartLocalSubflowRequest,
+    StartLocalSubflowResultSuccess,
+)
 from griptape_nodes.retained_mode.events.flow_events import (
+    DeleteFlowRequest,
+    DeleteFlowResultSuccess,
+    DeserializeFlowFromCommandsRequest,
+    DeserializeFlowFromCommandsResultSuccess,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
+)
+from griptape_nodes.retained_mode.events.parameter_events import (
+    SetParameterValueRequest,
+    SetParameterValueResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
@@ -45,6 +58,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowFileFromSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.event_manager import EventSuppressionContext
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.connections import Connections
@@ -380,14 +394,21 @@ class NodeExecutor:
             node: The BaseIterativeEndNode marking the end of the loop
             execution_type: The execution environment type
         """
-        from griptape_nodes.machines.dag_builder import DagBuilder
-
         # Validate start node exists
         if node.start_node is None:
             msg = f"BaseIterativeEndNode '{node.name}' has no start_node reference"
             raise ValueError(msg)
 
         start_node = node.start_node
+
+        # Initialize iteration data to determine total iterations
+        if hasattr(start_node, "_initialize_iteration_data"):
+            start_node._initialize_iteration_data()  # pyright: ignore[reportAttributeAccessIssue]
+
+        total_iterations = start_node._get_total_iterations()
+        if total_iterations == 0:
+            logger.info("No iterations for empty loop from '%s' to '%s'", start_node.name, node.name)
+            return
         flow_manager = GriptapeNodes.FlowManager()
         connections = flow_manager.get_connections()
 
@@ -426,16 +447,6 @@ class NodeExecutor:
                 start_node.name,
                 node.name,
             )
-
-            # Initialize iteration data to determine total iterations
-            if hasattr(start_node, "_initialize_iteration_data"):
-                start_node._initialize_iteration_data()  # pyright: ignore[reportAttributeAccessIssue]
-
-            total_iterations = start_node._get_total_iterations()
-
-            if total_iterations == 0:
-                logger.info("No iterations for empty loop from '%s' to '%s'", start_node.name, node.name)
-                return
 
             # Check if there are direct data connections from start to end
             # Could be: current_item (ForEach), index (ForLoop or ForEach), or other output parameters
@@ -510,7 +521,19 @@ class NodeExecutor:
                 end_nodes = library.get_nodes_by_base_type(EndNode)
                 if len(start_nodes) > 0 and len(end_nodes) > 0:
                     start_node_type = start_nodes[0]
+                    if len(start_nodes) > 1:
+                        logger.warning(
+                            "Multiple StartNodes found in library '%s' for loop execution, using first StartNode '%s'",
+                            execution_type,
+                            start_node_type
+                        )
                     end_node_type = end_nodes[0]
+                    if len(end_nodes) > 1:
+                        logger.warning(
+                            "Multiple EndNodes found in library '%s' for loop execution, using first EndNode '%s'",
+                            execution_type,
+                            end_node_type
+                        )
                     library_name = library.get_library_data().name
             except KeyError:
                 logger.warning("Could not find library '%s' for loop execution, using default library", execution_type)
@@ -538,16 +561,6 @@ class NodeExecutor:
             start_node.name,
             node.name,
         )
-
-        # Initialize iteration data to populate state
-        if hasattr(start_node, "_initialize_iteration_data"):
-            start_node._initialize_iteration_data()  # pyright: ignore[reportAttributeAccessIssue]
-
-        total_iterations = start_node._get_total_iterations()
-        if total_iterations == 0:
-            logger.info("No iterations for loop from '%s' to '%s'", start_node.name, node.name)
-            return
-        logger.info("Starting parallel execution of %d iterations for loop '%s'", total_iterations, start_node.name)
 
         # Step 4a: Get parameter values from start node (vary per iteration)
         parameter_values_to_set_before_run = self.get_parameter_values_per_iteration(
@@ -1029,14 +1042,6 @@ class NodeExecutor:
             - successful_iterations: List of iteration indices that succeeded
             - last_iteration_values: Dict mapping parameter names -> values from last iteration
         """
-        from griptape_nodes.retained_mode.events.flow_events import (
-            DeserializeFlowFromCommandsRequest,
-            DeserializeFlowFromCommandsResultSuccess,
-        )
-        from griptape_nodes.retained_mode.events.parameter_events import (
-            SetParameterValueRequest,
-            SetParameterValueResultSuccess,
-        )
 
         # Step 1: Deserialize N flow instances from the serialized flow
         # Save the current context and restore it after each deserialization to prevent
@@ -1046,7 +1051,6 @@ class NodeExecutor:
         saved_context_flow = context_manager.get_current_flow() if context_manager.has_current_flow() else None
 
         # Suppress events during deserialization to prevent sending them to websockets
-        from griptape_nodes.retained_mode.managers.event_manager import EventSuppressionContext
 
         event_manager = GriptapeNodes.EventManager()
         with EventSuppressionContext(event_manager):
@@ -1131,10 +1135,6 @@ class NodeExecutor:
 
         async def run_single_iteration(flow_name: str, iteration_index: int, start_node_name: str) -> tuple[int, bool]:
             """Run a single iteration flow and return success status."""
-            from griptape_nodes.retained_mode.events.execution_events import (
-                StartLocalSubflowRequest,
-                StartLocalSubflowResultSuccess,
-            )
 
             start_subflow_request = StartLocalSubflowRequest(
                 flow_name=flow_name,
@@ -1194,11 +1194,6 @@ class NodeExecutor:
 
         finally:
             # Step 5: Cleanup - delete all iteration flows
-            from griptape_nodes.retained_mode.events.flow_events import (
-                DeleteFlowRequest,
-                DeleteFlowResultSuccess,
-            )
-
             # Suppress events during deletion to prevent sending them to websockets
             with EventSuppressionContext(event_manager):
                 for iteration_index, flow_name, _ in deserialized_flows:
