@@ -1,8 +1,6 @@
-import base64
 import hashlib
 import io
 import logging
-import uuid
 
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -14,6 +12,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ class ExtractKeyColors(DataNode):
 
     Features:
     - Supports ImageArtifact and ImageUrlArtifact inputs
-    - Configurable number of colors to extract (3-12)
+    - Configurable number of colors to extract (2-12)
     - Dynamic color picker parameters for each extracted color
     - Pretty-printed color output for inspection
     - Automatic parameter cleanup between runs
@@ -77,7 +76,7 @@ class ExtractKeyColors(DataNode):
                 name="num_colors",
                 tooltip="Target number of colors to extract",
                 type=ParameterTypeBuiltin.INT.value,
-                traits={Slider(min_val=1, max_val=12)},
+                traits={Slider(min_val=2, max_val=12)},
                 default_value=3,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Target Number of Colors"},
@@ -97,48 +96,6 @@ class ExtractKeyColors(DataNode):
                 },
             )
         )
-
-    def _dict_to_image_url_artifact(self, image_dict: dict, image_format: str | None = None) -> ImageUrlArtifact:
-        """Convert a dictionary representation of an image to an ImageUrlArtifact.
-
-        This method handles serialized image artifacts that come as dictionaries,
-        typically when artifacts are passed between nodes in the workflow system.
-        It supports both direct URL references and base64-encoded image data.
-
-        Args:
-            image_dict: Dictionary containing image data with 'value' and 'type' keys
-            image_format: Optional format override (e.g., 'png', 'jpg'). If None,
-                         format is inferred from MIME type or defaults to 'png'
-
-        Returns:
-            ImageUrlArtifact: A URL-based image artifact that can be processed
-
-        Raises:
-            KeyError: If required dictionary keys are missing
-            ValueError: If base64 decoding fails or image data is invalid
-        """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        value = image_dict["value"]
-        if image_dict.get("type") == "ImageUrlArtifact":
-            return ImageUrlArtifact(value)
-
-        # Strip base64 prefix if needed
-        if "base64," in value:
-            value = value.split("base64,")[1]
-
-        image_bytes = base64.b64decode(value)
-
-        # Infer format from MIME type if not specified
-        if image_format is None:
-            if "type" in image_dict:
-                mime_format = image_dict["type"].split("/")[1] if "/" in image_dict["type"] else None
-                image_format = mime_format
-            else:
-                image_format = "png"
-
-        url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.{image_format}")
-        return ImageUrlArtifact(url)
 
     def _image_to_bytes(self, image_artifact: ImageArtifact | ImageUrlArtifact | dict) -> bytes:
         """Convert ImageArtifact, ImageUrlArtifact, or dict representation to bytes.
@@ -160,7 +117,7 @@ class ExtractKeyColors(DataNode):
             # Handle dictionary format (serialized artifacts)
             if isinstance(image_artifact, dict):
                 # Convert dict to ImageUrlArtifact first
-                image_url_artifact = self._dict_to_image_url_artifact(image_artifact)
+                image_url_artifact = dict_to_image_url_artifact(image_artifact)
                 return image_url_artifact.to_bytes()
             # Handle artifact objects directly
             if isinstance(image_artifact, (ImageArtifact, ImageUrlArtifact)):
@@ -414,10 +371,6 @@ class ExtractKeyColors(DataNode):
             Exception: If color extraction encounters an error
         """
         self._clear_color_picker_parameters()
-
-        # Force parameter refresh to avoid caching issues
-        if "input_image" in self.parameter_output_values:
-            del self.parameter_output_values["input_image"]
 
         input_image = self.get_parameter_value("input_image")
         num_colors = self.get_parameter_value("num_colors")
