@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING
 
 import semver
 
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_schema_version_problem import (
+    WorkflowSchemaVersionProblem,
+)
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     WorkflowVersionCompatibilityCheck,
     WorkflowVersionCompatibilityIssue,
@@ -39,9 +42,11 @@ class LocalExecutorArgumentAddition(WorkflowVersionCompatibilityCheck):
         if workflow_schema_version < semver.VersionInfo(0, 7, 0):
             issues.append(
                 WorkflowVersionCompatibilityIssue(
-                    message=f"Workflow schema version {workflow_metadata.schema_version} is older than version 0.7.0. "
-                    "The generated LocalExecutor code for the workflow file is missing the `--json-input` argument, which may cause issues for Publish Workflow requests when using certain Library targets. "
-                    "Consider updating the workflow by saving it again.",
+                    problem=WorkflowSchemaVersionProblem(
+                        description=f"Workflow schema version {workflow_metadata.schema_version} is older than version 0.7.0. "
+                        "The generated LocalExecutor code for the workflow file is missing the `--json-input` argument, which may cause issues for Publish Workflow requests when using certain Library targets. "
+                        "Consider updating the workflow by saving it again."
+                    ),
                     severity=WorkflowManager.WorkflowStatus.FLAWED,
                 )
             )

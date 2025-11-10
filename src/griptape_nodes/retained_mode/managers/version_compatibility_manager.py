@@ -22,6 +22,12 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
     DeprecatedNodeWarningProblem,
 )
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.deprecated_node_in_workflow_problem import (
+    DeprecatedNodeInWorkflowProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_not_found_problem import (
+    NodeTypeNotFoundProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
@@ -29,6 +35,7 @@ if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
+    from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -56,7 +63,7 @@ class LibraryVersionCompatibilityCheck(ABC):
 class WorkflowVersionCompatibilityIssue(NamedTuple):
     """Represents a workflow version compatibility issue found in a workflow."""
 
-    message: str
+    problem: WorkflowProblem
     severity: WorkflowManager.WorkflowStatus
 
 
@@ -214,7 +221,7 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def _check_workflow_for_deprecated_nodes(  # noqa: C901, PLR0912
+    def _check_workflow_for_deprecated_nodes(
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for deprecated nodes.
@@ -255,16 +262,14 @@ class VersionCompatibilityManager:
 
             if not isinstance(node_metadata_result, GetNodeMetadataFromLibraryResultSuccess):
                 # Node type doesn't exist in current library version
-                message = f"This workflow uses node type '{node_type}' from library '{library_name}', but this node type is not found in the current library version {current_library_version}"
-
-                if workflow_library_version:
-                    message += f". The workflow was saved with library version {workflow_library_version}"
-
-                message += ". This node may have been removed or renamed. Contact the library author for more details."
-
                 issues.append(
                     WorkflowVersionCompatibilityIssue(
-                        message=message,
+                        problem=NodeTypeNotFoundProblem(
+                            node_type=node_type,
+                            library_name=library_name,
+                            current_library_version=current_library_version,
+                            workflow_library_version=workflow_library_version,
+                        ),
                         severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
                     )
                 )
@@ -277,40 +282,18 @@ class VersionCompatibilityManager:
 
             deprecation = node_metadata.deprecation
 
-            removal_version_reached = False
-            if deprecation.removal_version:
-                try:
-                    current_version = semver.VersionInfo.parse(current_library_version)
-                    removal_version = semver.VersionInfo.parse(deprecation.removal_version)
-                    removal_version_reached = current_version >= removal_version
-                except Exception:
-                    # Errored out trying to parse the version strings; assume not reached.
-                    removal_version_reached = False
-
-            # Build the complete message
-            message = f"This workflow uses node '{node_metadata.display_name}' (class: {node_type}) from library '{library_name}', which is deprecated"
-
-            if deprecation.removal_version:
-                if removal_version_reached:
-                    message += f" and was removed in version {deprecation.removal_version}"
-                else:
-                    message += f" and will be removed in version {deprecation.removal_version}"
-            else:
-                message += " and may be removed in future versions"
-
-            message += f". You are currently using library version: {current_library_version}"
-
-            if workflow_library_version:
-                message += f", and the workflow was saved with library version: {workflow_library_version}"
-
-            if deprecation.deprecation_message:
-                message += f". The library author provided the following message for this deprecation: {deprecation.deprecation_message}"
-            else:
-                message += ". The library author did not provide a message explaining the deprecation. Contact the library author for details on how to remedy this."
-
+            # Create deprecated node problem
             issues.append(
                 WorkflowVersionCompatibilityIssue(
-                    message=message,
+                    problem=DeprecatedNodeInWorkflowProblem(
+                        node_display_name=node_metadata.display_name,
+                        node_type=node_type,
+                        library_name=library_name,
+                        current_library_version=current_library_version,
+                        workflow_library_version=workflow_library_version,
+                        removal_version=deprecation.removal_version,
+                        deprecation_message=deprecation.deprecation_message,
+                    ),
                     severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
                 )
             )
