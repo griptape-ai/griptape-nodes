@@ -851,6 +851,7 @@ class LibraryManager:
                     logger.info(
                         "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
                     )
+                    is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
                     await subprocess_run(
                         [
                             sys.executable,
@@ -864,7 +865,7 @@ class LibraryManager:
                             str(library_venv_python_path),
                         ],
                         check=True,
-                        capture_output=True,
+                        capture_output=not is_debug,
                         text=True,
                     )
                 else:
@@ -984,6 +985,7 @@ class LibraryManager:
                 uv_path = find_uv_bin()
 
                 logger.info("Installing dependency '%s' with pip in venv at %s", package_name, venv_path)
+                is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
                 await subprocess_run(
                     [
                         uv_path,
@@ -994,7 +996,7 @@ class LibraryManager:
                         str(library_python_venv_path),
                     ],
                     check=True,
-                    capture_output=True,
+                    capture_output=not is_debug,
                     text=True,
                 )
             else:
@@ -1061,10 +1063,11 @@ class LibraryManager:
             try:
                 uv_path = find_uv_bin()
                 logger.info("Creating virtual environment at %s with Python %s", library_venv_path, python_version)
+                is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
                 await subprocess_run(
                     [uv_path, "venv", str(library_venv_path), "--python", python_version],
                     check=True,
-                    capture_output=True,
+                    capture_output=not is_debug,
                     text=True,
                 )
             except subprocess.CalledProcessError as e:
