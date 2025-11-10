@@ -76,6 +76,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadLibrariesRequest,
+    LoadLibrariesResultFailure,
+    LoadLibrariesResultSuccess,
     LoadLibraryMetadataFromFileRequest,
     LoadLibraryMetadataFromFileResultFailure,
     LoadLibraryMetadataFromFileResultSuccess,
@@ -240,7 +243,8 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
-        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
+        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_libraries_request)
+        event_manager.assign_manager_to_request_type(LoadLibrariesRequest, self.load_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -2139,7 +2143,7 @@ class LibraryManager:
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
 
-    async def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+    async def reload_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
         clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
@@ -2171,6 +2175,25 @@ class LibraryManager:
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        # Check if there are any new libraries in config that haven't been loaded yet
+        discovered_libraries = {str(path) for path in self._discover_library_files()}
+        loaded_libraries = set(self._library_file_path_to_info.keys())
+        unloaded_libraries = discovered_libraries - loaded_libraries
+
+        if not unloaded_libraries:
+            details = "All configured libraries are already loaded, no action needed."
+            return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+        try:
+            await self.load_all_libraries_from_config()
+            details = "Successfully loaded all libraries from configuration."
+            return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+        except Exception as e:
+            details = f"Failed to load libraries from configuration: {e}"
+            logger.error(details)
+            return LoadLibrariesResultFailure(result_details=details)
 
     def _discover_library_files(self) -> list[Path]:
         """Discover library JSON files from config and workspace recursively.
