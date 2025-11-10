@@ -39,6 +39,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
+    InitializationPhase,
+    InitializationStatus,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
@@ -1541,9 +1543,9 @@ class LibraryManager:
                 GriptapeNodes.EventManager().put_event(
                     AppEvent(
                         payload=EngineInitializationProgress(
-                            phase="libraries",
+                            phase=InitializationPhase.LIBRARIES,
                             item_name=library_name,
-                            status="loading",
+                            status=InitializationStatus.LOADING,
                             current=current_library_index,
                             total=total_libraries,
                         )
@@ -1560,9 +1562,9 @@ class LibraryManager:
                     GriptapeNodes.EventManager().put_event(
                         AppEvent(
                             payload=EngineInitializationProgress(
-                                phase="libraries",
+                                phase=InitializationPhase.LIBRARIES,
                                 item_name=library_name,
-                                status="complete",
+                                status=InitializationStatus.COMPLETE,
                                 current=current_library_index,
                                 total=total_libraries,
                             )
@@ -1587,9 +1589,9 @@ class LibraryManager:
                         GriptapeNodes.EventManager().put_event(
                             AppEvent(
                                 payload=EngineInitializationProgress(
-                                    phase="libraries",
+                                    phase=InitializationPhase.LIBRARIES,
                                     item_name=library_name,
-                                    status="failed",
+                                    status=InitializationStatus.FAILED,
                                     current=current_library_index,
                                     total=total_libraries,
                                     error=error_message,
@@ -1601,9 +1603,9 @@ class LibraryManager:
                         GriptapeNodes.EventManager().put_event(
                             AppEvent(
                                 payload=EngineInitializationProgress(
-                                    phase="libraries",
+                                    phase=InitializationPhase.LIBRARIES,
                                     item_name=library_name,
-                                    status="complete",
+                                    status=InitializationStatus.COMPLETE,
                                     current=current_library_index,
                                     total=total_libraries,
                                 )

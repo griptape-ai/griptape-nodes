@@ -35,6 +35,8 @@ from griptape_nodes.retained_mode.events.app_events import (
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
+    InitializationPhase,
+    InitializationStatus,
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
@@ -4150,9 +4152,9 @@ class WorkflowManager:
             GriptapeNodes.EventManager().put_event(
                 AppEvent(
                     payload=EngineInitializationProgress(
-                        phase="workflows",
+                        phase=InitializationPhase.WORKFLOWS,
                         item_name=workflow_name,
-                        status="loading",
+                        status=InitializationStatus.LOADING,
                         current=current_index,
                         total=total_workflows,
                     )
@@ -4167,9 +4169,9 @@ class WorkflowManager:
                 GriptapeNodes.EventManager().put_event(
                     AppEvent(
                         payload=EngineInitializationProgress(
-                            phase="workflows",
+                            phase=InitializationPhase.WORKFLOWS,
                             item_name=workflow_name,
-                            status="complete",
+                            status=InitializationStatus.COMPLETE,
                             current=current_index,
                             total=total_workflows,
                         )
@@ -4181,9 +4183,9 @@ class WorkflowManager:
                 GriptapeNodes.EventManager().put_event(
                     AppEvent(
                         payload=EngineInitializationProgress(
-                            phase="workflows",
+                            phase=InitializationPhase.WORKFLOWS,
                             item_name=workflow_name,
-                            status="failed",
+                            status=InitializationStatus.FAILED,
                             current=current_index,
                             total=total_workflows,
                             error="Failed to process workflow file",
