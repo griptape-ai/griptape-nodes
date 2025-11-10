@@ -2020,7 +2020,15 @@ class LibraryManager:
             try:
                 module = self._load_module_from_file(candidate_path, LibraryManager.SANDBOX_LIBRARY_NAME)
             except Exception as err:
-                problems.append(f"Could not load module in sandbox library '{candidate_path}': {err}")
+                root_cause = self._get_root_cause_from_exception(err)
+                problems.append(
+                    NodeModuleImportProblem(
+                        class_name=node_def.class_name,
+                        file_path=str(candidate_path),
+                        error_message=str(err),
+                        root_cause=str(root_cause),
+                    )
+                )
                 details = f"Attempted to load module in sandbox library '{candidate_path}'. Failed because an exception occurred: {err}."
                 logger.warning(details)
                 continue  # SKIP IT
