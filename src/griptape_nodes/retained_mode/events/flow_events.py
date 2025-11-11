@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
     from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
+    from griptape_nodes.retained_mode.events.draw_events import SerializedDrawCommands
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -238,6 +239,8 @@ class SerializedFlowCommands:
     sub_flows_commands: list[SerializedFlowCommands]
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
+    # Draw objects serialized with this flow
+    serialized_draw_commands: list[SerializedDrawCommands] = field(default_factory=list)
 
 
 @dataclass

@@ -5,6 +5,7 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
+    ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -121,4 +122,57 @@ class ListDrawsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class ListDrawsResultFailure(ResultPayloadFailure):
+    pass
+
+
+# -----------------------------------------------------------------------------
+# Serialization (save like a node)
+# -----------------------------------------------------------------------------
+
+@dataclass
+class SerializedDrawCommands:
+    """Serialized commands required to recreate a draw object."""
+
+    create_draw_command: CreateDrawRequest
+    # Future: additional modification commands (currently unused)
+    modification_commands: list[RequestPayload] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeDrawToCommandsRequest(RequestPayload):
+    """Serialize a draw into a sequence of commands."""
+
+    draw_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeDrawToCommandsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    serialized_draw_commands: SerializedDrawCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class SerializeDrawToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    pass
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeDrawFromCommandsRequest(RequestPayload):
+    """Recreate a draw from serialized commands."""
+
+    serialized_draw_commands: SerializedDrawCommands
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeDrawFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    draw_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeserializeDrawFromCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     pass

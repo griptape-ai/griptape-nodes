@@ -8,6 +8,9 @@ from griptape_nodes.retained_mode.events.draw_events import (
     CreateDrawRequest,
     CreateDrawResultFailure,
     CreateDrawResultSuccess,
+    DeserializeDrawFromCommandsRequest,
+    DeserializeDrawFromCommandsResultFailure,
+    DeserializeDrawFromCommandsResultSuccess,
     DeleteDrawRequest,
     DeleteDrawResultFailure,
     DeleteDrawResultSuccess,
@@ -17,6 +20,10 @@ from griptape_nodes.retained_mode.events.draw_events import (
     ListDrawsRequest,
     ListDrawsResultFailure,
     ListDrawsResultSuccess,
+    SerializeDrawToCommandsRequest,
+    SerializeDrawToCommandsResultFailure,
+    SerializeDrawToCommandsResultSuccess,
+    SerializedDrawCommands,
     SetDrawMetadataRequest,
     SetDrawMetadataResultFailure,
     SetDrawMetadataResultSuccess,
@@ -39,6 +46,12 @@ class DrawManager:
         event_manager.assign_manager_to_request_type(GetDrawMetadataRequest, self.on_get_draw_metadata_request)
         event_manager.assign_manager_to_request_type(SetDrawMetadataRequest, self.on_set_draw_metadata_request)
         event_manager.assign_manager_to_request_type(ListDrawsRequest, self.on_list_draws_request)
+        event_manager.assign_manager_to_request_type(
+            SerializeDrawToCommandsRequest, self.on_serialize_draw_to_commands_request
+        )
+        event_manager.assign_manager_to_request_type(
+            DeserializeDrawFromCommandsRequest, self.on_deserialize_draw_from_commands_request
+        )
 
     def on_create_draw_request(self, request: CreateDrawRequest) -> ResultPayload:
         try:
@@ -110,3 +123,45 @@ class DrawManager:
         except Exception as e:
             logger.error("Failed to list draws: %s", e)
             return ListDrawsResultFailure(result_details=f"Failed to list draws: {e}")
+
+    def on_serialize_draw_to_commands_request(self, request: SerializeDrawToCommandsRequest) -> ResultPayload:
+        try:
+            draw = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(request.draw_name, BaseDraw)
+            if draw is None:
+                return SerializeDrawToCommandsResultFailure(
+                    result_details=f"Draw '{request.draw_name}' not found."
+                )
+            create_cmd = CreateDrawRequest(
+                requested_name=draw.name,
+                metadata=dict(draw.metadata),
+            )
+            serialized = SerializedDrawCommands(create_draw_command=create_cmd, modification_commands=[])
+            return SerializeDrawToCommandsResultSuccess(
+                serialized_draw_commands=serialized, result_details="Serialized draw successfully."
+            )
+        except Exception as e:
+            logger.error("Failed to serialize draw '%s': %s", request.draw_name, e)
+            return SerializeDrawToCommandsResultFailure(result_details=f"Failed to serialize draw: {e}")
+
+    def on_deserialize_draw_from_commands_request(
+        self, request: DeserializeDrawFromCommandsRequest
+    ) -> ResultPayload:
+        try:
+            commands = request.serialized_draw_commands
+            # Issue create
+            create_cmd = commands.create_draw_command
+            create_result = GriptapeNodes.handle_request(create_cmd)
+            if not isinstance(create_result, CreateDrawResultSuccess):
+                return DeserializeDrawFromCommandsResultFailure(
+                    result_details=f"Failed to create draw during deserialize: {create_result.result_details}"
+                )
+            new_name = create_result.draw_name
+            # Apply any modifications (none by default)
+            for cmd in commands.modification_commands:
+                GriptapeNodes.handle_request(cmd)
+            return DeserializeDrawFromCommandsResultSuccess(
+                draw_name=new_name, result_details="Deserialized draw successfully."
+            )
+        except Exception as e:
+            logger.error("Failed to deserialize draw: %s", e)
+            return DeserializeDrawFromCommandsResultFailure(result_details=f"Failed to deserialize draw: {e}")

@@ -147,6 +147,13 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.events.draw_events import (
+    ListDrawsRequest,
+    ListDrawsResultSuccess,
+    SerializeDrawToCommandsRequest,
+    SerializeDrawToCommandsResultSuccess,
+    DeserializeDrawFromCommandsRequest,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -2937,6 +2944,15 @@ class FlowManager:
             details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
             return SerializeFlowToCommandsResultFailure(result_details=details)
 
+        # Serialize draw objects (currently global)
+        serialized_draw_commands = []
+        draws_list_result = GriptapeNodes.handle_request(ListDrawsRequest())
+        if isinstance(draws_list_result, ListDrawsResultSuccess):
+            for draw_name in draws_list_result.draw_names:
+                draw_ser_result = GriptapeNodes.handle_request(SerializeDrawToCommandsRequest(draw_name=draw_name))
+                if isinstance(draw_ser_result, SerializeDrawToCommandsResultSuccess):
+                    serialized_draw_commands.append(draw_ser_result.serialized_draw_commands)
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
@@ -2947,6 +2963,7 @@ class FlowManager:
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
+            serialized_draw_commands=serialized_draw_commands,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3072,6 +3089,15 @@ class FlowManager:
             sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
             if sub_flow_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
+                return DeserializeFlowFromCommandsResultFailure(result_details=details)
+
+        # Deserialize draws
+        for serialized_draw in request.serialized_flow_commands.serialized_draw_commands:
+            draw_deser_result = GriptapeNodes.handle_request(
+                DeserializeDrawFromCommandsRequest(serialized_draw_commands=serialized_draw)
+            )
+            if draw_deser_result.failed():
+                details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing draw objects."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
