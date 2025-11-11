@@ -429,6 +429,8 @@ class FileOperationBaseNode(SuccessFailureNode):
         info_class: type[Any],  # Dataclass type (e.g., CopyFileInfo, MoveFileInfo)
         pending_status: Enum,
         invalid_status: Enum,
+        *,
+        type_hint: type[T] | None = None,  # Used for typing only; callers do not need to pass
     ) -> list[T]:
         """Generic method to collect all files/directories that will be operated on.
 
@@ -440,10 +442,13 @@ class FileOperationBaseNode(SuccessFailureNode):
             info_class: The Info dataclass class (e.g., CopyFileInfo, MoveFileInfo)
             pending_status: The PENDING status enum value (e.g., CopyStatus.PENDING)
             invalid_status: The INVALID status enum value (e.g., CopyStatus.INVALID)
+            type_hint: Optional generic type hint to satisfy static typing; not used at runtime.
 
         Returns:
             List of Info objects with status set (PENDING for valid paths, INVALID for invalid paths)
         """
+        # Typing-only hint; referenced to satisfy unused-argument linters.
+        _ = type_hint
         all_targets: list[T] = []
 
         def create_pending_info(source_path: str, destination_path: str, *, is_directory: bool) -> T:

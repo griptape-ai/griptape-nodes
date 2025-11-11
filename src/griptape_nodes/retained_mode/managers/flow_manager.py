@@ -2949,9 +2949,11 @@ class FlowManager:
         draws_list_result = GriptapeNodes.handle_request(ListDrawsRequest())
         if isinstance(draws_list_result, ListDrawsResultSuccess):
             for draw_name in draws_list_result.draw_names:
-                draw_ser_result = GriptapeNodes.handle_request(SerializeDrawToCommandsRequest(draw_name=draw_name))
-                if isinstance(draw_ser_result, SerializeDrawToCommandsResultSuccess):
-                    serialized_draw_commands.append(draw_ser_result.serialized_draw_commands)
+                draw_serialize_result = GriptapeNodes.handle_request(
+                    SerializeDrawToCommandsRequest(draw_name=draw_name)
+                )
+                if isinstance(draw_serialize_result, SerializeDrawToCommandsResultSuccess):
+                    serialized_draw_commands.append(draw_serialize_result.serialized_draw_commands)
 
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
