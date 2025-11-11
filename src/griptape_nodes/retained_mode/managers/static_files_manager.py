@@ -104,14 +104,12 @@ class StaticFilesManager:
             content_bytes = base64.b64decode(request.content)
         except (binascii.Error, ValueError) as e:
             msg = f"Failed to decode base64 content for file {file_name}: {e}"
-            logger.error(msg)
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         try:
             url = self.save_static_file(content_bytes, file_name)
         except Exception as e:
             msg = f"Failed to create static file for file {file_name}: {e}"
-            logger.error(msg)
             return CreateStaticFileResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileResultSuccess(url=url, result_details=f"Successfully created static file: {url}")
@@ -137,7 +135,6 @@ class StaticFilesManager:
             response = self.storage_driver.create_signed_upload_url(full_file_path)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
-            logger.error(msg)
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileUploadUrlResultSuccess(
@@ -168,7 +165,6 @@ class StaticFilesManager:
             url = self.storage_driver.create_signed_download_url(full_file_path)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
-            logger.error(msg)
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
@@ -177,7 +173,7 @@ class StaticFilesManager:
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Start static server in daemon thread if enabled
-        if self.storage_backend == StorageBackend.LOCAL:
+        if isinstance(self.storage_driver, LocalStorageDriver):
             threading.Thread(target=start_static_server, daemon=True, name="static-server").start()
 
     def save_static_file(self, data: bytes, file_name: str) -> str:

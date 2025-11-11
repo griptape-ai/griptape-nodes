@@ -14,6 +14,7 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
+    from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 
@@ -201,14 +202,14 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
                      None if the name couldn't be determined.
         status: The LibraryStatus enum indicating the type of failure
                (MISSING, UNUSABLE, etc.).
-        problems: List of specific error messages describing what went wrong
-                 during loading (JSON parse errors, validation failures, etc.).
+        problems: List of specific problems encountered during loading
+                 (file not found, JSON parse errors, validation failures, etc.).
     """
 
     library_path: str
     library_name: str | None
     status: LibraryStatus
-    problems: list[str]
+    problems: list[LibraryProblem]
 
 
 @dataclass
@@ -510,3 +511,31 @@ class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
     """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibrariesRequest(RequestPayload):
+    """Load all libraries from configuration if they are not already loaded.
+
+    This is a non-destructive operation that checks if libraries are already loaded
+    and only performs the initial loading if needed. Unlike ReloadAllLibrariesRequest,
+    this does NOT clear any workflow state.
+
+    Use when: Ensuring libraries are loaded at workflow startup, initializing library
+    system on demand, preparing library catalog without disrupting existing workflows.
+
+    Results: LoadLibrariesResultSuccess | LoadLibrariesResultFailure (loading error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Libraries loaded successfully (or were already loaded)."""
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library loading failed. Common causes: library loading errors, configuration issues, initialization failures."""

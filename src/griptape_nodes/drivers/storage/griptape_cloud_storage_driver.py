@@ -46,7 +46,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             response = httpx.post(url, json={"operation": "PUT"}, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned URL for file {path}: {e}"
+            msg = f"Failed to create presigned upload URL for file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
@@ -60,7 +60,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned URL for file {path}: {e}"
+            msg = f"Failed to create presigned download URL for file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
