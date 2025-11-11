@@ -450,7 +450,7 @@ class AgentManager:
         if not api_key:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
-        return GriptapeCloudPromptDriver(api_key=api_key, stream=True, structured_output_strategy="tool")
+        return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
 
     def _initialize_image_tool(self) -> NodesPromptImageGenerationTool:
         api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
