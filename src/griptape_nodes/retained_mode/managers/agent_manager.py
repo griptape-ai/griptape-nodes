@@ -175,7 +175,6 @@ class AgentManager:
             return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
-        logger.debug(f"Configuring agent with request: {request}")
         try:
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
