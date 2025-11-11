@@ -590,7 +590,51 @@ class NodeExecutor:
 
         end_node._output_results_list()
 
-    async def _execute_loop_iterations_sequentially(
+    def _should_break_loop(
+        self,
+        node_name_mappings: dict[str, str],
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+    ) -> bool:
+        """Check if the loop should break based on the end node's control output.
+
+        Args:
+            node_name_mappings: Mapping from original to deserialized node names
+            package_result: The package result containing parameter mappings
+
+        Returns:
+            True if the end node signaled a break, False otherwise
+        """
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Get the End node mapping
+        end_node_mapping = self.get_node_parameter_mappings(package_result, "end")
+        end_node_name = end_node_mapping.node_name
+
+        # Get the deserialized end node name
+        packaged_end_node_name = node_name_mappings.get(end_node_name)
+        if packaged_end_node_name is None:
+            logger.warning("Could not find deserialized End node name for %s", end_node_name)
+            return False
+
+        # Get the deserialized end node instance
+        deserialized_end_node = node_manager.get_node_by_name(packaged_end_node_name)
+        if deserialized_end_node is None:
+            logger.warning("Could not find deserialized End node instance for %s", packaged_end_node_name)
+            return False
+
+        # Check if this is a BaseIterativeEndNode
+        if not isinstance(deserialized_end_node, BaseIterativeEndNode):
+            return False
+
+        # Check if end node would emit break_loop_signal_output
+        next_control_output = deserialized_end_node.get_next_control_output()
+        if next_control_output is None:
+            return False
+
+        # Check if it's the break signal
+        return next_control_output == deserialized_end_node.break_loop_signal_output
+
+    async def _execute_loop_iterations_sequentially(  # noqa: PLR0915
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
@@ -698,12 +742,22 @@ class NodeExecutor:
 
                 logger.info("Completed sequential iteration %d/%d", iteration_index + 1, total_iterations)
 
-            # Extract last iteration values
-            deserialized_flows = [(total_iterations - 1, flow_name, node_name_mappings)]
+                # Check if the end node signaled a break
+                if self._should_break_loop(node_name_mappings, package_result):
+                    logger.info(
+                        "Loop break detected at iteration %d/%d - stopping execution early",
+                        iteration_index + 1,
+                        total_iterations,
+                    )
+                    break
+
+            # Extract last iteration values from the last successful iteration
+            last_successful_iteration = successful_iterations[-1] if successful_iterations else 0
+            deserialized_flows = [(last_successful_iteration, flow_name, node_name_mappings)]
             last_iteration_values = self.get_last_iteration_values_for_packaged_nodes(
                 deserialized_flows=deserialized_flows,
                 package_result=package_result,
-                total_iterations=total_iterations,
+                total_iterations=len(successful_iterations),
             )
 
             return iteration_results, successful_iterations, last_iteration_values
@@ -795,10 +849,21 @@ class NodeExecutor:
             end_loop_node=end_node,
         )
 
-        if len(successful_iterations) != total_iterations:
-            failed_count = total_iterations - len(successful_iterations)
-            msg = f"Loop execution failed: {failed_count} of {total_iterations} iterations failed"
-            raise RuntimeError(msg)
+        # Check if execution stopped early due to break (not failure)
+        if len(successful_iterations) < total_iterations:
+            # Only raise an error if there were actual failures (not just early termination)
+            # If iterations stopped due to break, the last successful iteration count matches
+            expected_count = len(successful_iterations)
+            actual_count = len(iteration_results)
+            if expected_count != actual_count:
+                failed_count = expected_count - actual_count
+                msg = f"Loop execution failed: {failed_count} of {expected_count} iterations failed"
+                raise RuntimeError(msg)
+            logger.info(
+                "Loop execution stopped early at %d of %d iterations (break signal)",
+                len(successful_iterations),
+                total_iterations,
+            )
 
         # Build results list in iteration order
         end_node._results_list = []
