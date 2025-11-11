@@ -175,11 +175,17 @@ class AgentManager:
             return RunAgentResultFailure(error=ErrorArtifact(e).to_dict(), result_details=err_msg)
 
     def on_handle_configure_agent_request(self, request: ConfigureAgentRequest) -> ResultPayload:
+        logger.debug(f"Configuring agent with request: {request}")
         try:
             if self.prompt_driver is None:
                 self.prompt_driver = self._initialize_prompt_driver()
             for key, value in request.prompt_driver.items():
                 setattr(self.prompt_driver, key, value)
+
+            if self.image_tool is None:
+                self.image_tool = self._initialize_image_tool()
+            for key, value in request.image_generation_driver.items():
+                setattr(self.image_tool.image_generation_driver, key, value)
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
@@ -445,7 +451,7 @@ class AgentManager:
         if not api_key:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
-        return GriptapeCloudPromptDriver(api_key=api_key, stream=True)
+        return GriptapeCloudPromptDriver(api_key=api_key, stream=True, structured_output_strategy="tool")
 
     def _initialize_image_tool(self) -> NodesPromptImageGenerationTool:
         api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
@@ -453,7 +459,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return NodesPromptImageGenerationTool(
-            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="gpt-image-1"),
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key),
             static_files_manager=self.static_files_manager,
         )
 
