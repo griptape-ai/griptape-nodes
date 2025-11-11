@@ -62,6 +62,17 @@ class ForLoopStartNode(BaseIterativeStartNode):
         self.add_parameter(self.end_inclusive)
         self.add_parameter(self.step_value)
 
+        # Add parallel execution control parameter
+        self.run_in_parallel = Parameter(
+            name="run_in_parallel",
+            tooltip="Execute all iterations concurrently (parallel) or one at a time (sequential)",
+            type=ParameterTypeBuiltin.BOOL.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=False,
+            ui_options={"display_name": "Run in Parallel"},
+        )
+        self.add_parameter(self.run_in_parallel)
+
         # Move the parameter group to the end
         self.move_element_to_position("For Loop", position="last")
 

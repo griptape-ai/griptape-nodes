@@ -31,6 +31,17 @@ class ForEachStartNode(BaseIterativeStartNode):
         )
         self.add_parameter(self.items_list)
 
+        # Add parallel execution control parameter
+        self.run_in_parallel = Parameter(
+            name="run_in_parallel",
+            tooltip="Execute all iterations concurrently (parallel) or one at a time (sequential)",
+            type=ParameterTypeBuiltin.BOOL.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=False,
+            ui_options={"display_name": "Run in Parallel"},
+        )
+        self.add_parameter(self.run_in_parallel)
+
         # Add current_item parameter specific to ForEach
         self.current_item = Parameter(
             name="current_item",

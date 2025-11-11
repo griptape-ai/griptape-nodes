@@ -383,3 +383,90 @@ class EventSuppressionContext:
         for item in self.events_to_suppress:
             if item in self.manager._events_to_suppress:
                 self.manager._events_to_suppress.remove(item)
+
+
+class EventTranslationContext:
+    """Context manager to translate node names in events from packaged to original names.
+
+    Use this to make loop execution events reference the original nodes that the user placed,
+    rather than the packaged node copies. This allows the UI to highlight the correct nodes
+    during loop execution.
+    """
+
+    def __init__(self, manager: EventManager, node_name_mapping: dict[str, str]):
+        """Initialize the event translation context.
+
+        Args:
+            manager: The EventManager to intercept events from
+            node_name_mapping: Dict mapping packaged node names to original node names
+        """
+        self.manager = manager
+        self.node_name_mapping = node_name_mapping
+        self.original_put_event: Any = None
+
+    def __enter__(self) -> None:
+        """Enter the context and start translating events."""
+        self.original_put_event = self.manager.put_event
+        self.manager.put_event = self._translate_and_put  # type: ignore[method-assign]
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
+        """Exit the context and restore original event sending."""
+        self.manager.put_event = self.original_put_event  # type: ignore[method-assign]
+
+    def _translate_and_put(self, event: Any) -> None:
+        """Translate node names in events and put them in the queue.
+
+        Args:
+            event: The event to potentially translate and send
+        """
+        # Check if event has node_name attribute and needs translation
+        if hasattr(event, "node_name"):
+            node_name = event.node_name
+            if node_name in self.node_name_mapping:
+                # Create a copy of the event with the translated node name
+                translated_event = self._copy_event_with_translated_name(event)
+                self.original_put_event(translated_event)
+                return
+
+        # No translation needed, send as-is
+        self.original_put_event(event)
+
+    def _copy_event_with_translated_name(self, event: Any) -> Any:
+        """Create a copy of an event with the node name translated to the original name.
+
+        Args:
+            event: The event to copy and translate
+
+        Returns:
+            A new event instance with the translated node name
+        """
+        # Get the original node name from the mapping
+        node_name = event.node_name
+        original_node_name = self.node_name_mapping[node_name]
+
+        # Get the event class
+        event_class = type(event)
+
+        # Create a dict of all event attributes
+        if hasattr(event, "model_dump"):
+            event_dict = event.model_dump()
+        elif hasattr(event, "__dict__"):
+            event_dict = event.__dict__.copy()
+        else:
+            # Can't copy this event, return as-is
+            return event
+
+        # Replace the node name with the original name
+        event_dict["node_name"] = original_node_name
+
+        # Create a new event instance with the translated name
+        try:
+            return event_class(**event_dict)
+        except Exception:
+            # If we can't create a new instance, return the original
+            return event
