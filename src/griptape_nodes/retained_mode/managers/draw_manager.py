@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from griptape_nodes.exe_types.draw_types import BaseDraw
-from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.draw_events import (
     CreateDrawRequest,
     CreateDrawResultFailure,
@@ -23,7 +22,10 @@ from griptape_nodes.retained_mode.events.draw_events import (
     SetDrawMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.event_manager import EventManager
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.base_events import ResultPayload
+    from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -45,13 +47,21 @@ class DrawManager:
             name = GriptapeNodes.ObjectManager().generate_name_for_object(
                 type_name="Draw", requested_name=requested_name
             )
+            # Merge provided position/size convenience fields into metadata
+            merged_metadata: dict[str, Any] = {}
+            if request.metadata:
+                merged_metadata.update(request.metadata)
+            if request.x is not None:
+                merged_metadata["x"] = request.x
+            if request.y is not None:
+                merged_metadata["y"] = request.y
+            if request.width is not None:
+                merged_metadata["width"] = request.width
+            if request.height is not None:
+                merged_metadata["height"] = request.height
             draw = BaseDraw(
                 name=name,
-                metadata=request.metadata,
-                x=request.x,
-                y=request.y,
-                width=request.width,
-                height=request.height,
+                metadata=merged_metadata,
             )
             GriptapeNodes.ObjectManager().add_object_by_name(name, draw)
             return CreateDrawResultSuccess(draw_name=name, result_details="Draw created successfully.")
@@ -100,5 +110,3 @@ class DrawManager:
         except Exception as e:
             logger.error("Failed to list draws: %s", e)
             return ListDrawsResultFailure(result_details=f"Failed to list draws: {e}")
-
-

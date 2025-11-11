@@ -110,7 +110,6 @@ class SetDrawMetadataResultFailure(ResultPayloadFailure):
 class ListDrawsRequest(RequestPayload):
     """List all draw object names."""
 
-    pass
 
 
 @dataclass
@@ -123,5 +122,3 @@ class ListDrawsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class ListDrawsResultFailure(ResultPayloadFailure):
     pass
-
-

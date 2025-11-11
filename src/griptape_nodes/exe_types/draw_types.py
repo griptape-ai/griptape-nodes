@@ -19,25 +19,21 @@ class BaseDraw:
         name: str,
         metadata: dict[str, Any] | None = None,
         *,
-        x: float | None = None,
-        y: float | None = None,
-        width: float | None = None,
-        height: float | None = None,
+        position: Tuple[float, float] | None = None,
+        size: Tuple[float, float] | None = None,
     ) -> None:
         self.name = name
         self.metadata = {} if metadata is None else dict(metadata)
         # Optionally initialize position/size
-        if x is not None:
-            self.metadata["x"] = x
-        if y is not None:
-            self.metadata["y"] = y
-        if width is not None:
-            self.metadata["width"] = width
-        if height is not None:
-            self.metadata["height"] = height
+        if position is not None:
+            self.metadata["x"] = float(position[0])
+            self.metadata["y"] = float(position[1])
+        if size is not None:
+            self.metadata["width"] = float(size[0])
+            self.metadata["height"] = float(size[1])
 
     # Position
-    def get_position(self) -> Tuple[float, float] | None:
+    def get_position(self) -> tuple[float, float] | None:
         x = self.metadata.get("x")
         y = self.metadata.get("y")
         if x is None or y is None:
@@ -49,7 +45,7 @@ class BaseDraw:
         self.metadata["y"] = y
 
     # Size
-    def get_size(self) -> Tuple[float, float] | None:
+    def get_size(self) -> tuple[float, float] | None:
         width = self.metadata.get("width")
         height = self.metadata.get("height")
         if width is None or height is None:
@@ -65,5 +61,3 @@ class BaseDraw:
             "name": self.name,
             "metadata": dict(self.metadata),
         }
-
-
