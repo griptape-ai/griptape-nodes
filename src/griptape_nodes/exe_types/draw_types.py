@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any
 
 
 class BaseDraw:
@@ -19,8 +19,8 @@ class BaseDraw:
         name: str,
         metadata: dict[str, Any] | None = None,
         *,
-        position: Tuple[float, float] | None = None,
-        size: Tuple[float, float] | None = None,
+        position: tuple[float, float] | None = None,
+        size: tuple[float, float] | None = None,
     ) -> None:
         self.name = name
         self.metadata = {} if metadata is None else dict(metadata)

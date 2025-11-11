@@ -1,29 +1,29 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.exe_types.draw_types import BaseDraw
 from griptape_nodes.retained_mode.events.draw_events import (
     CreateDrawRequest,
     CreateDrawResultFailure,
     CreateDrawResultSuccess,
-    DeserializeDrawFromCommandsRequest,
-    DeserializeDrawFromCommandsResultFailure,
-    DeserializeDrawFromCommandsResultSuccess,
     DeleteDrawRequest,
     DeleteDrawResultFailure,
     DeleteDrawResultSuccess,
+    DeserializeDrawFromCommandsRequest,
+    DeserializeDrawFromCommandsResultFailure,
+    DeserializeDrawFromCommandsResultSuccess,
     GetDrawMetadataRequest,
     GetDrawMetadataResultFailure,
     GetDrawMetadataResultSuccess,
     ListDrawsRequest,
     ListDrawsResultFailure,
     ListDrawsResultSuccess,
+    SerializedDrawCommands,
     SerializeDrawToCommandsRequest,
     SerializeDrawToCommandsResultFailure,
     SerializeDrawToCommandsResultSuccess,
-    SerializedDrawCommands,
     SetDrawMetadataRequest,
     SetDrawMetadataResultFailure,
     SetDrawMetadataResultSuccess,
@@ -128,9 +128,7 @@ class DrawManager:
         try:
             draw = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(request.draw_name, BaseDraw)
             if draw is None:
-                return SerializeDrawToCommandsResultFailure(
-                    result_details=f"Draw '{request.draw_name}' not found."
-                )
+                return SerializeDrawToCommandsResultFailure(result_details=f"Draw '{request.draw_name}' not found.")
             create_cmd = CreateDrawRequest(
                 requested_name=draw.name,
                 metadata=dict(draw.metadata),
@@ -143,9 +141,7 @@ class DrawManager:
             logger.error("Failed to serialize draw '%s': %s", request.draw_name, e)
             return SerializeDrawToCommandsResultFailure(result_details=f"Failed to serialize draw: {e}")
 
-    def on_deserialize_draw_from_commands_request(
-        self, request: DeserializeDrawFromCommandsRequest
-    ) -> ResultPayload:
+    def on_deserialize_draw_from_commands_request(self, request: DeserializeDrawFromCommandsRequest) -> ResultPayload:
         try:
             commands = request.serialized_draw_commands
             # Issue create

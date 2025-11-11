@@ -5,7 +5,6 @@ from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
-    ResultPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
     WorkflowAlteredMixin,
@@ -112,7 +111,6 @@ class ListDrawsRequest(RequestPayload):
     """List all draw object names."""
 
 
-
 @dataclass
 @PayloadRegistry.register
 class ListDrawsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
@@ -128,6 +126,7 @@ class ListDrawsResultFailure(ResultPayloadFailure):
 # -----------------------------------------------------------------------------
 # Serialization (save like a node)
 # -----------------------------------------------------------------------------
+
 
 @dataclass
 class SerializedDrawCommands:
