@@ -96,12 +96,28 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             self.model_id = model_id
             self.start_time = datetime.now(UTC).isoformat()
 
+            # Check if this is a byte-level progress bar or file enumeration bar
+            unit = getattr(self, "unit", "")
+            desc = getattr(self, "desc", "")
+
+            # Skip file enumeration bars (unit='it', desc='Fetching N files')
+            # We only want to track byte-level download progress
+            self._should_track = not (unit == "it" and "Fetching" in str(desc))
+
+            if not self._should_track:
+                logger.info(
+                    "ModelDownloadTracker skipping file enumeration bar - model_id: %s, desc: '%s'",
+                    self.model_id,
+                    desc,
+                )
+                return
+
             logger.info(
-                "ModelDownloadTracker instantiated - model_id: %s, total: %s, unit: %s, desc: '%s'",
+                "ModelDownloadTracker instantiated for tracking - model_id: %s, total: %s, unit: %s, desc: '%s'",
                 self.model_id,
                 self.total,
-                getattr(self, "unit", "?"),
-                getattr(self, "desc", "?"),
+                unit,
+                desc,
             )
 
             if self.model_id:
@@ -109,6 +125,12 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
         def update(self, n: int = 1) -> None:
             """Override update to track progress in status file."""
+            super().update(n)
+
+            # Skip if not tracking this progress bar
+            if not getattr(self, "_should_track", True):
+                return
+
             if self._first_update:
                 logger.info("ModelDownloadTracker received first update for model: %s", self.model_id)
                 self._first_update = False
@@ -117,16 +139,19 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
                 self.model_id,
                 n,
-                self.n + n,  # Show what it will be after this update
+                self.n,  # self.n is already updated by super().update(n)
                 self.total,
-                ((self.n + n) / self.total * 100) if self.total else 0,
+                (self.n / self.total * 100) if self.total else 0,
             )
-            super().update(n)
             self._update_status_file(mark_completed=False)
 
         def close(self) -> None:
             """Override close to mark download as completed only if fully downloaded."""
             super().close()
+
+            # Skip if not tracking this progress bar
+            if not getattr(self, "_should_track", True):
+                return
 
             # Only mark as completed if we actually downloaded everything
             is_complete = self.total > 0 and self.n >= self.total
