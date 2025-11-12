@@ -151,6 +151,7 @@ TRegisteredEventData = TypeVar("TRegisteredEventData")
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
+    LIBRARY_CONFIG_GLOB_PATTERN = "griptape[_-]nodes[_-]library.json"
 
     @dataclass
     class LibraryInfo:
@@ -2227,7 +2228,7 @@ class LibraryManager:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Process all library JSON files recursively in the directory
-                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
+                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
             elif path.suffix == ".json":
                 discovered_libraries.add(path)
 
