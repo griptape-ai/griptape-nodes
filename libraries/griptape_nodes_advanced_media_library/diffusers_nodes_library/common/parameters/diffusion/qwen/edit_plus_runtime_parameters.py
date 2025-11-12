@@ -29,7 +29,7 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
         self._node.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "list[ImageArtifact]", "list[ImageUrlArtifact]"],
+                input_types=["ImageArtifact", "ImageUrlArtifact", "list"],
                 type="list[ImageArtifact]",
                 tooltip="Image(s) to be edited. Can be a single image or a list of up to 3 images.",
             )
