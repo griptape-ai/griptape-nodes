@@ -19,7 +19,6 @@ class QwenImageEditPlusPipelineParameters(DiffusionPipelineTypePipelineParameter
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
             repo_ids=[
-                "Qwen/Qwen-Image-Edit",
                 "Qwen/Qwen-Image-Edit-2509",
             ],
             parameter_name="model",
