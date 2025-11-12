@@ -106,14 +106,14 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             self._should_track = not (unit == "it" and "Fetching" in str(desc))
 
             if not self._should_track:
-                logger.info(
+                logger.debug(
                     "ModelDownloadTracker skipping file enumeration bar - model_id: %s, desc: '%s'",
                     self.model_id,
                     desc,
                 )
                 return
 
-            logger.info(
+            logger.debug(
                 "ModelDownloadTracker instantiated for tracking - model_id: %s, total: %s, unit: %s, desc: '%s'",
                 self.model_id,
                 self.total,
@@ -134,10 +134,10 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 return
 
             if self._first_update:
-                logger.info("ModelDownloadTracker received first update for model: %s", self.model_id)
+                logger.debug("ModelDownloadTracker received first update for model: %s", self.model_id)
                 self._first_update = False
 
-            logger.info(
+            logger.debug(
                 "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
                 self.model_id,
                 n,
