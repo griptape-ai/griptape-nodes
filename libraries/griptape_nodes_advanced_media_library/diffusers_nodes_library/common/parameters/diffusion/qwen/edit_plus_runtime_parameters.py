@@ -18,6 +18,8 @@ from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+MAX_IMAGES = 3
+
 
 class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
@@ -27,9 +29,9 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
         self._node.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageArtifact",
-                tooltip="Image to be edited.",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "list[ImageArtifact]", "list[ImageUrlArtifact]"],
+                type="list[ImageArtifact]",
+                tooltip="Image(s) to be edited. Can be a single image or a list of up to 3 images.",
             )
         )
         self._node.add_parameter(
@@ -63,8 +65,34 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
         self._node.remove_parameter_element_by_name("guidance_scale")
         self._node.remove_parameter_element_by_name("image")
 
-    def get_image_pil(self) -> Image:
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Validate image count (1-3 images supported)
+        if (
+            parameter.name == "image"
+            and value is not None
+            and isinstance(value, list)
+            and (len(value) < 1 or len(value) > MAX_IMAGES)
+        ):
+            msg = f"QwenImageEditPlusPipeline supports 1-{MAX_IMAGES} images, got {len(value)}"
+            raise ValueError(msg)
+
+    def get_image_pil(self) -> Image | list[Image]:
         input_image_artifact = self._node.get_parameter_value("image")
+
+        # Handle list of images
+        if isinstance(input_image_artifact, list):
+            images = []
+            for artifact in input_image_artifact:
+                image_artifact = artifact
+                if isinstance(image_artifact, ImageUrlArtifact):
+                    image_artifact = load_image_from_url_artifact(image_artifact)
+                pil_image = image_artifact_to_pil(image_artifact)
+                images.append(pil_image.convert("RGB"))
+            return images
+
+        # Handle single image
         if isinstance(input_image_artifact, ImageUrlArtifact):
             input_image_artifact = load_image_from_url_artifact(input_image_artifact)
         input_image_pil = image_artifact_to_pil(input_image_artifact)
