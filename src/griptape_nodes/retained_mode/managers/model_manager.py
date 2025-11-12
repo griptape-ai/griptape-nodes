@@ -54,6 +54,10 @@ HTTP_FORBIDDEN = 403
 MIN_CACHE_DIR_PARTS = 3
 
 
+class DownloadCanceledError(Exception):
+    """Exception raised when a download is canceled by deleting its status file."""
+
+
 @dataclass
 class SearchResultsData:
     """Data class for model search results."""
@@ -223,8 +227,9 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                     status_file = self._get_status_file_path()
 
                     if not status_file.exists():
-                        logger.warning("Status file does not exist: %s", status_file)
-                        return
+                        logger.info("Status file deleted, aborting download for model: %s", self.model_id)
+                        msg = f"Download canceled for model '{self.model_id}': status file deleted"
+                        raise DownloadCanceledError(msg)  # noqa: TRY301
 
                     with status_file.open() as f:
                         data = json.load(f)
@@ -250,6 +255,9 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                     with status_file.open("w") as f:
                         json.dump(data, f, indent=2)
 
+            except DownloadCanceledError:
+                # Re-raise cancellation exception to abort the download
+                raise
             except Exception:
                 logger.exception("ModelDownloadTracker._update_status_file failed")
 
@@ -384,6 +392,15 @@ class ModelManager:
             return DownloadModelResultSuccess(
                 model_id=parsed_model_id,
                 result_details=f"Successfully downloaded model '{parsed_model_id}'",
+            )
+
+        except DownloadCanceledError as e:
+            # Handle download cancellation via status file deletion
+            logger.info("Download aborted for model '%s': status file was deleted", parsed_model_id)
+
+            return DownloadModelResultFailure(
+                result_details=f"Download canceled for model '{parsed_model_id}'",
+                exception=e,
             )
 
         except Exception as e:
