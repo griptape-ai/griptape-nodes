@@ -890,61 +890,38 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:
-        if not obj:
+        """Extract status from Veo3 response (only checks top-level 'status' field)."""
+        if not obj or not isinstance(obj, dict):
             return None
-        for key in ("status", "state", "phase"):
-            val = obj.get(key)
-            if isinstance(val, str):
-                return val
-        # Some providers nest status under data/result
-        data = obj.get("data") if isinstance(obj, dict) else None
-        if isinstance(data, dict):
-            for key in ("status", "state", "phase"):
-                val = data.get(key)
-                if isinstance(val, str):
-                    return val
-        return None
+        return obj.get("status") if isinstance(obj.get("status"), str) else None
 
     @staticmethod
-    def _extract_video_url(obj: dict[str, Any] | None) -> str | None:  # noqa: C901, PLR0912
-        """Extract video URL from response using Veo3 specific path."""
-        if not obj:
+    def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
+        """Extract video URL from Veo3 response.
+
+        Expected path: response.generateVideoResponse.generatedSamples[0].video_uri
+        """
+        if not obj or not isinstance(obj, dict):
             return None
 
-        # Veo3 specific path: response.generateVideoResponse.generatedSamples[0].video_uri
         try:
             response = obj.get("response")
-            if response and isinstance(response, dict):
-                generate_video_response = response.get("generateVideoResponse")
-                if generate_video_response and isinstance(generate_video_response, dict):
-                    generated_samples = generate_video_response.get("generatedSamples")
-                    if generated_samples and isinstance(generated_samples, list) and len(generated_samples) > 0:
-                        first_sample = generated_samples[0]
-                        if isinstance(first_sample, dict):
-                            video_uri = first_sample.get("video_uri")
-                            if isinstance(video_uri, str) and video_uri.startswith("http"):
-                                return video_uri
+            generate_video_response = response.get("generateVideoResponse") if isinstance(response, dict) else None
+            generated_samples = (
+                generate_video_response.get("generatedSamples") if isinstance(generate_video_response, dict) else None
+            )
+
+            if not (isinstance(generated_samples, list) and len(generated_samples) > 0):
+                return None
+
+            first_sample = generated_samples[0]
+            video_uri = first_sample.get("video_uri") if isinstance(first_sample, dict) else None
+
+            if isinstance(video_uri, str) and video_uri.startswith("http"):
+                return video_uri
+
         except Exception as e:
             logger.warning("Failed to extract video URL from Veo3 response: %s", e)
-
-        # Fallback to generic extraction
-        for key in ("url", "video_url", "output_url", "video_uri"):
-            val = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(val, str) and val.startswith("http"):
-                return val
-
-        # Check nested containers
-        for key in ("result", "data", "output", "outputs", "content", "task_result"):
-            nested = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(nested, dict):
-                url = Veo3VideoGeneration._extract_video_url(nested)
-                if url:
-                    return url
-            elif isinstance(nested, list):
-                for item in nested:
-                    url = Veo3VideoGeneration._extract_video_url(item if isinstance(item, dict) else None)
-                    if url:
-                        return url
 
         return None
 
