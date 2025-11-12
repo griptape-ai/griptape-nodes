@@ -181,10 +181,14 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
         library_schema: The validated LibrarySchema object containing all metadata
                        about the library including nodes, categories, and settings.
         file_path: The file path from which the library metadata was loaded.
+        git_remote: The git remote URL if the library is in a git repository, None otherwise.
+        git_branch: The current git branch name if the library is in a git repository, None otherwise.
     """
 
     library_schema: LibrarySchema
     file_path: str
+    git_remote: str | None
+    git_branch: str | None
 
 
 @dataclass
@@ -539,3 +543,211 @@ class LoadLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class LoadLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library loading failed. Common causes: library loading errors, configuration issues, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateRequest(RequestPayload):
+    """Check if a library has updates available via git.
+
+    Use when: Checking for library updates, displaying update status,
+    validating library versions, implementing update notifications.
+
+    Args:
+        library_name: Name of the library to check for updates
+
+    Results: CheckLibraryUpdateResultSuccess (with update info) | CheckLibraryUpdateResultFailure (library not found, not a git repo, check error)
+    """
+
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library update check completed successfully.
+
+    Args:
+        has_update: True if an update is available, False otherwise
+        current_version: The current library version
+        latest_version: The latest library version from remote
+        git_remote: The git remote URL
+        git_branch: The current git branch name
+    """
+
+    has_update: bool
+    current_version: str | None
+    latest_version: str | None
+    git_remote: str | None
+    git_branch: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library update check failed. Common causes: library not found, not a git repository, git remote error, network error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryRequest(RequestPayload):
+    """Update a library to the latest version via git pull --rebase.
+
+    Use when: Applying library updates, synchronizing with remote changes,
+    updating library versions, implementing auto-update features.
+
+    Args:
+        library_name: Name of the library to update
+
+    Results: UpdateLibraryResultSuccess (with version info) | UpdateLibraryResultFailure (library not found, git error, update failure)
+    """
+
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library updated successfully.
+
+    Args:
+        old_version: The previous library version
+        new_version: The new library version after update
+    """
+
+    old_version: str
+    new_version: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryResultFailure(ResultPayloadFailure):
+    """Library update failed. Common causes: library not found, not a git repository, git pull error, rebase conflicts."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryBranchRequest(RequestPayload):
+    """Switch a library to a different git branch.
+
+    Use when: Switching between branches for development, testing different versions,
+    reverting to stable branches, or checking out feature branches.
+
+    Args:
+        library_name: Name of the library to switch branches
+        branch_name: Name of the branch to switch to
+
+    Results: SwitchLibraryBranchResultSuccess (with branch/version info) | SwitchLibraryBranchResultFailure (library not found, git error, branch not found)
+    """
+
+    library_name: str
+    branch_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library branch switched successfully.
+
+    Args:
+        old_branch: The previous branch name
+        new_branch: The new branch name after switch
+        old_version: The previous library version
+        new_version: The new library version after switch
+    """
+
+    old_branch: str
+    new_branch: str
+    old_version: str
+    new_version: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryBranchResultFailure(ResultPayloadFailure):
+    """Library branch switch failed. Common causes: library not found, not a git repository, branch not found, git checkout error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryRequest(RequestPayload):
+    """Download a library from a git repository.
+
+    Use when: Installing new libraries from git repositories, downloading third-party libraries,
+    setting up development libraries, adding community libraries.
+
+    Args:
+        git_url: The git repository URL to clone
+        branch_tag_commit: Optional branch, tag, or commit to checkout (defaults to default branch)
+        target_directory_name: Optional name for the target directory (defaults to repository name)
+
+    Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
+    """
+
+    git_url: str
+    branch_tag_commit: str | None = None
+    target_directory_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library downloaded successfully.
+
+    Args:
+        library_name: Name of the library extracted from griptape_nodes_library.json
+        library_path: Full path where the library was downloaded
+    """
+
+    library_name: str
+    library_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultFailure(ResultPayloadFailure):
+    """Library download failed. Common causes: invalid git URL, network error, target directory already exists, no griptape_nodes_library.json found."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesRequest(RequestPayload):
+    """Install dependencies for a library.
+
+    Use when: Installing or reinstalling dependencies for a library,
+    setting up a library's environment, updating dependencies after changes.
+
+    This operation:
+    1. Validates the library exists
+    2. Gets library metadata for dependencies
+    3. Initializes the library's virtual environment
+    4. Installs pip dependencies specified in the library metadata
+    5. Always installs dependencies without version checks
+
+    Args:
+        library_name: Name of the library to install dependencies for
+
+    Results: InstallLibraryDependenciesResultSuccess | InstallLibraryDependenciesResultFailure
+    """
+
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesResultSuccess(ResultPayloadSuccess):
+    """Library dependencies installed successfully.
+
+    Args:
+        library_name: Name of the library whose dependencies were installed
+        dependencies_installed: Number of dependencies that were installed
+    """
+
+    library_name: str
+    dependencies_installed: int
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesResultFailure(ResultPayloadFailure):
+    """Library dependency installation failed. Common causes: library not found, no dependencies defined, venv initialization failed, pip install error."""
