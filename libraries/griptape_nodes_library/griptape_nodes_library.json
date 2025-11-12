@@ -651,6 +651,17 @@
       }
     },
     {
+      "class_name": "CropVideo",
+      "file_path": "griptape_nodes_library/video/crop_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Crop a video to a specific size with preview visualization showing the crop area",
+        "display_name": "Crop Video",
+        "icon": "crop",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "SaveVideo",
       "file_path": "griptape_nodes_library/video/save_video.py",
       "metadata": {
