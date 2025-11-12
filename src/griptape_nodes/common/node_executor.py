@@ -111,7 +111,6 @@ class NodeExecutor:
         workflow_result = None
         try:
             result = await self._publish_local_workflow(node)
-            return
             workflow_result = result.workflow_result
         except Exception as e:
             logger.exception(
@@ -226,7 +225,7 @@ class NodeExecutor:
 
     async def _publish_local_workflow(
         self, node: BaseNode, library: Library | None = None
-    ) -> PublishLocalWorkflowResult | None:
+    ) -> PublishLocalWorkflowResult:
         """Package and publish a workflow for subprocess execution.
 
         Returns:
@@ -259,7 +258,6 @@ class NodeExecutor:
                 parameter_name="output", node_name="Agent_1", value="I love private execution", is_output=True
             )
         )
-        return None
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
