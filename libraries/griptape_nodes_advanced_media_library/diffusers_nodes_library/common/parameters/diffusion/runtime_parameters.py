@@ -199,6 +199,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
 
     def publish_output_image(self, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
+        self._node.publish_update_to_parameter("output_image", image_artifact)
         self._node.set_parameter_value("output_image", image_artifact)
         self._node.parameter_output_values["output_image"] = image_artifact
 

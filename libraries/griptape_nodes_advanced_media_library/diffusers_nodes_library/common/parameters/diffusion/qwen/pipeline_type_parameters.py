@@ -6,6 +6,12 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_parameters import (
+    QwenEditPipelineParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_plus_parameters import (
+    QwenImageEditPlusPipelineParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.img2img_parameters import (
     QwenImg2ImgPipelineParameters,
 )
@@ -22,6 +28,8 @@ logger = logging.getLogger("diffusers_nodes_library")
 QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
     "QwenPipeline": QwenPipelineParameters,
     "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters,
+    "QwenEditPipeline": QwenEditPipelineParameters,
+    "QwenImageEditPlusPipeline": QwenImageEditPlusPipelineParameters,
     "QwenUpscalePipeline": QwenUpscalePipelineParameters,
 }
 
