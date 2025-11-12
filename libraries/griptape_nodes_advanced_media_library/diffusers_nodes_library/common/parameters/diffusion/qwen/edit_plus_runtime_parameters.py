@@ -29,9 +29,9 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
         self._node.add_parameter(
             Parameter(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "list"],
+                input_types=["list"],
                 type="list[ImageArtifact]",
-                tooltip="Image(s) to be edited. Can be a single image or a list of up to 3 images.",
+                tooltip="List of 1-3 images to be edited.",
             )
         )
         self._node.add_parameter(
@@ -68,35 +68,31 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
-        # Validate image count (1-3 images supported)
-        if (
-            parameter.name == "image"
-            and value is not None
-            and isinstance(value, list)
-            and (len(value) < 1 or len(value) > MAX_IMAGES)
-        ):
-            msg = f"QwenImageEditPlusPipeline supports 1-{MAX_IMAGES} images, got {len(value)}"
-            raise ValueError(msg)
+        # Validate image count (1-3 images required)
+        if parameter.name == "image" and value is not None:
+            if not isinstance(value, list):
+                msg = f"QwenImageEditPlusPipeline requires a list of images, got {type(value).__name__}"
+                raise ValueError(msg)
+            if len(value) < 1 or len(value) > MAX_IMAGES:
+                msg = f"QwenImageEditPlusPipeline requires 1-{MAX_IMAGES} images, got {len(value)}"
+                raise ValueError(msg)
 
-    def get_image_pil(self) -> Image | list[Image]:
+    def get_image_pil(self) -> list[Image]:
         input_image_artifact = self._node.get_parameter_value("image")
 
-        # Handle list of images
-        if isinstance(input_image_artifact, list):
-            images = []
-            for artifact in input_image_artifact:
-                image_artifact = artifact
-                if isinstance(image_artifact, ImageUrlArtifact):
-                    image_artifact = load_image_from_url_artifact(image_artifact)
-                pil_image = image_artifact_to_pil(image_artifact)
-                images.append(pil_image.convert("RGB"))
-            return images
+        # Handle list of images (only supported mode)
+        if not isinstance(input_image_artifact, list):
+            msg = f"QwenImageEditPlusPipeline requires a list of images, got {type(input_image_artifact).__name__}"
+            raise ValueError(msg)
 
-        # Handle single image
-        if isinstance(input_image_artifact, ImageUrlArtifact):
-            input_image_artifact = load_image_from_url_artifact(input_image_artifact)
-        input_image_pil = image_artifact_to_pil(input_image_artifact)
-        return input_image_pil.convert("RGB")
+        images = []
+        for artifact in input_image_artifact:
+            image_artifact = artifact
+            if isinstance(image_artifact, ImageUrlArtifact):
+                image_artifact = load_image_from_url_artifact(image_artifact)
+            pil_image = image_artifact_to_pil(image_artifact)
+            images.append(pil_image.convert("RGB"))
+        return images
 
     def _get_pipe_kwargs(self) -> dict:
         return {
