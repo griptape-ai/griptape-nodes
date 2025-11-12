@@ -16,9 +16,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
-# Host of the static server
+# Host of the static server (where uvicorn binds)
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
-# Port of the static server
+# Port of the static server (where uvicorn binds)
 STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/workspace")
@@ -34,10 +34,11 @@ async def _create_static_file_upload_url(request: Request) -> dict:
 
     Similar to a presigned URL, but for uploading files to the static server.
     """
-    base_url = request.base_url
+    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+
     body = await request.json()
     file_path = body["file_path"].lstrip("/")
-    url = urljoin(str(base_url), f"/static-uploads/{file_path}")
+    url = urljoin(base_url, f"/static-uploads/{file_path}")
 
     return {"url": url}
 
@@ -66,7 +67,8 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
         logger.error(msg)
         raise HTTPException(status_code=500, detail=msg) from e
 
-    static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_path}"
+    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+    static_url = urljoin(f"{base_url}{STATIC_SERVER_URL}/", file_path)
     return {"url": static_url}
 
 
@@ -144,14 +146,18 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
 
+    # Build CORS allowed origins list
+    allowed_origins = [
+        os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
+        "https://app.nodes-staging.griptape.ai",
+        "http://localhost:5173",
+        GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
+    ]
+
     # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
-            "https://app.nodes-staging.griptape.ai",
-            "http://localhost:5173",
-        ],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
