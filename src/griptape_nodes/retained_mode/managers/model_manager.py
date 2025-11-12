@@ -122,15 +122,30 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             self._update_status_file(mark_completed=False)
 
         def close(self) -> None:
-            """Override close to mark download as completed."""
+            """Override close to mark download as completed only if fully downloaded."""
             super().close()
-            self._update_status_file(mark_completed=True)  # Mark as completed on close
-            logger.info(
-                "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes",
-                self.model_id,
-                self.n,
-                self.total,
-            )
+
+            # Only mark as completed if we actually downloaded everything
+            is_complete = self.total > 0 and self.n >= self.total
+
+            if is_complete:
+                logger.info(
+                    "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes (COMPLETE)",
+                    self.model_id,
+                    self.n,
+                    self.total,
+                )
+                self._update_status_file(mark_completed=True)
+            else:
+                logger.warning(
+                    "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
+                    self.model_id,
+                    self.n,
+                    self.total,
+                    (self.n / self.total * 100) if self.total else 0,
+                )
+                # Don't mark as completed - leave status as "downloading" or "failed"
+                self._update_status_file(mark_completed=False)
 
         def _get_status_file_path(self) -> Path:
             """Get the path to the status file for this model."""
