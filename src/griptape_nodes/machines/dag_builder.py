@@ -62,6 +62,24 @@ class DagBuilder:
         parent_execution_env = node.parent_node.get_parameter_value(node.parent_node.execution_environment.name)
         return parent_execution_env != LOCAL_EXECUTION
 
+    def _get_node_for_dag_edge(self, node: BaseNode, graph: DirectedGraph, graph_name: str) -> BaseNode:
+        """Get the node to use for DAG edges - either the node itself or its parent group.
+
+        Args:
+            node: The original node
+            graph: The graph being built
+            graph_name: Name of the graph for tracking
+
+        Returns:
+            The node or parent group to use in DAG edges
+        """
+        if self._should_use_parent_group(node):
+            parent_group = node.parent_node
+            if isinstance(parent_group, NodeGroupNode):
+                self._ensure_group_node_in_dag(parent_group, graph, graph_name)
+                return parent_group
+        return node
+
     def _ensure_group_node_in_dag(self, group_node: NodeGroupNode, graph: DirectedGraph, graph_name: str) -> None:
         """Ensure a NodeGroupNode is added to the DAG if not already present.
 
@@ -90,70 +108,61 @@ class DagBuilder:
             self.graph_to_nodes[graph_name] = set()
 
         def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
+            # Skip if already visited or already in DAG
             if current_node.name in visited:
                 return
             visited.add(current_node.name)
-            # Skip if already in DAG (use DAG membership, not resolved state)
+
             if current_node.name in self.node_to_reference:
                 return
-            # Process dependencies first (depth-first)
-            ignore_data_dependencies = False
-            # This is specifically for output_selector. Overriding 'initialize_spotlight' doesn't work anymore.
-            if hasattr(current_node, "ignore_dependencies"):
-                ignore_data_dependencies = True
+
+            # Check if we should ignore dependencies (for special nodes like output_selector)
+            ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
+
+            # Process all upstream dependencies first (depth-first traversal)
             for param in current_node.parameters:
+                # Skip control flow parameters
                 if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
                     continue
+
+                # Skip if node ignores dependencies
                 if ignore_data_dependencies:
                     continue
+
                 upstream_connection = connections.get_connected_node(current_node, param)
-                if upstream_connection:
-                    upstream_node, _ = upstream_connection
-                    # Don't add nodes that have already been resolved.
-                    if upstream_node.state == NodeResolutionState.RESOLVED:
-                        continue
+                if not upstream_connection:
+                    continue
 
-                    # Check if this is an internal connection within the same node group
-                    # Only skip internal edges if parent group is NOT in LOCAL_EXECUTION mode
-                    if self._should_use_parent_group(current_node):
-                        if upstream_node.parent_node == current_node.parent_node:
-                            # Internal connection - traverse upstream but don't add edge
-                            _add_node_recursive(upstream_node, visited, graph)
-                            continue
+                upstream_node, _ = upstream_connection
 
-                    # Determine which nodes to use for the edge
-                    upstream_node_for_edge = upstream_node
-                    current_node_for_edge = current_node
+                # Skip already resolved nodes
+                if upstream_node.state == NodeResolutionState.RESOLVED:
+                    continue
 
-                    # If upstream_node should use its parent group, use the parent for the edge
-                    if self._should_use_parent_group(upstream_node):
-                        upstream_node_for_edge = upstream_node.parent_node
-                        self._ensure_group_node_in_dag(upstream_node_for_edge, graph, graph_name)
+                # Check for internal group connections - traverse but don't add edge
+                is_internal_connection = (
+                    self._should_use_parent_group(current_node)
+                    and upstream_node.parent_node == current_node.parent_node
+                )
 
-                    # If current_node should use its parent group, use the parent for the edge
-                    if self._should_use_parent_group(current_node):
-                        current_node_for_edge = current_node.parent_node
-                        self._ensure_group_node_in_dag(current_node_for_edge, graph, graph_name)
+                # Recursively add upstream node
+                _add_node_recursive(upstream_node, visited, graph)
 
-                    # Check if upstream node is already in DAG
-                    if upstream_node_for_edge.name in self.node_to_reference:
-                        graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
-                    else:
-                        # Add upstream node to DAG first, then create edge
-                        _add_node_recursive(upstream_node, visited, graph)
-                        graph.add_edge(upstream_node_for_edge.name, current_node_for_edge.name)
+                # Add edge unless it's an internal group connection
+                if not is_internal_connection:
+                    upstream_for_edge = self._get_node_for_dag_edge(upstream_node, graph, graph_name)
+                    current_for_edge = self._get_node_for_dag_edge(current_node, graph, graph_name)
+                    graph.add_edge(upstream_for_edge.name, current_for_edge.name)
 
-            # Add current node to DAG (but keep original resolution state)
-            if not self._should_use_parent_group(current_node):
-                dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
-                self.node_to_reference[current_node.name] = dag_node
-                graph.add_node(node_for_adding=current_node.name)
-
-                # Track which nodes belong to this graph
-                self.graph_to_nodes[graph_name].add(current_node.name)
-
-            # DON'T mark as resolved - that happens during actual execution
+            # Always add current node to tracking (even if parent group is used for edges)
+            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+            self.node_to_reference[current_node.name] = dag_node
             added_nodes.append(current_node)
+
+            # Add to graph if not using parent group
+            if not self._should_use_parent_group(current_node):
+                graph.add_node(node_for_adding=current_node.name)
+                self.graph_to_nodes[graph_name].add(current_node.name)
 
         _add_node_recursive(node, set(), graph)
 

@@ -388,6 +388,7 @@ class ExecuteDagState(State):
                 canceled_nodes.add(node)
             elif node_state == NodeState.QUEUED:
                 queued_nodes.add(node)
+
         return canceled_nodes, queued_nodes, leaf_nodes
 
     @staticmethod
@@ -442,7 +443,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0915
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
         # Check if execution is paused
         if context.paused:
             return None
@@ -539,6 +540,7 @@ class ExecuteDagState(State):
                     context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
                 context.task_to_node.pop(task)
+
         # Once a task has finished, loop back to the top.
         await ExecuteDagState.pop_done_states(context)
         # Remove all nodes that are done

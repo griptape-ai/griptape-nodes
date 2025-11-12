@@ -40,7 +40,6 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -2090,7 +2089,7 @@ class NodeGroupNode(BaseNode):
         for node in nodes:
             # Track incoming external connections
             if node.name in connections.incoming_index:
-                for param_name, connection_ids in connections.incoming_index[node.name].items():
+                for connection_ids in connections.incoming_index[node.name].values():
                     for conn_id in connection_ids:
                         if conn_id not in connections.connections:
                             continue
@@ -2105,7 +2104,7 @@ class NodeGroupNode(BaseNode):
 
             # Track outgoing external connections
             if node.name in connections.outgoing_index:
-                for param_name, connection_ids in connections.outgoing_index[node.name].items():
+                for connection_ids in connections.outgoing_index[node.name].values():
                     for conn_id in connection_ids:
                         if conn_id not in connections.connections:
                             continue
@@ -2129,7 +2128,7 @@ class NodeGroupNode(BaseNode):
                 raise ValueError(msg)
 
         # Untrack connections before removing nodes
-        connections = GriptapeNodes.FlowManager().get_connections()
+        GriptapeNodes.FlowManager().get_connections()
         nodes_being_removed = {node.name for node in nodes}
 
         for node in nodes:
@@ -2150,7 +2149,7 @@ class NodeGroupNode(BaseNode):
             # Untrack internal connections involving this node
             for conn in list(self.stored_connections.internal_connections):
                 # If connection involves this node and the other node is also being removed, untrack it
-                if conn.source_node.name == node.name or conn.target_node.name == node.name:
+                if node.name in (conn.source_node.name, conn.target_node.name):
                     other_node_name = (
                         conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
                     )
