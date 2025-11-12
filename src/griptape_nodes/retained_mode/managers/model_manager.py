@@ -179,7 +179,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             try:
                 with self._file_lock:
                     status_file = self._get_status_file_path()
-                    logger.info("ModelDownloadTracker updating status file: %s", status_file)
+                    logger.debug("ModelDownloadTracker updating status file: %s", status_file)
 
                     if not status_file.exists():
                         logger.warning("Status file does not exist: %s", status_file)
@@ -191,7 +191,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                     current_time = datetime.now(UTC).isoformat()
                     progress_percent = (self.n / self.total * 100) if self.total else 0
 
-                    logger.info(
+                    logger.debug(
                         "ModelDownloadTracker updating progress: bytes=%d/%d, percent=%.1f%%",
                         self.n,
                         self.total,
