@@ -198,6 +198,41 @@ class ResolveNodeState(State):
         return None
 
 
+def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple[BaseNode, Parameter | None]:
+    """Resolve the target node, replacing children with their parent node group if necessary.
+
+    If the target node is inside a non-local node group, returns the parent node group instead.
+
+    Args:
+        next_node_info: Information about the next node to process
+
+    Returns:
+        Tuple of (resolved_node, entry_parameter)
+    """
+    from griptape_nodes.exe_types.node_types import NodeGroupNode
+
+    target_node = next_node_info.node
+    entry_parameter = next_node_info.entry_parameter
+
+    # Check if node has a parent and if parent is not local execution
+    if target_node.parent_node is not None and isinstance(target_node.parent_node, NodeGroupNode):
+        parent_node = target_node.parent_node
+        execution_env = parent_node.get_parameter_value(parent_node.execution_environment.name)
+        if execution_env != LOCAL_EXECUTION:
+            logger.info(
+                "Control Flow: Redirecting from child node '%s' to parent node group '%s' (execution environment: %s)",
+                target_node.name,
+                parent_node.name,
+                execution_env,
+            )
+            # Move to parent instead of child
+            target_node = parent_node
+            # Entry parameter should be None for the parent node group
+            entry_parameter = None
+
+    return target_node, entry_parameter
+
+
 class NextNodeState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
@@ -238,10 +273,12 @@ class NextNodeState(State):
             return CompleteState
 
         # Set up next nodes as current nodes
+        # If a node has a parent (is in a node group), move to the parent instead
         next_nodes = []
         for next_node_info in next_node_infos:
-            next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
-            next_nodes.append(next_node_info.node)
+            target_node, entry_parameter = _resolve_target_node_for_control_flow(next_node_info)
+            target_node.set_entry_control_parameter(entry_parameter)
+            next_nodes.append(target_node)
 
         context.current_nodes = next_nodes
         context.selected_output = None
