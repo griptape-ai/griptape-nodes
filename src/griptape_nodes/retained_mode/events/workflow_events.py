@@ -377,6 +377,16 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 
 @dataclass
+class PublishWorkflowRegisteredEventData:
+    """Data specific to registering a PublishWorkflowRequest event handler."""
+
+    start_flow_node_type: str
+    start_flow_node_library_name: str
+    end_flow_node_type: str
+    end_flow_node_library_name: str
+
+
+@dataclass
 @PayloadRegistry.register
 class PublishWorkflowRequest(RequestPayload):
     """Publish a workflow for distribution.

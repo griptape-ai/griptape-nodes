@@ -1373,19 +1373,19 @@ class FlowManager:
         try:
             start_end_library = LibraryRegistry.get_library_for_node_type(
                 node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
-                specific_library_name=request.start_end_specific_library_name,
+                specific_library_name=request.start_node_library_name,
             )
         except KeyError as err:
-            details = f"Attempted to package nodes with start node type '{request.start_node_type}' from library '{request.start_end_specific_library_name}'. Failed because start node type was not found in library. Error: {err}."
+            details = f"Attempted to package nodes with start node type '{request.start_node_type}' from library '{request.start_node_library_name}'. Failed because start node type was not found in library. Error: {err}."
             return PackageNodesAsSerializedFlowResultFailure(result_details=details)
 
         try:
             LibraryRegistry.get_library_for_node_type(
                 node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
-                specific_library_name=request.start_end_specific_library_name,
+                specific_library_name=request.end_node_library_name,
             )
         except KeyError as err:
-            details = f"Attempted to package nodes with end node type '{request.end_node_type}' from library '{request.start_end_specific_library_name}'. Failed because end node type was not found in library. Error: {err}."
+            details = f"Attempted to package nodes with end node type '{request.end_node_type}' from library '{request.end_node_library_name}'. Failed because end node type was not found in library. Error: {err}."
             return PackageNodesAsSerializedFlowResultFailure(result_details=details)
 
         # Get the actual library version
@@ -1716,7 +1716,7 @@ class FlowManager:
         # Build end node CreateNodeRequest
         end_create_node_command = CreateNodeRequest(
             node_type=request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
-            specific_library_name=request.start_end_specific_library_name,
+            specific_library_name=request.end_node_library_name,
             node_name=end_node_name,
             metadata={},
             initial_setup=True,
@@ -1725,7 +1725,7 @@ class FlowManager:
 
         # Create library details
         end_node_library_details = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
+            library_name=request.end_node_library_name,
             library_version=library_version,
         )
 
@@ -1969,7 +1969,7 @@ class FlowManager:
         # Build start node CreateNodeRequest
         start_create_node_command = CreateNodeRequest(
             node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
-            specific_library_name=request.start_end_specific_library_name,
+            specific_library_name=request.start_node_library_name,
             node_name=start_node_name,
             metadata={},
             initial_setup=True,
@@ -1978,7 +1978,7 @@ class FlowManager:
 
         # Create library details
         start_node_library_details = LibraryNameAndVersion(
-            library_name=request.start_end_specific_library_name,
+            library_name=request.start_node_library_name,
             library_version=library_version,
         )
 

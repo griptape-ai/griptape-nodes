@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
@@ -145,10 +145,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 console = Console()
 
+TRegisteredEventData = TypeVar("TRegisteredEventData")
+
 
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
+    LIBRARY_CONFIG_GLOB_PATTERN = "griptape[_-]nodes[_-]library.json"
 
     @dataclass
     class LibraryInfo:
@@ -166,11 +169,16 @@ class LibraryManager:
     _library_file_path_to_info: dict[str, LibraryInfo]
 
     @dataclass
-    class RegisteredEventHandler:
-        """Information regarding an event handler from a registered library."""
+    class RegisteredEventHandler(Generic[TRegisteredEventData]):
+        """Information regarding an event handler from a registered library.
+
+        The generic type parameter TRegisteredEventData allows each event type
+        to specify its own structured additional data.
+        """
 
         handler: Callable[[RequestPayload], ResultPayload]
         library_data: LibrarySchema
+        event_data: TRegisteredEventData | None = None
 
     # Stable module namespace mappings for workflow serialization
     # These mappings ensure that dynamically loaded modules can be reliably imported
@@ -196,7 +204,9 @@ class LibraryManager:
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
         self._library_to_stable_modules = {}
-        self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
+        self._library_event_handler_mappings: dict[
+            type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
+        ] = {}
         # LibraryDirectory owns the FSMs and manages library lifecycle
         self._library_directory = LibraryDirectory()
         self._libraries_loading_complete = asyncio.Event()
@@ -356,15 +366,23 @@ class LibraryManager:
         request_type: type[RequestPayload],
         handler: Callable[[RequestPayload], ResultPayload],
         library_data: LibrarySchema,
+        event_data: object | None = None,
     ) -> None:
-        """Register an event handler for a specific request type from a library."""
+        """Register an event handler for a specific request type from a library.
+
+        Args:
+            request_type: The type of request payload this handler processes
+            handler: The callable handler function
+            library_data: Schema data for the library registering this handler
+            event_data: Optional structured data specific to this event type
+        """
         if self._library_event_handler_mappings.get(request_type) is None:
             self._library_event_handler_mappings[request_type] = {}
         self._library_event_handler_mappings[request_type][library_data.name] = LibraryManager.RegisteredEventHandler(
-            handler=handler, library_data=library_data
+            handler=handler, library_data=library_data, event_data=event_data
         )
 
-    def get_registered_event_handlers(self, request_type: type[Payload]) -> dict[str, RegisteredEventHandler]:
+    def get_registered_event_handlers(self, request_type: type[Payload]) -> dict[str, RegisteredEventHandler[Any]]:
         """Get all registered event handlers for a specific request type."""
         return self._library_event_handler_mappings.get(request_type, {})
 
@@ -2210,7 +2228,7 @@ class LibraryManager:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Process all library JSON files recursively in the directory
-                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
+                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
             elif path.suffix == ".json":
                 discovered_libraries.add(path)
 

@@ -428,7 +428,8 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
         node_names: List of node names to package as a flow (empty list will create StartFlow→EndFlow only with warning)
         start_node_type: Node type name for the artificial start node (None or omitted defaults to "StartFlow")
         end_node_type: Node type name for the artificial end node (None or omitted defaults to "EndFlow")
-        start_end_specific_library_name: Library name containing the start/end nodes (defaults to "Griptape Nodes Library")
+        start_node_library_name: Library name containing the start node (defaults to "Griptape Nodes Library")
+        end_node_library_name: Library name containing the end node (defaults to "Griptape Nodes Library")
         entry_control_node_name: Name of the node that should receive the control flow entry (required if entry_control_parameter_name specified)
         entry_control_parameter_name: Name of the control parameter on the entry node (None for auto-detection of first available control parameter)
         output_parameter_prefix: Prefix for parameter names on the generated end node to avoid collisions (defaults to "packaged_node_")
@@ -440,7 +441,8 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     node_names: list[str] = field(default_factory=list)
     start_node_type: str | None = None
     end_node_type: str | None = None
-    start_end_specific_library_name: str = "Griptape Nodes Library"
+    start_node_library_name: str = "Griptape Nodes Library"
+    end_node_library_name: str = "Griptape Nodes Library"
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"

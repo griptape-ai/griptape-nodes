@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import logging
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -29,6 +30,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowResultFailure,
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultSuccess,
+    PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     SaveWorkflowFileFromSerializedFlowRequest,
     SaveWorkflowFileFromSerializedFlowResultSuccess,
@@ -40,6 +42,14 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+@dataclass
+class PublishWorkflowStartEndNodes:
+    start_flow_node_type: str
+    start_flow_node_library_name: str
+    end_flow_node_type: str
+    end_flow_node_library_name: str
 
 
 class PublishLocalWorkflowResult(NamedTuple):
@@ -226,6 +236,40 @@ class NodeExecutor:
                 published_filename = published_workflow_filename.stem
                 await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
 
+    async def _get_workflow_start_end_nodes(self, library: Library | None) -> PublishWorkflowStartEndNodes:
+        library_name = "Griptape Nodes Library"
+        start_node_type = "StartFlow"
+        end_node_type = "EndFlow"
+
+        if library is not None:
+            # Attempt to get start and end nodes from the registered handler
+            library_name = library.get_library_data().name
+            registered_event_handler = self.get_workflow_handler(library_name)
+            registered_event_data = registered_event_handler.event_data
+            if registered_event_data is not None and isinstance(
+                registered_event_data, PublishWorkflowRegisteredEventData
+            ):
+                return PublishWorkflowStartEndNodes(
+                    start_flow_node_type=registered_event_data.start_flow_node_type,
+                    start_flow_node_library_name=registered_event_data.start_flow_node_library_name,
+                    end_flow_node_type=registered_event_data.end_flow_node_type,
+                    end_flow_node_library_name=registered_event_data.end_flow_node_library_name,
+                )
+
+            start_nodes = library.get_nodes_by_base_type(StartNode)
+            end_nodes = library.get_nodes_by_base_type(EndNode)
+            if len(start_nodes) > 0 and len(end_nodes) > 0:
+                start_node_type = start_nodes[0]
+                end_node_type = end_nodes[0]
+                library_name = library.get_library_data().name
+
+        return PublishWorkflowStartEndNodes(
+            start_flow_node_type=start_node_type,
+            start_flow_node_library_name=library_name,
+            end_flow_node_type=end_node_type,
+            end_flow_node_library_name=library_name,
+        )
+
     async def _publish_local_workflow(
         self, node: BaseNode, library: Library | None = None
     ) -> PublishLocalWorkflowResult:
@@ -237,16 +281,9 @@ class NodeExecutor:
         sanitized_node_name = node.name.replace(" ", "_")
         output_parameter_prefix = f"{sanitized_node_name}_packaged_node_"
         # We have to make our defaults strings because the PackageNodesAsSerializedFlowRequest doesn't accept None types.
-        library_name = "Griptape Nodes Library"
-        start_node_type = "StartFlow"
-        end_node_type = "EndFlow"
-        if library is not None:
-            start_nodes = library.get_nodes_by_base_type(StartNode)
-            end_nodes = library.get_nodes_by_base_type(EndNode)
-            if len(start_nodes) > 0 and len(end_nodes) > 0:
-                start_node_type = start_nodes[0]
-                end_node_type = end_nodes[0]
-                library_name = library.get_library_data().name
+        library_name = library.get_library_data().name if library is not None else "Griptape Nodes Library"
+        workflow_start_end_nodes = await self._get_workflow_start_end_nodes(library)
+
         sanitized_library_name = library_name.replace(" ", "_")
         # If we are packaging a NodeGroupNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the group node.
         if isinstance(node, NodeGroupNode):
@@ -257,9 +294,10 @@ class NodeExecutor:
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
-            start_node_type=start_node_type,
-            end_node_type=end_node_type,
-            start_end_specific_library_name=library_name,
+            start_node_type=workflow_start_end_nodes.start_flow_node_type,
+            end_node_type=workflow_start_end_nodes.end_flow_node_type,
+            start_node_library_name=workflow_start_end_nodes.start_flow_node_library_name,
+            end_node_library_name=workflow_start_end_nodes.end_flow_node_library_name,
             output_parameter_prefix=output_parameter_prefix,
             entry_control_node_name=None,
             entry_control_parameter_name=None,
