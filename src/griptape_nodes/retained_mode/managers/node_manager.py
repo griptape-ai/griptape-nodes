@@ -494,7 +494,7 @@ class NodeManager:
             result_details=ResultDetails(message=details, level=log_level),
         )
 
-    def on_create_node_group_request(self, request: CreateNodeGroupRequest) -> ResultPayload:
+    def on_create_node_group_request(self, request: CreateNodeGroupRequest) -> ResultPayload:  # noqa: C901
         """Handle CreateNodeGroupRequest to create a new NodeGroupNode."""
         flow_name = request.flow_name
         flow = None
