@@ -37,11 +37,11 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.runtime_parameters
 from diffusers_nodes_library.common.parameters.diffusion.flux.upscale_runtime_parameters import (
     FluxUpscalePipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_runtime_parameters import (
-    QwenEditPipelineRuntimeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_plus_runtime_parameters import (
     QwenImageEditPlusPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_runtime_parameters import (
+    QwenEditPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.img2img_runtime_parameters import (
     QwenImg2ImgPipelineRuntimeParameters,
