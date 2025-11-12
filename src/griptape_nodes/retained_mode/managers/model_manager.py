@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import sys
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -40,6 +41,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.async_utils import cancel_subprocess
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -271,6 +273,7 @@ class ModelManager:
             event_manager: The EventManager instance to use for event handling.
         """
         self._download_tasks = {}
+        self._download_processes = {}
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(DownloadModelRequest, self.on_handle_download_model_request)
@@ -436,10 +439,7 @@ class ModelManager:
             return str(cache_path / f"models--{params.model_id.replace('/', '--')}")
 
     async def _download_model_task(self, download_params: DownloadParams) -> None:
-        """Background task for downloading a model.
-
-        This method calls download_model() in a thread to avoid blocking the event loop.
-        The download_model() method uses huggingface_hub's aggregated tqdm for progress tracking.
+        """Background task for downloading a model using CLI command.
 
         Args:
             download_params: Download parameters
@@ -450,17 +450,36 @@ class ModelManager:
         model_id = download_params.model_id
         logger.info("Starting download for model: %s", model_id)
 
-        # Call download_model in a thread to avoid blocking the event loop
-        await asyncio.to_thread(
-            self.download_model,
-            model_id=download_params.model_id,
-            local_dir=download_params.local_dir,
-            revision=download_params.revision or "main",
-            allow_patterns=download_params.allow_patterns,
-            ignore_patterns=download_params.ignore_patterns,
+        # Build CLI command
+        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
+
+        if download_params.local_dir:
+            cmd.extend(["--local-dir", download_params.local_dir])
+        if download_params.revision and download_params.revision != "main":
+            cmd.extend(["--revision", download_params.revision])
+
+        # Start subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
 
-        logger.info("Successfully downloaded model '%s'", model_id)
+        try:
+            # Store process for cancellation
+            self._download_processes[model_id] = process
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0:
+                logger.debug(stdout.decode().strip())
+                logger.debug(stderr.decode().strip())
+                logger.info("Successfully downloaded model '%s'", model_id)
+            else:
+                raise ValueError(stdout.decode().strip())
+        finally:
+            if model_id in self._download_processes:
+                del self._download_processes[model_id]
 
     async def on_handle_list_models_request(self, request: ListModelsRequest) -> ResultPayload:  # noqa: ARG002
         """Handle model listing requests asynchronously.
@@ -1022,8 +1041,8 @@ class ModelManager:
 
         This method removes download tracking records for a specific model
         from the local status files stored in the XDG data directory.
-        If the model is currently downloading, it cancels the download task
-        and deletes any cached model files.
+        If the model is currently downloading or failed, it also cancels
+        the download task and deletes any cached model files.
 
         Args:
             request: The delete request containing model_id
@@ -1036,6 +1055,12 @@ class ModelManager:
         try:
             # Check current download status first
             download_status = await asyncio.to_thread(self._read_model_download_status, model_id)
+
+            # Cancel active download process if it exists
+            if model_id in self._download_processes:
+                process = self._download_processes[model_id]
+                await cancel_subprocess(process, f"download process for model '{model_id}'")
+                del self._download_processes[model_id]
 
             # Cancel active download task if it exists
             if model_id in self._download_tasks:
