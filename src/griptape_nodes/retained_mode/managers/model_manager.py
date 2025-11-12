@@ -83,22 +83,23 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
     Returns:
         A tqdm class that will track progress for the given model
     """
+    logger.info("Creating progress tracker for model: %s", model_id)
 
     class BoundModelDownloadTracker(tqdm):
         """Tqdm subclass bound to a specific model_id."""
 
         _file_lock = threading.Lock()
+        _first_update = True
 
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
             self.model_id = model_id
             self.start_time = datetime.now(UTC).isoformat()
 
-            logger.debug(
-                "ModelDownloadTracker created - model_id: %s, total: %s, desc: %s",
+            logger.info(
+                "ModelDownloadTracker instantiated - model_id: %s, total: %s",
                 self.model_id,
                 self.total,
-                getattr(self, "desc", None),
             )
 
             if self.model_id:
@@ -106,6 +107,10 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
         def update(self, n: int = 1) -> None:
             """Override update to track progress in status file."""
+            if self._first_update:
+                logger.info("ModelDownloadTracker received first update for model: %s", self.model_id)
+                self._first_update = False
+
             logger.debug(
                 "ModelDownloadTracker update - model_id: %s, n: %s, self.n: %s, total: %s",
                 self.model_id,
@@ -120,8 +125,8 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             """Override close to mark download as completed."""
             super().close()
             self._update_status_file(mark_completed=True)  # Mark as completed on close
-            logger.debug(
-                "ModelDownloadTracker close - model_id: %s, self.n: %s, total: %s",
+            logger.info(
+                "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes",
                 self.model_id,
                 self.n,
                 self.total,
@@ -296,6 +301,8 @@ class ModelManager:
             download_kwargs["allow_patterns"] = allow_patterns
         if ignore_patterns:
             download_kwargs["ignore_patterns"] = ignore_patterns
+
+        logger.info("Calling snapshot_download with custom tqdm_class for model: %s", model_id)
 
         # Execute download with progress tracking
         local_path = snapshot_download(**download_kwargs)  # type: ignore[arg-type]
