@@ -83,7 +83,7 @@ class QwenImageEditPlusPipelineRuntimeParameters(DiffusionPipelineRuntimeParamet
         # Handle list of images (only supported mode)
         if not isinstance(input_image_artifact, list):
             msg = f"QwenImageEditPlusPipeline requires a list of images, got {type(input_image_artifact).__name__}"
-            raise ValueError(msg)
+            raise TypeError(msg)
 
         images = []
         for artifact in input_image_artifact:
