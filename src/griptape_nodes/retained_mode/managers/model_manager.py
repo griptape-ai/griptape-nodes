@@ -417,7 +417,7 @@ class ModelManager:
         logger.info("Starting download for model: %s", model_id)
 
         # Build CLI command
-        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
+        cmd = [sys.executable, "-m", "griptape_nodes", "--no-update", "models", "download", download_params.model_id]
 
         if download_params.local_dir:
             cmd.extend(["--local-dir", download_params.local_dir])
