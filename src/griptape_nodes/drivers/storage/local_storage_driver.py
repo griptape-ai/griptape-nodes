@@ -33,6 +33,7 @@ class LocalStorageDriver(BaseStorageDriver):
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
         if base_url is None:
+            # Default to localhost - the storage driver creator can pass a proxy URL if needed
             self.base_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}"
         else:
             self.base_url = base_url
