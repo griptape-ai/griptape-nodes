@@ -97,9 +97,11 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             self.start_time = datetime.now(UTC).isoformat()
 
             logger.info(
-                "ModelDownloadTracker instantiated - model_id: %s, total: %s",
+                "ModelDownloadTracker instantiated - model_id: %s, total: %s, unit: %s, desc: '%s'",
                 self.model_id,
                 self.total,
+                getattr(self, "unit", "?"),
+                getattr(self, "desc", "?"),
             )
 
             if self.model_id:
@@ -111,12 +113,13 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 logger.info("ModelDownloadTracker received first update for model: %s", self.model_id)
                 self._first_update = False
 
-            logger.debug(
-                "ModelDownloadTracker update - model_id: %s, n: %s, self.n: %s, total: %s",
+            logger.info(
+                "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
                 self.model_id,
                 n,
-                self.n,
+                self.n + n,  # Show what it will be after this update
                 self.total,
+                ((self.n + n) / self.total * 100) if self.total else 0,
             )
             super().update(n)
             self._update_status_file(mark_completed=False)
@@ -162,12 +165,6 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                     status_file = self._get_status_file_path()
                     current_time = datetime.now(UTC).isoformat()
 
-                    logger.debug(
-                        "ModelDownloadTracker initializing status file: %s (total_bytes=%s)",
-                        status_file,
-                        self.total,
-                    )
-
                     data = {
                         "model_id": self.model_id,
                         "status": "downloading",
@@ -180,8 +177,6 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
                     with status_file.open("w") as f:
                         json.dump(data, f, indent=2)
-
-                    logger.debug("ModelDownloadTracker status file initialized successfully")
 
             except Exception:
                 logger.exception("ModelDownloadTracker._init_status_file failed")
@@ -199,7 +194,6 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             try:
                 with self._file_lock:
                     status_file = self._get_status_file_path()
-                    logger.debug("ModelDownloadTracker updating status file: %s", status_file)
 
                     if not status_file.exists():
                         logger.warning("Status file does not exist: %s", status_file)
@@ -210,13 +204,6 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
                     current_time = datetime.now(UTC).isoformat()
                     progress_percent = (self.n / self.total * 100) if self.total else 0
-
-                    logger.debug(
-                        "ModelDownloadTracker updating progress: bytes=%d/%d, percent=%.1f%%",
-                        self.n,
-                        self.total,
-                        progress_percent,
-                    )
 
                     # Always update total_bytes since it grows during aggregated downloads
                     update_data = {
@@ -235,8 +222,6 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
                     with status_file.open("w") as f:
                         json.dump(data, f, indent=2)
-
-                    logger.debug("ModelDownloadTracker status file updated successfully")
 
             except Exception:
                 logger.exception("ModelDownloadTracker._update_status_file failed")
