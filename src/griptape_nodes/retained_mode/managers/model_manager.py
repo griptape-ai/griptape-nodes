@@ -95,6 +95,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             super().__init__(*args, **kwargs)
             self.model_id = model_id
             self.start_time = datetime.now(UTC).isoformat()
+            self._cumulative_bytes = 0
 
             # Check if this is a byte-level progress bar or file enumeration bar
             unit = getattr(self, "unit", "")
@@ -126,6 +127,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
         def update(self, n: int = 1) -> None:
             """Override update to track progress in status file."""
             super().update(n)
+            self._cumulative_bytes += n
 
             # Skip if not tracking this progress bar
             if not getattr(self, "_should_track", True):
@@ -139,9 +141,9 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
                 self.model_id,
                 n,
-                self.n,  # self.n is already updated by super().update(n)
+                self._cumulative_bytes,
                 self.total,
-                (self.n / self.total * 100) if self.total else 0,
+                (self._cumulative_bytes / self.total * 100) if self.total else 0,
             )
             self._update_status_file(mark_completed=False)
 
@@ -154,13 +156,13 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 return
 
             # Only mark as completed if we actually downloaded everything
-            is_complete = self.total > 0 and self.n >= self.total
+            is_complete = self.total > 0 and self._cumulative_bytes >= self.total
 
             if is_complete:
                 logger.info(
                     "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes (COMPLETE)",
                     self.model_id,
-                    self.n,
+                    self._cumulative_bytes,
                     self.total,
                 )
                 self._update_status_file(mark_completed=True)
@@ -168,9 +170,9 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 logger.warning(
                     "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
                     self.model_id,
-                    self.n,
+                    self._cumulative_bytes,
                     self.total,
-                    (self.n / self.total * 100) if self.total else 0,
+                    (self._cumulative_bytes / self.total * 100) if self.total else 0,
                 )
                 # Don't mark as completed - leave status as "downloading" or "failed"
                 self._update_status_file(mark_completed=False)
@@ -228,12 +230,12 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                         data = json.load(f)
 
                     current_time = datetime.now(UTC).isoformat()
-                    progress_percent = (self.n / self.total * 100) if self.total else 0
+                    progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
 
                     # Always update total_bytes since it grows during aggregated downloads
                     update_data = {
                         "total_bytes": self.total or 0,
-                        "downloaded_bytes": self.n,
+                        "downloaded_bytes": self._cumulative_bytes,
                         "progress_percent": progress_percent,
                         "updated_at": current_time,
                     }
