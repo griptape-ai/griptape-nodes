@@ -114,12 +114,12 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 self.total,
             )
             super().update(n)
-            self._update_status_file()
+            self._update_status_file(mark_completed=False)
 
         def close(self) -> None:
-            """Override close to log download completion."""
+            """Override close to mark download as completed."""
             super().close()
-            self._update_status_file()  # Write final state to status file
+            self._update_status_file(mark_completed=True)  # Mark as completed on close
             logger.debug(
                 "ModelDownloadTracker close - model_id: %s, self.n: %s, total: %s",
                 self.model_id,
@@ -166,8 +166,12 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
             except Exception:
                 logger.exception("ModelDownloadTracker._init_status_file failed")
 
-        def _update_status_file(self) -> None:
-            """Update the status file with current progress."""
+        def _update_status_file(self, *, mark_completed: bool = False) -> None:
+            """Update the status file with current progress.
+
+            Args:
+                mark_completed: If True, mark the download as completed
+            """
             if not self.model_id:
                 logger.warning("ModelDownloadTracker._update_status_file called with empty model_id")
                 return
@@ -194,17 +198,16 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                         progress_percent,
                     )
 
-                    # Check if download is complete
-                    is_complete = self.total > 0 and self.n >= self.total
-
+                    # Always update total_bytes since it grows during aggregated downloads
                     update_data = {
+                        "total_bytes": self.total or 0,
                         "downloaded_bytes": self.n,
                         "progress_percent": progress_percent,
                         "updated_at": current_time,
                     }
 
-                    # Update status to completed if all bytes are downloaded
-                    if is_complete:
+                    # Only mark as completed when explicitly requested (from close())
+                    if mark_completed:
                         update_data["status"] = "completed"
                         update_data["completed_at"] = current_time
 
