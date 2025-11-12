@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers>=0.35.1",
+        "git+https://github.com/huggingface/diffusers",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.17.0",
