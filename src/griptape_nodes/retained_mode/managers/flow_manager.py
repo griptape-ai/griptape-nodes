@@ -1469,6 +1469,7 @@ class FlowManager:
 
             # Populate the shared node_name_to_uuid mapping
             create_cmd = serialize_result.serialized_node_commands.create_node_command
+            # Get the node name from the CreateNodeGroupRequest command if necessary.
             node_name = (
                 create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
             )
@@ -1565,6 +1566,7 @@ class FlowManager:
             serialized_node = None
             for serialized_node_command in serialized_package_nodes:
                 create_cmd = serialized_node_command.create_node_command
+                # In a CreateNodeGroupRequest, the node_name is the node_group_name
                 cmd_node_name = (
                     create_cmd.node_group_name
                     if isinstance(create_cmd, CreateNodeGroupRequest)

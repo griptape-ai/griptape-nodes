@@ -934,15 +934,7 @@ class AddNodesToNodeGroupRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class AddNodesToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Node added to NodeGroup successfully.
-
-    Args:
-        node_name: Name of the node that was added
-        node_group_name: Name of the NodeGroup it was added to
-    """
-
-    node_names: list[str]
-    node_group_name: str
+    """Node added to NodeGroup successfully."""
 
 
 @dataclass
@@ -979,15 +971,7 @@ class RemoveNodeFromNodeGroupRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RemoveNodeFromNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Nodes removed from NodeGroup successfully.
-
-    Args:
-        node_names: Names of the nodes that were removed
-        node_group_name: Name of the NodeGroup they were removed from
-    """
-
-    node_names: list[str]
-    node_group_name: str
+    """Nodes removed from NodeGroup successfully."""
 
 
 @dataclass

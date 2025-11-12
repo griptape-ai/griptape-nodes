@@ -526,7 +526,6 @@ class NodeManager:
         try:
             # Create metadata with required keys for serialization
             metadata = request.metadata if request.metadata else {}
-            metadata["library"] = "griptape_nodes"
             metadata["node_type"] = "NodeGroupNode"
 
             node_group = NodeGroupNode(name=final_node_group_name, metadata=metadata)
@@ -534,17 +533,24 @@ class NodeManager:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)
 
+        if request.node_names_to_add:
+            nodes_to_add = []
+            for node_name in request.node_names_to_add:
+                try:
+                    node = self.get_node_by_name(node_name)
+                except KeyError:
+                    details = f"Attempted to add node '{node_name}' to NodeGroup '{final_node_group_name}'. Failed because node was not found."
+                    return CreateNodeGroupResultFailure(result_details=details)
+                nodes_to_add.append(node)
+            # Add Nodes manually here, so we don't have to add the NodeGroup and remove it if it fails.
+            try:
+                node_group.add_nodes_to_group(nodes_to_add)
+            except Exception:
+                details = f"Failed to add nodes to NodeGroup '{final_node_group_name}'."
+                return CreateNodeGroupResultFailure(result_details=details)
         flow.add_node(node_group)
         obj_mgr.add_object_by_name(node_group.name, node_group)
         self._name_to_parent_flow_name[node_group.name] = flow_name
-
-        if request.node_names_to_add:
-            result = self.on_add_nodes_to_node_group_request(
-                AddNodesToNodeGroupRequest(node_group_name=final_node_group_name, node_names=request.node_names_to_add)
-            )
-            if not isinstance(result, AddNodesToNodeGroupResultSuccess):
-                msg = f"Failed to add nodes {request.node_names_to_add} to NodeGroup '{final_node_group_name}'."
-                logger.warning(msg)
         if request.flow_name is None:
             details = (
                 f"Successfully created NodeGroup '{final_node_group_name}' in the Current Context (Flow '{flow_name}')"
@@ -575,20 +581,31 @@ class NodeManager:
     def _get_nodes_for_group_operation(
         self, node_names: list[str], node_group_name: str
     ) -> list[BaseNode] | AddNodesToNodeGroupResultFailure:
-        """Get the list of nodes to add to a group."""
+        """Get the list of nodes to add to a group.
+
+        Collects all errors and returns them together if multiple nodes fail.
+        """
         obj_mgr = GriptapeNodes.ObjectManager()
         nodes = []
+        errors = []
+
         for node_name in node_names:
             try:
                 node = obj_mgr.get_object_by_name(node_name)
             except KeyError:
-                details = f"Attempted to add node '{node_name}' to NodeGroup '{node_group_name}'. Failed because node was not found."
-                return AddNodesToNodeGroupResultFailure(result_details=details)
+                errors.append(f"Node '{node_name}' was not found")
+                continue
 
             if not isinstance(node, BaseNode):
-                details = f"Attempted to add '{node_name}' to NodeGroup '{node_group_name}'. Failed because '{node_name}' is not a node."
-                return AddNodesToNodeGroupResultFailure(result_details=details)
+                errors.append(f"'{node_name}' is not a node")
+                continue
+
             nodes.append(node)
+
+        if errors:
+            details = f"Attempted to add nodes to NodeGroup '{node_group_name}'. Failed for the following nodes: {'; '.join(errors)}"
+            return AddNodesToNodeGroupResultFailure(result_details=details)
+
         return nodes
 
     def _get_node_group(
@@ -631,8 +648,6 @@ class NodeManager:
 
         details = f"Successfully added node '{request.node_names}' to NodeGroup '{request.node_group_name}'"
         return AddNodesToNodeGroupResultSuccess(
-            node_names=request.node_names,
-            node_group_name=request.node_group_name,
             result_details=ResultDetails(message=details, level=logging.DEBUG),
         )
 
@@ -653,20 +668,31 @@ class NodeManager:
     def _get_nodes_for_remove_operation(
         self, node_names: list[str], node_group_name: str
     ) -> list[BaseNode] | RemoveNodeFromNodeGroupResultFailure:
-        """Get the list of nodes to remove from a group."""
+        """Get the list of nodes to remove from a group.
+
+        Collects all errors and returns them together if multiple nodes fail.
+        """
         obj_mgr = GriptapeNodes.ObjectManager()
         nodes = []
+        errors = []
+
         for node_name in node_names:
             try:
                 node = obj_mgr.get_object_by_name(node_name)
             except KeyError:
-                details = f"Attempted to remove node '{node_name}' from NodeGroup '{node_group_name}'. Failed because node was not found."
-                return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+                errors.append(f"Node '{node_name}' was not found")
+                continue
 
             if not isinstance(node, BaseNode):
-                details = f"Attempted to remove '{node_name}' from NodeGroup '{node_group_name}'. Failed because '{node_name}' is not a node."
-                return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+                errors.append(f"'{node_name}' is not a node")
+                continue
+
             nodes.append(node)
+
+        if errors:
+            details = f"Attempted to remove nodes from NodeGroup '{node_group_name}'. Failed for the following nodes: {'; '.join(errors)}"
+            return RemoveNodeFromNodeGroupResultFailure(result_details=details)
+
         return nodes
 
     def _get_node_group_for_remove(
@@ -709,8 +735,6 @@ class NodeManager:
 
         details = f"Successfully removed nodes '{request.node_names}' from NodeGroup '{request.node_group_name}'"
         return RemoveNodeFromNodeGroupResultSuccess(
-            node_names=request.node_names,
-            node_group_name=request.node_group_name,
             result_details=ResultDetails(message=details, level=logging.DEBUG),
         )
 
@@ -725,8 +749,6 @@ class NodeManager:
                 f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed because NodeGroup was not found."
             )
             return DeleteNodeGroupResultFailure(result_details=details)
-
-        from griptape_nodes.exe_types.node_types import NodeGroupNode
 
         if not isinstance(node_group, NodeGroupNode):
             details = (
@@ -2398,8 +2420,6 @@ class NodeManager:
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
             # Handle NodeGroupNode specially - skip library lookup entirely
-            from griptape_nodes.exe_types.node_types import NodeGroupNode
-
             if isinstance(node, NodeGroupNode):
                 # NodeGroupNode doesn't have a library dependency
                 library_details = None
@@ -2437,6 +2457,7 @@ class NodeManager:
             if isinstance(node, NodeGroupNode):
                 create_node_request = CreateNodeGroupRequest(
                     node_group_name=node_name,
+                    node_names_to_add=list(node.nodes),
                     metadata=copy.deepcopy(node.metadata),
                 )
             else:
@@ -2535,17 +2556,6 @@ class NodeManager:
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
-
-        # For NodeGroupNode, add commands to re-add grouped nodes
-        from griptape_nodes.exe_types.node_types import NodeGroupNode
-
-        if isinstance(node, NodeGroupNode) and node.nodes:
-            add_to_group_request = AddNodesToNodeGroupRequest(
-                node_names=list(node.nodes.keys()),
-                node_group_name=node_name,
-                flow_name=None,
-            )
-            element_modification_commands.append(add_to_group_request)
 
         # now check if locked
         if node.lock:
@@ -2715,8 +2725,6 @@ class NodeManager:
                     element_command, (AlterParameterDetailsRequest, AddParameterToNodeRequest)
                 ):  # are there more types of requests we could encounter here?
                     element_command.node_name = node_name
-                elif isinstance(element_command, AddNodesToNodeGroupRequest):
-                    element_command.node_group_name = node_name
                 element_result = GriptapeNodes().handle_request(element_command)
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."

@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     BaseNode,
+    NodeGroupNode,
     NodeResolutionState,
 )
 from griptape_nodes.machines.fsm import FSM, State
@@ -23,6 +24,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
@@ -36,10 +38,6 @@ class NextNodeInfo:
     node: BaseNode
     entry_parameter: Parameter | None
 
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
-    from griptape_nodes.exe_types.flow import ControlFlow
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -66,7 +64,6 @@ class ControlFlowContext:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
             # Get the global DagBuilder from FlowManager
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             dag_builder = GriptapeNodes.FlowManager().global_dag_builder
             self.resolution_machine = ParallelResolutionMachine(
@@ -95,7 +92,6 @@ class ControlFlowContext:
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             else:
                 # Get next control output for this node
-                from griptape_nodes.exe_types.node_types import NodeGroupNode
 
                 if (
                     isinstance(current_node, NodeGroupNode)
@@ -209,8 +205,6 @@ def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple
     Returns:
         Tuple of (resolved_node, entry_parameter)
     """
-    from griptape_nodes.exe_types.node_types import NodeGroupNode
-
     target_node = next_node_info.node
     entry_parameter = next_node_info.entry_parameter
 
@@ -297,7 +291,6 @@ class CompleteState(State):
         # Broadcast completion events for any remaining current nodes
         for current_node in context.current_nodes:
             # Use pickle-based serialization for complex parameter output values
-            from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
                 current_node, use_pickling=context.pickle_control_flow_result
@@ -424,10 +417,10 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         dag_builder.add_node_with_dependencies(start_node, start_node.name)
         queue_items = list(flow_manager.global_flow_queue.queue)
         start_nodes = [start_node]
+        from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
+
         # Find data_nodes and remove them from queue
         for item in queue_items:
-            from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
-
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED

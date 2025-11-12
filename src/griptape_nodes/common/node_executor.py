@@ -74,13 +74,17 @@ class NodeExecutor:
         if isinstance(node, NodeGroupNode):
             execution_type = node.get_parameter_value(node.execution_environment.name)
             if execution_type == LOCAL_EXECUTION:
+                # Just execute the node normally! This means we aren't doing any special packaging.
                 await node.aprocess()
                 return
             if execution_type == PRIVATE_EXECUTION:
+                # Package the flow and run it in a subprocess.
                 await self._execute_private_workflow(node)
                 return
+            # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
             await self._execute_library_workflow(node, execution_type)
             return
+        # We default to local execution if it is not a NodeGroupNode!
         await node.aprocess()
 
     async def _execute_and_apply_workflow(
@@ -251,13 +255,6 @@ class NodeExecutor:
         else:
             # Otherwise, it's a list of one node!
             node_names = [node.name]
-
-        # Pass the group node if this is a NodeGroupNode so serialization can use stored connections
-        GriptapeNodes.handle_request(
-            SetParameterValueRequest(
-                parameter_name="output", node_name="Agent_1", value="I love private execution", is_output=True
-            )
-        )
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
