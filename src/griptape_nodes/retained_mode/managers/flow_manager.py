@@ -1111,6 +1111,7 @@ class FlowManager:
         # If source is in a group, untrack outgoing external connection
         if (
             conn
+            and conn_id
             and source_parent is not None
             and isinstance(source_parent, NodeGroupNode)
             and target_parent != source_parent
@@ -1124,6 +1125,7 @@ class FlowManager:
         # If target is in a group, untrack incoming external connection
         if (
             conn
+            and conn_id
             and target_parent is not None
             and isinstance(target_parent, NodeGroupNode)
             and source_parent != target_parent

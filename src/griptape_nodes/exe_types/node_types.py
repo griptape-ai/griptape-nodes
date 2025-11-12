@@ -2051,15 +2051,8 @@ class NodeGroupNode(BaseNode):
             if conn_id in self.stored_connections.original_targets.outgoing_targets:
                 del self.stored_connections.original_targets.outgoing_targets[conn_id]
 
-    def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
-        """Add nodes to the group and track their connections.
-
-        Args:
-            nodes: List of nodes to add to the group
-        """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        # Remove nodes from existing parent groups
+    def _remove_nodes_from_existing_parents(self, nodes: list[BaseNode]) -> None:
+        """Remove nodes from their existing parent groups."""
         child_nodes = {}
         for node in nodes:
             if node.parent_node is not None:
@@ -2069,50 +2062,98 @@ class NodeGroupNode(BaseNode):
         for parent_node, node_list in child_nodes.items():
             parent_node.remove_nodes_from_group(node_list)
 
-        # Add nodes to this group
+    def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
+        """Add nodes to the group's node dictionary."""
         for node in nodes:
             node.parent_node = self
             self.nodes[node.name] = node
 
-        # Track connections for the newly added nodes
+    def _track_incoming_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
+        """Track incoming external connections for a node."""
+        if node.name not in connections.incoming_index:
+            return
+
+        for connection_ids in connections.incoming_index[node.name].values():
+            for conn_id in connection_ids:
+                if conn_id not in connections.connections:
+                    continue
+                conn = connections.connections[conn_id]
+
+                if conn.source_node.name not in node_names_in_group:
+                    self.track_external_connection(conn, conn_id, is_incoming=True, grouped_node=node)
+                elif conn not in self.stored_connections.internal_connections:
+                    self.track_internal_connection(conn)
+
+    def _track_outgoing_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
+        """Track outgoing external connections for a node."""
+        if node.name not in connections.outgoing_index:
+            return
+
+        for connection_ids in connections.outgoing_index[node.name].values():
+            for conn_id in connection_ids:
+                if conn_id not in connections.connections:
+                    continue
+                conn = connections.connections[conn_id]
+
+                if conn.target_node.name not in node_names_in_group:
+                    self.track_external_connection(conn, conn_id, is_incoming=False, grouped_node=node)
+
+    def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
+        """Add nodes to the group and track their connections.
+
+        Args:
+            nodes: List of nodes to add to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        self._remove_nodes_from_existing_parents(nodes)
+        self._add_nodes_to_group_dict(nodes)
+
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
         self.metadata["node_names_in_group"] = list(node_names_in_group)
 
-        # Identify internal connections (between nodes being added)
         nodes_being_added = {node.name for node in nodes}
         internal_conns = connections.get_connections_between_nodes(nodes_being_added)
         for conn in internal_conns:
             self.track_internal_connection(conn)
 
-        # Identify and track external connections for each node
         for node in nodes:
-            # Track incoming external connections
-            if node.name in connections.incoming_index:
-                for connection_ids in connections.incoming_index[node.name].values():
-                    for conn_id in connection_ids:
-                        if conn_id not in connections.connections:
-                            continue
-                        conn = connections.connections[conn_id]
+            self._track_incoming_connections(node, connections, node_names_in_group)
+            self._track_outgoing_connections(node, connections, node_names_in_group)
 
-                        # If source is not in group, this is an external incoming connection
-                        if conn.source_node.name not in node_names_in_group:
-                            self.track_external_connection(conn, conn_id, is_incoming=True, grouped_node=node)
-                        # Otherwise it's internal (may already be tracked)
-                        elif conn not in self.stored_connections.internal_connections:
-                            self.track_internal_connection(conn)
+    def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
+        """Validate that all nodes are in the group."""
+        for node in nodes:
+            if node.name not in self.nodes:
+                msg = f"Node {node.name} is not in node group {self.name}"
+                raise ValueError(msg)
 
-            # Track outgoing external connections
-            if node.name in connections.outgoing_index:
-                for connection_ids in connections.outgoing_index[node.name].values():
-                    for conn_id in connection_ids:
-                        if conn_id not in connections.connections:
-                            continue
-                        conn = connections.connections[conn_id]
+    def _untrack_external_incoming_for_node(self, node: BaseNode) -> None:
+        """Untrack external incoming connections for a node."""
+        for conn in list(self.stored_connections.external_connections.incoming_connections):
+            conn_id = id(conn)
+            original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
+            if original_target and original_target.name == node.name:
+                self.untrack_external_connection(conn, conn_id, is_incoming=True)
 
-                        # If target is not in group, this is an external outgoing connection
-                        if conn.target_node.name not in node_names_in_group:
-                            self.track_external_connection(conn, conn_id, is_incoming=False, grouped_node=node)
+    def _untrack_external_outgoing_for_node(self, node: BaseNode) -> None:
+        """Untrack external outgoing connections for a node."""
+        for conn in list(self.stored_connections.external_connections.outgoing_connections):
+            conn_id = id(conn)
+            original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
+            if original_source and original_source.name == node.name:
+                self.untrack_external_connection(conn, conn_id, is_incoming=False)
+
+    def _untrack_internal_for_node(self, node: BaseNode, nodes_being_removed: set[str]) -> None:
+        """Untrack internal connections for a node."""
+        for conn in list(self.stored_connections.internal_connections):
+            if node.name not in (conn.source_node.name, conn.target_node.name):
+                continue
+
+            other_node_name = conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
+            if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
+                self.untrack_internal_connection(conn)
 
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from the group and untrack their connections.
@@ -2122,42 +2163,16 @@ class NodeGroupNode(BaseNode):
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        for node in nodes:
-            if node.name not in self.nodes:
-                msg = f"Node {node.name} is not in node group {self.name}"
-                raise ValueError(msg)
+        self._validate_nodes_in_group(nodes)
 
-        # Untrack connections before removing nodes
         GriptapeNodes.FlowManager().get_connections()
         nodes_being_removed = {node.name for node in nodes}
 
         for node in nodes:
-            # Untrack external incoming connections
-            for conn in list(self.stored_connections.external_connections.incoming_connections):
-                conn_id = id(conn)
-                original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
-                if original_target and original_target.name == node.name:
-                    self.untrack_external_connection(conn, conn_id, is_incoming=True)
+            self._untrack_external_incoming_for_node(node)
+            self._untrack_external_outgoing_for_node(node)
+            self._untrack_internal_for_node(node, nodes_being_removed)
 
-            # Untrack external outgoing connections
-            for conn in list(self.stored_connections.external_connections.outgoing_connections):
-                conn_id = id(conn)
-                original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
-                if original_source and original_source.name == node.name:
-                    self.untrack_external_connection(conn, conn_id, is_incoming=False)
-
-            # Untrack internal connections involving this node
-            for conn in list(self.stored_connections.internal_connections):
-                # If connection involves this node and the other node is also being removed, untrack it
-                if node.name in (conn.source_node.name, conn.target_node.name):
-                    other_node_name = (
-                        conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
-                    )
-                    # Only untrack if the other node is also being removed or not in group
-                    if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
-                        self.untrack_internal_connection(conn)
-
-        # Remove nodes from group
         for node in nodes:
             node.parent_node = None
             self.nodes.pop(node.name)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
@@ -121,58 +122,88 @@ class EvaluateParameterState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ResolutionContext) -> type[State] | None:
+    def _get_next_node(current_node: BaseNode, current_parameter: Any, connections: Any) -> BaseNode | None:
+        """Get the next node connected to the current parameter."""
+        next_node = connections.get_connected_node(current_node, current_parameter)
+        if next_node:
+            next_node, _ = next_node
+        return next_node
+
+    @staticmethod
+    def _check_for_cycle(next_node: BaseNode, current_node: BaseNode, focus_stack_names: set[str]) -> None:
+        """Check if queuing next_node would create a cycle."""
+        if next_node.name in focus_stack_names:
+            msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
+            raise RuntimeError(msg)
+
+    @staticmethod
+    def _handle_parent_already_resolved(current_node: BaseNode) -> type[State]:
+        """Handle case where parent node group is already resolved."""
+        if current_node.advance_parameter():
+            return InitializeSpotlightState
+        return ExecuteNodeState
+
+    @staticmethod
+    def _determine_node_to_queue(
+        next_node: BaseNode, current_node: BaseNode, focus_stack_names: set[str]
+    ) -> BaseNode | None:
+        """Determine which node to queue - the next node or its parent group.
+
+        Returns None if the parent node group is already resolved.
+        """
         from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
+
+        if next_node.parent_node is None or not isinstance(next_node.parent_node, NodeGroupNode):
+            return next_node
+
+        parent_node = next_node.parent_node
+        execution_env = parent_node.get_parameter_value(parent_node.execution_environment.name)
+        if execution_env == LOCAL_EXECUTION:
+            return next_node
+
+        if parent_node.state == NodeResolutionState.RESOLVED:
+            logger.info(
+                "Sequential Resolution: Parent node group '%s' is already resolved, skipping child node '%s' (execution environment: %s)",
+                parent_node.name,
+                next_node.name,
+                execution_env,
+            )
+            return None
+
+        if parent_node.name in focus_stack_names:
+            msg = f"Cycle detected: parent node '{parent_node.name}' is already in focus stack while processing dependency for '{current_node.name}'."
+            raise RuntimeError(msg)
+
+        logger.info(
+            "Sequential Resolution: Queuing parent node group '%s' instead of child node '%s' (execution environment: %s) - child is a dependency of '%s'",
+            parent_node.name,
+            next_node.name,
+            execution_env,
+            current_node.name,
+        )
+        return parent_node
+
+    @staticmethod
+    async def on_update(context: ResolutionContext) -> type[State] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         current_node = context.current_node
         current_parameter = current_node.get_current_parameter()
 
-        connections = GriptapeNodes.FlowManager().get_connections()
         if current_parameter is None:
             msg = "No current parameter set."
             raise ValueError(msg)
-        # Get the next node
-        next_node = connections.get_connected_node(current_node, current_parameter)
-        if next_node:
-            next_node, _ = next_node
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        next_node = EvaluateParameterState._get_next_node(current_node, current_parameter, connections)
+
         if next_node and next_node.state == NodeResolutionState.UNRESOLVED:
             focus_stack_names = {focus.node.name for focus in context.focus_stack}
-            if next_node.name in focus_stack_names:
-                msg = f"Cycle detected between node '{current_node.name}' and '{next_node.name}'."
-                raise RuntimeError(msg)
+            EvaluateParameterState._check_for_cycle(next_node, current_node, focus_stack_names)
 
-            # Check if next_node has a parent (is in a node group)
-            # If so, and parent is not LOCAL_EXECUTION, queue the parent instead
-            node_to_queue = next_node
-            if next_node.parent_node is not None and isinstance(next_node.parent_node, NodeGroupNode):
-                parent_node = next_node.parent_node
-                execution_env = parent_node.get_parameter_value(parent_node.execution_environment.name)
-                if execution_env != LOCAL_EXECUTION:
-                    # Check if parent is already resolved or in focus stack
-                    if parent_node.state == NodeResolutionState.RESOLVED:
-                        # Parent is already resolved, treat the child as resolved
-                        logger.info(
-                            "Sequential Resolution: Parent node group '%s' is already resolved, skipping child node '%s' (execution environment: %s)",
-                            parent_node.name,
-                            next_node.name,
-                            execution_env,
-                        )
-                        # Don't queue anything, advance to next parameter
-                        if current_node.advance_parameter():
-                            return InitializeSpotlightState
-                        return ExecuteNodeState
-                    if parent_node.name in focus_stack_names:
-                        msg = f"Cycle detected: parent node '{parent_node.name}' is already in focus stack while processing dependency for '{current_node.name}'."
-                        raise RuntimeError(msg)
-                    logger.info(
-                        "Sequential Resolution: Queuing parent node group '%s' instead of child node '%s' (execution environment: %s) - child is a dependency of '%s'",
-                        parent_node.name,
-                        next_node.name,
-                        execution_env,
-                        current_node.name,
-                    )
-                    node_to_queue = parent_node
+            node_to_queue = EvaluateParameterState._determine_node_to_queue(next_node, current_node, focus_stack_names)
+            if node_to_queue is None:
+                return EvaluateParameterState._handle_parent_already_resolved(current_node)
 
             context.focus_stack.append(Focus(node=node_to_queue))
             return InitializeSpotlightState
