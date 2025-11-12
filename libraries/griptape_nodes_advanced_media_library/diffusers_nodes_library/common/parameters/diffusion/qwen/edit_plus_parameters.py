@@ -13,13 +13,14 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
+class QwenImageEditPlusPipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
             repo_ids=[
-                "Qwen/Qwen-Image",
+                "Qwen/Qwen-Image-Edit",
+                "Qwen/Qwen-Image-Edit-2509",
             ],
             parameter_name="model",
             list_all_models=list_all_models,
@@ -50,7 +51,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.QwenImageImg2ImgPipeline
+        return diffusers.QwenImageEditPipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -64,7 +65,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
 
         return errors or None
 
-    def build_pipeline(self) -> diffusers.QwenImageImg2ImgPipeline:
+    def build_pipeline(self) -> diffusers.QwenImageEditPipeline:
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
         text_encoder_repo_id, text_encoder_revision = self._text_encoder_repo_parameter.get_repo_revision()
 
@@ -75,7 +76,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             local_files_only=True,
         )
 
-        return diffusers.QwenImageImg2ImgPipeline.from_pretrained(
+        return diffusers.QwenImageEditPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             text_encoder=text_encoder,
