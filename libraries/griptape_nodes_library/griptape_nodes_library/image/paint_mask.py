@@ -2,6 +2,7 @@ from io import BytesIO
 from typing import Any
 
 import httpx
+import numpy as np
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image, ImageFilter
 
@@ -9,12 +10,22 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     save_pil_image_with_named_filename,
 )
+
+# OpenCV is faster for morphological operations, so we use it if it's available.
+# If it's not available, we use PIL's MinFilter/MaxFilter.
+try:
+    import cv2  # type: ignore[reportMissingImports]
+
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    cv2 = None  # type: ignore[assignment]
 
 
 class PaintMask(DataNode):
@@ -199,6 +210,8 @@ class PaintMask(DataNode):
             mask_artifact = self.get_parameter_value("output_mask")
 
             if input_image is None or mask_artifact is None:
+                msg = f"{self.name}: Input image or mask is not set, skipping mask application"
+                logger.debug(msg)
                 return super().after_value_set(parameter, value)
 
             if isinstance(input_image, dict):
@@ -253,6 +266,9 @@ class PaintMask(DataNode):
 
     def _extract_alpha_from_mask(self, mask_pil: Image.Image) -> Image.Image:
         """Extract red channel from mask image to use as alpha channel."""
+        if mask_pil.mode == "L":
+            # Grayscale mode - use directly (no conversion needed)
+            return mask_pil
         if mask_pil.mode == "RGB":
             r, _, _ = mask_pil.split()
             return r
@@ -260,9 +276,39 @@ class PaintMask(DataNode):
             r, _, _, _ = mask_pil.split()
             return r
 
+        # For other modes, convert to RGB first
         mask_pil = mask_pil.convert("RGB")
         r, _, _ = mask_pil.split()
         return r
+
+    def _apply_grow_shrink(self, alpha: Image.Image, grow_shrink: float) -> Image.Image:
+        """Apply grow/shrink morphological operation using the fastest available method."""
+        iterations = int(abs(grow_shrink))
+        # Prefer OpenCV (fastest), then PIL iterations as fallback
+        if OPENCV_AVAILABLE and cv2 is not None:
+            msg = f"{self.name}: Using OpenCV for grow/shrink operation (iterations={iterations})"
+            logger.debug(msg)
+            # Use OpenCV for fastest morphological operations
+            # Use a 3x3 kernel (same as PIL) and let OpenCV handle iterations
+            alpha_array = np.array(alpha, dtype=np.uint8)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            if grow_shrink > 0:
+                alpha_array = cv2.erode(alpha_array, kernel, iterations=iterations)
+            else:
+                alpha_array = cv2.dilate(alpha_array, kernel, iterations=iterations)
+            return Image.fromarray(alpha_array, mode="L")
+
+        msg = f"{self.name}: Using PIL iterations for grow/shrink operation (iterations={iterations})"
+        logger.debug(msg)
+        # Fallback: PIL's MinFilter/MaxFilter only support size=3, so we must use iterations.
+        # Each iteration processes the entire image, so large values (e.g., 100) can be slow.
+        if grow_shrink > 0:
+            for _ in range(iterations):
+                alpha = alpha.filter(ImageFilter.MinFilter(size=3))
+        else:
+            for _ in range(iterations):
+                alpha = alpha.filter(ImageFilter.MaxFilter(size=3))
+        return alpha
 
     def _apply_mask_transformations(self, alpha: Image.Image) -> Image.Image:
         """Apply grow/shrink, invert, and blur transformations to alpha channel."""
@@ -270,16 +316,7 @@ class PaintMask(DataNode):
         grow_shrink = self.get_parameter_value("grow_shrink")
 
         if grow_shrink != 0:
-            iterations = int(abs(grow_shrink))
-            if iterations > 0:
-                if grow_shrink > 0:
-                    # Shrink (erode) the mask using MinFilter
-                    for _ in range(iterations):
-                        alpha = alpha.filter(ImageFilter.MinFilter(size=3))
-                else:
-                    # Grow (dilate) the mask using MaxFilter
-                    for _ in range(iterations):
-                        alpha = alpha.filter(ImageFilter.MaxFilter(size=3))
+            alpha = self._apply_grow_shrink(alpha, grow_shrink)
 
         invert_mask = self.get_parameter_value("invert_mask")
         if invert_mask:
@@ -287,7 +324,21 @@ class PaintMask(DataNode):
 
         blur_mask = self.get_parameter_value("blur_mask")
         if blur_mask != 0:
-            alpha = alpha.filter(ImageFilter.GaussianBlur(blur_mask))
+            # Prefer OpenCV (faster), then PIL as fallback
+            if OPENCV_AVAILABLE and cv2 is not None:
+                msg = f"{self.name}: Using OpenCV for blur operation (radius={blur_mask})"
+                logger.debug(msg)
+                alpha_array = np.array(alpha, dtype=np.uint8)
+                # OpenCV GaussianBlur requires kernel size to be odd
+                kernel_size = int(blur_mask * 2 + 1)
+                if kernel_size % 2 == 0:
+                    kernel_size += 1
+                alpha_array = cv2.GaussianBlur(alpha_array, (kernel_size, kernel_size), blur_mask)
+                alpha = Image.fromarray(alpha_array, mode="L")
+            else:
+                msg = f"{self.name}: Using PIL for blur operation (radius={blur_mask})"
+                logger.debug(msg)
+                alpha = alpha.filter(ImageFilter.GaussianBlur(blur_mask))
 
         return alpha
 
