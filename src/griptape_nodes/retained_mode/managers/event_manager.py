@@ -53,8 +53,6 @@ class EventManager:
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
-        self._flush_in_queue: bool = False
         # Event queue for publishing events
         self._event_queue: asyncio.Queue | None = None
         # Keep track of which thread the event loop runs on
@@ -68,9 +66,6 @@ class EventManager:
             msg = "Event queue has not been initialized. Please call 'initialize_queue' with an asyncio.Queue instance before accessing the event queue."
             raise ValueError(msg)
         return self._event_queue
-
-    def clear_flush_in_queue(self) -> None:
-        self._flush_in_queue = False
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.
@@ -253,9 +248,8 @@ class EventManager:
 
         # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
                 await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
 
         return self._handle_request_core(
             request,
@@ -302,9 +296,8 @@ class EventManager:
 
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
                 self.put_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
 
         return self._handle_request_core(
             request,
