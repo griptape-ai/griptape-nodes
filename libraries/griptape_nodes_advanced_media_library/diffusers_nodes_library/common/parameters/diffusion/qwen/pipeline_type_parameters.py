@@ -26,11 +26,11 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
-    "QwenPipeline": QwenPipelineParameters,
-    "QwenImg2ImgPipeline": QwenImg2ImgPipelineParameters,
-    "QwenEditPipeline": QwenEditPipelineParameters,
+    "QwenImagePipeline": QwenPipelineParameters,
+    "QwenImageImg2ImgPipeline": QwenImg2ImgPipelineParameters,
+    "QwenImageEditPipeline": QwenEditPipelineParameters,
     "QwenImageEditPlusPipeline": QwenImageEditPlusPipelineParameters,
-    "QwenUpscalePipeline": QwenUpscalePipelineParameters,
+    "QwenImageUpscalePipeline": QwenUpscalePipelineParameters,
 }
 
 
