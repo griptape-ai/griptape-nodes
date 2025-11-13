@@ -598,11 +598,13 @@ class UpdateLibraryRequest(RequestPayload):
 
     Args:
         library_name: Name of the library to update
+        install_dependencies: If True, automatically install dependencies after updating (default: True)
 
     Results: UpdateLibraryResultSuccess (with version info) | UpdateLibraryResultFailure (library not found, git error, update failure)
     """
 
     library_name: str
+    install_dependencies: bool = True
 
 
 @dataclass
@@ -680,6 +682,7 @@ class DownloadLibraryRequest(RequestPayload):
         git_url: The git repository URL to clone
         branch_tag_commit: Optional branch, tag, or commit to checkout (defaults to default branch)
         target_directory_name: Optional name for the target directory (defaults to repository name)
+        install_dependencies: If True, automatically install dependencies after downloading (default: True)
 
     Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
     """
@@ -687,6 +690,7 @@ class DownloadLibraryRequest(RequestPayload):
     git_url: str
     branch_tag_commit: str | None = None
     target_directory_name: str | None = None
+    install_dependencies: bool = True
 
 
 @dataclass
@@ -751,3 +755,56 @@ class InstallLibraryDependenciesResultSuccess(ResultPayloadSuccess):
 @PayloadRegistry.register
 class InstallLibraryDependenciesResultFailure(ResultPayloadFailure):
     """Library dependency installation failed. Common causes: library not found, no dependencies defined, venv initialization failed, pip install error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesRequest(RequestPayload):
+    """Sync all libraries to latest versions and ensure dependencies are installed.
+
+    Similar to `uv sync` - ensures workspace is in a consistent, up-to-date state.
+    This operation:
+    1. Gets all registered libraries
+    2. Checks each library for available updates
+    3. Updates libraries that have updates available
+    4. Installs/updates dependencies for all libraries
+    5. Returns comprehensive summary of changes
+
+    Use when: Updating workspace to latest versions, ensuring all libraries are
+    up-to-date, setting up development environment, periodic maintenance.
+
+    Args:
+        check_updates_only: If True, only report what would be updated without making changes (default: False)
+        install_dependencies: If True, install dependencies after updating (default: True)
+        exclude_libraries: Optional list of library names to skip during sync
+
+    Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
+    """
+
+    check_updates_only: bool = False
+    install_dependencies: bool = True
+    exclude_libraries: list[str] | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Libraries synced successfully.
+
+    Args:
+        libraries_checked: Number of libraries checked for updates
+        libraries_updated: Number of libraries that were updated
+        libraries_skipped: Number of libraries that were skipped
+        update_summary: Dict mapping library names to their update info (old_version -> new_version)
+    """
+
+    libraries_checked: int
+    libraries_updated: int
+    libraries_skipped: int
+    update_summary: dict[str, dict[str, str]]
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesResultFailure(ResultPayloadFailure):
+    """Library sync failed. Common causes: git errors, network errors, dependency installation failures."""
