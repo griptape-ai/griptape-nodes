@@ -847,12 +847,16 @@ class BaseNode(ABC):
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
         if param_name in self.parameter_values:
-            del self.parameter_values[param_name]
+            # Reset the parameter to default.
+            default_val = parameter.default_value
+            self.set_parameter_value(param_name, default_val)
+
             # special handling if it's in a container.
             if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
                 del self.parameter_values[parameter.parent_container_name]
                 new_val = self.get_parameter_value(parameter.parent_container_name)
                 if new_val is not None:
+                    # Don't set the container to None (that would make it empty)
                     self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
