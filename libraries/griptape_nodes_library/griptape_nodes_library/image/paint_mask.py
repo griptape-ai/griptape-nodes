@@ -3,15 +3,17 @@ from typing import Any
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
-    save_pil_image_to_static_file,
+    save_pil_image_with_named_filename,
 )
 
 
@@ -42,6 +44,9 @@ class PaintMask(DataNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
+        self.add_parameter(ParameterBool(name="invert_mask", default_value=False))
+        self.add_parameter(ParameterFloat(name="grow_shrink", default_value=0, slider=True, min_val=-100, max_val=100))
+        self.add_parameter(ParameterFloat(name="blur_mask", default_value=0, slider=True, min_val=-0, max_val=100))
 
         self.add_parameter(
             Parameter(
@@ -188,6 +193,18 @@ class PaintMask(DataNode):
             self._handle_input_image_change(value)
         elif parameter.name == "output_mask" and value is not None:
             self._handle_output_mask_change(value)
+        elif parameter.name in ["invert_mask", "grow_shrink", "blur_mask"]:
+            # When transform parameters change, re-apply the current mask
+            input_image = self.get_parameter_value("input_image")
+            mask_artifact = self.get_parameter_value("output_mask")
+
+            if input_image is None or mask_artifact is None:
+                return super().after_value_set(parameter, value)
+
+            if isinstance(input_image, dict):
+                input_image = dict_to_image_url_artifact(input_image)
+
+            self._apply_mask_to_input(input_image, mask_artifact)
 
         return super().after_value_set(parameter, value)
 
@@ -264,10 +281,40 @@ class PaintMask(DataNode):
         # Resize alpha to match input image size
         alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)
 
+        # Apply mask transformations
+        # Order: grow/shrink first (modify mask shape), then invert, then blur
+        grow_shrink = self.get_parameter_value("grow_shrink")
+
+        if grow_shrink != 0:
+            # Convert to absolute value for iterations, use sign to determine operation
+            iterations = int(abs(grow_shrink))
+            if iterations > 0:
+                if grow_shrink > 0:
+                    # Shrink (erode) the mask using MinFilter
+                    for _ in range(iterations):
+                        alpha = alpha.filter(ImageFilter.MinFilter(size=3))
+                else:
+                    # Grow (dilate) the mask using MaxFilter
+                    for _ in range(iterations):
+                        alpha = alpha.filter(ImageFilter.MaxFilter(size=3))
+
+        invert_mask = self.get_parameter_value("invert_mask")
+        if invert_mask:
+            alpha = Image.eval(alpha, lambda x: 255 - x)
+
+        blur_mask = self.get_parameter_value("blur_mask")
+        if blur_mask != 0:
+            alpha = alpha.filter(ImageFilter.GaussianBlur(blur_mask))
+
         # Apply alpha channel to input image
         input_pil.putalpha(alpha)
         output_pil = input_pil
 
-        # Save output image and create URL artifact
-        output_artifact = save_pil_image_to_static_file(output_pil)
+        # Save output image with deterministic filename (overwrites same file)
+        output_filename = generate_filename(
+            node_name=self.name,
+            suffix="_output",
+            extension="png",
+        )
+        output_artifact = save_pil_image_with_named_filename(output_pil, output_filename)
         self.set_parameter_value("output_image", output_artifact)
