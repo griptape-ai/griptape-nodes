@@ -671,7 +671,7 @@ class NodeManager:
         result = GetNodeMetadataResultSuccess(metadata=metadata, result_details=details)
         return result
 
-    def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
+    async def on_set_node_metadata_request(self, request: SetNodeMetadataRequest) -> ResultPayload:
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -701,7 +701,7 @@ class NodeManager:
         result = SetNodeMetadataResultSuccess(result_details=details)
         return result
 
-    def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
+    async def on_batch_set_node_metadata_request(self, request: BatchSetNodeMetadataRequest) -> ResultPayload:
         updated_nodes = []
         failed_nodes = {}
 
@@ -726,13 +726,14 @@ class NodeManager:
                     failed_nodes[actual_node_name] = f"Node '{actual_node_name}' not found"
                     continue
 
-            single_request = SetNodeMetadataRequest(node_name=actual_node_name, metadata=metadata_update)
-            result = self.on_set_node_metadata_request(single_request)
+            result = await GriptapeNodes.ahandle_request(
+                SetNodeMetadataRequest(node_name=actual_node_name, metadata=metadata_update)
+            )
 
-            if isinstance(result, SetNodeMetadataResultSuccess):
-                updated_nodes.append(actual_node_name)
-            else:
+            if isinstance(result, SetNodeMetadataResultFailure):
                 failed_nodes[actual_node_name] = result.result_details
+            else:
+                updated_nodes.append(actual_node_name)
 
         if failed_nodes:
             return BatchSetNodeMetadataResultFailure(
