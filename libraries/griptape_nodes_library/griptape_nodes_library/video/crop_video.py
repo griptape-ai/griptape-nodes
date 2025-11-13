@@ -378,7 +378,7 @@ class CropVideo(BaseVideoProcessor):
 
         return (x, y)
 
-    def _get_video_dimensions_for_preview(self) -> tuple[int, int] | None:
+    def _get_video_dimensions_for_preview(self) -> tuple[int, int] | None:  # noqa: PLR0911
         """Get video dimensions for preview generation.
 
         Returns:
