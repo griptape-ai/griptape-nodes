@@ -10,12 +10,11 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    FlushParameterChangesRequest,
     FlushParameterChangesResultSuccess,
     RequestPayload,
     ResultPayload,
@@ -249,7 +248,7 @@ class EventManager:
         # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
             if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -297,7 +296,7 @@ class EventManager:
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
             if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self.put_event(EventRequest(request=FlushParameterChangesRequest()))
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -329,3 +328,14 @@ class EventManager:
             async with asyncio.TaskGroup() as tg:
                 for listener_callback in listener_set:
                     tg.create_task(call_function(listener_callback, app_event))
+
+    def _flush_tracked_parameter_changes(self) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        obj_manager = GriptapeNodes.ObjectManager()
+        # Get all flows and their nodes
+        nodes = obj_manager.get_filtered_subset(type=BaseNode)
+        for node in nodes.values():
+            # Only flush if there are actually tracked parameters
+            if node._tracked_parameters:
+                node.emit_parameter_changes()
