@@ -105,6 +105,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     SwitchLibraryBranchRequest,
     SwitchLibraryBranchResultFailure,
     SwitchLibraryBranchResultSuccess,
+    SyncLibrariesRequest,
+    SyncLibrariesResultFailure,
+    SyncLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
@@ -283,6 +286,7 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             InstallLibraryDependenciesRequest, self.install_library_dependencies_request
         )
+        event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -2417,7 +2421,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Update a library to the latest version via git pull --rebase."""
         from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError, is_monorepo
 
@@ -2490,6 +2494,18 @@ class LibraryManager:
                 new_version = "unknown"
         except KeyError:
             new_version = "unknown"
+
+        # Install dependencies if requested
+        if request.install_dependencies:
+            logger.info("Installing dependencies for updated library '%s'", library_name)
+            install_deps_request = InstallLibraryDependenciesRequest(library_name=library_name)
+            install_deps_result = await GriptapeNodes.ahandle_request(install_deps_request)
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' was updated successfully but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
 
         details = f"Successfully updated Library '{library_name}' from version {old_version} to {new_version}."
         return UpdateLibraryResultSuccess(
@@ -2594,7 +2610,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
         """Download a library from a git repository."""
         import json
 
@@ -2659,6 +2675,27 @@ class LibraryManager:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
             logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
+
+        # Register the library
+        logger.info("Registering downloaded library '%s' from %s", library_name, library_json_path)
+        register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
+        register_result = await GriptapeNodes.ahandle_request(register_request)
+        if not isinstance(register_result, RegisterLibraryFromFileResultSuccess):
+            details = f"Downloaded library '{library_name}' but failed to register it: {register_result.result_details}"
+            logger.error(details)
+            return DownloadLibraryResultFailure(result_details=details)
+
+        # Install dependencies if requested
+        if request.install_dependencies:
+            logger.info("Installing dependencies for downloaded library '%s'", library_name)
+            install_deps_request = InstallLibraryDependenciesRequest(library_name=library_name)
+            install_deps_result = await GriptapeNodes.ahandle_request(install_deps_request)
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' was downloaded and registered successfully but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
 
         details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
         return DownloadLibraryResultSuccess(
@@ -2757,4 +2794,138 @@ class LibraryManager:
         logger.info(details)
         return InstallLibraryDependenciesResultSuccess(
             library_name=library_name, dependencies_installed=len(pip_dependencies), result_details=details
+        )
+
+    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
+        """Sync all libraries to latest versions and ensure dependencies are installed."""
+        check_updates_only = request.check_updates_only
+        install_dependencies = request.install_dependencies
+        exclude_libraries = request.exclude_libraries or []
+
+        # Get all registered libraries
+        list_libraries_request = ListRegisteredLibrariesRequest()
+        list_result = GriptapeNodes.handle_request(list_libraries_request)
+        if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
+            details = "Failed to list registered libraries for sync"
+            logger.error(details)
+            return SyncLibrariesResultFailure(result_details=details)
+
+        all_libraries = list_result.library_names
+        libraries_to_check = [lib for lib in all_libraries if lib not in exclude_libraries]
+
+        logger.info("Syncing %d libraries (excluded: %d)", len(libraries_to_check), len(exclude_libraries))
+
+        # Check all libraries for updates concurrently using task group
+        async def check_library_for_update(library_name: str) -> tuple[str, ResultPayload]:
+            """Check a single library for updates."""
+            logger.info("Checking library '%s' for updates", library_name)
+            check_request = CheckLibraryUpdateRequest(library_name=library_name)
+            check_result = await GriptapeNodes.ahandle_request(check_request)
+            return library_name, check_result
+
+        # Gather all check results concurrently
+        check_results: dict[str, ResultPayload] = {}
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(check_library_for_update(lib)) for lib in libraries_to_check]
+
+        # Collect results from completed tasks
+        for task in tasks:
+            library_name, result = task.result()
+            check_results[library_name] = result
+
+        # Process check results and determine which libraries need updates
+        libraries_checked = len(libraries_to_check)
+        libraries_updated = 0
+        libraries_skipped = len(exclude_libraries)
+        update_summary = {}
+        libraries_to_update: list[tuple[str, str, str]] = []  # (library_name, old_version, new_version)
+
+        for library_name, check_result in check_results.items():
+            if not isinstance(check_result, CheckLibraryUpdateResultSuccess):
+                logger.warning(
+                    "Failed to check for updates for library '%s': %s", library_name, check_result.result_details
+                )
+                continue
+
+            if not check_result.has_update:
+                logger.info("Library '%s' is up to date (version %s)", library_name, check_result.current_version)
+                continue
+
+            # Library has an update available
+            old_version = check_result.current_version or "unknown"
+            new_version = check_result.latest_version or "unknown"
+            logger.info("Library '%s' has update available: %s -> %s", library_name, old_version, new_version)
+
+            if check_updates_only:
+                update_summary[library_name] = {
+                    "old_version": old_version,
+                    "new_version": new_version,
+                    "status": "available",
+                }
+            else:
+                libraries_to_update.append((library_name, old_version, new_version))
+
+        # If only checking for updates, return early
+        if check_updates_only:
+            updates_available = len(update_summary)
+            details = f"Checked {libraries_checked} libraries. {updates_available} update(s) available, {libraries_skipped} skipped."
+            logger.info(details)
+            return SyncLibrariesResultSuccess(
+                libraries_checked=libraries_checked,
+                libraries_updated=0,
+                libraries_skipped=libraries_skipped,
+                update_summary=update_summary,
+                result_details=details,
+            )
+
+        # Update libraries concurrently using task group
+        async def update_library(
+            library_name: str, old_version: str, new_version: str
+        ) -> tuple[str, str, str, ResultPayload]:
+            """Update a single library."""
+            logger.info("Updating library '%s' from %s to %s", library_name, old_version, new_version)
+            update_request = UpdateLibraryRequest(library_name=library_name, install_dependencies=install_dependencies)
+            update_result = await GriptapeNodes.ahandle_request(update_request)
+            return library_name, old_version, new_version, update_result
+
+        # Gather all update results concurrently
+        async with asyncio.TaskGroup() as tg:
+            update_tasks = [tg.create_task(update_library(lib, old, new)) for lib, old, new in libraries_to_update]
+
+        # Collect update results
+        for task in update_tasks:
+            library_name, old_version, new_version, update_result = task.result()
+
+            if not isinstance(update_result, UpdateLibraryResultSuccess):
+                logger.error("Failed to update library '%s': %s", library_name, update_result.result_details)
+                update_summary[library_name] = {
+                    "old_version": old_version,
+                    "new_version": old_version,
+                    "status": "failed",
+                    "error": update_result.result_details,
+                }
+                continue
+
+            libraries_updated += 1
+            update_summary[library_name] = {
+                "old_version": update_result.old_version,
+                "new_version": update_result.new_version,
+                "status": "updated",
+            }
+            logger.info(
+                "Successfully updated library '%s' from %s to %s",
+                library_name,
+                update_result.old_version,
+                update_result.new_version,
+            )
+
+        # Build result details
+        details = f"Synced {libraries_checked} libraries. {libraries_updated} updated, {libraries_skipped} skipped."
+        logger.info(details)
+        return SyncLibrariesResultSuccess(
+            libraries_checked=libraries_checked,
+            libraries_updated=libraries_updated,
+            libraries_skipped=libraries_skipped,
+            update_summary=update_summary,
+            result_details=details,
         )
