@@ -30,10 +30,7 @@
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
     "library_version": "0.59.3",
     "engine_version": "0.59.3",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
@@ -41,6 +38,8 @@
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
         "diffusers @ https://github.com/huggingface/diffusers/archive/f3db38c1e74c49de0ff42356515e7b394561ec39.zip",
+        "imageio[ffmpeg]>=2.37.2",
+        "ninja>=1.13.0",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.17.0",
@@ -64,10 +63,7 @@
         "matplotlib>=3.10.3",
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
-      "pip_install_flags": [
-        "--preview",
-        "--torch-backend=auto"
-      ]
+      "pip_install_flags": ["--preview", "--torch-backend=auto"]
     }
   },
   "categories": [],

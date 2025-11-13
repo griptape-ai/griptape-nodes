@@ -5,6 +5,9 @@ from diffusers_nodes_library.common.parameters.diffusion.amused.pipeline_type_pa
 from diffusers_nodes_library.common.parameters.diffusion.audioldm.pipeline_type_parameters import (
     AudioldmPipelineTypeDict,
 )
+from diffusers_nodes_library.common.parameters.diffusion.depthcrafter.pipeline_type_parameters import (
+    DepthCrafterPipelineTypeDict,
+)
 from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type_parameters import (
     DiffusionPipelineTypeParameters,
 )
@@ -30,6 +33,7 @@ AllPipelineTypes: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
     **AllegroPipelineTypeDict,
     **AmusedPipelineTypeDict,
     **AudioldmPipelineTypeDict,
+    **DepthCrafterPipelineTypeDict,
     **FluxPipelineTypeDict,
     **QwenPipelineTypeDict,
     **StableDiffusionPipelineTypeDict,
