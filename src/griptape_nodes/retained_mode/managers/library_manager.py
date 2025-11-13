@@ -2804,7 +2804,7 @@ class LibraryManager:
 
         # Get all registered libraries
         list_libraries_request = ListRegisteredLibrariesRequest()
-        list_result = GriptapeNodes.handle_request(list_libraries_request)
+        list_result = await GriptapeNodes.ahandle_request(list_libraries_request)
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             details = "Failed to list registered libraries for sync"
             logger.error(details)

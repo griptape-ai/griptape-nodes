@@ -6,6 +6,7 @@ import typer
 
 from griptape_nodes.cli.shared import console
 from griptape_nodes.retained_mode.events.library_events import (
+    LoadLibrariesRequest,
     SyncLibrariesRequest,
     SyncLibrariesResultSuccess,
 )
@@ -22,6 +23,15 @@ def sync() -> None:
 
 async def _sync_libraries() -> None:
     """Sync all libraries by checking for updates and installing dependencies."""
+    console.print("[bold cyan]Loading libraries...[/bold cyan]")
+
+    # First, load libraries from configuration
+    load_request = LoadLibrariesRequest()
+    load_result = await GriptapeNodes.ahandle_request(load_request)
+    if not load_result.succeeded():
+        console.print(f"[red]Failed to load libraries: {load_result.result_details}[/red]")
+        return
+
     console.print("[bold cyan]Syncing libraries...[/bold cyan]")
 
     # Create sync request with default parameters
