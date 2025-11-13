@@ -3067,7 +3067,6 @@ class FlowManager:
 
     def on_flush_request(self, request: FlushParameterChangesRequest) -> ResultPayload:  # noqa: ARG002
         obj_manager = GriptapeNodes.ObjectManager()
-        GriptapeNodes.EventManager().clear_flush_in_queue()
         # Get all flows and their nodes
         nodes = obj_manager.get_filtered_subset(type=BaseNode)
         for node in nodes.values():
