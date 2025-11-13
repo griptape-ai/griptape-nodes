@@ -251,42 +251,25 @@ class PaintMask(DataNode):
         response.raise_for_status()
         return Image.open(BytesIO(response.content))
 
-    def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any) -> None:
-        """Apply mask to input image using red channel as alpha and set as output_image."""
-        # Load input image
-        input_pil = self.load_pil_from_url(input_image.value).convert("RGBA")
-
-        # Process the mask
-        if isinstance(mask_artifact, dict):
-            mask_artifact = dict_to_image_url_artifact(mask_artifact)
-
-        # Load mask
-        mask_pil = self.load_pil_from_url(mask_artifact.value)
-
-        # Extract red channel and use as alpha
+    def _extract_alpha_from_mask(self, mask_pil: Image.Image) -> Image.Image:
+        """Extract red channel from mask image to use as alpha channel."""
         if mask_pil.mode == "RGB":
-            # Get red channel
             r, _, _ = mask_pil.split()
-            alpha = r
-        elif mask_pil.mode == "RGBA":
-            # Get red channel
+            return r
+        if mask_pil.mode == "RGBA":
             r, _, _, _ = mask_pil.split()
-            alpha = r
-        else:
-            # Convert to RGB first
-            mask_pil = mask_pil.convert("RGB")
-            r, _, _ = mask_pil.split()
-            alpha = r
+            return r
 
-        # Resize alpha to match input image size
-        alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)
+        mask_pil = mask_pil.convert("RGB")
+        r, _, _ = mask_pil.split()
+        return r
 
-        # Apply mask transformations
+    def _apply_mask_transformations(self, alpha: Image.Image) -> Image.Image:
+        """Apply grow/shrink, invert, and blur transformations to alpha channel."""
         # Order: grow/shrink first (modify mask shape), then invert, then blur
         grow_shrink = self.get_parameter_value("grow_shrink")
 
         if grow_shrink != 0:
-            # Convert to absolute value for iterations, use sign to determine operation
             iterations = int(abs(grow_shrink))
             if iterations > 0:
                 if grow_shrink > 0:
@@ -306,9 +289,29 @@ class PaintMask(DataNode):
         if blur_mask != 0:
             alpha = alpha.filter(ImageFilter.GaussianBlur(blur_mask))
 
+        return alpha
+
+    def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any) -> None:
+        """Apply mask to input image using red channel as alpha and set as output_image."""
+        # Load input image
+        input_pil = self.load_pil_from_url(input_image.value).convert("RGBA")
+
+        # Process the mask
+        if isinstance(mask_artifact, dict):
+            mask_artifact = dict_to_image_url_artifact(mask_artifact)
+
+        # Load mask and extract alpha channel
+        mask_pil = self.load_pil_from_url(mask_artifact.value)
+        alpha = self._extract_alpha_from_mask(mask_pil)
+
+        # Resize alpha to match input image size
+        alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)
+
+        # Apply mask transformations
+        alpha = self._apply_mask_transformations(alpha)
+
         # Apply alpha channel to input image
         input_pil.putalpha(alpha)
-        output_pil = input_pil
 
         # Save output image with deterministic filename (overwrites same file)
         output_filename = generate_filename(
@@ -316,5 +319,5 @@ class PaintMask(DataNode):
             suffix="_output",
             extension="png",
         )
-        output_artifact = save_pil_image_with_named_filename(output_pil, output_filename)
+        output_artifact = save_pil_image_with_named_filename(input_pil, output_filename)
         self.set_parameter_value("output_image", output_artifact)
