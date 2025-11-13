@@ -257,7 +257,7 @@ class CropVideo(BaseVideoProcessor):
                 with suppress(Exception):
                     temp_path.unlink(missing_ok=True)
 
-        except Exception as e:
+        except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             # Log error but don't fail - we'll use fallback background
             self.append_value_to_parameter("logs", f"Warning: Could not extract first frame for preview: {e}\n")
 
@@ -295,7 +295,7 @@ class CropVideo(BaseVideoProcessor):
                         # Clear cache if video is invalid
                         self._cached_first_frame = None
                         self._cached_video_url = None
-                except Exception as e:
+                except (ValueError, TypeError, AttributeError) as e:
                     # Reset cache on error
                     self._cached_first_frame = None
                     self._cached_video_url = None
@@ -315,18 +315,20 @@ class CropVideo(BaseVideoProcessor):
         """Get the target crop dimensions."""
         crop_size = self.get_parameter_value("crop_size") or "1K (1024x1024)"
 
+        # Handle Custom size
         if crop_size == "Custom":
             width = self.get_parameter_value("custom_width") or 1024
             height = self.get_parameter_value("custom_height") or 1024
-            if width > 0 and height > 0:
-                return (width, height)
-            return None
+            if width <= 0 or height <= 0:
+                return None
+            return (width, height)
 
         # Try to parse from preset
         if crop_size in RESOLUTION_PRESETS:
             dimensions = RESOLUTION_PRESETS[crop_size]
-            if dimensions != (0, 0):  # Not the Custom placeholder
-                return dimensions
+            if dimensions == (0, 0):  # Custom placeholder (shouldn't happen, but check)
+                return None
+            return dimensions
 
         # Try to parse as string
         parsed = parse_size_string(crop_size)
@@ -376,67 +378,69 @@ class CropVideo(BaseVideoProcessor):
 
         return (x, y)
 
-    def _generate_preview(self) -> None:
-        """Generate a preview image showing the crop area overlaid on the first frame."""
-        # Validate video input
+    def _get_video_dimensions_for_preview(self) -> tuple[int, int] | None:
+        """Get video dimensions for preview generation.
+
+        Returns:
+            Tuple of (width, height) or None if dimensions cannot be determined
+        """
         video = self.parameter_values.get("video")
         if not video:
-            return
+            return None
 
-        # Convert to VideoUrlArtifact if needed (handles dict, VideoUrlArtifact, etc.)
         try:
             video_artifact = to_video_artifact(video)
-            if not video_artifact or not hasattr(video_artifact, "value") or not video_artifact.value:
-                return
-            input_url = video_artifact.value
-        except Exception:
-            # Can't convert video, skip preview
-            return
+        except (ValueError, TypeError, AttributeError):
+            return None
 
-        # Get video dimensions
+        if not video_artifact or not hasattr(video_artifact, "value") or not video_artifact.value:
+            return None
+
+        input_url = video_artifact.value
+
         try:
             self._validate_url_safety(input_url)
+        except ValueError as e:
+            self.append_value_to_parameter("logs", f"Warning: Invalid video URL for preview: {e}\n")
+            return None
 
+        try:
             _ffmpeg_path, ffprobe_path = self._get_ffmpeg_paths()
+        except ValueError as e:
+            self.append_value_to_parameter("logs", f"Warning: FFmpeg not available for preview: {e}\n")
+            return None
+
+        try:
             _, (video_width, video_height), _ = self._detect_video_properties(input_url, ffprobe_path)
-        except Exception as e:
-            # Can't get video dimensions, skip preview
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as e:
             self.append_value_to_parameter("logs", f"Warning: Could not get video dimensions for preview: {e}\n")
-            return
+            return None
 
-        # Get crop dimensions
-        crop_dims = self._get_crop_dimensions()
-        if not crop_dims:
-            return
+        return (video_width, video_height)
 
-        crop_width, crop_height = crop_dims
+    def _create_preview_image_with_overlay(
+        self,
+        preview_size: tuple[int, int],
+        crop_rect: tuple[int, int, int, int],
+        scale_factor: float,
+    ) -> Image.Image:
+        """Create preview image with crop overlay.
 
-        # Ensure crop dimensions don't exceed video dimensions
-        crop_width = min(crop_width, video_width)
-        crop_height = min(crop_height, video_height)
+        Args:
+            preview_size: Tuple of (width, height) for preview image
+            crop_rect: Tuple of (x, y, width, height) for crop area
+            scale_factor: Scale factor used for preview
 
-        # Calculate crop position
-        crop_x, crop_y = self._calculate_crop_coordinates(video_width, video_height, crop_width, crop_height)
-
-        # Scale preview to max 1920x1080 for performance while maintaining aspect ratio
-        max_preview_width = 1920
-        max_preview_height = 1080
-        scale_factor = min(max_preview_width / video_width, max_preview_height / video_height, 1.0)
-
-        preview_width = int(video_width * scale_factor)
-        preview_height = int(video_height * scale_factor)
-        preview_crop_x = int(crop_x * scale_factor)
-        preview_crop_y = int(crop_y * scale_factor)
-        preview_crop_width = int(crop_width * scale_factor)
-        preview_crop_height = int(crop_height * scale_factor)
-
+        Returns:
+            PIL Image with preview and overlay
+        """
+        preview_width, preview_height = preview_size
+        preview_crop_x, preview_crop_y, preview_crop_width, preview_crop_height = crop_rect
         # Create preview image background
         if self._cached_first_frame:
-            # Use cached first frame as background, scaled to preview size
             preview_image = self._cached_first_frame.copy()
             preview_image = preview_image.resize((preview_width, preview_height), Image.Resampling.LANCZOS)
         else:
-            # Fallback to grey background if frame not available
             preview_image = Image.new("RGB", (preview_width, preview_height), PREVIEW_BG_COLOR)
 
         draw = ImageDraw.Draw(preview_image)
@@ -449,19 +453,17 @@ class CropVideo(BaseVideoProcessor):
             width=outline_width,
         )
 
-        # Draw cropped area overlay: semi-transparent overlay with blue outline
-        # Create a semi-transparent overlay for the cropped area
+        # Create semi-transparent overlay
         overlay = Image.new("RGBA", (preview_width, preview_height), (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
 
-        # Draw semi-transparent dark overlay outside crop area
-        # First, darken everything
+        # Darken everything
         overlay_draw.rectangle(
             [(0, 0), (preview_width, preview_height)],
             fill=(0, 0, 0, 128),  # Semi-transparent black
         )
 
-        # Then clear the crop area (make it transparent so original frame shows through)
+        # Clear the crop area (transparent so original frame shows through)
         overlay_draw.rectangle(
             [
                 (preview_crop_x, preview_crop_y),
@@ -487,13 +489,49 @@ class CropVideo(BaseVideoProcessor):
             width=crop_outline_width,
         )
 
-        # Save preview image
+        return preview_image
+
+    def _generate_preview(self) -> None:
+        """Generate a preview image showing the crop area overlaid on the first frame."""
+        video_dims = self._get_video_dimensions_for_preview()
+        if not video_dims:
+            return
+
+        video_width, video_height = video_dims
+
+        crop_dims = self._get_crop_dimensions()
+        if not crop_dims:
+            return
+
+        crop_width, crop_height = crop_dims
+        crop_width = min(crop_width, video_width)
+        crop_height = min(crop_height, video_height)
+
+        crop_x, crop_y = self._calculate_crop_coordinates(video_width, video_height, crop_width, crop_height)
+
+        # Scale preview to max 1920x1080 for performance
+        max_preview_width = 1920
+        max_preview_height = 1080
+        scale_factor = min(max_preview_width / video_width, max_preview_height / video_height, 1.0)
+
+        preview_width = int(video_width * scale_factor)
+        preview_height = int(video_height * scale_factor)
+        preview_crop_x = int(crop_x * scale_factor)
+        preview_crop_y = int(crop_y * scale_factor)
+        preview_crop_width = int(crop_width * scale_factor)
+        preview_crop_height = int(crop_height * scale_factor)
+
+        preview_size = (preview_width, preview_height)
+        crop_rect = (preview_crop_x, preview_crop_y, preview_crop_width, preview_crop_height)
+        preview_image = self._create_preview_image_with_overlay(preview_size, crop_rect, scale_factor)
+
         try:
             preview_artifact = save_pil_image_to_static_file(preview_image, "PNG")
-            self.parameter_output_values["preview"] = preview_artifact
-        except Exception as e:
-            # Log error but don't fail the node
-            self.append_value_to_parameter("logs", f"Warning: Could not generate preview: {e}\n")
+        except (ValueError, OSError) as e:
+            self.append_value_to_parameter("logs", f"Warning: Could not save preview image: {e}\n")
+            return
+
+        self.parameter_output_values["preview"] = preview_artifact
 
     def _build_ffmpeg_command(self, input_url: str, output_path: str, input_frame_rate: float, **kwargs) -> list[str]:  # noqa: ARG002
         """Build the FFmpeg command for cropping."""
@@ -585,6 +623,9 @@ class CropVideo(BaseVideoProcessor):
 
     def process(self) -> AsyncResult[None]:
         """Process the video cropping."""
+        # Clear execution status at start
+        self._clear_execution_status()
+
         # Generate preview first
         self._generate_preview()
 
@@ -601,8 +642,18 @@ class CropVideo(BaseVideoProcessor):
             yield lambda: self._process(input_url, detected_format)
             self.append_value_to_parameter("logs", "[Finished video cropping.]\n")
 
+            # Report success
+            result_details = "Successfully cropped video"
+            self._set_status_results(was_successful=True, result_details=result_details)
+
         except Exception as e:
             error_message = str(e)
             msg = f"{self.name}: Error cropping video: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+
+            # Report failure
+            failure_details = f"Video cropping failed: {error_message}"
+            self._set_status_results(was_successful=False, result_details=failure_details)
+
+            # Handle failure exception (raises if no failure output connected)
+            self._handle_failure_exception(ValueError(msg))
