@@ -128,7 +128,7 @@ class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-    _parent_node: BaseNode | None
+    _parent_group: BaseNode | None
     # Node Context Fields
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
@@ -170,7 +170,7 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self._cancellation_requested = threading.Event()
-        self._parent_node = None
+        self._parent_group = None
         self.set_entry_control_parameter(None)
 
     @property
@@ -186,12 +186,12 @@ class BaseNode(ABC):
         self._state = new_state
 
     @property
-    def parent_node(self) -> BaseNode | None:
-        return self._parent_node
+    def parent_group(self) -> BaseNode | None:
+        return self._parent_group
 
-    @parent_node.setter
-    def parent_node(self, parent_node: BaseNode | None) -> None:
-        self._parent_node = parent_node
+    @parent_group.setter
+    def parent_group(self, parent_group: BaseNode | None) -> None:
+        self._parent_group = parent_group
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -2055,17 +2055,17 @@ class NodeGroupNode(BaseNode):
         """Remove nodes from their existing parent groups."""
         child_nodes = {}
         for node in nodes:
-            if node.parent_node is not None:
-                existing_parent_node = node.parent_node
-                if isinstance(existing_parent_node, NodeGroupNode):
-                    child_nodes.setdefault(existing_parent_node, []).append(node)
-        for parent_node, node_list in child_nodes.items():
-            parent_node.remove_nodes_from_group(node_list)
+            if node.parent_group is not None:
+                existing_parent_group = node.parent_group
+                if isinstance(existing_parent_group, NodeGroupNode):
+                    child_nodes.setdefault(existing_parent_group, []).append(node)
+        for parent_group, node_list in child_nodes.items():
+            parent_group.remove_nodes_from_group(node_list)
 
     def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group's node dictionary."""
         for node in nodes:
-            node.parent_node = self
+            node.parent_group = self
             self.nodes[node.name] = node
 
     def _track_incoming_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
@@ -2174,7 +2174,7 @@ class NodeGroupNode(BaseNode):
             self._untrack_internal_for_node(node, nodes_being_removed)
 
         for node in nodes:
-            node.parent_node = None
+            node.parent_group = None
             self.nodes.pop(node.name)
 
         self.metadata["node_names_in_group"] = list(self.nodes.keys())

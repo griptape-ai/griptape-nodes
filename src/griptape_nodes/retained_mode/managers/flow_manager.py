@@ -922,8 +922,8 @@ class FlowManager:
 
         # Check if either node is in a NodeGroup and track connections
 
-        source_parent = source_node.parent_node
-        target_parent = target_node.parent_node
+        source_parent = source_node.parent_group
+        target_parent = target_node.parent_group
 
         # If source is in a group, this is an outgoing external connection
         if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
@@ -1087,8 +1087,8 @@ class FlowManager:
 
         # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
 
-        source_parent = source_node.parent_node
-        target_parent = target_node.parent_node
+        source_parent = source_node.parent_group
+        target_parent = target_node.parent_group
 
         # Find the connection before it's deleted
         conn = None

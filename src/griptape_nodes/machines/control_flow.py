@@ -209,18 +209,18 @@ def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple
     entry_parameter = next_node_info.entry_parameter
 
     # Check if node has a parent and if parent is not local execution
-    if target_node.parent_node is not None and isinstance(target_node.parent_node, NodeGroupNode):
-        parent_node = target_node.parent_node
-        execution_env = parent_node.get_parameter_value(parent_node.execution_environment.name)
+    if target_node.parent_group is not None and isinstance(target_node.parent_group, NodeGroupNode):
+        parent_group = target_node.parent_group
+        execution_env = parent_group.get_parameter_value(parent_group.execution_environment.name)
         if execution_env != LOCAL_EXECUTION:
             logger.info(
                 "Control Flow: Redirecting from child node '%s' to parent node group '%s' (execution environment: %s)",
                 target_node.name,
-                parent_node.name,
+                parent_group.name,
                 execution_env,
             )
             # Move to parent instead of child
-            target_node = parent_node
+            target_node = parent_group
             # Entry parameter should be None for the parent node group
             entry_parameter = None
 

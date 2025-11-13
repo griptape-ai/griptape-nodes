@@ -153,35 +153,35 @@ class EvaluateParameterState(State):
         """
         from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
 
-        if next_node.parent_node is None or not isinstance(next_node.parent_node, NodeGroupNode):
+        if next_node.parent_group is None or not isinstance(next_node.parent_group, NodeGroupNode):
             return next_node
 
-        parent_node = next_node.parent_node
-        execution_env = parent_node.get_parameter_value(parent_node.execution_environment.name)
+        parent_group = next_node.parent_group
+        execution_env = parent_group.get_parameter_value(parent_group.execution_environment.name)
         if execution_env == LOCAL_EXECUTION:
             return next_node
 
-        if parent_node.state == NodeResolutionState.RESOLVED:
+        if parent_group.state == NodeResolutionState.RESOLVED:
             logger.info(
                 "Sequential Resolution: Parent node group '%s' is already resolved, skipping child node '%s' (execution environment: %s)",
-                parent_node.name,
+                parent_group.name,
                 next_node.name,
                 execution_env,
             )
             return None
 
-        if parent_node.name in focus_stack_names:
-            msg = f"Cycle detected: parent node '{parent_node.name}' is already in focus stack while processing dependency for '{current_node.name}'."
+        if parent_group.name in focus_stack_names:
+            msg = f"Cycle detected: parent node group '{parent_group.name}' is already in focus stack while processing dependency for '{current_node.name}'."
             raise RuntimeError(msg)
 
         logger.info(
             "Sequential Resolution: Queuing parent node group '%s' instead of child node '%s' (execution environment: %s) - child is a dependency of '%s'",
-            parent_node.name,
+            parent_group.name,
             next_node.name,
             execution_env,
             current_node.name,
         )
-        return parent_node
+        return parent_group
 
     @staticmethod
     async def on_update(context: ResolutionContext) -> type[State] | None:

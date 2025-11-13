@@ -57,9 +57,9 @@ class DagBuilder:
         Returns True if the node has a parent NodeGroupNode that is NOT in LOCAL_EXECUTION mode.
         In LOCAL_EXECUTION mode, groups are transparent and children are treated as separate nodes.
         """
-        if not isinstance(node.parent_node, NodeGroupNode):
+        if not isinstance(node.parent_group, NodeGroupNode):
             return False
-        parent_execution_env = node.parent_node.get_parameter_value(node.parent_node.execution_environment.name)
+        parent_execution_env = node.parent_group.get_parameter_value(node.parent_group.execution_environment.name)
         return parent_execution_env != LOCAL_EXECUTION
 
     def _get_node_for_dag_edge(self, node: BaseNode, graph: DirectedGraph, graph_name: str) -> BaseNode:
@@ -74,7 +74,7 @@ class DagBuilder:
             The node or parent group to use in DAG edges
         """
         if self._should_use_parent_group(node):
-            parent_group = node.parent_node
+            parent_group = node.parent_group
             if isinstance(parent_group, NodeGroupNode):
                 self._ensure_group_node_in_dag(parent_group, graph, graph_name)
                 return parent_group
@@ -142,7 +142,7 @@ class DagBuilder:
                 # Check for internal group connections - traverse but don't add edge
                 is_internal_connection = (
                     self._should_use_parent_group(current_node)
-                    and upstream_node.parent_node == current_node.parent_node
+                    and upstream_node.parent_group == current_node.parent_group
                 )
 
                 # Recursively add upstream node
