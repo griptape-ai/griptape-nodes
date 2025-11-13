@@ -56,6 +56,21 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
     {
+        "name": "gemini-2.5-flash",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-2.5-flash-lite",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-2.5-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
         "name": "llama3-3-70b-instruct-v1",
         "icon": "logos/meta.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
