@@ -19,10 +19,10 @@ class ConcatenateVideos(BaseVideoProcessor):
     """Concatenate multiple videos into a single video file using FFmpeg."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
-        # Initialize the base ControlNode first (skip BaseVideoProcessor custom init)
-        from griptape_nodes.exe_types.node_types import ControlNode
+        # Initialize the base SuccessFailureNode first (skip BaseVideoProcessor custom init)
+        from griptape_nodes.exe_types.node_types import SuccessFailureNode
 
-        ControlNode.__init__(self, name, metadata)
+        SuccessFailureNode.__init__(self, name, metadata)
 
         # Add our custom video_inputs parameter first
         self.add_parameter(
@@ -77,6 +77,12 @@ class ConcatenateVideos(BaseVideoProcessor):
 
         # Setup logging group
         self._setup_logging_group()
+
+        # Add status parameters using the helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video concatenation operation result",
+            result_details_placeholder="Details on the concatenation attempt will be presented here.",
+        )
 
     def _setup_logging_group(self) -> None:
         """Setup the common logging parameter group."""
@@ -240,6 +246,9 @@ class ConcatenateVideos(BaseVideoProcessor):
 
     def process(self) -> AsyncResult[None]:
         """Concatenate multiple videos and save as VideoUrlArtifact."""
+        # Clear execution status at start
+        self._clear_execution_status()
+
         # Get custom parameters
         custom_params = self._get_custom_parameters()
         video_inputs = custom_params["video_inputs"]
@@ -253,11 +262,21 @@ class ConcatenateVideos(BaseVideoProcessor):
             yield lambda: self._process_concatenation(**custom_params)
             self.append_value_to_parameter("logs", "[Finished video concatenation.]\n")
 
+            # Report success
+            result_details = f"Successfully concatenated {len(video_inputs)} videos"
+            self._set_status_results(was_successful=True, result_details=result_details)
+
         except Exception as e:
             error_message = str(e)
             msg = f"{self.name}: Error concatenating videos: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+
+            # Report failure
+            failure_details = f"Video concatenation failed: {error_message}"
+            self._set_status_results(was_successful=False, result_details=failure_details)
+
+            # Handle failure exception (raises if no failure output connected)
+            self._handle_failure_exception(ValueError(msg))
 
     def _raise_download_error(self, message: str, cause: Exception | None = None) -> None:
         """Raise a download error with proper formatting."""
