@@ -175,7 +175,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 default_value=None,
                 tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Last Frame", "hide": True},
+                ui_options={"display_name": "Last Frame"},
             )
         )
 
