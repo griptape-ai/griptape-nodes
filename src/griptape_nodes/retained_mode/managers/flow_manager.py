@@ -1068,6 +1068,18 @@ class FlowManager:
 
             return DeleteConnectionResultFailure(result_details=details)
 
+        # Let the source make any internal handling decisions before the Connection is REMOVED.
+        source_node.before_outgoing_connection_removed(
+            source_parameter=source_param, target_node=target_node, target_parameter=target_param
+        )
+
+        # And target.
+        target_node.before_incoming_connection_removed(
+            source_node=source_node,
+            source_parameter=source_param,
+            target_parameter=target_param,
+        )
+
         # After the connection has been removed, if it doesn't have PROPERTY as a type, wipe the set parameter value and unresolve future nodes
         if ParameterMode.PROPERTY not in target_param.allowed_modes:
             try:
