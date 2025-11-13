@@ -113,7 +113,7 @@ def _run_init(config: InitConfig) -> None:
 
     # Sync libraries
     if config.libraries_sync is not False:
-        asyncio.run(_sync_libraries(load_libraries_from_config=False))
+        asyncio.run(_sync_libraries())
 
     console.print("[bold green]Initialization complete![/bold green]")
 

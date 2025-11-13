@@ -2810,7 +2810,7 @@ class LibraryManager:
             logger.error(details)
             return SyncLibrariesResultFailure(result_details=details)
 
-        all_libraries = list_result.library_names
+        all_libraries = list_result.libraries
         libraries_to_check = [lib for lib in all_libraries if lib not in exclude_libraries]
 
         logger.info("Syncing %d libraries (excluded: %d)", len(libraries_to_check), len(exclude_libraries))
