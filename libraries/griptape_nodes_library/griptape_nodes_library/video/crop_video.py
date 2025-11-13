@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 import tempfile
 import time
@@ -16,24 +15,26 @@ from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_fi
 from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
-# Common resolution presets
+# Common resolution presets (aligned with video generation nodes)
+# Standard video resolutions using common naming conventions
+# Based on resolutions used in:
+# - seedance_video_generation.py: ["480p", "720p", "1080p"]
+# - seedvr_video_upscale.py: ["720p", "1080p", "1440p", "2160p"]
+# - wan_image_to_video_generation.py: ["480P", "720P", "1080P"]
+# - wan_text_to_video_generation.py: ["480P", "720P", "1080P"] (model-dependent)
+# - sora_video_generation.py: ["1280x720", "720x1280", "1024x1792", "1792x1024"] (WxH format)
 RESOLUTION_PRESETS: dict[str, tuple[int, int]] = {
-    "1K (1024x1024)": (1024, 1024),
-    "2K (2048x1080)": (2048, 1080),
-    "4K (3840x2160)": (3840, 2160),
-    "HD (1280x720)": (1280, 720),
-    "Full HD (1920x1080)": (1920, 1080),
-    "1280x1024": (1280, 1024),
-    "1920x1200": (1920, 1200),
-    "2560x1440": (2560, 1440),
+    "480p (854x480)": (854, 480),  # Standard Definition
+    "720p (1280x720)": (1280, 720),  # HD
+    "1080p (1920x1080)": (1920, 1080),  # Full HD
+    "1440p (2560x1440)": (2560, 1440),  # 2K/QHD
+    "2160p (3840x2160)": (3840, 2160),  # 4K/UHD
+    # Common aspect ratios
+    "Square (1080x1080)": (1080, 1080),  # 1:1
+    "Portrait (1080x1920)": (1080, 1920),  # 9:16 (vertical)
+    "4:3 (1440x1080)": (1440, 1080),  # 4:3 aspect ratio
 }
 
-# Constants for size parsing
-K_RESOLUTION_1K = 1
-K_RESOLUTION_2K = 2
-K_RESOLUTION_4K = 4
-K_BASE_SIZE = 1024
-MIN_DIMENSION = 1
 
 # Preview colors
 PREVIEW_BG_COLOR = (128, 128, 128)  # Grey background fallback
@@ -47,10 +48,10 @@ PREVIEW_WEBP_QUALITY = 60  # Lower quality for faster processing
 
 
 def parse_size_string(size_str: str) -> tuple[int, int] | None:
-    """Parse size string like '1k', '2k', '1280x1024', etc. into (width, height).
+    """Parse size string like '1280x1024' into (width, height).
 
     Args:
-        size_str: Size string to parse
+        size_str: Size string to parse (WxH format)
 
     Returns:
         Tuple of (width, height) or None if parsing fails
@@ -58,9 +59,9 @@ def parse_size_string(size_str: str) -> tuple[int, int] | None:
     if not size_str:
         return None
 
-    size_str = size_str.strip().lower()
+    size_str = size_str.strip()
 
-    # Check presets first
+    # Check presets first (case-insensitive)
     for preset_name, dimensions in RESOLUTION_PRESETS.items():
         if preset_name.lower() == size_str.lower():
             return dimensions
@@ -69,8 +70,7 @@ def parse_size_string(size_str: str) -> tuple[int, int] | None:
     if "x" in size_str:
         return _parse_wxh_format(size_str)
 
-    # Try to parse "Nk" format
-    return _parse_k_format(size_str)
+    return None
 
 
 def _parse_wxh_format(size_str: str) -> tuple[int, int] | None:
@@ -91,27 +91,6 @@ def _parse_wxh_format(size_str: str) -> tuple[int, int] | None:
     return None
 
 
-def _parse_k_format(size_str: str) -> tuple[int, int] | None:
-    """Parse Nk format like '1k', '2k', '4k'."""
-    k_match = re.match(r"^(\d+)k$", size_str)
-    if not k_match:
-        return None
-
-    k_value = int(k_match.group(1))
-
-    # Common K resolutions
-    if k_value == K_RESOLUTION_1K:
-        return (1024, 1024)
-    if k_value == K_RESOLUTION_2K:
-        return (2048, 1080)
-    if k_value == K_RESOLUTION_4K:
-        return (3840, 2160)
-
-    # Default: assume square
-    base_size = k_value * K_BASE_SIZE
-    return (base_size, base_size)
-
-
 class CropVideo(BaseVideoProcessor):
     """Crop a video to a specific size with preview visualization."""
 
@@ -128,7 +107,7 @@ class CropVideo(BaseVideoProcessor):
             name="crop_size",
             type="str",
             default_value="Custom",
-            tooltip="Target crop size. Choose a preset or enter custom dimensions (e.g., '1280x1024' or '2k')",
+            tooltip="Target crop size. Choose a preset or enter custom dimensions (e.g., '1280x1024')",
         )
         size_param.add_trait(Options(choices=[*list(RESOLUTION_PRESETS.keys()), "Custom"]))
         self.add_parameter(size_param)
