@@ -1895,6 +1895,14 @@ class NodeGroupNode(BaseNode):
         self._proxy_param_to_node_param = {}
         self.stored_connections = NodeGroupStoredConnections()
 
+    def get_all_nodes(self) -> dict[str, BaseNode]:
+        all_nodes = {}
+        for node_name, node in self.nodes.items():
+            all_nodes[node_name] = node
+            if isinstance(node, NodeGroupNode):
+                all_nodes.update(node.nodes)
+        return all_nodes
+
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode
     ) -> set[BaseNode]:
