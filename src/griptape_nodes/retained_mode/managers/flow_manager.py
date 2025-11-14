@@ -591,7 +591,10 @@ class FlowManager:
             if isinstance(draws_list_result, ListDrawsResultSuccess):
                 for draw_name in draws_list_result.draw_names:
                     md_result = GriptapeNodes.handle_request(GetDrawMetadataRequest(draw_name=draw_name))
-                    if isinstance(md_result, GetDrawMetadataResultSuccess) and md_result.metadata.get("flow_name") == flow.name:
+                    if (
+                        isinstance(md_result, GetDrawMetadataResultSuccess)
+                        and md_result.metadata.get("flow_name") == flow.name
+                    ):
                         # Remove from object manager
                         GriptapeNodes.ObjectManager().del_obj_by_name(draw_name)
 
@@ -2961,7 +2964,10 @@ class FlowManager:
         if isinstance(draws_list_result, ListDrawsResultSuccess):
             for draw_name in draws_list_result.draw_names:
                 md_result = GriptapeNodes.handle_request(GetDrawMetadataRequest(draw_name=draw_name))
-                if isinstance(md_result, GetDrawMetadataResultSuccess) and md_result.metadata.get("flow_name") == flow_name:
+                if (
+                    isinstance(md_result, GetDrawMetadataResultSuccess)
+                    and md_result.metadata.get("flow_name") == flow_name
+                ):
                     draw_serialize_result = GriptapeNodes.handle_request(
                         SerializeDrawToCommandsRequest(draw_name=draw_name)
                     )

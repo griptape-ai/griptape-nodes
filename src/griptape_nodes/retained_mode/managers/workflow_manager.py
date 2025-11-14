@@ -1691,9 +1691,7 @@ class WorkflowManager:
             # Generate draw creation code in this flow (mirrors node creation style)
             if getattr(serialized_flow_commands, "serialized_draw_commands", None):
                 # Ensure CreateDrawRequest import is recorded
-                import_recorder.add_from_import(
-                    "griptape_nodes.retained_mode.events.draw_events", "CreateDrawRequest"
-                )
+                import_recorder.add_from_import("griptape_nodes.retained_mode.events.draw_events", "CreateDrawRequest")
                 for draw_index, draw_cmd in enumerate(serialized_flow_commands.serialized_draw_commands):
                     create_keywords: list[ast.keyword] = []
                     if is_dataclass(draw_cmd.create_draw_command):
