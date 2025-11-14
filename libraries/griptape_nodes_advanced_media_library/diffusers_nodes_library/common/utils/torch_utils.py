@@ -85,8 +85,95 @@ def print_pipeline_memory_footprint(pipe: DiffusionPipeline, component_names: li
     logger.info("")
 
 
-def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR0911 PLR0912
-    """Gets the best torch device using heuristics."""
+def get_available_cuda_devices() -> list[int]:
+    """Get list of available CUDA device indices."""
+    if not torch.cuda.is_available():
+        return []
+
+    return list(range(torch.cuda.device_count()))
+
+
+def get_cuda_device_info(device_id: int) -> dict[str, str | int]:
+    """Get information about a specific CUDA device."""
+    if not torch.cuda.is_available():
+        return {}
+
+    if device_id >= torch.cuda.device_count():
+        return {}
+
+    props = torch.cuda.get_device_properties(device_id)
+    return {
+        "name": props.name,
+        "total_memory": props.total_memory,
+        "total_memory_human": to_human_readable_size(props.total_memory),
+        "major": props.major,
+        "minor": props.minor,
+        "multi_processor_count": props.multi_processor_count,
+    }
+
+
+def get_cuda_devices_by_free_memory() -> list[tuple[int, int]]:
+    """Get CUDA devices sorted by free memory (descending).
+
+    Returns:
+        List of tuples (device_id, free_memory_bytes) sorted by free memory descending.
+    """
+    if not torch.cuda.is_available():
+        return []
+
+    device_count = torch.cuda.device_count()
+    devices_with_memory = []
+
+    for device_id in range(device_count):
+        props = torch.cuda.get_device_properties(device_id)
+        total_memory = props.total_memory
+        allocated_memory = torch.cuda.memory_allocated(device_id)
+        free_memory = total_memory - allocated_memory
+        devices_with_memory.append((device_id, free_memory))
+
+    devices_with_memory.sort(key=lambda x: x[1], reverse=True)
+    return devices_with_memory
+
+
+def create_device_map_for_pipeline(component_names: list[str], num_gpus: int | None = None) -> dict[str, int | str]:
+    """Create a device_map for distributing pipeline components across GPUs.
+
+    Args:
+        component_names: List of component names to distribute (e.g., ['vae', 'text_encoder', 'transformer'])
+        num_gpus: Number of GPUs to use. If None, uses all available GPUs.
+
+    Returns:
+        Dictionary mapping component names to device IDs (e.g., {'vae': 0, 'transformer': 1})
+    """
+    if not torch.cuda.is_available():
+        return dict.fromkeys(component_names, "cpu")
+
+    available_gpus = torch.cuda.device_count()
+    gpus_to_use = num_gpus if num_gpus is not None else available_gpus
+    gpus_to_use = min(gpus_to_use, available_gpus)
+
+    if gpus_to_use <= 0:
+        return dict.fromkeys(component_names, "cpu")
+
+    device_map = {}
+    for idx, component_name in enumerate(component_names):
+        device_id = idx % gpus_to_use
+        device_map[component_name] = device_id
+
+    return device_map
+
+
+def get_devices(*, quiet: bool = False, num_gpus: int | None = None) -> list[torch.device]:  # noqa: C901 PLR0911 PLR0912 PLR0915
+    """Gets available torch devices using heuristics.
+
+    Args:
+        quiet: If True, suppress logging output
+        num_gpus: Number of GPUs to use. If None, uses all available GPUs.
+
+    Returns:
+        List of torch devices. For multi-GPU systems, returns multiple cuda devices.
+        For single device systems, returns a single-item list.
+    """
     system = platform.system()
     machine = platform.machine().lower()
     python_version = sys.version.split()[0]
@@ -102,7 +189,7 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
             device = xm.xla_device()
             if not quiet:
                 logger.info("Detected TPU environment, using XLA device.")
-            return device  # noqa: TRY300
+            return [device]  # noqa: TRY300
         except ImportError:
             if not quiet:
                 logger.info("TPU environment detected but torch-xla not installed, skipping TPU.")
@@ -113,59 +200,122 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
             if torch.backends.mps.is_available():
                 if not quiet:
                     logger.info("Detected macOS with Apple Silicon (arm64), using MPS device.")
-                return torch.device("mps")
+                return [torch.device("mps")]
             if not quiet:
                 logger.info("Detected macOS with Apple Silicon (arm64), but MPS unavailable, using CPU.")
-            return torch.device("cpu")
+            return [torch.device("cpu")]
         if not quiet:
             logger.info("Detected macOS with Intel architecture (x86_64), using CPU.")
-        return torch.device("cpu")
+        return [torch.device("cpu")]
 
     # Windows branch
     if system == "Windows":
         if torch.cuda.is_available():
-            device_name = torch.cuda.get_device_name(0)
+            device_count = torch.cuda.device_count()
+            requested_gpus = num_gpus if num_gpus is not None else device_count
+            requested_gpus = min(requested_gpus, device_count)
+
+            devices = [torch.device(f"cuda:{device_id}") for device_id in range(requested_gpus)]
+
             if not quiet:
-                logger.info("Detected Windows with CUDA support, using CUDA device: %s.", device_name)
-            return torch.device("cuda")
+                if len(devices) > 1:
+                    device_names = [torch.cuda.get_device_name(i) for i in range(len(devices))]
+                    logger.info("Detected Windows with CUDA support, using %s GPUs: %s", len(devices), device_names)
+                else:
+                    device_name = torch.cuda.get_device_name(0)
+                    logger.info("Detected Windows with CUDA support, using CUDA device: %s.", device_name)
+            return devices
+
         try:
             import torch_directml  # pyright: ignore[reportMissingImports]
 
             device = torch_directml.device()
             if not quiet:
                 logger.info("Detected Windows without CUDA, using DirectML device.")
-            return device  # noqa: TRY300
+            return [device]  # noqa: TRY300
         except ImportError:
             if not quiet:
                 logger.info("Detected Windows without CUDA or DirectML, using CPU.")
-        return torch.device("cpu")
+        return [torch.device("cpu")]
 
     # Linux branch
     if system == "Linux":
         if torch.cuda.is_available():
-            device_name = torch.cuda.get_device_name(0)
+            device_count = torch.cuda.device_count()
+            requested_gpus = num_gpus if num_gpus is not None else device_count
+            requested_gpus = min(requested_gpus, device_count)
+
+            devices = [torch.device(f"cuda:{device_id}") for device_id in range(requested_gpus)]
+
             if not quiet:
-                logger.info("Detected Linux with CUDA support, using CUDA device: %s.", device_name)
-            return torch.device("cuda")
+                if len(devices) > 1:
+                    device_names = [torch.cuda.get_device_name(i) for i in range(len(devices))]
+                    logger.info("Detected Linux with CUDA support, using %s GPUs: %s", len(devices), device_names)
+                else:
+                    device_name = torch.cuda.get_device_name(0)
+                    logger.info("Detected Linux with CUDA support, using CUDA device: %s.", device_name)
+            return devices
+
         if not quiet:
             logger.info("Detected Linux without CUDA support, using CPU.")
-        return torch.device("cpu")
+        return [torch.device("cpu")]
 
     # Unknown OS fallback
     if not quiet:
         logger.info("Unknown system '%s', using CPU.", system)
-    return torch.device("cpu")
+    return [torch.device("cpu")]
 
 
-def get_free_cuda_memory() -> int:
-    """Get free memory on the current CUDA device."""
+def get_best_device(*, quiet: bool = False) -> torch.device:
+    """Gets the best single torch device using heuristics.
+
+    This is a compatibility wrapper around get_devices() that returns a single device.
+    For multi-GPU support, use get_devices() instead.
+
+    Args:
+        quiet: If True, suppress logging output
+
+    Returns:
+        A single torch device (the first/best available device)
+    """
+    devices = get_devices(quiet=quiet, num_gpus=1)
+    return devices[0]
+
+
+def get_free_cuda_memory(device_id: int = 0) -> int:
+    """Get free memory on a specific CUDA device.
+
+    Args:
+        device_id: CUDA device ID (default: 0)
+
+    Returns:
+        Free memory in bytes
+    """
     if not torch.cuda.is_available():
         return 0
 
-    device = torch.device("cuda")
-    total_memory = torch.cuda.get_device_properties(device).total_memory
-    free_memory = total_memory - torch.cuda.memory_allocated(device)
+    if device_id >= torch.cuda.device_count():
+        return 0
+
+    total_memory = torch.cuda.get_device_properties(device_id).total_memory
+    free_memory = total_memory - torch.cuda.memory_allocated(device_id)
     return free_memory
+
+
+def get_total_free_cuda_memory() -> int:
+    """Get total free memory across all CUDA devices.
+
+    Returns:
+        Total free memory in bytes across all GPUs
+    """
+    if not torch.cuda.is_available():
+        return 0
+
+    total_free = 0
+    for device_id in range(torch.cuda.device_count()):
+        total_free += get_free_cuda_memory(device_id)
+
+    return total_free
 
 
 def should_enable_attention_slicing(device: torch.device) -> bool:  # noqa: PLR0911
