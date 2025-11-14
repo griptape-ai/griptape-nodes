@@ -846,10 +846,17 @@ class WorkflowManager:
             details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
             return RenameWorkflowResultFailure(result_details=details)
 
-        delete_workflow_result = await GriptapeNodes.ahandle_request(DeleteWorkflowRequest(name=request.workflow_name))
-        if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
-            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to remove the original file name from the registry."
-            return RenameWorkflowResultFailure(result_details=details)
+        # If the original workflow isn't registered, treat this as a Save As and skip deletion
+        if WorkflowRegistry.has_workflow_with_name(request.workflow_name):
+            delete_workflow_result = await GriptapeNodes.ahandle_request(
+                DeleteWorkflowRequest(name=request.workflow_name)
+            )
+            if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
+                details = (
+                    f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. "
+                    "Failed while attempting to remove the original file name from the registry."
+                )
+                return RenameWorkflowResultFailure(result_details=details)
 
         return RenameWorkflowResultSuccess(
             result_details=ResultDetails(
@@ -1503,21 +1510,25 @@ class WorkflowManager:
         # Preserve existing description/image if not explicitly provided
         existing_description: str | None = None
         existing_image: str | None = None
+        existing_is_template: bool | None = None
         if WorkflowRegistry.has_workflow_with_name(file_name):
             try:
                 existing = WorkflowRegistry.get_workflow_by_name(file_name)
                 existing_description = existing.metadata.description
                 existing_image = existing.metadata.image
+                existing_is_template = existing.metadata.is_template
             except Exception as err:
                 logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
         image_path_to_save = request.image_path if request.image_path is not None else existing_image
         description_to_save = existing_description
+        is_template_to_save = existing_is_template
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
             file_name=file_name,
             creation_date=creation_date,
             image_path=image_path_to_save,
             description=description_to_save,
+            is_template=is_template_to_save,
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
             workflow_shape=workflow_shape,
@@ -1669,6 +1680,7 @@ class WorkflowManager:
                 creation_date=creation_date,
                 image_path=request.image_path,
                 description=request.description,
+                is_template=request.is_template,
                 branched_from=request.branched_from,
                 workflow_shape=request.workflow_shape,
             )
@@ -1711,6 +1723,7 @@ class WorkflowManager:
         creation_date: datetime,
         image_path: str | None = None,
         description: str | None = None,
+        is_template: bool | None = None,
         branched_from: str | None = None,
         workflow_shape: WorkflowShape | None = None,
     ) -> WorkflowMetadata:
@@ -1743,6 +1756,7 @@ class WorkflowManager:
             workflow_shape=workflow_shape,
             image=image_path,
             description=description,
+            is_template=is_template,
         )
 
     def _generate_workflow_file_content(  # noqa: PLR0912, PLR0915, C901

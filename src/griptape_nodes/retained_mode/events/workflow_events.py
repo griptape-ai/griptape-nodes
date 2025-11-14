@@ -732,6 +732,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
         creation_date: Optional creation date for the workflow metadata (defaults to current time if not provided)
         image_path: Optional path to workflow image/thumbnail. If None, callers may preserve existing image.
         description: Optional workflow description text. If None, callers may preserve existing description.
+        is_template: Optional template status flag. If None, callers may preserve existing template status.
         execution_flow_name: Optional flow name to use for execution code (defaults to file_name if not provided)
         branched_from: Optional branched from information to preserve workflow lineage
         workflow_shape: Optional workflow shape defining inputs and outputs for external callers
@@ -747,6 +748,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
     creation_date: datetime | None = None
     image_path: str | None = None
     description: str | None = None
+    is_template: bool | None = None
     execution_flow_name: str | None = None
     branched_from: str | None = None
     workflow_shape: WorkflowShape | None = None
