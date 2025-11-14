@@ -53,6 +53,12 @@ class StaticFilesManager:
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
 
+        # Build base URL for LocalStorageDriver from configured base URL
+        from griptape_nodes.servers.static import STATIC_SERVER_URL
+
+        base_url_config = config_manager.get_config_value("static_server_base_url")
+        base_url = f"{base_url_config}{STATIC_SERVER_URL}"
+
         match self.storage_backend:
             case StorageBackend.GTC:
                 bucket_id = secrets_manager.get_secret("GT_CLOUD_BUCKET_ID", should_error_on_not_found=False)
@@ -61,7 +67,7 @@ class StaticFilesManager:
                     logger.warning(
                         "GT_CLOUD_BUCKET_ID secret is not available, falling back to local storage. Run `gtn init` to set it up."
                     )
-                    self.storage_driver = LocalStorageDriver(workspace_directory)
+                    self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
                 else:
                     static_files_directory = config_manager.get_config_value(
                         "static_files_directory", default="staticfiles"
@@ -73,7 +79,7 @@ class StaticFilesManager:
                         static_files_directory=static_files_directory,
                     )
             case StorageBackend.LOCAL:
-                self.storage_driver = LocalStorageDriver(workspace_directory)
+                self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
             case _:
                 msg = f"Invalid storage backend: {self.storage_backend}"
                 raise ValueError(msg)

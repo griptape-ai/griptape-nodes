@@ -34,7 +34,7 @@ class Connections:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
-    ) -> bool:
+    ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
             raise ValueError(errormsg)
@@ -58,7 +58,7 @@ class Connections:
             self.incoming_index.setdefault(target_node.name, {}).setdefault(target_parameter.name, []).append(
                 connection_id
             )
-            return True
+            return connection
         msg = "Connection not allowed because of multiple connections on the same parameter input or control output parameter"
         raise ValueError(msg)
 
@@ -187,6 +187,29 @@ class Connections:
             return connection.source_node, connection.source_parameter
         return None
 
+    def remove_connection_by_object(self, conn: Connection) -> bool:
+        """Remove a connection from the manager by Connection object.
+
+        Args:
+            conn: The Connection object to remove
+
+        Returns:
+            True if connection was removed, False if not found
+        """
+        conn_id = id(conn)
+
+        if conn_id not in self.connections:
+            return False
+
+        self._remove_connection(
+            conn_id,
+            conn.source_node.name,
+            conn.source_parameter.name,
+            conn.target_node.name,
+            conn.target_parameter.name,
+        )
+        return True
+
     def remove_connection(
         self, source_node: str, source_parameter: str, target_node: str, target_parameter: str
     ) -> bool:
@@ -231,6 +254,32 @@ class Connections:
                 del self.incoming_index[target_node]
         # delete from the connections dictionary
         del self.connections[connection_id]
+
+    def get_connections_between_nodes(self, node_names: set[str]) -> list[Connection]:
+        """Get all connections where both source and target are in the provided set.
+
+        Args:
+            node_names: Set of node names to check for internal connections
+
+        Returns:
+            List of connections that have both endpoints in the node_names set
+        """
+        internal_connections = []
+
+        for node_name in node_names:
+            if node_name not in self.outgoing_index:
+                continue
+
+            for connection_ids in self.outgoing_index[node_name].values():
+                for conn_id in connection_ids:
+                    if conn_id not in self.connections:
+                        continue
+                    conn = self.connections[conn_id]
+
+                    if conn.target_node.name in node_names:
+                        internal_connections.append(conn)
+
+        return internal_connections
 
     # Used to check data connections for all future nodes to be BAD!
     def unresolve_future_nodes(self, node: BaseNode) -> None:

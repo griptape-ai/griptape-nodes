@@ -10,14 +10,12 @@ from typing import TYPE_CHECKING, Any, cast
 from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
     BaseEvent,
-    EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    FlushParameterChangesRequest,
-    FlushParameterChangesResultSuccess,
     ProgressEvent,
     RequestPayload,
     ResultPayload,
@@ -34,15 +32,9 @@ AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
 
 # Result types that should NOT trigger a flush request.
 #
-# After most requests complete, we queue a FlushParameterChangesRequest to flush any tracked
-# parameter changes to the UI. However, when the FlushParameterChangesRequest itself completes,
-# it returns a FlushParameterChangesResultSuccess. If we don't exclude this result type, it would
-# trigger another FlushParameterChangesRequest, which would return another FlushParameterChangesResultSuccess,
-# creating an infinite loop of flush requests.
-#
 # Add result types to this set if they should never trigger a flush (typically because they ARE
 # the flush operation itself, or other internal operations that don't modify workflow state).
-RESULT_TYPES_THAT_SKIP_FLUSH = {FlushParameterChangesResultSuccess}
+RESULT_TYPES_THAT_SKIP_FLUSH = {}
 
 
 class ResultContext(TypedDict, total=False):
@@ -56,8 +48,6 @@ class EventManager:
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
-        self._flush_in_queue: bool = False
         # Event queue for publishing events
         self._event_queue: asyncio.Queue | None = None
         # Keep track of which thread the event loop runs on
@@ -75,9 +65,6 @@ class EventManager:
             msg = "Event queue has not been initialized. Please call 'initialize_queue' with an asyncio.Queue instance before accessing the event queue."
             raise ValueError(msg)
         return self._event_queue
-
-    def clear_flush_in_queue(self) -> None:
-        self._flush_in_queue = False
 
     def should_suppress_event(self, event: BaseEvent | ProgressEvent) -> bool:
         """Check if events should be suppressed from being sent to websockets."""
@@ -271,9 +258,8 @@ class EventManager:
 
         # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -320,9 +306,8 @@ class EventManager:
 
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self.put_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -354,6 +339,17 @@ class EventManager:
             async with asyncio.TaskGroup() as tg:
                 for listener_callback in listener_set:
                     tg.create_task(call_function(listener_callback, app_event))
+
+    def _flush_tracked_parameter_changes(self) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        obj_manager = GriptapeNodes.ObjectManager()
+        # Get all flows and their nodes
+        nodes = obj_manager.get_filtered_subset(type=BaseNode)
+        for node in nodes.values():
+            # Only flush if there are actually tracked parameters
+            if node._tracked_parameters:
+                node.emit_parameter_changes()
 
 
 class EventSuppressionContext:

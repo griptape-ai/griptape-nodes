@@ -651,6 +651,17 @@
       }
     },
     {
+      "class_name": "CropVideo",
+      "file_path": "griptape_nodes_library/video/crop_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Crop a video to a specific size with preview visualization showing the crop area",
+        "display_name": "Crop Video",
+        "icon": "crop",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "SaveVideo",
       "file_path": "griptape_nodes_library/video/save_video.py",
       "metadata": {
@@ -930,6 +941,17 @@
         "description": "Create a JSON node from input data",
         "display_name": "JSON Input",
         "icon": "file-json",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "CreateAgentSchema",
+      "file_path": "griptape_nodes_library/json/json_schema_from_example.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Generate a JSON schema from an example JSON structure for Agent nodes. Provide an example of the data structure you want, and this node will automatically create a schema that can be used with Agent nodes for structured output validation.",
+        "display_name": "Create Agent Schema",
+        "icon": "file-code",
         "group": "create"
       }
     },
@@ -1407,7 +1429,7 @@
         "category": "image",
         "description": "Calculate aspect ratios with preset selection and dimension modifiers",
         "display_name": "Aspect Ratio",
-        "icon": "aspect-ratio",
+        "icon": "ratio",
         "group": "edit"
       }
     },

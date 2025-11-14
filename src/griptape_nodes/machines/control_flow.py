@@ -6,9 +6,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import CONTROL_INPUT_PARAMETER, LOCAL_EXECUTION, BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import (
+    CONTROL_INPUT_PARAMETER,
+    LOCAL_EXECUTION,
+    BaseNode,
+    NodeGroupNode,
+    NodeResolutionState,
+)
 from griptape_nodes.machines.fsm import FSM, State
-from griptape_nodes.machines.parallel_resolution import ExecuteDagState, ParallelResolutionMachine
+from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
@@ -18,12 +24,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.flow import ControlFlow
-    from griptape_nodes.exe_types.node_types import NodeGroup
 
 
 @dataclass
@@ -33,10 +38,6 @@ class NextNodeInfo:
     node: BaseNode
     entry_parameter: Parameter | None
 
-
-if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
-    from griptape_nodes.exe_types.flow import ControlFlow
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -50,7 +51,6 @@ class ControlFlowContext:
     paused: bool = False
     flow_name: str
     pickle_control_flow_result: bool
-    node_to_proxy_map: dict[BaseNode, BaseNode]
     end_node: BaseNode | None = None
 
     def __init__(
@@ -82,7 +82,6 @@ class ControlFlowContext:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
-        self.node_to_proxy_map = {}
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
@@ -102,7 +101,11 @@ class ControlFlowContext:
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             else:
                 # Get next control output for this node
-                if current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION:
+
+                if (
+                    isinstance(current_node, NodeGroupNode)
+                    and current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION
+                ):
                     next_output = self.get_next_control_output_for_non_local_execution(current_node)
                 else:
                     next_output = current_node.get_next_control_output()
@@ -200,6 +203,39 @@ class ResolveNodeState(State):
         return None
 
 
+def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple[BaseNode, Parameter | None]:
+    """Resolve the target node, replacing children with their parent node group if necessary.
+
+    If the target node is inside a non-local node group, returns the parent node group instead.
+
+    Args:
+        next_node_info: Information about the next node to process
+
+    Returns:
+        Tuple of (resolved_node, entry_parameter)
+    """
+    target_node = next_node_info.node
+    entry_parameter = next_node_info.entry_parameter
+
+    # Check if node has a parent and if parent is not local execution
+    if target_node.parent_group is not None and isinstance(target_node.parent_group, NodeGroupNode):
+        parent_group = target_node.parent_group
+        execution_env = parent_group.get_parameter_value(parent_group.execution_environment.name)
+        if execution_env != LOCAL_EXECUTION:
+            logger.info(
+                "Control Flow: Redirecting from child node '%s' to parent node group '%s' (execution environment: %s)",
+                target_node.name,
+                parent_group.name,
+                execution_env,
+            )
+            # Move to parent instead of child
+            target_node = parent_group
+            # Entry parameter should be None for the parent node group
+            entry_parameter = None
+
+    return target_node, entry_parameter
+
+
 class NextNodeState(State):
     @staticmethod
     async def on_enter(context: ControlFlowContext) -> type[State] | None:
@@ -240,10 +276,12 @@ class NextNodeState(State):
             return CompleteState
 
         # Set up next nodes as current nodes
+        # If a node has a parent (is in a node group), move to the parent instead
         next_nodes = []
         for next_node_info in next_node_infos:
-            next_node_info.node.set_entry_control_parameter(next_node_info.entry_parameter)
-            next_nodes.append(next_node_info.node)
+            target_node, entry_parameter = _resolve_target_node_for_control_flow(next_node_info)
+            target_node.set_entry_control_parameter(entry_parameter)
+            next_nodes.append(target_node)
 
         context.current_nodes = next_nodes
         context.selected_output = None
@@ -262,7 +300,6 @@ class CompleteState(State):
         # Broadcast completion events for any remaining current nodes
         for current_node in context.current_nodes:
             # Use pickle-based serialization for complex parameter output values
-            from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 
             parameter_output_values, unique_uuid_to_values = NodeManager.serialize_parameter_output_values(
                 current_node, use_pickling=context.pickle_control_flow_result
@@ -312,34 +349,17 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     async def start_flow(
         self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
     ) -> None:
-        # FIRST: Scan all nodes in the flow and create node groups BEFORE any resolution
-        flow_manager = GriptapeNodes.FlowManager()
-        flow = flow_manager.get_flow_by_name(self._context.flow_name)
-        logger.debug("Scanning flow '%s' for node groups before execution", self._context.flow_name)
-
-        try:
-            node_to_proxy_map = self._identify_and_create_node_group_proxies(flow, flow_manager.get_connections())
-            if node_to_proxy_map:
-                logger.info(
-                    "Created %d proxy nodes for %d grouped nodes in flow '%s'",
-                    len(set(node_to_proxy_map.values())),
-                    len(node_to_proxy_map),
-                    self._context.flow_name,
-                )
-            # Store the mapping in context so it can be used by resolution machines
-            self._context.node_to_proxy_map = node_to_proxy_map
-        except ValueError as e:
-            logger.error("Failed to process node groups: %s", e)
-            raise
-
-        # Determine the actual start node (use proxy if it's part of a group)
-        actual_start_node = node_to_proxy_map.get(start_node, start_node)
-
         # If using DAG resolution, process data_nodes from queue first
         if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
-            current_nodes = await self._process_nodes_for_dag(actual_start_node)
+            current_nodes = await self._process_nodes_for_dag(start_node)
         else:
-            current_nodes = [actual_start_node]
+            current_nodes = [start_node]
+            if isinstance(start_node.parent_group, NodeGroupNode):
+                # In sequential mode, we aren't going to run this. Just continue.
+                node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
+                if node is not None:
+                    await self.start_flow(node, end_node, debug_mode=debug_mode)
+                    return
             # For control flow/sequential: emit all nodes in flow as involved
         self._context.current_nodes = current_nodes
         self._context.end_node = end_node
@@ -418,9 +438,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
 
-        # Use the node-to-proxy map that was created in start_flow
-        node_to_proxy_map = self._context.node_to_proxy_map
-
         # Build with the first node (it should already be the proxy if it's part of a group)
         dag_builder.add_node_with_dependencies(start_node, start_node.name)
 
@@ -439,18 +456,15 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         # For main flows using the global DagBuilder, process the global queue
         queue_items = list(flow_manager.global_flow_queue.queue)
         start_nodes = [start_node]
+        from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
+
         # Find data_nodes and remove them from queue
         for item in queue_items:
-            from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
-
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
-                if node in node_to_proxy_map:
-                    node_to_add = node_to_proxy_map[node]
-                else:
-                    node_to_add = node
+                node_to_add = node
                 # Only add if not already added (proxy might already be in DAG)
                 if node_to_add.name not in dag_builder.node_to_reference:
                     dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
@@ -461,149 +475,13 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
-                if node in node_to_proxy_map:
-                    node_to_add = node_to_proxy_map[node]
-                else:
-                    node_to_add = node
+                node_to_add = node
                 # Only add if not already added (proxy might already be in DAG)
                 if node_to_add.name not in dag_builder.node_to_reference:
                     dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
                 flow_manager.global_flow_queue.queue.remove(item)
 
         return start_nodes
-
-    def _identify_and_create_node_group_proxies(
-        self, flow: ControlFlow, connections: Connections
-    ) -> dict[BaseNode, BaseNode]:
-        """Scan all nodes in flow, identify groups, and create proxy nodes.
-
-        Returns:
-            Dictionary mapping original nodes to their proxy nodes (only for grouped nodes)
-        """
-        from griptape_nodes.exe_types.node_types import NodeGroup, NodeGroupProxyNode
-
-        # Step 1: Identify groups by scanning all nodes in the flow
-        groups: dict[str, NodeGroup] = {}
-        for node in flow.nodes.values():
-            group_id = node.get_parameter_value("job_group")
-
-            # Skip nodes without group assignment, empty group ID, or locked nodes
-            if not group_id or group_id == "" or node.lock:
-                continue
-
-            # Create group if it doesn't exist
-            if group_id not in groups:
-                groups[group_id] = NodeGroup(group_id=group_id)
-
-            # Add node to group
-            groups[group_id].add_node(node)
-
-        if not groups:
-            return {}
-
-        # Step 2: Analyze connections for each group
-        for group in groups.values():
-            self._analyze_group_connections(group, connections)
-
-        # Step 3: Validate each group
-        for group in groups.values():
-            group.validate_no_intermediate_nodes(connections.connections)
-
-        # Step 4: Create proxy nodes and build mapping
-        node_to_proxy_map: dict[BaseNode, BaseNode] = {}
-        for group_id, group in groups.items():
-            # Create proxy node
-            proxy_name = f"__group_proxy_{group_id}"
-            proxy_node = NodeGroupProxyNode(name=proxy_name, node_group=group)
-
-            # Register the proxy node with ObjectManager so it can be found during parameter updates
-            obj_manager = GriptapeNodes.ObjectManager()
-            obj_manager.add_object_by_name(proxy_name, proxy_node)
-
-            # Map all grouped nodes to this proxy
-            for node in group.nodes.values():
-                node_to_proxy_map[node] = proxy_node
-
-            # Remap connections to point to proxy
-            self._remap_connections_to_proxy_node(group, proxy_node, connections)
-
-            # Now create proxy parameters (after remapping so original references are saved)
-            proxy_node.create_proxy_parameters()
-
-        return node_to_proxy_map
-
-    def _analyze_group_connections(self, group: NodeGroup, connections: Connections) -> None:
-        """Analyze and categorize connections for a node group."""
-        node_names_in_group = group.nodes.keys()
-
-        # Analyze all connections in the flow
-        for conn in connections.connections.values():
-            source_in_group = conn.source_node.name in node_names_in_group
-            target_in_group = conn.target_node.name in node_names_in_group
-
-            if source_in_group and target_in_group:
-                # Both endpoints in group - internal connection
-                group.internal_connections.append(conn)
-            elif source_in_group and not target_in_group:
-                # From group to outside - external outgoing
-                group.external_outgoing_connections.append(conn)
-            elif not source_in_group and target_in_group:
-                # From outside to group - external incoming
-                group.external_incoming_connections.append(conn)
-
-    def _remap_connections_to_proxy_node(
-        self, group: NodeGroup, proxy_node: BaseNode, connections: Connections
-    ) -> None:
-        """Remap external connections from group nodes to the proxy node."""
-        # Remap external incoming connections (from outside -> group becomes outside -> proxy)
-        for conn in group.external_incoming_connections:
-            conn_id = id(conn)
-
-            # Save original target node before remapping (for cleanup later)
-            original_target_node = conn.target_node
-            group.original_incoming_targets[conn_id] = original_target_node
-
-            # Remove old incoming index entry
-            if (
-                conn.target_node.name in connections.incoming_index
-                and conn.target_parameter.name in connections.incoming_index[conn.target_node.name]
-            ):
-                connections.incoming_index[conn.target_node.name][conn.target_parameter.name].remove(conn_id)
-
-            # Update connection target to proxy
-            conn.target_node = proxy_node
-
-            # Create proxy parameter name using original node name
-            sanitized_node_name = original_target_node.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.target_parameter.name}"
-
-            # Add new incoming index entry with proxy parameter name
-            connections.incoming_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
-
-        # Remap external outgoing connections (group -> outside becomes proxy -> outside)
-        for conn in group.external_outgoing_connections:
-            conn_id = id(conn)
-
-            # Save original source node before remapping (for cleanup later)
-            original_source_node = conn.source_node
-            group.original_outgoing_sources[conn_id] = original_source_node
-
-            # Remove old outgoing index entry
-            if (
-                conn.source_node.name in connections.outgoing_index
-                and conn.source_parameter.name in connections.outgoing_index[conn.source_node.name]
-            ):
-                connections.outgoing_index[conn.source_node.name][conn.source_parameter.name].remove(conn_id)
-
-            # Update connection source to proxy
-            conn.source_node = proxy_node
-
-            # Create proxy parameter name using original node name
-            sanitized_node_name = original_source_node.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{conn.source_parameter.name}"
-
-            # Add new outgoing index entry with proxy parameter name
-            connections.outgoing_index.setdefault(proxy_node.name, {}).setdefault(proxy_param_name, []).append(conn_id)
 
     async def cancel_flow(self) -> None:
         """Cancel all nodes in the flow by delegating to the resolution machine."""
@@ -612,22 +490,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
     def reset_machine(self, *, cancel: bool = False) -> None:
         self._context.reset(cancel=cancel)
         self._current_state = None
-
-    def cleanup_proxy_nodes(self) -> None:
-        """Cleanup all proxy nodes and restore original connections."""
-        if not self._context.node_to_proxy_map:
-            # If we're calling cleanup, but it's already been cleaned up, we just want to return.
-            return
-
-        # Get all unique proxy nodes
-        proxy_nodes = set(self._context.node_to_proxy_map.values())
-
-        # Cleanup each proxy node using the existing method
-        for proxy_node in proxy_nodes:
-            ExecuteDagState._cleanup_proxy_node(proxy_node)
-
-        # Clear the proxy mapping
-        self._context.node_to_proxy_map.clear()
 
     @property
     def resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:

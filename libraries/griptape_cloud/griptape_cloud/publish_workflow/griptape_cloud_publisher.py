@@ -448,6 +448,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
 
         asset_name = f"{structure_id}/{file_name}"
         self._upload_file_to_data_lake(name=asset_name, value=file_contents, bucket_id=self._gt_cloud_bucket_id)
+        Path(package_path).unlink(missing_ok=True)
 
         update_structure_request_content = UpdateStructureRequestContent(
             structure_config_file="structure_config.yaml",

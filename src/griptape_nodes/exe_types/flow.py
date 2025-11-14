@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from queue import Queue
 
     from griptape_nodes.exe_types.core_types import Parameter
-    from griptape_nodes.exe_types.node_types import BaseNode
+    from griptape_nodes.exe_types.node_types import BaseNode, Connection
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -43,7 +43,7 @@ class ControlFlow:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
-    ) -> bool:
+    ) -> Connection | None:
         if source_node.name in self.nodes and target_node.name in self.nodes:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -52,7 +52,7 @@ class ControlFlow:
                 .get_connections()
                 .add_connection(source_node, source_parameter, target_node, target_parameter)
             )
-        return False
+        return None
 
     def remove_connection(
         self, source_node: BaseNode, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter

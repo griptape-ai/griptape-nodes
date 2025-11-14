@@ -40,7 +40,6 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -129,7 +128,7 @@ class BaseNode(ABC):
     # Owned by a flow
     name: str
     metadata: dict[Any, Any]
-
+    _parent_group: BaseNode | None
     # Node Context Fields
     current_spotlight_parameter: Parameter | None = None
     parameter_values: dict[str, Any]
@@ -171,26 +170,8 @@ class BaseNode(ABC):
         self.process_generator = None
         self._tracked_parameters = []
         self._cancellation_requested = threading.Event()
+        self._parent_group = None
         self.set_entry_control_parameter(None)
-        self.execution_environment = Parameter(
-            name="execution_environment",
-            tooltip="Environment that the node should execute in",
-            type=ParameterTypeBuiltin.STR,
-            allowed_modes={ParameterMode.PROPERTY},
-            default_value=LOCAL_EXECUTION,
-            traits={Options(choices=get_library_names_with_publish_handlers())},
-            ui_options={"hide": True},
-        )
-        self.add_parameter(self.execution_environment)
-        self.node_group = Parameter(
-            name="job_group",
-            tooltip="Groupings of multiple nodes to send up as a Deadline Cloud job.",
-            type=ParameterTypeBuiltin.STR,
-            allowed_modes={ParameterMode.PROPERTY},
-            default_value="",
-            ui_options={"hide": True},
-        )
-        self.add_parameter(self.node_group)
 
     @property
     def state(self) -> NodeResolutionState:
@@ -203,6 +184,14 @@ class BaseNode(ABC):
     @state.setter
     def state(self, new_state: NodeResolutionState) -> None:
         self._state = new_state
+
+    @property
+    def parent_group(self) -> BaseNode | None:
+        return self._parent_group
+
+    @parent_group.setter
+    def parent_group(self, parent_group: BaseNode | None) -> None:
+        self._parent_group = parent_group
 
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
@@ -315,6 +304,15 @@ class BaseNode(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
+    def before_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback before a Connection TO this Node is REMOVED."""
+        return
+
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -322,6 +320,15 @@ class BaseNode(ABC):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
+        return
+
+    def before_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback before a Connection OUT of this Node is REMOVED."""
         return
 
     def after_outgoing_connection_removed(
@@ -829,12 +836,16 @@ class BaseNode(ABC):
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
         if param_name in self.parameter_values:
-            del self.parameter_values[param_name]
+            # Reset the parameter to default.
+            default_val = parameter.default_value
+            self.set_parameter_value(param_name, default_val)
+
             # special handling if it's in a container.
             if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
                 del self.parameter_values[parameter.parent_container_name]
                 new_val = self.get_parameter_value(parameter.parent_container_name)
                 if new_val is not None:
+                    # Don't set the container to None (that would make it empty)
                     self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
@@ -1836,86 +1847,74 @@ class ErrorProxyNode(BaseNode):
 
 
 @dataclass
-class NodeGroup:
-    """Represents a group of nodes that should be executed together in parallel.
+class NodeGroupStoredConnections:
+    """Stores all of the connections for when we create/remove connections on a node group based on the parameters."""
 
-    Nodes in a group are identified by having the same non-empty value in their
-    node_group parameter. During DAG resolution, grouped nodes are replaced with
-    a single NodeGroupProxyNode that represents them in the execution graph.
+    @dataclass
+    class ExternalConnections:
+        """Represents the External connections to/from the node group."""
 
-    Attributes:
-        group_id: Unique identifier for this group (value from node_group parameter)
-        nodes: Set of BaseNode instances that belong to this group
-        internal_connections: Connections between nodes within the group
-        external_incoming_connections: Connections from outside nodes into the group
-        external_outgoing_connections: Connections from group nodes to outside nodes
+        incoming_connections: list[Connection] = field(default_factory=list)
+        outgoing_connections: list[Connection] = field(default_factory=list)
+
+    @dataclass
+    class OriginalTargets:
+        """Represents the connections before they were remapped."""
+
+        incoming_sources: dict[int, BaseNode] = field(default_factory=dict)
+        outgoing_targets: dict[int, BaseNode] = field(default_factory=dict)
+
+    internal_connections: list[Connection] = field(default_factory=list)
+    external_connections: ExternalConnections = field(default_factory=ExternalConnections)
+    original_targets: OriginalTargets = field(default_factory=OriginalTargets)
+
+
+class NodeGroupNode(BaseNode):
+    """Proxy node that represents a group of nodes during DAG execution.
+
+    This node acts as a single execution unit for a group of nodes that should
+    be executed in parallel. When the DAG executor encounters this proxy node,
+    it passes the entire NodeGroup to the NodeExecutor which handles parallel
+    execution of all grouped nodes.
+
+    The proxy node has parameters that mirror the external connections to/from
+    the group, allowing it to seamlessly integrate into the DAG structure.
     """
 
-    group_id: str
-    nodes: dict[str, BaseNode] = field(default_factory=dict)
-    internal_connections: list[Connection] = field(default_factory=list)
-    external_incoming_connections: list[Connection] = field(default_factory=list)
-    external_outgoing_connections: list[Connection] = field(default_factory=list)
-    # Store original node references before remapping to proxy (for cleanup)
-    original_incoming_targets: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original target
-    original_outgoing_sources: dict[int, BaseNode] = field(default_factory=dict)  # conn_id -> original source
+    nodes: dict[str, BaseNode]
+    stored_connections: NodeGroupStoredConnections
+    _proxy_param_to_node_param: dict[str, tuple[BaseNode, str]]
 
-    def add_node(self, node: BaseNode) -> None:
-        """Add a node to this group."""
-        self.nodes[node.name] = node
+    def __init__(
+        self,
+        name: str,
+        metadata: dict[Any, Any] | None = None,
+    ) -> None:
+        super().__init__(name, metadata)
+        self.execution_environment = Parameter(
+            name="execution_environment",
+            tooltip="Environment that the group should execute in",
+            type=ParameterTypeBuiltin.STR,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=LOCAL_EXECUTION,
+            traits={Options(choices=get_library_names_with_publish_handlers())},
+        )
+        self.add_parameter(self.execution_environment)
+        self.nodes = {}
+        # Track mapping from proxy parameter name to (original_node, original_param_name)
+        self._proxy_param_to_node_param = {}
+        self.stored_connections = NodeGroupStoredConnections()
 
-    def validate_no_intermediate_nodes(self, all_connections: dict[int, Connection]) -> None:
-        """Validate that no ungrouped nodes exist between grouped nodes.
-
-        This method checks the dependency graph to ensure that all nodes that lie
-        on paths between grouped nodes are also part of the group. If ungrouped
-        nodes are found between grouped nodes, this indicates a logical error in
-        the group definition.
-
-        Args:
-            all_connections: Dictionary mapping connection IDs to Connection objects
-
-        Raises:
-            ValueError: If ungrouped nodes are found between grouped nodes
-        """
-        from griptape_nodes.exe_types.connections import Connections
-
-        # Build a Connections object for traversal
-        connections = Connections()
-        connections.connections = all_connections
-
-        # Rebuild indices for efficient lookup
-        for conn_id, conn in all_connections.items():
-            connections.outgoing_index.setdefault(conn.source_node.name, {}).setdefault(
-                conn.source_parameter.name, []
-            ).append(conn_id)
-            connections.incoming_index.setdefault(conn.target_node.name, {}).setdefault(
-                conn.target_parameter.name, []
-            ).append(conn_id)
-
-        # Check each pair of nodes in the group
-        for node_a in self.nodes.values():
-            for node_b in self.nodes.values():
-                if node_a == node_b:
-                    continue
-
-                # Check if there's a path from node_a to node_b
-                intermediate_nodes = self._find_intermediate_nodes(node_a, node_b, connections)
-
-                # Check if any intermediate nodes are not in the group
-                ungrouped_intermediates = [n for n in intermediate_nodes if n not in self.nodes]
-
-                if ungrouped_intermediates:
-                    ungrouped_names = [n.name for n in ungrouped_intermediates]
-                    msg = (
-                        f"Invalid node group '{self.group_id}': Found ungrouped nodes between grouped nodes. "
-                        f"Ungrouped nodes {ungrouped_names} exist on the path from '{node_a.name}' to '{node_b.name}'. "
-                        f"All nodes on paths between grouped nodes must be part of the same group."
-                    )
-                    raise ValueError(msg)
+    def get_all_nodes(self) -> dict[str, BaseNode]:
+        all_nodes = {}
+        for node_name, node in self.nodes.items():
+            all_nodes[node_name] = node
+            if isinstance(node, NodeGroupNode):
+                all_nodes.update(node.nodes)
+        return all_nodes
 
     def _find_intermediate_nodes(  # noqa: C901
-        self, start_node: BaseNode, end_node: BaseNode, connections: Connections
+        self, start_node: BaseNode, end_node: BaseNode
     ) -> set[BaseNode]:
         """Find all nodes on paths between start_node and end_node (excluding endpoints).
 
@@ -1925,13 +1924,19 @@ class NodeGroup:
         Args:
             start_node: Starting node for path search
             end_node: Target node for path search
-            connections: Connections object for graph traversal
 
         Returns:
             Set of nodes found on paths between start and end (excluding endpoints)
         """
-        if start_node.name not in connections.outgoing_index:
-            return set()
+        # Build a lookup dictionary for faster connection queries
+        # Map from (source_node_name, source_param_name) -> list of connections
+        outgoing_lookup: dict[tuple[str, str], list[Connection]] = {}
+
+        for conn in self.stored_connections.internal_connections:
+            key = (conn.source_node.name, conn.source_parameter.name)
+            if key not in outgoing_lookup:
+                outgoing_lookup[key] = []
+            outgoing_lookup[key].append(conn)
 
         visited = set()
         intermediate = set()
@@ -1945,141 +1950,268 @@ class NodeGroup:
             visited.add(current_node.name)
 
             # Process outgoing connections from current node
-            if current_node.name not in connections.outgoing_index:
-                continue
+            current_outgoing = []
+            for param_name in [p.name for p in current_node.parameters]:
+                key = (current_node.name, param_name)
+                if key in outgoing_lookup:
+                    current_outgoing.extend(outgoing_lookup[key])
 
-            for conn_ids in connections.outgoing_index[current_node.name].values():
-                for conn_id in conn_ids:
-                    if conn_id not in connections.connections:
-                        continue
+            for conn in current_outgoing:
+                next_node = conn.target_node
 
-                    conn = connections.connections[conn_id]
-                    next_node = conn.target_node
+                # If we reached the end node, record intermediate nodes
+                if next_node == end_node:
+                    for node in path[1:]:
+                        intermediate.add(node)
+                    continue
 
-                    # If we reached the end node, record intermediate nodes
-                    if next_node == end_node:
-                        for node in path[1:]:
-                            intermediate.add(node)
-                        continue
-
-                    # Continue exploring if not already visited
-                    if next_node.name not in visited:
-                        queue.append((next_node, [*path, next_node]))
+                # Continue exploring if not already visited
+                if next_node.name not in visited:
+                    queue.append((next_node, [*path, next_node]))
 
         return intermediate
 
+    def validate_no_intermediate_nodes(self) -> None:
+        """Validate that no ungrouped nodes exist between grouped nodes.
 
-class NodeGroupProxyNode(BaseNode):
-    """Proxy node that represents a group of nodes during DAG execution.
+        This method checks the dependency graph to ensure that all nodes that lie
+        on paths between grouped nodes are also part of the group. If ungrouped
+        nodes are found between grouped nodes, this indicates a logical error in
+        the group definition.
 
-    This node acts as a single execution unit for a group of nodes that should
-    be executed in parallel. When the DAG executor encounters this proxy node,
-    it passes the entire NodeGroup to the NodeExecutor which handles parallel
-    execution of all grouped nodes.
-
-    The proxy node has parameters that mirror the external connections to/from
-    the group, allowing it to seamlessly integrate into the DAG structure.
-
-    Attributes:
-        node_group: The NodeGroup instance this proxy represents
-    """
-
-    def __init__(
-        self,
-        name: str,
-        node_group: NodeGroup,
-        metadata: dict[Any, Any] | None = None,
-    ) -> None:
-        super().__init__(name, metadata)
-        self.node_group_data = node_group
-
-        # Track mapping from proxy parameter name to (original_node, original_param_name)
-        self._proxy_param_to_node_param: dict[str, tuple[BaseNode, str]] = {}
-        execution_type = set()
-        for node in node_group.nodes.values():
-            execution_type.add(node.get_parameter_value(node.execution_environment.name))
-        # TODO: Set this by group in the UI, not set on the node itself. https://github.com/griptape-ai/griptape-vsl-gui/issues/1429
-        if len(execution_type) > 1:
-            # Hoping this check can be removed by UI updates.
-            # For now, we are setting execution type individually on a parameters in all three of the nodes. we want their execution types to all be matching, or we fail.
-            msg = f"Node group '{node_group.group_id}' has nodes with multiple execution types: {execution_type}"
-            raise ValueError(msg)
-        self.set_parameter_value(self.execution_environment.name, execution_type.pop())
-        # Note: Proxy parameters are created AFTER connection remapping in control_flow.py
-        # via explicit call to create_proxy_parameters()
-
-    def create_proxy_parameters(self) -> None:
-        """Create parameters on the proxy that match external connections.
-
-        For each external incoming connection, create an input parameter with name
-        format: {sanitized_node_name}__{param_name}. This allows the proxy to
-        forward parameter values to the correct original node.
-
-        For each external outgoing connection, create an output parameter.
-        This allows the proxy to integrate seamlessly into the DAG.
+        Raises:
+            ValueError: If ungrouped nodes are found between grouped nodes
         """
-        # Track created parameters to avoid duplicates
-        created_params = set()
+        # Check each pair of nodes in the group
+        for node_a in self.nodes.values():
+            for node_b in self.nodes.values():
+                if node_a == node_b:
+                    continue
 
-        # Create input parameters for external incoming connections
-        for conn in self.node_group_data.external_incoming_connections:
-            conn_id = id(conn)
-            # Get the original target node from saved mapping (before it was remapped to proxy)
-            target_node = self.node_group_data.original_incoming_targets.get(conn_id)
-            if target_node is None:
-                # Fallback if not found (shouldn't happen)
-                msg = f"Failed to find target node for incoming connection with ID: {conn_id}"
+                # Check if there's a path from node_a to node_b
+                intermediate_nodes = self._find_intermediate_nodes(node_a, node_b)
+
+                # Check if any intermediate nodes are not in the group
+                ungrouped_intermediates = [n for n in intermediate_nodes if n.name not in self.nodes]
+
+                if ungrouped_intermediates:
+                    ungrouped_names = [n.name for n in ungrouped_intermediates]
+                    msg = (
+                        f"Invalid node group '{self.name}': Found ungrouped nodes between grouped nodes. "
+                        f"Ungrouped nodes {ungrouped_names} exist on the path from '{node_a.name}' to '{node_b.name}'. "
+                        f"All nodes on paths between grouped nodes must be part of the same group."
+                    )
+                    raise ValueError(msg)
+
+    def track_internal_connection(self, conn: Connection) -> None:
+        """Track a connection between nodes within the group.
+
+        Args:
+            conn: The internal connection to track
+        """
+        if conn not in self.stored_connections.internal_connections:
+            self.stored_connections.internal_connections.append(conn)
+
+    def track_external_connection(
+        self,
+        conn: Connection,
+        conn_id: int,
+        is_incoming: bool,  # noqa: FBT001
+        grouped_node: BaseNode,
+    ) -> None:
+        """Track a connection to/from a node in the group.
+
+        Args:
+            conn: The external connection to track
+            conn_id: ID of the connection
+            is_incoming: True if connection is coming INTO the group
+            grouped_node: The node in the group involved in the connection
+        """
+        if is_incoming:
+            if conn not in self.stored_connections.external_connections.incoming_connections:
+                self.stored_connections.external_connections.incoming_connections.append(conn)
+            self.stored_connections.original_targets.incoming_sources[conn_id] = grouped_node
+        else:
+            if conn not in self.stored_connections.external_connections.outgoing_connections:
+                self.stored_connections.external_connections.outgoing_connections.append(conn)
+            self.stored_connections.original_targets.outgoing_targets[conn_id] = grouped_node
+
+    def untrack_internal_connection(self, conn: Connection) -> None:
+        """Remove tracking of an internal connection.
+
+        Args:
+            conn: The internal connection to untrack
+        """
+        if conn in self.stored_connections.internal_connections:
+            self.stored_connections.internal_connections.remove(conn)
+
+    def untrack_external_connection(
+        self,
+        conn: Connection,
+        conn_id: int,
+        is_incoming: bool,  # noqa: FBT001
+    ) -> None:
+        """Remove tracking of an external connection.
+
+        Args:
+            conn: The external connection to untrack
+            conn_id: ID of the connection
+            is_incoming: True if connection was coming INTO the group
+        """
+        if is_incoming:
+            if conn in self.stored_connections.external_connections.incoming_connections:
+                self.stored_connections.external_connections.incoming_connections.remove(conn)
+            if conn_id in self.stored_connections.original_targets.incoming_sources:
+                del self.stored_connections.original_targets.incoming_sources[conn_id]
+        else:
+            if conn in self.stored_connections.external_connections.outgoing_connections:
+                self.stored_connections.external_connections.outgoing_connections.remove(conn)
+            if conn_id in self.stored_connections.original_targets.outgoing_targets:
+                del self.stored_connections.original_targets.outgoing_targets[conn_id]
+
+    def _remove_nodes_from_existing_parents(self, nodes: list[BaseNode]) -> None:
+        """Remove nodes from their existing parent groups."""
+        child_nodes = {}
+        for node in nodes:
+            if node.parent_group is not None:
+                existing_parent_group = node.parent_group
+                if isinstance(existing_parent_group, NodeGroupNode):
+                    child_nodes.setdefault(existing_parent_group, []).append(node)
+        for parent_group, node_list in child_nodes.items():
+            parent_group.remove_nodes_from_group(node_list)
+
+    def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
+        """Add nodes to the group's node dictionary."""
+        for node in nodes:
+            node.parent_group = self
+            self.nodes[node.name] = node
+
+    def _track_incoming_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
+        """Track incoming external connections for a node."""
+        if node.name not in connections.incoming_index:
+            return
+
+        for connection_ids in connections.incoming_index[node.name].values():
+            for conn_id in connection_ids:
+                if conn_id not in connections.connections:
+                    continue
+                conn = connections.connections[conn_id]
+
+                if conn.source_node.name not in node_names_in_group:
+                    self.track_external_connection(conn, conn_id, is_incoming=True, grouped_node=node)
+                elif conn not in self.stored_connections.internal_connections:
+                    self.track_internal_connection(conn)
+
+    def _track_outgoing_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
+        """Track outgoing external connections for a node."""
+        if node.name not in connections.outgoing_index:
+            return
+
+        for connection_ids in connections.outgoing_index[node.name].values():
+            for conn_id in connection_ids:
+                if conn_id not in connections.connections:
+                    continue
+                conn = connections.connections[conn_id]
+
+                if conn.target_node.name not in node_names_in_group:
+                    self.track_external_connection(conn, conn_id, is_incoming=False, grouped_node=node)
+
+    def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
+        """Add nodes to the group and track their connections.
+
+        Args:
+            nodes: List of nodes to add to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        self._remove_nodes_from_existing_parents(nodes)
+        self._add_nodes_to_group_dict(nodes)
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        node_names_in_group = set(self.nodes.keys())
+        self.metadata["node_names_in_group"] = list(node_names_in_group)
+
+        nodes_being_added = {node.name for node in nodes}
+        internal_conns = connections.get_connections_between_nodes(nodes_being_added)
+        for conn in internal_conns:
+            self.track_internal_connection(conn)
+
+        for node in nodes:
+            self._track_incoming_connections(node, connections, node_names_in_group)
+            self._track_outgoing_connections(node, connections, node_names_in_group)
+
+    def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
+        """Validate that all nodes are in the group."""
+        for node in nodes:
+            if node.name not in self.nodes:
+                msg = f"Node {node.name} is not in node group {self.name}"
                 raise ValueError(msg)
-            target_param = conn.target_parameter
 
-            # Create proxy parameter name: {sanitized_node_name}__{param_name}
-            sanitized_node_name = target_node.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{target_param.name}"
-
-            if proxy_param_name not in created_params:
-                proxy_param = Parameter(
-                    name=proxy_param_name,
-                    type=target_param.type,
-                    input_types=target_param.input_types,
-                    output_type=target_param.output_type,
-                    tooltip=f"Proxy input for {target_node.name}.{target_param.name}",
-                    allowed_modes={ParameterMode.INPUT},
-                )
-                self.add_parameter(proxy_param)
-                created_params.add(proxy_param_name)
-
-                # Track mapping from proxy param to original node/param
-                self._proxy_param_to_node_param[proxy_param_name] = (target_node, target_param.name)
-
-        # Create output parameters for external outgoing connections
-        for conn in self.node_group_data.external_outgoing_connections:
+    def _untrack_external_incoming_for_node(self, node: BaseNode) -> None:
+        """Untrack external incoming connections for a node."""
+        for conn in list(self.stored_connections.external_connections.incoming_connections):
             conn_id = id(conn)
-            # Get the original source node from saved mapping (before it was remapped to proxy)
-            source_node = self.node_group_data.original_outgoing_sources.get(conn_id)
-            if source_node is None:
-                # Fallback if not found (shouldn't happen)
+            original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
+            if original_target and original_target.name == node.name:
+                self.untrack_external_connection(conn, conn_id, is_incoming=True)
+
+    def _untrack_external_outgoing_for_node(self, node: BaseNode) -> None:
+        """Untrack external outgoing connections for a node."""
+        for conn in list(self.stored_connections.external_connections.outgoing_connections):
+            conn_id = id(conn)
+            original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
+            if original_source and original_source.name == node.name:
+                self.untrack_external_connection(conn, conn_id, is_incoming=False)
+
+    def _untrack_internal_for_node(self, node: BaseNode, nodes_being_removed: set[str]) -> None:
+        """Untrack internal connections for a node."""
+        for conn in list(self.stored_connections.internal_connections):
+            if node.name not in (conn.source_node.name, conn.target_node.name):
                 continue
 
-            source_param = conn.source_parameter
+            other_node_name = conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
+            if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
+                self.untrack_internal_connection(conn)
 
-            # Create proxy parameter name: {sanitized_node_name}__{param_name}
-            sanitized_node_name = source_node.name.replace(" ", "_")
-            proxy_param_name = f"{sanitized_node_name}__{source_param.name}"
+    def has_external_control_input(self) -> bool:
+        """Check if this NodeGroup has any external incoming control connections.
 
-            if proxy_param_name not in created_params:
-                proxy_param = Parameter(
-                    name=proxy_param_name,
-                    type=source_param.type,
-                    input_types=source_param.input_types,
-                    output_type=source_param.output_type,
-                    tooltip=f"Proxy output for {source_node.name}.{source_param.name}",
-                    allowed_modes={ParameterMode.OUTPUT},
-                )
-                self.add_parameter(proxy_param)
-                created_params.add(proxy_param_name)
+        Returns:
+            True if any external incoming connection is a control input, False otherwise
+        """
+        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 
-                # Track mapping from proxy param to original node/param
-                self._proxy_param_to_node_param[proxy_param_name] = (source_node, source_param.name)
+        for conn in self.stored_connections.external_connections.incoming_connections:
+            if conn.target_parameter.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                return True
+            if ParameterTypeBuiltin.CONTROL_TYPE.value in conn.target_parameter.input_types:
+                return True
+
+        return False
+
+    def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
+        """Remove nodes from the group and untrack their connections.
+
+        Args:
+            nodes: List of nodes to remove from the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        self._validate_nodes_in_group(nodes)
+
+        GriptapeNodes.FlowManager().get_connections()
+        nodes_being_removed = {node.name for node in nodes}
+
+        for node in nodes:
+            self._untrack_external_incoming_for_node(node)
+            self._untrack_external_outgoing_for_node(node)
+            self._untrack_internal_for_node(node, nodes_being_removed)
+
+        for node in nodes:
+            node.parent_group = None
+            self.nodes.pop(node.name)
+
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
     async def aprocess(self) -> None:
         """Execute all nodes in the group in parallel.
@@ -2088,13 +2220,9 @@ class NodeGroupProxyNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
-        msg = "NodeGroupProxyNode should not be executed locally."
-        raise NotImplementedError(msg)
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
-        msg = "NodeGroupProxyNode should use aprocess() for async execution."
-        raise NotImplementedError(msg)
 
 
 class Connection:

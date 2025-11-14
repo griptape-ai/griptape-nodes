@@ -304,8 +304,6 @@ def main():
         """
         if omit_parameters is None:
             omit_parameters = []
-        omit_parameters.append("execution_environment")  # Always omit this parameter
-        omit_parameters.append("job_group")  # Always omit this parameter
 
         # Check if there are any parameters left after omitting
         param_names = {param["name"] for param in params}

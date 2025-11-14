@@ -2482,82 +2482,11 @@ class WorkflowManager:
         workflow_name: str,
         import_recorder: ImportRecorder,
     ) -> list[ast.AST]:
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesRequest"
-        )
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesResultSuccess"
-        )
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "ReloadAllLibrariesRequest"
-        )
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
 
         code_blocks: list[ast.AST] = []
 
-        response_assign = ast.Assign(
-            targets=[ast.Name(id="response", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Call(
-                        func=ast.Name(id="GetAllInfoForAllLibrariesRequest", ctx=ast.Load()),
-                        args=[],
-                        keywords=[],
-                    )
-                ],
-                keywords=[],
-            ),
-        )
-        ast.fix_missing_locations(response_assign)
-        code_blocks.append(response_assign)
-
-        isinstance_test = ast.Call(
-            func=ast.Name(id="isinstance", ctx=ast.Load()),
-            args=[
-                ast.Name(id="response", ctx=ast.Load()),
-                ast.Name(id="GetAllInfoForAllLibrariesResultSuccess", ctx=ast.Load()),
-            ],
-            keywords=[],
-        )
-        ast.fix_missing_locations(isinstance_test)
-
-        len_call = ast.Call(
-            func=ast.Name(id="len", ctx=ast.Load()),
-            args=[
-                ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Attribute(
-                            value=ast.Name(id="response", ctx=ast.Load()),
-                            attr="library_name_to_library_info",
-                            ctx=ast.Load(),
-                        ),
-                        attr="keys",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[],
-                )
-            ],
-            keywords=[],
-        )
-        compare_len = ast.Compare(
-            left=len_call,
-            ops=[ast.Lt()],
-            comparators=[ast.Constant(value=1)],
-        )
-        ast.fix_missing_locations(compare_len)
-
-        test = ast.BoolOp(
-            op=ast.And(),
-            values=[isinstance_test, compare_len],
-        )
-        ast.fix_missing_locations(test)
-
-        # 3) the body: GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
+        # Generate load libraries request call
         # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
         load_call = ast.Expr(
             value=ast.Call(
@@ -2568,7 +2497,7 @@ class WorkflowManager:
                 ),
                 args=[
                     ast.Call(
-                        func=ast.Name(id="ReloadAllLibrariesRequest", ctx=ast.Load()),
+                        func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
                         args=[],
                         keywords=[],
                     )
@@ -2577,17 +2506,9 @@ class WorkflowManager:
             )
         )
         ast.fix_missing_locations(load_call)
+        code_blocks.append(load_call)
 
-        # 4) assemble the `if` statement
-        if_node = ast.If(
-            test=test,
-            body=[load_call],
-            orelse=[],
-        )
-        ast.fix_missing_locations(if_node)
-        code_blocks.append(if_node)
-
-        # 5) context_manager = GriptapeNodes.ContextManager()
+        # Generate context manager assignment
         assign_context_manager = ast.Assign(
             targets=[ast.Name(id="context_manager", ctx=ast.Store())],
             value=ast.Call(
@@ -2980,6 +2901,7 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeDeprecationMetadata")
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeGroupRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
         )
@@ -3004,7 +2926,8 @@ class WorkflowManager:
                     create_node_request_args.append(
                         ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                     )
-
+        # Get the actual request class name (CreateNodeRequest or CreateNodeGroupRequest)
+        request_class_name = type(create_node_request).__name__
         # Handle the create node command and assign to node name
         create_node_call_ast = ast.Assign(
             targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
@@ -3019,7 +2942,7 @@ class WorkflowManager:
                     ),
                     args=[
                         ast.Call(
-                            func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
                             args=[],
                             keywords=create_node_request_args,
                             lineno=1,
@@ -3030,7 +2953,7 @@ class WorkflowManager:
                     lineno=1,
                     col_offset=0,
                 ),
-                attr="node_name",
+                attr="node_name" if request_class_name == "CreateNodeRequest" else "node_group_name",
                 ctx=ast.Load(),
                 lineno=1,
                 col_offset=0,
@@ -3083,6 +3006,11 @@ class WorkflowManager:
 
             # Generate handle_request calls for element_modification_commands
             for element_command in serialized_node_command.element_modification_commands:
+                # Add import for this element command type
+                element_command_class_name = element_command.__class__.__name__
+                element_command_module = element_command.__class__.__module__
+                import_recorder.add_from_import(element_command_module, element_command_class_name)
+
                 # Strip default values from element_command
                 element_command_args = []
                 if is_dataclass(element_command):

@@ -125,7 +125,7 @@ class QwenImageEdit(SuccessFailureNode):
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 default_value=[],
                 tooltip="List of 1-6 images to edit (JPG, PNG, BMP, TIFF, WEBP; 384-3072px; max 10MB each)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allowed_modes={ParameterMode.INPUT},
                 ui_options={
                     "display_name": "Images to Edit",
                 },

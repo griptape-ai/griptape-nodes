@@ -10,13 +10,13 @@ import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact, validate_url
 
 
-class BaseVideoProcessor(ControlNode, ABC):
+class BaseVideoProcessor(SuccessFailureNode, ABC):
     """Base class for video processing nodes with common functionality."""
 
     # Default video properties constants
@@ -89,6 +89,12 @@ class BaseVideoProcessor(ControlNode, ABC):
         )
 
         self._setup_logging_group()
+
+        # Add status parameters using the helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video processing operation result",
+            result_details_placeholder="Details on the processing attempt will be presented here.",
+        )
 
     @abstractmethod
     def _setup_custom_parameters(self) -> None:
@@ -413,6 +419,9 @@ class BaseVideoProcessor(ControlNode, ABC):
 
     def process(self) -> AsyncResult[None]:
         """Common async processing entry point."""
+        # Clear execution status at start
+        self._clear_execution_status()
+
         # Get video input data
         input_url, detected_format = self._get_video_input_data()
         self._log_format_detection(detected_format)
@@ -429,11 +438,21 @@ class BaseVideoProcessor(ControlNode, ABC):
             yield lambda: self._process(input_url, detected_format, **custom_params)
             self.append_value_to_parameter("logs", "[Finished video processing.]\n")
 
+            # Report success
+            result_details = f"Successfully processed video: {self._get_processing_description()}"
+            self._set_status_results(was_successful=True, result_details=result_details)
+
         except Exception as e:
             error_message = str(e)
             msg = f"{self.name}: Error processing video: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+
+            # Report failure
+            failure_details = f"Video processing failed: {error_message}"
+            self._set_status_results(was_successful=False, result_details=failure_details)
+
+            # Handle failure exception (raises if no failure output connected)
+            self._handle_failure_exception(ValueError(msg))
 
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get custom parameters for processing. Override in subclasses if needed."""
