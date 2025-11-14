@@ -36,7 +36,7 @@ class YOLOv8FaceDetectionParameters:
                 type="float",
                 tooltip="Minimum confidence threshold for face detection (0.0-1.0)",
                 default_value=0.5,
-                traits={Slider(min_val=0.0, max_val=1.0, step=0.05)},
+                traits={Slider(min_val=0.0, max_val=1.0)},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
