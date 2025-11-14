@@ -129,6 +129,120 @@ class ExtractKeyColors(DataNode):
             msg = f"Failed to extract image data: {e!s}"
             raise ValueError(msg) from e
 
+    def _find_largest_bucket(self, buckets: list[np.ndarray]) -> int:
+        """Find the bucket with the largest color range.
+
+        Args:
+            buckets: List of color buckets (numpy arrays of pixels)
+
+        Returns:
+            Index of the bucket with the largest range, or -1 if none can be split
+        """
+        largest_range = -1
+        largest_bucket_idx = -1
+
+        for idx, bucket in enumerate(buckets):
+            if len(bucket) <= 1:
+                continue
+
+            # Calculate range for each color channel
+            ranges = np.ptp(bucket, axis=0)  # ptp = peak to peak (max - min)
+            total_range = np.sum(ranges)
+
+            if total_range > largest_range:
+                largest_range = total_range
+                largest_bucket_idx = idx
+
+        return largest_bucket_idx
+
+    def _split_bucket(self, buckets: list[np.ndarray], idx: int) -> list[np.ndarray]:
+        """Split a bucket at its median along the largest range channel.
+
+        Args:
+            buckets: List of color buckets
+            idx: Index of bucket to split
+
+        Returns:
+            Updated list of buckets with the specified bucket split into two
+        """
+        bucket_to_split = buckets[idx]
+
+        # Find the channel with the largest range
+        ranges = np.ptp(bucket_to_split, axis=0)
+        channel = np.argmax(ranges)
+
+        # Sort pixels by the selected channel
+        sorted_pixels = bucket_to_split[bucket_to_split[:, channel].argsort()]
+
+        # Split at median
+        median_idx = len(sorted_pixels) // 2
+
+        # Replace the old bucket with two new buckets
+        buckets[idx] = sorted_pixels[:median_idx]
+        buckets.append(sorted_pixels[median_idx:])
+
+        return buckets
+
+    def _split_buckets_mmcq(self, pixels: np.ndarray, num_colors: int) -> list[np.ndarray]:
+        """Split color buckets using Modified Median Cut Quantization.
+
+        Args:
+            pixels: Array of all pixels in the image (Nx3)
+            num_colors: Target number of color buckets
+
+        Returns:
+            List of color buckets
+        """
+        buckets = [pixels]
+
+        # Iteratively split buckets until we have the desired number
+        while len(buckets) < num_colors:
+            largest_bucket_idx = self._find_largest_bucket(buckets)
+
+            # If no bucket can be split, stop
+            if largest_bucket_idx == -1:
+                break
+
+            # Split the largest bucket
+            buckets = self._split_bucket(buckets, largest_bucket_idx)
+
+        return buckets
+
+    def _buckets_to_colors(self, buckets: list[np.ndarray], total_pixels: int) -> list[tuple[int, int, int]]:
+        """Convert buckets to RGB colors sorted by prominence.
+
+        Args:
+            buckets: List of color buckets
+            total_pixels: Total number of pixels in the image
+
+        Returns:
+            List of RGB tuples sorted by prominence
+        """
+        color_data = []
+        for bucket in buckets:
+            if len(bucket) > 0:
+                avg_color = np.mean(bucket, axis=0)
+                color_data.append((len(bucket), avg_color))
+
+        # Sort by bucket size (descending) for consistent ordering
+        color_data.sort(key=lambda x: x[0], reverse=True)
+
+        # Extract colors as RGB tuples
+        selected_colors = []
+        for count, color in color_data:
+            r, g, b = color
+            selected_colors.append((int(r), int(g), int(b)))
+            logger.debug(
+                "Median Cut color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
+                int(r),
+                int(g),
+                int(b),
+                count,
+                (count / total_pixels) * 100,
+            )
+
+        return selected_colors
+
     def _extract_colors_median_cut(self, image_bytes: bytes, num_colors: int) -> list[tuple[int, int, int]]:
         """Extract colors using Median Cut algorithm (MMCQ variant).
 
@@ -159,78 +273,15 @@ class ExtractKeyColors(DataNode):
             image_array = np.array(pil_image)
             pixels = image_array.reshape(-1, 3)
 
-            # Start with all pixels in one bucket
-            buckets = [pixels]
+            # Split buckets using MMCQ algorithm
+            buckets = self._split_buckets_mmcq(pixels, num_colors)
 
-            # Iteratively split buckets until we have the desired number
-            while len(buckets) < num_colors:
-                # Find the bucket with the largest color range
-                largest_range = -1
-                largest_bucket_idx = -1
-
-                for idx, bucket in enumerate(buckets):
-                    if len(bucket) <= 1:
-                        continue
-
-                    # Calculate range for each color channel
-                    ranges = np.ptp(bucket, axis=0)  # ptp = peak to peak (max - min)
-                    total_range = np.sum(ranges)
-
-                    if total_range > largest_range:
-                        largest_range = total_range
-                        largest_bucket_idx = idx
-
-                # If no bucket can be split, stop
-                if largest_bucket_idx == -1:
-                    break
-
-                # Split the largest bucket
-                bucket_to_split = buckets[largest_bucket_idx]
-
-                # Find the channel with the largest range
-                ranges = np.ptp(bucket_to_split, axis=0)
-                channel = np.argmax(ranges)
-
-                # Sort pixels by the selected channel
-                sorted_pixels = bucket_to_split[bucket_to_split[:, channel].argsort()]
-
-                # Split at median
-                median_idx = len(sorted_pixels) // 2
-
-                # Replace the old bucket with two new buckets
-                buckets[largest_bucket_idx] = sorted_pixels[:median_idx]
-                buckets.append(sorted_pixels[median_idx:])
-
-            # Calculate average color for each bucket
-            total_pixels = len(pixels)
-            color_data = []
-            for bucket in buckets:
-                if len(bucket) > 0:
-                    avg_color = np.mean(bucket, axis=0)
-                    color_data.append((len(bucket), avg_color))
-
-            # Sort by bucket size (descending) for consistent ordering
-            color_data.sort(key=lambda x: x[0], reverse=True)
-
-            # Extract colors as RGB tuples
-            selected_colors = []
-            for count, color in color_data:
-                r, g, b = color
-                selected_colors.append((int(r), int(g), int(b)))
-                logger.debug(
-                    "Median Cut color: RGB(%3d, %3d, %3d) - pixels: %d (%.2f%%)",
-                    int(r),
-                    int(g),
-                    int(b),
-                    count,
-                    (count / total_pixels) * 100,
-                )
+            # Calculate average colors and sort by prominence
+            return self._buckets_to_colors(buckets, len(pixels))
 
         except Exception as e:
             msg = f"Median Cut color extraction failed: {e!s}"
             raise ValueError(msg) from e
-        else:
-            return selected_colors
 
     def _extract_colors_kmeans(self, image_bytes: bytes, num_colors: int) -> list[tuple[int, int, int]]:
         """Extract colors using KMeans clustering algorithm.
@@ -269,7 +320,7 @@ class ExtractKeyColors(DataNode):
             labels = kmeans.labels_
             if labels is None:
                 msg = "KMeans clustering failed to assign labels"
-                raise ValueError(msg)
+                raise ValueError(msg)  # noqa: TRY301
             unique_labels, counts = np.unique(labels, return_counts=True)
 
             # Sort clusters by count (most prominent first)
