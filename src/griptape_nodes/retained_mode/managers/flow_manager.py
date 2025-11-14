@@ -53,6 +53,8 @@ from griptape_nodes.retained_mode.events.connection_events import (
 )
 from griptape_nodes.retained_mode.events.draw_events import (
     DeserializeDrawFromCommandsRequest,
+    GetDrawMetadataRequest,
+    GetDrawMetadataResultSuccess,
     ListDrawsRequest,
     ListDrawsResultSuccess,
     SerializeDrawToCommandsRequest,
@@ -583,6 +585,15 @@ class FlowManager:
                     details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Node '{node_name}'."
                     result = DeleteFlowResultFailure(result_details=details)
                     return result
+
+            # Delete any draw objects scoped to this flow
+            draws_list_result = GriptapeNodes.handle_request(ListDrawsRequest())
+            if isinstance(draws_list_result, ListDrawsResultSuccess):
+                for draw_name in draws_list_result.draw_names:
+                    md_result = GriptapeNodes.handle_request(GetDrawMetadataRequest(draw_name=draw_name))
+                    if isinstance(md_result, GetDrawMetadataResultSuccess) and md_result.metadata.get("flow_name") == flow.name:
+                        # Remove from object manager
+                        GriptapeNodes.ObjectManager().del_obj_by_name(draw_name)
 
             # Delete all child Flows of this Flow.
             # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
@@ -2944,16 +2955,18 @@ class FlowManager:
             details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
             return SerializeFlowToCommandsResultFailure(result_details=details)
 
-        # Serialize draw objects (currently global)
+        # Serialize draw objects scoped to this flow
         serialized_draw_commands = []
         draws_list_result = GriptapeNodes.handle_request(ListDrawsRequest())
         if isinstance(draws_list_result, ListDrawsResultSuccess):
             for draw_name in draws_list_result.draw_names:
-                draw_serialize_result = GriptapeNodes.handle_request(
-                    SerializeDrawToCommandsRequest(draw_name=draw_name)
-                )
-                if isinstance(draw_serialize_result, SerializeDrawToCommandsResultSuccess):
-                    serialized_draw_commands.append(draw_serialize_result.serialized_draw_commands)
+                md_result = GriptapeNodes.handle_request(GetDrawMetadataRequest(draw_name=draw_name))
+                if isinstance(md_result, GetDrawMetadataResultSuccess) and md_result.metadata.get("flow_name") == flow_name:
+                    draw_serialize_result = GriptapeNodes.handle_request(
+                        SerializeDrawToCommandsRequest(draw_name=draw_name)
+                    )
+                    if isinstance(draw_serialize_result, SerializeDrawToCommandsResultSuccess):
+                        serialized_draw_commands.append(draw_serialize_result.serialized_draw_commands)
 
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,

@@ -1688,6 +1688,56 @@ class WorkflowManager:
             # Add the nodes to the body of the Current Context flow's "with" statement
             assign_flow_context_node.body.extend(nodes_in_flow)
 
+            # Generate draw creation code in this flow (mirrors node creation style)
+            if getattr(serialized_flow_commands, "serialized_draw_commands", None):
+                # Ensure CreateDrawRequest import is recorded
+                import_recorder.add_from_import(
+                    "griptape_nodes.retained_mode.events.draw_events", "CreateDrawRequest"
+                )
+                for draw_index, draw_cmd in enumerate(serialized_flow_commands.serialized_draw_commands):
+                    create_keywords: list[ast.keyword] = []
+                    if is_dataclass(draw_cmd.create_draw_command):
+                        for field in fields(draw_cmd.create_draw_command):
+                            field_value = getattr(draw_cmd.create_draw_command, field.name)
+                            if field_value != field.default:
+                                create_keywords.append(
+                                    ast.keyword(arg=field.name, value=self._to_ast_constant(field_value))
+                                )
+                    draw_variable_name = f"draw{draw_index}_name"
+                    create_draw_assign = ast.Assign(
+                        targets=[ast.Name(id=draw_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
+                        value=ast.Attribute(
+                            value=ast.Call(
+                                func=ast.Attribute(
+                                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load(), lineno=1, col_offset=0),
+                                    attr="handle_request",
+                                    ctx=ast.Load(),
+                                    lineno=1,
+                                    col_offset=0,
+                                ),
+                                args=[
+                                    ast.Call(
+                                        func=ast.Name(id="CreateDrawRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                                        args=[],
+                                        keywords=create_keywords,
+                                        lineno=1,
+                                        col_offset=0,
+                                    )
+                                ],
+                                keywords=[],
+                                lineno=1,
+                                col_offset=0,
+                            ),
+                            attr="draw_name",
+                            ctx=ast.Load(),
+                            lineno=1,
+                            col_offset=0,
+                        ),
+                        lineno=1,
+                        col_offset=0,
+                    )
+                    assign_flow_context_node.body.append(create_draw_assign)
+
             # Process sub-flows - for each sub-flow, generate its initialization command
             for sub_flow_index, sub_flow_commands in enumerate(serialized_flow_commands.sub_flows_commands):
                 sub_flow_creation_index = flow_creation_index + 1 + sub_flow_index
@@ -2888,6 +2938,22 @@ class WorkflowManager:
             )
             node_creation_asts.extend(node_creation_ast)
         return node_creation_asts
+
+    def _to_ast_constant(self, value: Any) -> ast.expr:
+        """Convert a Python value into an AST literal for codegen."""
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return ast.Constant(value=value)
+        if isinstance(value, dict):
+            return ast.Dict(
+                keys=[self._to_ast_constant(k) for k in value],
+                values=[self._to_ast_constant(v) for v in value.values()],
+            )
+        if isinstance(value, list):
+            return ast.List(elts=[self._to_ast_constant(v) for v in value], ctx=ast.Load())
+        if isinstance(value, tuple):
+            return ast.Tuple(elts=[self._to_ast_constant(v) for v in value], ctx=ast.Load())
+        # Fallback: stringify unknown types
+        return ast.Constant(value=str(value))
 
     def _generate_node_creation_code(
         self,
