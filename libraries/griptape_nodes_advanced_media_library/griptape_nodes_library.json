@@ -30,10 +30,7 @@
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
     "library_version": "0.59.3",
     "engine_version": "0.59.3",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
@@ -66,10 +63,7 @@
         "matplotlib>=3.10.3",
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
-      "pip_install_flags": [
-        "--preview",
-        "--torch-backend=auto"
-      ]
+      "pip_install_flags": ["--preview", "--torch-backend=auto"]
     }
   },
   "categories": [],
@@ -109,6 +103,15 @@
         "category": "image/depth",
         "description": "Generate a Depth Map with Depth Anything V2 and 🤗 Transformers Pairs well with ControlNet Image Generation in depth mode.",
         "display_name": "Depth Anything V2 Image"
+      }
+    },
+    {
+      "class_name": "YOLOv8FaceDetection",
+      "file_path": "ultralytics_nodes_library/yolov8_face_detection.py",
+      "metadata": {
+        "category": "image/detection",
+        "description": "Detect faces in images using YOLOv8 from 🤗 Hugging Face. Returns bounding boxes with confidence scores for each detected face.",
+        "display_name": "YOLOv8 Face Detection"
       }
     },
     {
