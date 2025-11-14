@@ -1,6 +1,5 @@
 """Init command for Griptape Nodes CLI."""
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,7 +10,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from griptape_nodes.cli.commands.libraries import _sync_libraries
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
     CONFIG_FILE,
@@ -54,10 +52,6 @@ def init_command(  # noqa: PLR0913
             help="Install the Griptape Cloud Library.",
         ),
     ] = None,
-    libraries_sync: Annotated[
-        bool | None,
-        typer.Option("--libraries-sync/--no-libraries-sync", help="Sync the Griptape Nodes libraries."),
-    ] = None,
     no_interactive: Annotated[  # noqa: FBT002
         bool,
         typer.Option(help="Run init in non-interactive mode (no prompts)."),
@@ -93,7 +87,6 @@ def init_command(  # noqa: PLR0913
             register_griptape_cloud_library=register_griptape_cloud_library,
             config_values=config_values,
             secret_values=secret_values,
-            libraries_sync=libraries_sync,
             bucket_name=bucket_name,
             hf_token=hf_token,
         )
@@ -110,10 +103,6 @@ def _run_init(config: InitConfig) -> None:
 
     # Run configuration flow
     _run_init_configuration(config)
-
-    # Sync libraries
-    if config.libraries_sync is not False:
-        asyncio.run(_sync_libraries())
 
     console.print("[bold green]Initialization complete![/bold green]")
 
