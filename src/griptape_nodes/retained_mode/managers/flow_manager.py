@@ -1449,6 +1449,7 @@ class FlowManager:
         """
         # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
         serialized_node_commands = []
+        serialized_node_group_commands = []  # NodeGroupNodes must be added LAST
 
         for node in nodes_to_package:
             # Serialize this node using shared dictionaries for value deduplication
@@ -1464,9 +1465,6 @@ class FlowManager:
                     result_details=f"Attempted to package nodes as serialized flow. Failed to serialize node '{node.name}': {serialize_result.result_details}"
                 )
 
-            # Collect serialized node
-            serialized_node_commands.append(serialize_result.serialized_node_commands)
-
             # Populate the shared node_name_to_uuid mapping
             create_cmd = serialize_result.serialized_node_commands.create_node_command
             # Get the node name from the CreateNodeGroupRequest command if necessary.
@@ -1475,6 +1473,13 @@ class FlowManager:
             )
             if node_name is not None:
                 node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
+
+            # NodeGroupNodes must be serialized LAST because CreateNodeGroupRequest references child node names
+            # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
+            if isinstance(node, NodeGroupNode):
+                serialized_node_group_commands.append(serialize_result.serialized_node_commands)
+            else:
+                serialized_node_commands.append(serialize_result.serialized_node_commands)
 
             # Collect set parameter value commands (references to unique_parameter_uuid_to_values)
             if serialize_result.set_parameter_value_commands:
@@ -1496,6 +1501,7 @@ class FlowManager:
             return connections_result
 
         internal_connections.extend(connections_result)
+        serialized_node_commands.extend(serialized_node_group_commands)
         return serialized_node_commands
 
     def _get_internal_connections_for_package(
@@ -2704,6 +2710,7 @@ class FlowManager:
                 create_flow_request = None
 
             serialized_node_commands = []
+            serialized_node_group_commands = []  # NodeGroupNodes must be added LAST
             set_parameter_value_commands_per_node = {}  # Maps a node UUID to a list of set parameter value commands
             set_lock_commands_per_node = {}  # Maps a node UUID to a set Lock command, if it exists.
 
@@ -2740,7 +2747,13 @@ class FlowManager:
                     # Store the serialized node's UUID for correlation to connections and setting parameter values later.
                     node_name_to_uuid[node_name] = serialized_node.node_uuid
 
-                    serialized_node_commands.append(serialized_node)
+                    # NodeGroupNodes must be serialized LAST because CreateNodeGroupRequest references child node names
+                    # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
+                    if isinstance(node, NodeGroupNode):
+                        serialized_node_group_commands.append(serialized_node)
+                    else:
+                        serialized_node_commands.append(serialized_node)
+
                     # Get the list of set value commands for THIS node.
                     set_value_commands_list = serialize_node_result.set_parameter_value_commands
                     if serialize_node_result.serialized_node_commands.lock_node_command is not None:
@@ -2816,6 +2829,10 @@ class FlowManager:
                             return SerializeFlowToCommandsResultFailure(result_details=details)
                         serialized_flow = child_flow_result.serialized_flow_commands
                         sub_flow_commands.append(serialized_flow)
+
+        # Append NodeGroup commands AFTER regular node commands
+        # This ensures child nodes exist before their parent NodeGroups are created during deserialization
+        serialized_node_commands.extend(serialized_node_group_commands)
 
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)

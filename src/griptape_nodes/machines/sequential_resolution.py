@@ -78,6 +78,43 @@ class InitializeSpotlightState(State):
         if not len(context.focus_stack):
             return CompleteState
         current_node = context.current_node
+
+        # If this node has a non-LOCAL parent group, redirect to parent instead
+        # Handle nested groups recursively - keep redirecting until we find the top-level parent
+        from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
+
+        while current_node.parent_group is not None and isinstance(current_node.parent_group, NodeGroupNode):
+            execution_env = current_node.parent_group.get_parameter_value(
+                current_node.parent_group.execution_environment.name
+            )
+            if execution_env != LOCAL_EXECUTION:
+                # Replace current node with parent group
+                parent_group = current_node.parent_group
+                logger.info(
+                    "Sequential Resolution: Redirecting from child node '%s' to parent node group '%s' at InitializeSpotlight",
+                    current_node.name,
+                    parent_group.name,
+                )
+                # Update the focus stack to use parent instead
+                context.focus_stack[-1] = Focus(node=parent_group)
+                current_node = parent_group
+                # Continue loop to check if this parent also has a parent
+            else:
+                # Parent is LOCAL_EXECUTION, stop redirecting
+                break
+
+        # For NodeGroups, check external connections for unresolved dependencies
+        if isinstance(current_node, NodeGroupNode):
+            unresolved_dependency = EvaluateParameterState._check_node_group_external_dependencies(current_node)
+            if unresolved_dependency:
+                logger.info(
+                    "Sequential Resolution: NodeGroup '%s' has unresolved external dependency on '%s', queuing dependency first",
+                    current_node.name,
+                    unresolved_dependency.name,
+                )
+                context.focus_stack.append(Focus(node=unresolved_dependency))
+                return InitializeSpotlightState
+
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
@@ -142,6 +179,30 @@ class EvaluateParameterState(State):
         if current_node.advance_parameter():
             return InitializeSpotlightState
         return ExecuteNodeState
+
+    @staticmethod
+    def _check_node_group_external_dependencies(node_group: BaseNode) -> BaseNode | None:
+        """Check if NodeGroup has unresolved external incoming connections.
+
+        Returns the first unresolved source node (or its parent if applicable) if found, None otherwise.
+        """
+        from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
+
+        if not isinstance(node_group, NodeGroupNode):
+            return None
+
+        for conn in node_group.stored_connections.external_connections.incoming_connections:
+            source_node = conn.source_node
+            if source_node.state == NodeResolutionState.UNRESOLVED:
+                # Check if source has a parent group to use instead
+                if source_node.parent_group is not None and isinstance(source_node.parent_group, NodeGroupNode):
+                    execution_env = source_node.parent_group.get_parameter_value(
+                        source_node.parent_group.execution_environment.name
+                    )
+                    if execution_env != LOCAL_EXECUTION:
+                        return source_node.parent_group
+                return source_node
+        return None
 
     @staticmethod
     def _determine_node_to_queue(

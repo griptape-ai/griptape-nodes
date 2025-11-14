@@ -20,16 +20,11 @@ from griptape_nodes.exe_types.node_types import (
     StartNode,
 )
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.flow_events import (
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
-    DeleteWorkflowRequest,
-    DeleteWorkflowResultFailure,
-    LoadWorkflowMetadata,
-    LoadWorkflowMetadataResultSuccess,
     PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     SaveWorkflowFileFromSerializedFlowRequest,
@@ -124,6 +119,9 @@ class NodeExecutor:
         workflow_result = None
         try:
             result = await self._publish_local_workflow(node)
+            if result is None:
+                # Length of list is 0, no node names in group.
+                return
             workflow_result = result.workflow_result
         except Exception as e:
             logger.exception(
@@ -152,10 +150,11 @@ class NodeExecutor:
             msg = f"Failed to execute node '{node.name}' in local subprocess: {e}"
             raise RuntimeError(msg) from e
         finally:
-            if workflow_result is not None:
-                await self._delete_workflow(
-                    workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
-                )
+            pass
+            # if workflow_result is not None:
+            #     await self._delete_workflow(
+            #         workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+            #     )
 
     async def _execute_library_workflow(self, node: BaseNode, execution_type: str) -> None:
         """Execute node via library handler.
@@ -184,6 +183,9 @@ class NodeExecutor:
 
         try:
             result = await self._publish_local_workflow(node, library=library)
+            if result is None:
+                # Length of list is 0, no node names in group.
+                return
             workflow_result = result.workflow_result
         except Exception as e:
             logger.exception(
@@ -228,13 +230,14 @@ class NodeExecutor:
             msg = f"Failed to execute node '{node.name}' via library '{library_name}': {e}"
             raise RuntimeError(msg) from e
         finally:
-            if workflow_result is not None:
-                await self._delete_workflow(
-                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
-                )
-            if published_workflow_filename is not None:
-                published_filename = published_workflow_filename.stem
-                await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
+            pass
+            # if workflow_result is not None:
+            #     await self._delete_workflow(
+            #         workflow_name=workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+            #     )
+            # if published_workflow_filename is not None:
+            #     published_filename = published_workflow_filename.stem
+            #     await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
 
     async def _get_workflow_start_end_nodes(self, library: Library | None) -> PublishWorkflowStartEndNodes:
         library_name = "Griptape Nodes Library"
@@ -272,7 +275,7 @@ class NodeExecutor:
 
     async def _publish_local_workflow(
         self, node: BaseNode, library: Library | None = None
-    ) -> PublishLocalWorkflowResult:
+    ) -> PublishLocalWorkflowResult | None:
         """Package and publish a workflow for subprocess execution.
 
         Returns:
@@ -291,6 +294,9 @@ class NodeExecutor:
         else:
             # Otherwise, it's a list of one node!
             node_names = [node.name]
+
+        if len(node_names) == 0:
+            return None
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
@@ -523,29 +529,30 @@ class NodeExecutor:
             )
 
     async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
-        try:
-            WorkflowRegistry.get_workflow_by_name(workflow_name)
-        except KeyError:
-            # Register the workflow if not already registered since a subprocess may have created it
-            load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
-            result = GriptapeNodes.handle_request(load_workflow_metadata_request)
-            if isinstance(result, LoadWorkflowMetadataResultSuccess):
-                WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
+        pass
+        # try:
+        #     WorkflowRegistry.get_workflow_by_name(workflow_name)
+        # except KeyError:
+        #     # Register the workflow if not already registered since a subprocess may have created it
+        #     load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
+        #     result = GriptapeNodes.handle_request(load_workflow_metadata_request)
+        #     if isinstance(result, LoadWorkflowMetadataResultSuccess):
+        #         WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
 
-        delete_request = DeleteWorkflowRequest(name=workflow_name)
-        delete_result = GriptapeNodes.handle_request(delete_request)
-        if isinstance(delete_result, DeleteWorkflowResultFailure):
-            logger.error(
-                "Failed to delete workflow '%s'. Error: %s",
-                workflow_name,
-                delete_result.result_details,
-            )
-        else:
-            logger.info(
-                "Cleanup result for workflow '%s': %s",
-                workflow_name,
-                delete_result.result_details,
-            )
+        # delete_request = DeleteWorkflowRequest(name=workflow_name)
+        # delete_result = GriptapeNodes.handle_request(delete_request)
+        # if isinstance(delete_result, DeleteWorkflowResultFailure):
+        #     logger.error(
+        #         "Failed to delete workflow '%s'. Error: %s",
+        #         workflow_name,
+        #         delete_result.result_details,
+        #     )
+        # else:
+        #     logger.info(
+        #         "Cleanup result for workflow '%s': %s",
+        #         workflow_name,
+        #         delete_result.result_details,
+        #     )
 
     async def _get_storage_backend(self) -> StorageBackend:
         storage_backend_str = GriptapeNodes.ConfigManager().get_config_value("storage_backend")

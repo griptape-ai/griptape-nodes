@@ -338,6 +338,12 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             current_nodes = await self._process_nodes_for_dag(start_node)
         else:
             current_nodes = [start_node]
+            if isinstance(start_node.parent_group, NodeGroupNode):
+                # In sequential mode, we aren't going to run this. Just continue.
+                node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
+                if node is not None:
+                    await self.start_flow(node, end_node, debug_mode=debug_mode)
+                    return
             # For control flow/sequential: emit all nodes in flow as involved
         self._context.current_nodes = current_nodes
         self._context.end_node = end_node
