@@ -210,8 +210,6 @@ class EvaluateParameterState(State):
 
         Returns None if the parent node group is already resolved.
         """
-        from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
-
         if next_node.parent_group is None or not isinstance(next_node.parent_group, NodeGroupNode):
             return next_node
 
