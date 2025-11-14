@@ -6,7 +6,6 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
-    get_best_device,
     get_devices,
     get_free_cuda_memory,
     get_max_memory_footprint,
@@ -275,22 +274,21 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
         pipe.to(device)
 
 
-def distribute_pipeline_across_gpus(
+def apply_device_map_to_pipeline(
     pipe: DiffusionPipeline,
     *,
     num_gpus: int | None = None,
 ) -> None:
-    """Enable multi-GPU support for pipeline using model CPU offload.
+    """Apply device_map to distribute pipeline across GPUs using diffusers' built-in support.
 
     Args:
         pipe: The diffusion pipeline to distribute
         num_gpus: Number of GPUs to use. If None, uses all available GPUs.
 
     Note:
-        This function uses enable_model_cpu_offload() which automatically manages
-        device placement and tensor movement between components. Manual distribution
-        of components to different GPUs causes tensor device mismatch errors because
-        intermediate tensors need explicit device transfers between components.
+        This uses accelerate's device_map="balanced" which automatically distributes
+        the model across available GPUs. This is the recommended approach from:
+        https://huggingface.co/docs/diffusers/en/training/distributed_inference
     """
     devices = get_devices(num_gpus=num_gpus)
 
@@ -299,34 +297,59 @@ def distribute_pipeline_across_gpus(
         return
 
     if len(devices) == 1:
-        logger.info("Single GPU detected, moving entire pipeline to %s", devices[0])
+        logger.info("Single GPU detected: %s", devices[0])
+        logger.info("Moving pipeline to single GPU")
         pipe.to(devices[0])
         return
 
-    # For multi-GPU setups, use model CPU offload on the primary GPU
-    # This automatically handles device placement and tensor movement
-    primary_device = devices[0]
-    gpu_id = primary_device.index if primary_device.index is not None else 0
+    # Multi-GPU: use device_map for automatic distribution
+    logger.info("Multi-GPU system detected: %s GPUs available", len(devices))
+    logger.info("Applying device_map='balanced' for distributed inference")
 
-    logger.info("Multi-GPU system detected (%s GPUs available)", len(devices))
-    logger.info("Using model CPU offload strategy with primary GPU: cuda:%s", gpu_id)
-    logger.info("Note: Model CPU offload will rotate components through GPU memory as needed")
+    try:
+        # Get max memory dict for balanced distribution
+        max_memory = {}
+        for i in range(len(devices)):
+            # Leave some headroom for inference
+            free_mem = get_free_cuda_memory(i)
+            max_memory[i] = int(free_mem * 0.85)  # Use 85% of free memory
 
-    if hasattr(pipe, "enable_model_cpu_offload"):
-        try:
+        logger.debug("Max memory per GPU: %s", {k: to_human_readable_size(v) for k, v in max_memory.items()})
+
+        # Apply device_map using accelerate
+        from accelerate import dispatch_model, infer_auto_device_map  # type: ignore[reportMissingImports]
+
+        device_map = infer_auto_device_map(
+            pipe,
+            max_memory=max_memory,
+            no_split_module_classes=pipe._no_split_modules if hasattr(pipe, "_no_split_modules") else None,
+        )
+
+        logger.info("Computed device_map: %s", device_map)
+
+        dispatch_model(pipe, device_map=device_map)
+        logger.info("Successfully distributed pipeline across %s GPUs", len(devices))
+
+    except ImportError:
+        logger.warning("accelerate not available, falling back to model CPU offload")
+        primary_device = devices[0]
+        gpu_id = primary_device.index if primary_device.index is not None else 0
+        if hasattr(pipe, "enable_model_cpu_offload"):
             pipe.enable_model_cpu_offload(gpu_id=gpu_id)
-            logger.info("Model CPU offload enabled successfully")
-        except Exception as e:
-            logger.warning("Failed to enable model CPU offload: %s", e)
-            logger.warning("Falling back to placing entire pipeline on primary GPU")
+        else:
             pipe.to(primary_device)
-    else:
-        logger.warning("Pipeline does not support model_cpu_offload")
-        logger.warning("Moving entire pipeline to primary GPU: %s", primary_device)
-        pipe.to(primary_device)
+    except Exception as e:
+        logger.warning("Failed to apply device_map: %s", e)
+        logger.warning("Falling back to primary GPU with model CPU offload")
+        primary_device = devices[0]
+        gpu_id = primary_device.index if primary_device.index is not None else 0
+        if hasattr(pipe, "enable_model_cpu_offload"):
+            pipe.enable_model_cpu_offload(gpu_id=gpu_id)
+        else:
+            pipe.to(primary_device)
 
 
-def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
+def optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913 PLR0915
     pipe: DiffusionPipeline,
     *,
     memory_optimization_strategy: str = "Manual",
@@ -349,51 +372,84 @@ def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
         quantization_mode: "None", "fp8", "int8", or "int4"
         num_gpus: Number of GPUs to use. If None, uses all available GPUs.
     """
-    # Always check for multi-GPU availability
+    # Always get all available devices
     devices = get_devices(num_gpus=num_gpus)
-    if len(devices) > 1 and all(d.type == "cuda" for d in devices):
-        logger.info("Using multi-GPU mode with %s GPUs", len(devices))
-        distribute_pipeline_across_gpus(pipe, num_gpus=num_gpus)
 
-        if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
-            logger.info("Enabling attention slicing")
-            pipe.enable_attention_slicing()
-        if vae_slicing:
-            if hasattr(pipe, "enable_vae_slicing"):
-                logger.info("Enabling vae slicing")
-                pipe.enable_vae_slicing()
-            elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_slicing"):
-                logger.info("Enabling vae slicing")
-                pipe.vae.enable_slicing()
-
-        try:
-            torch.backends.cuda.matmul.allow_tf32 = True
-            if hasattr(torch.backends.cuda, "sdp_kernel"):
-                torch.backends.cuda.sdp_kernel(
-                    enable_flash=True,
-                    enable_math=False,
-                    enable_mem_efficient=False,
-                )
-        except Exception:
-            logger.debug("sdp_kernel not supported, continuing without")
+    if len(devices) == 0:
+        logger.warning("No devices available, cannot optimize pipeline")
         return
 
-    # Single device mode
-    device = get_best_device()
-
-    if memory_optimization_strategy == "Automatic":
-        _automatic_optimize_diffusion_pipeline(pipe, device)
+    # Log device information
+    if len(devices) > 1 and all(d.type == "cuda" for d in devices):
+        logger.info("Multi-GPU system detected: %s GPUs available", len(devices))
+        for i, device in enumerate(devices):
+            logger.info("  GPU %s: %s", i, device)
     else:
-        _manual_optimize_diffusion_pipeline(
-            pipe=pipe,
-            device=device,
-            attention_slicing=attention_slicing,
-            vae_slicing=vae_slicing,
-            transformer_layerwise_casting=transformer_layerwise_casting,
-            cpu_offload_strategy=cpu_offload_strategy,
-            quantization_mode=quantization_mode,
+        logger.info("Using device: %s", devices[0])
+
+    primary_device = devices[0]
+
+    # Apply quantization first if requested
+    if quantization_mode != "None":
+        _quantize_diffusion_pipeline(pipe, quantization_mode, primary_device)
+
+    # Enable slicing optimizations
+    if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
+        logger.info("Enabling attention slicing")
+        pipe.enable_attention_slicing()
+
+    if vae_slicing:
+        if hasattr(pipe, "enable_vae_slicing"):
+            logger.info("Enabling VAE slicing")
+            pipe.enable_vae_slicing()
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_slicing"):
+            logger.info("Enabling VAE slicing")
+            pipe.vae.enable_slicing()
+        elif hasattr(pipe, "vae"):
+            logger.debug("VAE does not support slicing, skipping")
+
+    # Enable transformer layerwise casting if requested
+    if transformer_layerwise_casting and hasattr(pipe, "transformer"):
+        logger.info("Enabling FP8 layerwise casting for transformer")
+        pipe.transformer.enable_layerwise_casting(
+            storage_dtype=torch.float8_e4m3fn,
+            compute_dtype=torch.bfloat16,
         )
 
+    # Handle device placement and CPU offloading
+    # For multi-GPU, always use device_map distribution regardless of offload strategy
+    if len(devices) > 1 and all(d.type == "cuda" for d in devices):
+        logger.info("Multi-GPU detected - using device_map distribution")
+        apply_device_map_to_pipeline(pipe, num_gpus=num_gpus)
+    elif cpu_offload_strategy == "Sequential":
+        if hasattr(pipe, "enable_sequential_cpu_offload"):
+            logger.info("Enabling sequential CPU offload")
+            pipe.enable_sequential_cpu_offload()
+        else:
+            logger.warning("Pipeline does not support sequential CPU offload, using model offload")
+            if hasattr(pipe, "enable_model_cpu_offload"):
+                gpu_id = primary_device.index if primary_device.index is not None else 0
+                pipe.enable_model_cpu_offload(gpu_id=gpu_id)
+            else:
+                logger.warning("Pipeline does not support CPU offload, moving to device")
+                pipe.to(primary_device)
+    elif cpu_offload_strategy == "Model":
+        if hasattr(pipe, "enable_model_cpu_offload"):
+            logger.info("Enabling model CPU offload")
+            gpu_id = primary_device.index if primary_device.index is not None else 0
+            pipe.enable_model_cpu_offload(gpu_id=gpu_id)
+        else:
+            logger.warning("Pipeline does not support model CPU offload, moving to device")
+            pipe.to(primary_device)
+    elif cpu_offload_strategy == "None":
+        if memory_optimization_strategy == "Automatic":
+            logger.info("Using automatic memory optimization")
+            _automatic_optimize_diffusion_pipeline(pipe, primary_device)
+        else:
+            logger.info("Moving pipeline to device: %s", primary_device)
+            pipe.to(primary_device)
+
+    # Enable CUDA optimizations
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
         if hasattr(torch.backends.cuda, "sdp_kernel"):
