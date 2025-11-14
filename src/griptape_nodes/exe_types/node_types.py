@@ -2163,6 +2163,22 @@ class NodeGroupNode(BaseNode):
             if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
                 self.untrack_internal_connection(conn)
 
+    def has_external_control_input(self) -> bool:
+        """Check if this NodeGroup has any external incoming control connections.
+
+        Returns:
+            True if any external incoming connection is a control input, False otherwise
+        """
+        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+
+        for conn in self.stored_connections.external_connections.incoming_connections:
+            if conn.target_parameter.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                return True
+            if ParameterTypeBuiltin.CONTROL_TYPE.value in conn.target_parameter.input_types:
+                return True
+
+        return False
+
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from the group and untrack their connections.
 

@@ -7,7 +7,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, BaseNode, NodeGroupNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.node_library.library_registry import LibraryRegistry
@@ -186,8 +186,6 @@ class EvaluateParameterState(State):
 
         Returns the first unresolved source node (or its parent if applicable) if found, None otherwise.
         """
-        from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode
-
         if not isinstance(node_group, NodeGroupNode):
             return None
 
