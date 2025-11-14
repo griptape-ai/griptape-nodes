@@ -7,7 +7,11 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, save_pil_image_to_static_file
+from griptape_nodes_library.utils.file_utils import generate_filename
+from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
+    save_pil_image_with_named_filename,
+)
 
 
 class MergeImages(ControlNode):
@@ -143,18 +147,22 @@ class MergeImages(ControlNode):
         if not images:
             msg = "No images provided for composite layout"
             raise ValueError(msg)
-        # Reverse the order so the last image is at the bottom
+        # Reverse the order so the last image is at the bottom (like a stack)
         reversed_images = list(reversed(images))
         base = reversed_images[0].copy().convert("RGBA")
         base_width, base_height = base.size
         for img in reversed_images[1:]:
-            overlay = img.convert("RGBA") if img.mode != "RGBA" else img
+            overlay = img.convert("RGBA") if img.mode != "RGBA" else img.copy()
             resized_overlay = self._resize_image(overlay, base_width, base_height)
             # Center the overlay on the base
             x_offset = (base_width - resized_overlay.width) // 2
             y_offset = (base_height - resized_overlay.height) // 2
+            # Composite with alpha blending
             base.paste(resized_overlay, (x_offset, y_offset), resized_overlay)
-        return base
+        # Convert to RGB for consistency with other layouts
+        result = Image.new("RGB", base.size, (255, 255, 255))
+        result.paste(base, mask=base.split()[3] if base.mode == "RGBA" else None)
+        return result
 
     def process(self) -> None:
         self.parameter_output_values["output"] = None
@@ -166,6 +174,12 @@ class MergeImages(ControlNode):
         layout = self.get_parameter_value("layout")
         merged = self.LAYOUT_METHODS[layout](images)
 
-        url_artifact = save_pil_image_to_static_file(merged, "PNG")
+        # Save output image with deterministic filename (overwrites same file)
+        output_filename = generate_filename(
+            node_name=self.name,
+            suffix="_merged",
+            extension="png",
+        )
+        url_artifact = save_pil_image_with_named_filename(merged, output_filename, "PNG")
         self.set_parameter_value("output", url_artifact)
         self.parameter_output_values["output"] = url_artifact
