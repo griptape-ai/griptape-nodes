@@ -6,7 +6,6 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
-    create_device_map_for_pipeline,
     get_best_device,
     get_devices,
     get_free_cuda_memory,
@@ -281,31 +280,50 @@ def distribute_pipeline_across_gpus(
     *,
     num_gpus: int | None = None,
 ) -> None:
-    """Distribute pipeline components across multiple GPUs.
+    """Enable multi-GPU support for pipeline using model CPU offload.
 
     Args:
         pipe: The diffusion pipeline to distribute
         num_gpus: Number of GPUs to use. If None, uses all available GPUs.
-    """
-    component_names = get_pipeline_component_names(pipe)
-    device_map = create_device_map_for_pipeline(component_names, num_gpus)
 
-    if all(device == "cpu" for device in device_map.values()):
+    Note:
+        This function uses enable_model_cpu_offload() which automatically manages
+        device placement and tensor movement between components. Manual distribution
+        of components to different GPUs causes tensor device mismatch errors because
+        intermediate tensors need explicit device transfers between components.
+    """
+    devices = get_devices(num_gpus=num_gpus)
+
+    if len(devices) == 0 or all(d.type != "cuda" for d in devices):
         logger.info("No GPUs available, keeping pipeline on CPU")
         return
 
-    logger.info("Distributing pipeline across GPUs with device_map: %s", device_map)
+    if len(devices) == 1:
+        logger.info("Single GPU detected, moving entire pipeline to %s", devices[0])
+        pipe.to(devices[0])
+        return
 
-    for component_name, device_id in device_map.items():
-        if hasattr(pipe, component_name):
-            component = getattr(pipe, component_name)
-            if component is not None:
-                if isinstance(device_id, int):
-                    target_device = torch.device(f"cuda:{device_id}")
-                else:
-                    target_device = torch.device(device_id)
-                logger.debug("Moving %s to %s", component_name, target_device)
-                component.to(target_device)
+    # For multi-GPU setups, use model CPU offload on the primary GPU
+    # This automatically handles device placement and tensor movement
+    primary_device = devices[0]
+    gpu_id = primary_device.index if primary_device.index is not None else 0
+
+    logger.info("Multi-GPU system detected (%s GPUs available)", len(devices))
+    logger.info("Using model CPU offload strategy with primary GPU: cuda:%s", gpu_id)
+    logger.info("Note: Model CPU offload will rotate components through GPU memory as needed")
+
+    if hasattr(pipe, "enable_model_cpu_offload"):
+        try:
+            pipe.enable_model_cpu_offload(gpu_id=gpu_id)
+            logger.info("Model CPU offload enabled successfully")
+        except Exception as e:
+            logger.warning("Failed to enable model CPU offload: %s", e)
+            logger.warning("Falling back to placing entire pipeline on primary GPU")
+            pipe.to(primary_device)
+    else:
+        logger.warning("Pipeline does not support model_cpu_offload")
+        logger.warning("Moving entire pipeline to primary GPU: %s", primary_device)
+        pipe.to(primary_device)
 
 
 def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
@@ -317,7 +335,7 @@ def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
     transformer_layerwise_casting: bool = False,
     cpu_offload_strategy: str = "None",
     quantization_mode: str = "None",
-    use_multi_gpu: bool = True,
+    use_multi_gpu: bool = False,
     num_gpus: int | None = None,
 ) -> None:
     """Optimize pipeline performance and memory.
