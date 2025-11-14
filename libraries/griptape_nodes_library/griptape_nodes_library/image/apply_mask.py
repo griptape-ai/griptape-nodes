@@ -96,6 +96,8 @@ class ApplyMask(DataNode):
         self._apply_mask_to_input(input_image, input_mask, channel)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
         if parameter.name in ["input_image", "input_mask"] and value is not None:
             self._handle_parameter_change()
         elif parameter.name in ["channel", "invert_mask", "grow_shrink", "blur_mask"]:
@@ -105,7 +107,7 @@ class ApplyMask(DataNode):
             channel = self.get_parameter_value("channel")
 
             if input_image is None or input_mask is None:
-                return super().after_value_set(parameter, value)
+                return
 
             if isinstance(input_image, dict):
                 input_image = dict_to_image_url_artifact(input_image)
@@ -113,8 +115,6 @@ class ApplyMask(DataNode):
                 input_mask = dict_to_image_url_artifact(input_mask)
 
             self._apply_mask_to_input(input_image, input_mask, channel)
-
-        return super().after_value_set(parameter, value)
 
     def _handle_parameter_change(self) -> None:
         # Get both current values
