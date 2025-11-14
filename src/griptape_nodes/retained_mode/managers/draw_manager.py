@@ -64,14 +64,12 @@ class DrawManager:
             merged_metadata: dict[str, Any] = {}
             if request.metadata:
                 merged_metadata.update(request.metadata)
-            # Attach owning flow if available
-            try:
-                current_flow = GriptapeNodes.ContextManager().get_current_flow()
+            # Attach owning flow if available (avoid exceptions by checking first)
+            context_mgr = GriptapeNodes.ContextManager()
+            if hasattr(context_mgr, "has_current_flow") and context_mgr.has_current_flow():
+                current_flow = context_mgr.get_current_flow()
                 if "flow_name" not in merged_metadata:
                     merged_metadata["flow_name"] = current_flow.name
-            except Exception:
-                # No current flow; leave unscoped
-                pass
             if request.x is not None:
                 merged_metadata["x"] = request.x
             if request.y is not None:
