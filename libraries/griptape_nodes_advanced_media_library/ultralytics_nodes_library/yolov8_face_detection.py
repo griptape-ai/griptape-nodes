@@ -52,6 +52,48 @@ class YOLOv8FaceDetection(ControlNode):
 
         return errors or None
 
+    def _dilate_bbox(
+        self, x: int, y: int, width: int, height: int, dilation_percent: float, img_width: int, img_height: int
+    ) -> tuple[int, int, int, int]:
+        """Dilate bounding box by percentage while keeping it centered.
+        
+        Args:
+            x: Top-left x coordinate
+            y: Top-left y coordinate
+            width: Bounding box width
+            height: Bounding box height
+            dilation_percent: Percentage to expand (e.g., 10 for 10%)
+            img_width: Image width for boundary clamping
+            img_height: Image height for boundary clamping
+            
+        Returns:
+            Tuple of (new_x, new_y, new_width, new_height)
+        """
+        # Calculate dilation factor (e.g., 10% -> 1.10)
+        dilation_factor = 1.0 + (dilation_percent / 100.0)
+        
+        # Calculate new dimensions
+        new_width = int(width * dilation_factor)
+        new_height = int(height * dilation_factor)
+        
+        # Calculate offsets to keep box centered
+        width_offset = (new_width - width) // 2
+        height_offset = (new_height - height) // 2
+        
+        # Calculate new position
+        new_x = x - width_offset
+        new_y = y - height_offset
+        
+        # Clamp to image boundaries
+        new_x = max(0, min(new_x, img_width - new_width))
+        new_y = max(0, min(new_y, img_height - new_height))
+        
+        # Ensure width and height don't exceed image boundaries
+        new_width = min(new_width, img_width - new_x)
+        new_height = min(new_height, img_height - new_y)
+        
+        return new_x, new_y, new_width, new_height
+
     def process(self) -> AsyncResult | None:
         yield lambda: self._process()
 
@@ -70,8 +112,9 @@ class YOLOv8FaceDetection(ControlNode):
         with self.params.append_stdout_to_logs():
             model = self.params.load_model()
 
-        # Get confidence threshold
+        # Get parameters
         confidence_threshold = float(self.get_parameter_value("confidence_threshold") or 0.5)
+        dilation = float(self.get_parameter_value("dilation") or 0.0)
         
         self.append_value_to_parameter("logs", f"Running face detection (confidence threshold: {confidence_threshold})...\n")
         
@@ -80,6 +123,9 @@ class YOLOv8FaceDetection(ControlNode):
         
         # Parse results using supervision
         detections = Detections.from_ultralytics(results[0])
+        
+        # Get image dimensions for boundary clamping
+        img_width, img_height = input_image_pil.size
         
         # Filter by confidence threshold and convert to output format
         detected_faces = []
@@ -94,6 +140,10 @@ class YOLOv8FaceDetection(ControlNode):
                 y = int(y1)
                 width = int(x2 - x1)
                 height = int(y2 - y1)
+                
+                # Apply dilation if specified
+                if dilation > 0:
+                    x, y, width, height = self._dilate_bbox(x, y, width, height, dilation, img_width, img_height)
                 
                 detected_faces.append({
                     "x": x,

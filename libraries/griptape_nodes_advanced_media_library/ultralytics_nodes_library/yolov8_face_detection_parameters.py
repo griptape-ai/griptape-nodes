@@ -40,6 +40,19 @@ class YOLOv8FaceDetectionParameters:
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
+        
+        # Add dilation parameter
+        self._node.add_parameter(
+            Parameter(
+                name="dilation",
+                input_types=["float"],
+                type="float",
+                tooltip="Expand bounding boxes by percentage (0 = no expansion, 10 = 10% larger)",
+                default_value=0.0,
+                traits={Slider(min_val=0.0, max_val=100.0)},
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
 
     def add_logs_output_parameter(self) -> None:
         self._node.add_parameter(
