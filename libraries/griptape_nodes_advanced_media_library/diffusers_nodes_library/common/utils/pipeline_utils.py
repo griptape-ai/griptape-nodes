@@ -335,7 +335,6 @@ def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
     transformer_layerwise_casting: bool = False,
     cpu_offload_strategy: str = "None",
     quantization_mode: str = "None",
-    use_multi_gpu: bool = False,
     num_gpus: int | None = None,
 ) -> None:
     """Optimize pipeline performance and memory.
@@ -348,40 +347,38 @@ def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
         transformer_layerwise_casting: Enable FP8 layerwise casting for transformer
         cpu_offload_strategy: "None", "Model", or "Sequential"
         quantization_mode: "None", "fp8", "int8", or "int4"
-        use_multi_gpu: If True, distribute pipeline across multiple GPUs
-        num_gpus: Number of GPUs to use for multi-GPU distribution
+        num_gpus: Number of GPUs to use. If None, uses all available GPUs.
     """
-    if use_multi_gpu:
-        devices = get_devices(num_gpus=num_gpus)
-        if len(devices) > 1 and all(d.type == "cuda" for d in devices):
-            logger.info("Using multi-GPU mode with %s GPUs", len(devices))
-            distribute_pipeline_across_gpus(pipe, num_gpus=num_gpus)
+    # Always check for multi-GPU availability
+    devices = get_devices(num_gpus=num_gpus)
+    if len(devices) > 1 and all(d.type == "cuda" for d in devices):
+        logger.info("Using multi-GPU mode with %s GPUs", len(devices))
+        distribute_pipeline_across_gpus(pipe, num_gpus=num_gpus)
 
-            if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
-                logger.info("Enabling attention slicing")
-                pipe.enable_attention_slicing()
-            if vae_slicing:
-                if hasattr(pipe, "enable_vae_slicing"):
-                    logger.info("Enabling vae slicing")
-                    pipe.enable_vae_slicing()
-                elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_slicing"):
-                    logger.info("Enabling vae slicing")
-                    pipe.vae.enable_slicing()
+        if attention_slicing and hasattr(pipe, "enable_attention_slicing"):
+            logger.info("Enabling attention slicing")
+            pipe.enable_attention_slicing()
+        if vae_slicing:
+            if hasattr(pipe, "enable_vae_slicing"):
+                logger.info("Enabling vae slicing")
+                pipe.enable_vae_slicing()
+            elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_slicing"):
+                logger.info("Enabling vae slicing")
+                pipe.vae.enable_slicing()
 
-            try:
-                torch.backends.cuda.matmul.allow_tf32 = True
-                if hasattr(torch.backends.cuda, "sdp_kernel"):
-                    torch.backends.cuda.sdp_kernel(
-                        enable_flash=True,
-                        enable_math=False,
-                        enable_mem_efficient=False,
-                    )
-            except Exception:
-                logger.debug("sdp_kernel not supported, continuing without")
-            return
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            if hasattr(torch.backends.cuda, "sdp_kernel"):
+                torch.backends.cuda.sdp_kernel(
+                    enable_flash=True,
+                    enable_math=False,
+                    enable_mem_efficient=False,
+                )
+        except Exception:
+            logger.debug("sdp_kernel not supported, continuing without")
+        return
 
-        logger.info("Multi-GPU requested but not available, falling back to single device mode")
-
+    # Single device mode
     device = get_best_device()
 
     if memory_optimization_strategy == "Automatic":
