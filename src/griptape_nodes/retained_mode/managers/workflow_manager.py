@@ -870,7 +870,10 @@ class WorkflowManager:
             details = f"Failed to get description for '{request.workflow_name}': {load_metadata_result.result_details}"
             return GetWorkflowDescriptionResultFailure(result_details=details)
 
-        return GetWorkflowDescriptionResultSuccess(description=load_metadata_result.metadata.description)
+        return GetWorkflowDescriptionResultSuccess(
+            description=load_metadata_result.metadata.description,
+            result_details="Successfully retrieved workflow description.",
+        )
 
     async def on_set_workflow_description_request(self, request: SetWorkflowDescriptionRequest) -> ResultPayload:
         await self._workflows_loading_complete.wait()
@@ -1451,11 +1454,25 @@ class WorkflowManager:
         pickle_control_flow_result = (
             request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
         )
+        # Preserve existing description/image if not explicitly provided
+        existing_description: str | None = None
+        existing_image: str | None = None
+        if WorkflowRegistry.has_workflow_with_name(file_name):
+            try:
+                existing = WorkflowRegistry.get_workflow_by_name(file_name)
+                existing_description = existing.metadata.description
+                existing_image = existing.metadata.image
+            except Exception:
+                # Best-effort preserve; continue if lookup fails
+                pass
+        image_path_to_save = request.image_path if request.image_path is not None else existing_image
+        description_to_save = existing_description
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=serialized_flow_commands,
             file_name=file_name,
             creation_date=creation_date,
-            image_path=request.image_path,
+            image_path=image_path_to_save,
+            description=description_to_save,
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
             workflow_shape=workflow_shape,
@@ -1606,6 +1623,7 @@ class WorkflowManager:
                 file_name=request.file_name,
                 creation_date=creation_date,
                 image_path=request.image_path,
+                description=request.description,
                 branched_from=request.branched_from,
                 workflow_shape=request.workflow_shape,
             )
@@ -1647,6 +1665,7 @@ class WorkflowManager:
         file_name: str,
         creation_date: datetime,
         image_path: str | None = None,
+        description: str | None = None,
         branched_from: str | None = None,
         workflow_shape: WorkflowShape | None = None,
     ) -> WorkflowMetadata:
@@ -1678,6 +1697,7 @@ class WorkflowManager:
             branched_from=branched_from,
             workflow_shape=workflow_shape,
             image=image_path,
+            description=description,
         )
 
     def _generate_workflow_file_content(  # noqa: PLR0912, PLR0915, C901
