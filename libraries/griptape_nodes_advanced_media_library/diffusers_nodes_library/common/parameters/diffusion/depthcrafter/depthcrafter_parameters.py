@@ -86,7 +86,7 @@ class DepthCrafterPipelineParameters(DiffusionPipelineTypePipelineParameters):
             revision=revision,
             torch_dtype=torch.float16,
             variant="fp16",
-            use_local_files_only=True,
+            local_files_only=True,
             unet=unet,
         )
 

@@ -118,34 +118,54 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
     if device.type == "cuda":
         _log_memory_info(pipe, device)
 
+        # Step 1: Enable attention slicing (minimal impact on quality)
         if hasattr(pipe, "enable_attention_slicing") and should_enable_attention_slicing(device):
             logger.info("Enabling attention slicing")
             pipe.enable_attention_slicing()
 
+        # Step 2: Enable VAE slicing (processes VAE in smaller batches)
         if hasattr(pipe, "enable_vae_slicing"):
-            logger.info("Enabling vae slicing")
+            logger.info("Enabling VAE slicing")
             pipe.enable_vae_slicing()
-        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "use_slicing"):
-            logger.info("Enabling vae slicing")
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_slicing"):
+            logger.info("Enabling VAE slicing via vae.enable_slicing()")
             pipe.vae.enable_slicing()
 
+        # Step 3: Enable VAE tiling (critical for large images/videos)
+        if hasattr(pipe, "enable_vae_tiling"):
+            logger.info("Enabling VAE tiling")
+            pipe.enable_vae_tiling()
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
+            logger.info("Enabling VAE tiling via vae.enable_tiling()")
+            pipe.vae.enable_tiling()
+
+        # Clear cache after enabling optimizations
+        torch.cuda.empty_cache()
+        gc.collect()
+
+        # Check if slicing/tiling is sufficient
         if _check_cuda_memory_sufficient(pipe):
-            logger.info("Sufficient memory. Moving pipeline to %s", device)
+            logger.info("Sufficient memory after slicing/tiling. Moving pipeline to %s", device)
             pipe.to(device)
             return
 
-        logger.warning("Insufficient memory. Enabling fp8 layerwise caching for transformer")
-        pipe.transformer.enable_layerwise_casting(
-            storage_dtype=torch.float8_e4m3fn,
-            compute_dtype=torch.bfloat16,
-        )
-        _log_memory_info(pipe, device)
-        if _check_cuda_memory_sufficient(pipe):
-            logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
-            pipe.to(device)
-            return
+        # Step 4: Try layerwise casting for transformer-based pipelines (Flux, etc.)
+        if hasattr(pipe, "transformer"):
+            logger.warning("Insufficient memory. Enabling fp8 layerwise casting for transformer")
+            pipe.transformer.enable_layerwise_casting(
+                storage_dtype=torch.float8_e4m3fn,
+                compute_dtype=torch.bfloat16,
+            )
+            torch.cuda.empty_cache()
+            gc.collect()
+            _log_memory_info(pipe, device)
+            if _check_cuda_memory_sufficient(pipe):
+                logger.info("Sufficient memory after fp8 optimization. Moving pipeline to %s", device)
+                pipe.to(device)
+                return
 
-        logger.info("Insufficient memory after fp8 optimization. Trying model offloading techniques.")
+        # Step 5: Try CPU offloading (most aggressive memory saving)
+        logger.info("Insufficient memory. Trying CPU offloading techniques.")
         free_cuda_memory = get_free_cuda_memory()
         max_memory_footprint_with_headroom = MEMORY_HEADROOM_FACTOR * get_max_memory_footprint(
             pipe, get_pipeline_component_names(pipe)
@@ -155,27 +175,28 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
             "Pipeline estimated max memory footprint: %s",
             to_human_readable_size(max_memory_footprint_with_headroom),
         )
-        if max_memory_footprint_with_headroom < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
-            logger.info("Enabling model cpu offload")
-            pipe.enable_model_cpu_offload()
-            _log_memory_info(pipe, device)
-            if _check_cuda_memory_sufficient(pipe):
-                logger.info("Sufficient memory after model cpu offload")
-                return
-        elif hasattr(pipe, "enable_sequential_cpu_offload"):
-            logger.info("Enabling sequential cpu offload")
+
+        # Try sequential offload first (most aggressive, moves submodules)
+        if hasattr(pipe, "enable_sequential_cpu_offload"):
+            logger.info("Enabling sequential CPU offload (most aggressive)")
             pipe.enable_sequential_cpu_offload()
-            _log_memory_info(pipe, device)
-            if _check_cuda_memory_sufficient(pipe):
-                logger.info("Sufficient memory after sequential cpu offload")
-                return
+            torch.cuda.empty_cache()
+            gc.collect()
+            logger.info("Sequential CPU offload enabled successfully")
+            return
 
-        # Final check after all optimizations
-        if not _check_cuda_memory_sufficient(pipe):
-            logger.warning("Memory may still be insufficient after all optimizations, but will try anyway")
+        # Fall back to model offload if sequential not available and max component fits
+        if max_memory_footprint_with_headroom < free_cuda_memory and hasattr(pipe, "enable_model_cpu_offload"):
+            logger.info("Enabling model CPU offload")
+            pipe.enable_model_cpu_offload()
+            torch.cuda.empty_cache()
+            gc.collect()
+            logger.info("Model CPU offload enabled successfully")
+            return
 
-        # Intentionally not calling pipe.to(device) here because sequential_cpu_offload
-        # manages device placement automatically
+        # Final fallback: load to GPU and hope for the best
+        logger.warning("Memory may still be insufficient after all optimizations, but will try loading to GPU")
+        pipe.to(device)
 
     elif device.type == "mps":
         _log_memory_info(pipe, device)
@@ -187,16 +208,25 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
             return
 
         logger.warning("Insufficient memory on %s for Pipeline.", device)
+
+        # Enable VAE slicing
         if hasattr(pipe, "enable_vae_slicing"):
-            logger.info("Enabling vae slicing")
+            logger.info("Enabling VAE slicing")
             pipe.enable_vae_slicing()
 
-        # Final check after VAE slicing
+        # Enable VAE tiling
+        if hasattr(pipe, "enable_vae_tiling"):
+            logger.info("Enabling VAE tiling")
+            pipe.enable_vae_tiling()
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "enable_tiling"):
+            logger.info("Enabling VAE tiling via vae.enable_tiling()")
+            pipe.vae.enable_tiling()
+
+        # Final check after VAE optimizations
         if not _check_mps_memory_sufficient(pipe):
             logger.warning("Memory may still be insufficient after optimizations, but will try anyway")
 
-        # Intentionally not calling pipe.to(device) here when memory is insufficient
-        # to avoid potential OOM errors
+        pipe.to(device)
     return
 
 
