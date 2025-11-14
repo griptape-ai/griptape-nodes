@@ -1571,8 +1571,9 @@ class FlowManager:
             # Find the corresponding serialized node
             serialized_node = None
             for serialized_node_command in serialized_package_nodes:
+                # We need to get the create commoand.
                 create_cmd = serialized_node_command.create_node_command
-                # In a CreateNodeGroupRequest, the node_name is the node_group_name
+                # In a CreateNodeGroupRequest, the node_name is the node_group_name, so we need to add both.
                 cmd_node_name = (
                     create_cmd.node_group_name
                     if isinstance(create_cmd, CreateNodeGroupRequest)
