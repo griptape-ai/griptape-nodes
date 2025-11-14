@@ -317,7 +317,7 @@ def optimize_diffusion_pipeline(  # noqa: C901 PLR0913
     transformer_layerwise_casting: bool = False,
     cpu_offload_strategy: str = "None",
     quantization_mode: str = "None",
-    use_multi_gpu: bool = False,
+    use_multi_gpu: bool = True,
     num_gpus: int | None = None,
 ) -> None:
     """Optimize pipeline performance and memory.
