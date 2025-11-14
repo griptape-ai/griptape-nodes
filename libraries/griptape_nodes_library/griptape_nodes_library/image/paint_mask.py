@@ -18,7 +18,6 @@ from griptape_nodes_library.utils.image_utils import (
 )
 
 
-
 class PaintMask(DataNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -271,7 +270,6 @@ class PaintMask(DataNode):
         mask_pil = mask_pil.convert("RGB")
         r, _, _ = mask_pil.split()
         return r
-
 
     def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any) -> None:
         """Apply mask to input image using red channel as alpha and set as output_image."""
