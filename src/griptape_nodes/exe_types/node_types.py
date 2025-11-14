@@ -315,6 +315,15 @@ class BaseNode(ABC):
         """Callback after a Connection has been established OUT of this Node."""
         return
 
+    def before_incoming_connection_removed(
+        self,
+        source_node: BaseNode,  # noqa: ARG002
+        source_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback before a Connection TO this Node is REMOVED."""
+        return
+
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
@@ -322,6 +331,15 @@ class BaseNode(ABC):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
+        return
+
+    def before_outgoing_connection_removed(
+        self,
+        source_parameter: Parameter,  # noqa: ARG002
+        target_node: BaseNode,  # noqa: ARG002
+        target_parameter: Parameter,  # noqa: ARG002
+    ) -> None:
+        """Callback before a Connection OUT of this Node is REMOVED."""
         return
 
     def after_outgoing_connection_removed(
@@ -829,12 +847,16 @@ class BaseNode(ABC):
             err = f"Attempted to remove value for Parameter '{param_name}' but parameter doesn't exist."
             raise KeyError(err)
         if param_name in self.parameter_values:
-            del self.parameter_values[param_name]
+            # Reset the parameter to default.
+            default_val = parameter.default_value
+            self.set_parameter_value(param_name, default_val)
+
             # special handling if it's in a container.
             if parameter.parent_container_name and parameter.parent_container_name in self.parameter_values:
                 del self.parameter_values[parameter.parent_container_name]
                 new_val = self.get_parameter_value(parameter.parent_container_name)
                 if new_val is not None:
+                    # Don't set the container to None (that would make it empty)
                     self.set_parameter_value(parameter.parent_container_name, new_val)
         else:
             err = f"Attempted to remove value for Parameter '{param_name}' but no value was set."
