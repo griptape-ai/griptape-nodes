@@ -69,9 +69,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
-    GetWorkflowDescriptionRequest,
-    GetWorkflowDescriptionResultFailure,
-    GetWorkflowDescriptionResultSuccess,
+    GetWorkflowMetadataRequest,
+    GetWorkflowMetadataResultFailure,
+    GetWorkflowMetadataResultSuccess,
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultFailure,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -120,9 +120,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     SaveWorkflowRequest,
     SaveWorkflowResultFailure,
     SaveWorkflowResultSuccess,
-    SetWorkflowDescriptionRequest,
-    SetWorkflowDescriptionResultFailure,
-    SetWorkflowDescriptionResultSuccess,
+    SetWorkflowMetadataRequest,
+    SetWorkflowMetadataResultFailure,
+    SetWorkflowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import (
     GriptapeNodes,
@@ -338,12 +338,12 @@ class WorkflowManager:
             self.on_publish_workflow_request,
         )
         event_manager.assign_manager_to_request_type(
-            GetWorkflowDescriptionRequest,
-            self.on_get_workflow_description_request,
+            SetWorkflowMetadataRequest,
+            self.on_set_workflow_metadata_request,
         )
         event_manager.assign_manager_to_request_type(
-            SetWorkflowDescriptionRequest,
-            self.on_set_workflow_description_request,
+            GetWorkflowMetadataRequest,
+            self.on_get_workflow_metadata_request,
         )
         event_manager.assign_manager_to_request_type(
             ImportWorkflowAsReferencedSubFlowRequest,
@@ -857,94 +857,122 @@ class WorkflowManager:
             )
         )
 
-    def on_get_workflow_description_request(self, request: GetWorkflowDescriptionRequest) -> ResultPayload:
+    def on_get_workflow_metadata_request(self, request: GetWorkflowMetadataRequest) -> ResultPayload:
         try:
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
         except KeyError:
-            details = f"Failed to get description. Workflow '{request.workflow_name}' not found."
-            return GetWorkflowDescriptionResultFailure(result_details=details)
+            details = f"Failed to get metadata. Workflow '{request.workflow_name}' not found."
+            return GetWorkflowMetadataResultFailure(result_details=details)
 
         load_metadata_request = LoadWorkflowMetadata(file_name=workflow.file_path)
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-            details = f"Failed to get description for '{request.workflow_name}': {load_metadata_result.result_details}"
-            return GetWorkflowDescriptionResultFailure(result_details=details)
+            details = f"Failed to get metadata for '{request.workflow_name}': {load_metadata_result.result_details}"
+            return GetWorkflowMetadataResultFailure(result_details=details)
 
-        return GetWorkflowDescriptionResultSuccess(
-            description=load_metadata_result.metadata.description,
-            result_details="Successfully retrieved workflow description.",
+        metadata = load_metadata_result.metadata
+        return GetWorkflowMetadataResultSuccess(
+            description=metadata.description,
+            image=metadata.image,
+            is_template=metadata.is_template,
+            result_details="Successfully retrieved workflow metadata.",
         )
 
-    async def on_set_workflow_description_request(self, request: SetWorkflowDescriptionRequest) -> ResultPayload:  # noqa: C901, PLR0912
+    # Removed description-specific setter in favor of SetWorkflowMetadataRequest
+
+    def _validate_workflow_metadata_updates(self, updates: dict) -> str | None:
+        """Validate provided metadata updates for allowed keys and types."""
+        allowed_keys_and_types: dict[str, type | tuple[type, None.__class__]] = {
+            "description": (str, type(None)),
+            "image": (str, type(None)),
+            "is_template": bool,
+        }
+        invalid_keys = [k for k in updates if k not in allowed_keys_and_types]
+        if invalid_keys:
+            return f"Invalid metadata keys: {', '.join(invalid_keys)}"
+
+        for key, value in updates.items():
+            expected = allowed_keys_and_types[key]
+            if not isinstance(value, expected):  # type: ignore[arg-type]
+                return f"Invalid type for '{key}': expected {expected}, got {type(value)}"
+
+        return None
+
+    def _get_workflow_and_path(self, workflow_name: str) -> tuple[Workflow | None, Path | None, str | None]:
+        """Resolve workflow from registry and return absolute file path."""
+        try:
+            workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+        except KeyError:
+            return None, None, f"Failed to set metadata. Workflow '{workflow_name}' not found."
+
+        complete_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
+        file_path_obj = Path(complete_file_path)
+        if not file_path_obj.is_file():
+            return workflow, None, f"Failed to set metadata. File path '{complete_file_path}' does not exist."
+
+        return workflow, file_path_obj, None
+
+    def _load_existing_workflow_metadata(self, workflow: Workflow) -> tuple[WorkflowMetadata | None, str | None]:
+        """Load and return workflow metadata for the given workflow."""
+        load_metadata_request = LoadWorkflowMetadata(file_name=workflow.file_path)
+        load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+        if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+            return None, str(load_metadata_result.result_details)
+        return load_metadata_result.metadata, None
+
+    async def _write_metadata_header(self, file_path: Path, workflow_metadata: WorkflowMetadata) -> str | None:
+        """Replace the workflow header and persist changes to disk."""
+        try:
+            existing_content = file_path.read_text(encoding="utf-8")
+        except OSError as e:
+            return f"Failed to read workflow file '{file_path}': {e!s}"
+
+        updated_content = self._replace_workflow_metadata_header(existing_content, workflow_metadata)
+        if updated_content is None:
+            return "Failed to update metadata header."
+
+        write_result = await self._write_workflow_file(
+            file_path=file_path, content=updated_content, file_name=workflow_metadata.name
+        )
+        if not write_result.success:
+            return write_result.error_details
+        return None
+
+    async def on_set_workflow_metadata_request(self, request: SetWorkflowMetadataRequest) -> ResultPayload:
         await self._workflows_loading_complete.wait()
 
-        error_details: str | None = None
-        workflow: Workflow | None = None
+        # 1) Validate incoming updates
+        validation_error = self._validate_workflow_metadata_updates(request.updates)
+        if validation_error is not None:
+            return SetWorkflowMetadataResultFailure(result_details=validation_error)
 
-        # Resolve workflow and file path
-        try:
-            workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-        except KeyError:
-            error_details = f"Failed to set description. Workflow '{request.workflow_name}' not found."
+        # 2) Resolve workflow and file path
+        workflow, file_path_obj, resolve_error = self._get_workflow_and_path(request.workflow_name)
+        if resolve_error is not None or workflow is None or file_path_obj is None:
+            return SetWorkflowMetadataResultFailure(result_details=resolve_error or "Failed to resolve workflow.")
 
-        file_path_obj: Path | None = None
-        if error_details is None and workflow is not None:
-            complete_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
-            file_path_obj = Path(complete_file_path)
-            if not file_path_obj.is_file():
-                error_details = f"Failed to set description. File path '{complete_file_path}' does not exist."
+        # 3) Load existing metadata
+        workflow_metadata, load_error = self._load_existing_workflow_metadata(workflow)
+        if load_error is not None or workflow_metadata is None:
+            return SetWorkflowMetadataResultFailure(result_details=load_error or "Failed to load workflow metadata.")
 
-        # Load existing metadata
-        workflow_metadata: WorkflowMetadata | None = None
-        if error_details is None and workflow is not None:
-            load_metadata_request = LoadWorkflowMetadata(file_name=workflow.file_path)
-            load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
-            if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
-                error_details = (
-                    f"Failed to set description for '{request.workflow_name}': {load_metadata_result.result_details}"
-                )
-            else:
-                workflow_metadata = load_metadata_result.metadata
+        # 4) Apply replacements
+        for meta_key in ("description", "image", "is_template"):
+            if meta_key in request.updates:
+                setattr(workflow_metadata, meta_key, request.updates[meta_key])
+        workflow_metadata.last_modified_date = datetime.now(tz=UTC)
 
-        # Update metadata
-        updated_content: str | None = None
-        if error_details is None and workflow_metadata is not None and file_path_obj is not None:
-            workflow_metadata.description = request.description
-            workflow_metadata.last_modified_date = datetime.now(tz=UTC)
+        # 5) Persist header
+        write_error = await self._write_metadata_header(file_path=file_path_obj, workflow_metadata=workflow_metadata)
+        if write_error is not None:
+            return SetWorkflowMetadataResultFailure(result_details=write_error)
 
-            # Read existing content and replace header
-            try:
-                existing_content = file_path_obj.read_text(encoding="utf-8")
-            except OSError as e:
-                error_details = f"Failed to read workflow file '{file_path_obj}': {e!s}"
-            else:
-                updated_content = self._replace_workflow_metadata_header(existing_content, workflow_metadata)
-                if updated_content is None:
-                    error_details = f"Failed to update metadata header for '{request.workflow_name}'."
-
-        # Persist to disk
-        if error_details is None and updated_content is not None and file_path_obj is not None:
-            write_result = await self._write_workflow_file(
-                file_path=file_path_obj,
-                content=updated_content,
-                file_name=workflow_metadata.name,  # type: ignore[union-attr]
-            )
-            if not write_result.success:
-                error_details = write_result.error_details
-
-        if error_details is not None:
-            return SetWorkflowDescriptionResultFailure(result_details=error_details)
-
-        # Update registry metadata
-        if workflow is None or workflow_metadata is None:
-            return SetWorkflowDescriptionResultFailure(
-                result_details="Unexpected internal state when updating workflow description."
-            )
+        # 6) Update registry
         workflow.metadata = workflow_metadata
 
-        return SetWorkflowDescriptionResultSuccess(
+        return SetWorkflowMetadataResultSuccess(
             result_details=ResultDetails(
-                message=f"Successfully updated description for workflow '{request.workflow_name}'.", level=logging.INFO
+                message=f"Successfully updated metadata for workflow '{request.workflow_name}'.", level=logging.INFO
             )
         )
 
