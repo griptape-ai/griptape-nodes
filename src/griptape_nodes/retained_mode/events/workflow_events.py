@@ -634,6 +634,49 @@ class MoveWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class GetWorkflowDescriptionRequest(RequestPayload):
+    """Get the description for a workflow by name from the registry."""
+
+    workflow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowDescriptionResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow description retrieved successfully."""
+
+    description: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowDescriptionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow description retrieval failed. Common causes: workflow not found, registry error, file load error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SetWorkflowDescriptionRequest(RequestPayload):
+    """Set or update the description for a workflow by name and persist it to disk."""
+
+    workflow_name: str
+    description: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class SetWorkflowDescriptionResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow description updated successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SetWorkflowDescriptionResultFailure(ResultPayloadFailure):
+    """Workflow description update failed. Common causes: workflow not found, file system error, header replacement error."""
+
+
+@dataclass
+@PayloadRegistry.register
 class RegisterWorkflowsFromConfigRequest(RequestPayload):
     """Register workflows from configuration section.
 
