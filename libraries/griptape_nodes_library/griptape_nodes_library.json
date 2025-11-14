@@ -1429,7 +1429,7 @@
         "category": "image",
         "description": "Calculate aspect ratios with preset selection and dimension modifiers",
         "display_name": "Aspect Ratio",
-        "icon": "aspect-ratio",
+        "icon": "ratio",
         "group": "edit"
       }
     },
