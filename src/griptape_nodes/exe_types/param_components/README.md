@@ -5,6 +5,7 @@ The `ApiKeyProviderParameter` component provides a reusable way to add API key s
 ## Overview
 
 This component automatically adds:
+
 - A toggle parameter to switch between proxy (Griptape) and user API keys
 - A button on the toggle to open secrets settings (filtered to the relevant API key)
 - An informational message that shows/hides based on whether the user API key is set
@@ -212,25 +213,31 @@ Optional parameters:
 ### Available Methods
 
 #### `add_parameters()`
+
 Adds the toggle parameter and message to the node. Call this once in `__init__`.
 
 #### `after_value_set(parameter: Parameter, value: Any)`
+
 Handles visibility updates when the toggle changes. Call this from your node's `after_value_set` method.
 
 #### `validate_api_key() -> tuple[str, bool]`
+
 Validates and returns the API key and whether to use user API. Returns `(api_key, use_user_api)`.
 
 **Raises:** `ValueError` if the required API key is not set.
 
 #### `is_user_api_enabled() -> bool`
+
 Checks if user API is currently enabled.
 
 #### `get_api_key(use_user_api: bool) -> str`
+
 Gets the API key for the specified mode.
 
 **Raises:** `ValueError` if the API key is not set.
 
 #### `check_api_key_set(api_key: str) -> bool`
+
 Checks if an API key exists and is not empty.
 
 ## Migration Guide: Converting Existing Nodes
@@ -360,10 +367,11 @@ else:
 
 **Problem:** Getting `ValueError` about missing API key even though it's set.
 
-**Solution:** 
+**Solution:**
+
 1. Verify the API key name matches exactly (case-sensitive)
-2. Check that the secret is set in Settings → Secrets
-3. Ensure you're using the correct `api_key_name` when initializing the component
+1. Check that the secret is set in Settings → Secrets
+1. Ensure you're using the correct `api_key_name` when initializing the component
 
 ### Toggle Not Appearing
 
@@ -375,4 +383,3 @@ else:
 
 - [Flux Image Generation Node](../../libraries/griptape_nodes_library/griptape_nodes_library/image/flux_image_generation.py) - Complete working example
 - [ApiKeyProviderParameter Component](../../src/griptape_nodes/exe_types/param_components/api_key_provider_parameter.py) - Component source code
-
