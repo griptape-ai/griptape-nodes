@@ -104,6 +104,7 @@ class Button(Trait):
     loading_icon: str | None = None
     loading_icon_class: str | None = None
     tooltip: str | None = None
+    href: str | None = None
 
     element_id: str = field(default_factory=lambda: "Button")
     on_click_callback: OnClickCallback | None = field(default=None, init=False)
@@ -124,6 +125,7 @@ class Button(Trait):
         loading_icon: str | None = None,
         loading_icon_class: str | None = None,
         tooltip: str | None = None,
+        href: str | None = None,
         on_click: OnClickCallback | None = None,
         get_button_state: GetButtonStateCallback | None = None,
     ) -> None:
@@ -140,8 +142,33 @@ class Button(Trait):
         self.loading_icon = loading_icon
         self.loading_icon_class = loading_icon_class
         self.tooltip = tooltip
-        self.on_click_callback = on_click
+        self.href = href
+
+        # If href is provided and no custom on_click handler, create a default handler
+        if href is not None and on_click is None:
+            self.on_click_callback = self._create_href_handler(href)
+        else:
+            self.on_click_callback = on_click
         self.get_button_state_callback = get_button_state
+
+    def _create_href_handler(self, url: str) -> OnClickCallback:
+        """Create a default handler for href URLs."""
+
+        def handler(
+            button: Button,  # noqa: ARG001
+            button_details: ButtonDetailsMessagePayload,
+        ) -> NodeMessageResult:
+            return NodeMessageResult(
+                success=True,
+                details="Opening URL",
+                response=OnClickMessageResultPayload(
+                    button_details=button_details,
+                    href=url,
+                ),
+                altered_workflow_state=False,
+            )
+
+        return handler
 
     @classmethod
     def get_trait_keys(cls) -> list[str]:
