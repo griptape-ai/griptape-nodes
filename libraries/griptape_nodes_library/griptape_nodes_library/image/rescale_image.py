@@ -168,7 +168,7 @@ class RescaleImage(BaseImageProcessor):
 
         self.add_node_element(rescale_group)
 
-        # Hide the appropropriate parameters
+        # Hide the correct parameters
         self.hide_parameter_by_name("target_size")
         self.hide_parameter_by_name("target_width")
         self.hide_parameter_by_name("target_height")
