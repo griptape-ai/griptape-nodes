@@ -889,7 +889,7 @@ class WorkflowManager:
 
     def _validate_workflow_metadata_updates(self, updates: dict) -> str | None:
         """Validate provided metadata updates for allowed keys and types."""
-        allowed_keys_and_types: dict[str, type | tuple[type, None.__class__]] = {
+        allowed_keys_and_types: dict[str, type | tuple[type, type]] = {
             "description": (str, type(None)),
             "image": (str, type(None)),
             "is_template": bool,
@@ -1721,6 +1721,7 @@ class WorkflowManager:
         serialized_flow_commands: SerializedFlowCommands,
         file_name: str,
         creation_date: datetime,
+        *,
         image_path: str | None = None,
         description: str | None = None,
         is_template: bool | None = None,
