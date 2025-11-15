@@ -2320,11 +2320,10 @@ class LibraryManager:
             GitBranchError,
             GitCloneError,
             GitRemoteError,
-            clone_and_get_version,
             get_current_branch,
             get_git_remote,
-            is_monorepo,
         )
+        from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
 
         library_name = request.library_name
 
@@ -2333,7 +2332,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
             details = f"Attempted to check for updates for Library '{library_name}'. Failed because no Library with that name was registered."
-            logger.error(details)
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         # Find the library file path
@@ -2345,7 +2343,6 @@ class LibraryManager:
 
         if library_file_path is None:
             details = f"Attempted to check for updates for Library '{library_name}'. Failed because no file path could be found for this library."
-            logger.error(details)
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         # Get the library directory (parent of the JSON file)
@@ -2391,12 +2388,11 @@ class LibraryManager:
         current_version = library.get_metadata().library_version
         if current_version is None:
             details = f"Library '{library_name}' has no version information."
-            logger.error(details)
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         # Clone remote and get latest version
         try:
-            latest_version = await asyncio.to_thread(clone_and_get_version, git_remote)
+            latest_version = await asyncio.to_thread(clone_and_get_library_version, git_remote)
         except GitCloneError as e:
             details = f"Failed to retrieve latest version from git remote for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
@@ -2408,7 +2404,6 @@ class LibraryManager:
             has_update = latest_ver > current_ver
         except ValueError as e:
             details = f"Failed to parse version strings for Library '{library_name}': {e}"
-            logger.error(details)
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update}"
@@ -2421,9 +2416,10 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Update a library to the latest version via git pull --rebase."""
-        from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError, is_monorepo
+        from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError
+        from griptape_nodes.utils.library_utils import is_monorepo
 
         library_name = request.library_name
 
@@ -2432,14 +2428,12 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
             details = f"Attempted to update Library '{library_name}'. Failed because no Library with that name was registered."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Get current version before update
         old_version = library.get_metadata().library_version
         if old_version is None:
             details = f"Library '{library_name}' has no version information."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Find the library file path
@@ -2451,7 +2445,6 @@ class LibraryManager:
 
         if library_file_path is None:
             details = f"Attempted to update Library '{library_name}'. Failed because no file path could be found for this library."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Get the library directory (parent of the JSON file)
@@ -2460,7 +2453,6 @@ class LibraryManager:
         # Check if library is in a monorepo (multiple libraries in same git repository)
         if await asyncio.to_thread(is_monorepo, library_dir):
             details = f"Cannot update Library '{library_name}'. Repository contains multiple libraries and must be updated manually."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Perform git pull --rebase
@@ -2471,19 +2463,15 @@ class LibraryManager:
             return UpdateLibraryResultFailure(result_details=details)
 
         # Unload the library
-        unload_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
-        unload_result = GriptapeNodes.handle_request(unload_request)
+        unload_result = GriptapeNodes.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
         if not unload_result.succeeded():
             details = f"Failed to unload Library '{library_name}' after update."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Reload the library from file
-        reload_request = RegisterLibraryFromFileRequest(file_path=library_file_path)
-        reload_result = await GriptapeNodes.ahandle_request(reload_request)
+        reload_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_file_path))
         if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
             details = f"Failed to reload Library '{library_name}' after update."
-            logger.error(details)
             return UpdateLibraryResultFailure(result_details=details)
 
         # Get new version after update
@@ -2498,8 +2486,9 @@ class LibraryManager:
         # Install dependencies if requested
         if request.install_dependencies:
             logger.info("Installing dependencies for updated library '%s'", library_name)
-            install_deps_request = InstallLibraryDependenciesRequest(library_name=library_name)
-            install_deps_result = await GriptapeNodes.ahandle_request(install_deps_request)
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_name=library_name)
+            )
             if not install_deps_result.succeeded():
                 logger.warning(
                     "Library '%s' was updated successfully but dependency installation failed: %s",
@@ -2514,7 +2503,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def switch_library_branch_request(self, request: SwitchLibraryBranchRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+    async def switch_library_branch_request(self, request: SwitchLibraryBranchRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Switch a library to a different git branch."""
         from griptape_nodes.utils.git_utils import GitBranchError, GitRepositoryError, switch_branch
 
@@ -2526,14 +2515,12 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
             details = f"Attempted to switch branch for Library '{library_name}'. Failed because no Library with that name was registered."
-            logger.error(details)
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Get current branch and version before switch
         old_version = library.get_metadata().library_version
         if old_version is None:
             details = f"Library '{library_name}' has no version information."
-            logger.error(details)
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Find the library file path
@@ -2545,7 +2532,6 @@ class LibraryManager:
 
         if library_file_path is None:
             details = f"Attempted to switch branch for Library '{library_name}'. Failed because no file path could be found for this library."
-            logger.error(details)
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Get the library directory (parent of the JSON file)
@@ -2556,7 +2542,6 @@ class LibraryManager:
             old_branch = await asyncio.to_thread(get_current_branch, library_dir)
             if old_branch is None:
                 details = f"Library '{library_name}' is not on a branch or is not a git repository."
-                logger.error(details)
                 return SwitchLibraryBranchResultFailure(result_details=details)
         except GitBranchError as e:
             details = f"Failed to get current branch for Library '{library_name}': {e}"
@@ -2570,19 +2555,15 @@ class LibraryManager:
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Unload the library
-        unload_request = UnloadLibraryFromRegistryRequest(library_name=library_name)
-        unload_result = GriptapeNodes.handle_request(unload_request)
+        unload_result = GriptapeNodes.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
         if not unload_result.succeeded():
             details = f"Failed to unload Library '{library_name}' after branch switch."
-            logger.error(details)
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Reload the library from file
-        reload_request = RegisterLibraryFromFileRequest(file_path=library_file_path)
-        reload_result = await GriptapeNodes.ahandle_request(reload_request)
+        reload_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_file_path))
         if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
             details = f"Failed to reload Library '{library_name}' after branch switch."
-            logger.error(details)
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Get new branch and version after switch
@@ -2610,11 +2591,11 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0915
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911
         """Download a library from a git repository."""
         import json
 
-        from griptape_nodes.utils.git_utils import GitCloneError, clone_library
+        from griptape_nodes.utils.git_utils import GitCloneError, clone_repository
 
         git_url = request.git_url
         branch_tag_commit = request.branch_tag_commit
@@ -2625,7 +2606,6 @@ class LibraryManager:
         libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
         if not libraries_dir_setting:
             details = "Cannot download library: libraries_directory setting is not configured."
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         # Construct the libraries directory path
@@ -2644,12 +2624,11 @@ class LibraryManager:
         # Check if target directory already exists (clone_library also checks, but we check here first for a clearer error message)
         if target_path.exists():
             details = f"Cannot download library: target directory already exists at {target_path}"
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         # Clone the repository
         try:
-            await asyncio.to_thread(clone_library, git_url, target_path, branch_tag_commit)
+            await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
         except GitCloneError as e:
             details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
             return DownloadLibraryResultFailure(result_details=details)
@@ -2658,7 +2637,6 @@ class LibraryManager:
         library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
         if library_json_path is None:
             details = f"Downloaded library from {git_url} but no library JSON file found in {target_path}"
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         try:
@@ -2666,30 +2644,29 @@ class LibraryManager:
                 library_data = json.load(f)
         except json.JSONDecodeError as e:
             details = f"Failed to parse griptape_nodes_library.json from downloaded library: {e}"
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         # Extract library name
         library_name = library_data.get("name")
         if library_name is None:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         # Register the library
         logger.info("Registering downloaded library '%s' from %s", library_name, library_json_path)
-        register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
-        register_result = await GriptapeNodes.ahandle_request(register_request)
+        register_result = await GriptapeNodes.ahandle_request(
+            RegisterLibraryFromFileRequest(file_path=str(library_json_path))
+        )
         if not isinstance(register_result, RegisterLibraryFromFileResultSuccess):
             details = f"Downloaded library '{library_name}' but failed to register it: {register_result.result_details}"
-            logger.error(details)
             return DownloadLibraryResultFailure(result_details=details)
 
         # Install dependencies if requested
         if request.install_dependencies:
             logger.info("Installing dependencies for downloaded library '%s'", library_name)
-            install_deps_request = InstallLibraryDependenciesRequest(library_name=library_name)
-            install_deps_result = await GriptapeNodes.ahandle_request(install_deps_request)
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_name=library_name)
+            )
             if not install_deps_result.succeeded():
                 logger.warning(
                     "Library '%s' was downloaded and registered successfully but dependency installation failed: %s",
@@ -2713,7 +2690,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
             details = f"Library '{library_name}' not found in registry"
-            logger.error(details)
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
         # Get library metadata
@@ -2737,7 +2713,6 @@ class LibraryManager:
 
         if library_file_path is None:
             details = f"Library '{library_name}' has no file path"
-            logger.error(details)
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
         # Get venv path and initialize it
@@ -2747,7 +2722,6 @@ class LibraryManager:
             library_venv_python_path = await self._init_library_venv(venv_path)
         except RuntimeError as e:
             details = f"Failed to initialize venv for library '{library_name}': {e}"
-            logger.error(details)
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
         if not self._can_write_to_venv_location(library_venv_python_path):
@@ -2761,7 +2735,6 @@ class LibraryManager:
         if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
             error_msg = OSManager.format_disk_space_error(Path(venv_path))
             details = f"Insufficient disk space for dependencies (requires {min_space_gb} GB) for library '{library_name}': {error_msg}"
-            logger.error(details)
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
         # Install dependencies
@@ -2787,7 +2760,6 @@ class LibraryManager:
             )
         except subprocess.CalledProcessError as e:
             details = f"Failed to install dependencies for library '{library_name}': return code={e.returncode}, stderr={e.stderr}"
-            logger.error(details)
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
         details = f"Successfully installed {len(pip_dependencies)} dependencies for library '{library_name}'"
@@ -2803,11 +2775,9 @@ class LibraryManager:
         exclude_libraries = request.exclude_libraries or []
 
         # Get all registered libraries
-        list_libraries_request = ListRegisteredLibrariesRequest()
-        list_result = await GriptapeNodes.ahandle_request(list_libraries_request)
+        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             details = "Failed to list registered libraries for sync"
-            logger.error(details)
             return SyncLibrariesResultFailure(result_details=details)
 
         all_libraries = list_result.libraries
@@ -2819,8 +2789,7 @@ class LibraryManager:
         async def check_library_for_update(library_name: str) -> tuple[str, ResultPayload]:
             """Check a single library for updates."""
             logger.info("Checking library '%s' for updates", library_name)
-            check_request = CheckLibraryUpdateRequest(library_name=library_name)
-            check_result = await GriptapeNodes.ahandle_request(check_request)
+            check_result = await GriptapeNodes.ahandle_request(CheckLibraryUpdateRequest(library_name=library_name))
             return library_name, check_result
 
         # Gather all check results concurrently
@@ -2884,8 +2853,9 @@ class LibraryManager:
         ) -> tuple[str, str, str, ResultPayload]:
             """Update a single library."""
             logger.info("Updating library '%s' from %s to %s", library_name, old_version, new_version)
-            update_request = UpdateLibraryRequest(library_name=library_name, install_dependencies=install_dependencies)
-            update_result = await GriptapeNodes.ahandle_request(update_request)
+            update_result = await GriptapeNodes.ahandle_request(
+                UpdateLibraryRequest(library_name=library_name, install_dependencies=install_dependencies)
+            )
             return library_name, old_version, new_version, update_result
 
         # Gather all update results concurrently
