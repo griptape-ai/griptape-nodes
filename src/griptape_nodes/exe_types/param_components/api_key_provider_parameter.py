@@ -43,7 +43,7 @@ class ApiKeyProviderParameter:
         off_label: Label when proxy API is enabled (default: "Griptape")
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         node: BaseNode,
         api_key_name: str,
@@ -141,7 +141,7 @@ class ApiKeyProviderParameter:
             return bool(api_key_value.strip())
         return bool(api_key_value)
 
-    def get_api_key(self, use_user_api: bool) -> str:
+    def get_api_key(self, *, use_user_api: bool) -> str:
         """Get the API key for the specified mode.
 
         Args:
@@ -170,5 +170,5 @@ class ApiKeyProviderParameter:
             ValueError: If the required API key is not set
         """
         use_user_api = self.is_user_api_enabled()
-        api_key = self.get_api_key(use_user_api)
+        api_key = self.get_api_key(use_user_api=use_user_api)
         return api_key, use_user_api

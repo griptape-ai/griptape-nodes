@@ -307,7 +307,7 @@ class FluxImageGeneration(SuccessFailureNode):
 
         # Submit request to get generation ID and polling URL
         try:
-            generation_id, polling_url = await self._submit_request(params, headers, use_user_api)
+            generation_id, polling_url = await self._submit_request(params, headers, use_user_api=use_user_api)
             if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
@@ -322,7 +322,7 @@ class FluxImageGeneration(SuccessFailureNode):
             return
 
         # Poll for result
-        await self._poll_for_result(generation_id, headers, use_user_api, polling_url)
+        await self._poll_for_result(generation_id, headers, use_user_api=use_user_api, polling_url=polling_url)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
@@ -375,7 +375,7 @@ class FluxImageGeneration(SuccessFailureNode):
         return super().after_value_set(parameter, value)
 
     async def _submit_request(
-        self, params: dict[str, Any], headers: dict[str, str], use_user_api: bool
+        self, params: dict[str, Any], headers: dict[str, str], *, use_user_api: bool
     ) -> tuple[str | None, str | None]:
         """Submit request to API and return (generation_id, polling_url).
 
@@ -552,8 +552,8 @@ class FluxImageGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(
-        self, generation_id: str, headers: dict[str, str], use_user_api: bool, polling_url: str | None = None
+    async def _poll_for_result(  # noqa: PLR0912, PLR0915, C901
+        self, generation_id: str, headers: dict[str, str], *, use_user_api: bool, polling_url: str | None = None
     ) -> None:
         """Poll the API endpoint until ready.
 
