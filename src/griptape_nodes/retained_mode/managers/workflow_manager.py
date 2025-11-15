@@ -1443,13 +1443,12 @@ class WorkflowManager:
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
-    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0915
+    async def on_save_workflow_request(self, request: SaveWorkflowRequest) -> ResultPayload:
         # Determine save target (file path, name, metadata)
         context_manager = GriptapeNodes.ContextManager()
         current_workflow_name = (
             context_manager.get_current_workflow_name() if context_manager.has_current_workflow() else None
         )
-
         try:
             save_target = self._determine_save_target(
                 requested_file_name=request.file_name,
@@ -1473,92 +1472,34 @@ class WorkflowManager:
             branched_from if branched_from else "None",
         )
 
-        # Serialize the current workflow state
-        top_level_flow_request = GetTopLevelFlowRequest()
-        top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)
-        if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
-            details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
-            return SaveWorkflowResultFailure(result_details=details)
+        # Serialize current flow and get shape
+        serialized = await self._get_serialized_top_level_flow(relative_file_path)
+        if serialized.error is not None:
+            return SaveWorkflowResultFailure(result_details=serialized.error)
+        if serialized.top_level_flow_name is None or serialized.commands is None:
+            return SaveWorkflowResultFailure(result_details="Failed to serialize top-level flow for save operation.")
+        workflow_shape = self._safe_extract_workflow_shape(file_name)
 
-        top_level_flow_name = top_level_flow_result.flow_name
-        serialized_flow_request = SerializeFlowToCommandsRequest(
-            flow_name=top_level_flow_name, include_create_flow_command=True
-        )
-        serialized_flow_result = await GriptapeNodes.ahandle_request(serialized_flow_request)
-        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
-            details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
-            return SaveWorkflowResultFailure(result_details=details)
-
-        serialized_flow_commands = serialized_flow_result.serialized_flow_commands
-
-        # Extract workflow shape if possible
-        workflow_shape = None
-        try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
-            workflow_shape = WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
-        except ValueError:
-            # If we can't extract workflow shape, continue without it
-            pass
-
-        # Use the standalone request to save the workflow file
-        # Use pickle_control_flow_result from request if provided, otherwise use False (default)
-        pickle_control_flow_result = (
-            request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
-        )
-        # Preserve existing description/image if not explicitly provided
-        existing_description: str | None = None
-        existing_image: str | None = None
-        existing_is_template: bool | None = None
-        if WorkflowRegistry.has_workflow_with_name(file_name):
-            try:
-                existing = WorkflowRegistry.get_workflow_by_name(file_name)
-                existing_description = existing.metadata.description
-                existing_image = existing.metadata.image
-                existing_is_template = existing.metadata.is_template
-            except Exception as err:
-                logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
-        image_path_to_save = request.image_path if request.image_path is not None else existing_image
-        description_to_save = existing_description
-        is_template_to_save = existing_is_template
-        save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
-            serialized_flow_commands=serialized_flow_commands,
+        # Build and execute save request
+        save_file_request = self._build_save_file_request(
             file_name=file_name,
-            creation_date=creation_date,
-            image_path=image_path_to_save,
-            description=description_to_save,
-            is_template=is_template_to_save,
-            execution_flow_name=top_level_flow_name,
-            branched_from=branched_from,
-            workflow_shape=workflow_shape,
             file_path=str(file_path),
-            pickle_control_flow_result=pickle_control_flow_result,
+            creation_date=creation_date,
+            branched_from=branched_from,
+            top_level_flow_name=serialized.top_level_flow_name,
+            serialized_flow_commands=serialized.commands,
+            workflow_shape=workflow_shape,
+            pickle_control_flow_result=(
+                request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
+            ),
+            requested_image_path=request.image_path,
         )
-        save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
 
-        if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
-            details = f"Attempted to save workflow '{relative_file_path}'. Failed during file generation: {save_file_result.result_details}"
-            return SaveWorkflowResultFailure(result_details=details)
-
-        # Use the metadata returned by the save operation
-        workflow_metadata = save_file_result.workflow_metadata
-
-        # save the created workflow as an entry in the JSON config file.
-        registered_workflows = WorkflowRegistry.list_workflows()
-        if file_name not in registered_workflows:
-            # Only add to config if it's in the workspace directory (not an external file)
-            if not Path(relative_file_path).is_absolute():
-                try:
-                    GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
-                except OSError as e:
-                    details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
-                    return SaveWorkflowResultFailure(result_details=details)
-            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
-        # Update existing workflow's metadata in the registry
-        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
-        existing_workflow.metadata = workflow_metadata
-        details = f"Successfully saved workflow to: {save_file_result.file_path}"
-        return SaveWorkflowResultSuccess(
-            file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
+        return await self._persist_save_and_update_registry(
+            file_name=file_name,
+            relative_file_path=relative_file_path,
+            file_path=file_path,
+            save_file_request=save_file_request,
         )
 
     def _determine_save_target(
@@ -1650,6 +1591,115 @@ class WorkflowManager:
             relative_file_path=relative_file_path,
             creation_date=creation_date,
             branched_from=branched_from,
+        )
+
+    @dataclass
+    class _SerializedFlowResult:
+        top_level_flow_name: str | None
+        commands: SerializedFlowCommands | None
+        error: str | None
+
+    async def _get_serialized_top_level_flow(self, relative_file_path: str) -> _SerializedFlowResult:
+        """Get top-level flow and serialized commands for current workflow."""
+        top_level_flow_result = await GriptapeNodes.ahandle_request(GetTopLevelFlowRequest())
+        if not isinstance(top_level_flow_result, GetTopLevelFlowResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed when requesting top level flow."
+            return WorkflowManager._SerializedFlowResult(None, None, details)
+
+        top_level_flow_name = top_level_flow_result.flow_name
+        serialized_flow_result = await GriptapeNodes.ahandle_request(
+            SerializeFlowToCommandsRequest(flow_name=top_level_flow_name, include_create_flow_command=True)
+        )
+        if not isinstance(serialized_flow_result, SerializeFlowToCommandsResultSuccess):
+            details = f"Attempted to save workflow '{relative_file_path}'. Failed when serializing flow."
+            return WorkflowManager._SerializedFlowResult(None, None, details)
+        return WorkflowManager._SerializedFlowResult(
+            top_level_flow_name=top_level_flow_name,
+            commands=serialized_flow_result.serialized_flow_commands,
+            error=None,
+        )
+
+    def _safe_extract_workflow_shape(self, file_name: str) -> WorkflowShape | None:
+        """Extract workflow shape if available; return None on failure."""
+        try:
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            return WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
+        except ValueError:
+            return None
+
+    def _build_save_file_request(  # noqa: PLR0913
+        self,
+        *,
+        file_name: str,
+        file_path: str,
+        creation_date: datetime,
+        branched_from: str | None,
+        top_level_flow_name: str,
+        serialized_flow_commands: SerializedFlowCommands,
+        workflow_shape: WorkflowShape | None,
+        pickle_control_flow_result: bool,
+        requested_image_path: str | None,
+    ) -> SaveWorkflowFileFromSerializedFlowRequest:
+        # Preserve existing description/image/is_template if present
+        existing_description: str | None = None
+        existing_image: str | None = None
+        existing_is_template: bool | None = None
+        if WorkflowRegistry.has_workflow_with_name(file_name):
+            try:
+                existing = WorkflowRegistry.get_workflow_by_name(file_name)
+                existing_description = existing.metadata.description
+                existing_image = existing.metadata.image
+                existing_is_template = existing.metadata.is_template
+            except Exception as err:
+                logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
+
+        return SaveWorkflowFileFromSerializedFlowRequest(
+            serialized_flow_commands=serialized_flow_commands,
+            file_name=file_name,
+            creation_date=creation_date,
+            image_path=requested_image_path if requested_image_path is not None else existing_image,
+            description=existing_description,
+            is_template=existing_is_template,
+            execution_flow_name=top_level_flow_name,
+            branched_from=branched_from,
+            workflow_shape=workflow_shape,
+            file_path=file_path,
+            pickle_control_flow_result=pickle_control_flow_result,
+        )
+
+    async def _persist_save_and_update_registry(
+        self,
+        *,
+        file_name: str,
+        relative_file_path: str,
+        file_path: Path,
+        save_file_request: SaveWorkflowFileFromSerializedFlowRequest,
+    ) -> ResultPayload:
+        save_file_result = await self.on_save_workflow_file_from_serialized_flow_request(save_file_request)
+        if not isinstance(save_file_result, SaveWorkflowFileFromSerializedFlowResultSuccess):
+            details = (
+                f"Attempted to save workflow '{relative_file_path}'. "
+                f"Failed during file generation: {save_file_result.result_details}"
+            )
+            return SaveWorkflowResultFailure(result_details=details)
+
+        workflow_metadata = save_file_result.workflow_metadata
+
+        registered_workflows = WorkflowRegistry.list_workflows()
+        if file_name not in registered_workflows:
+            if not Path(relative_file_path).is_absolute():
+                try:
+                    GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+                except OSError as e:
+                    details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
+                    return SaveWorkflowResultFailure(result_details=details)
+            WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
+
+        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+        existing_workflow.metadata = workflow_metadata
+        details = f"Successfully saved workflow to: {save_file_result.file_path}"
+        return SaveWorkflowResultSuccess(
+            file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
         )
 
     async def on_save_workflow_file_from_serialized_flow_request(
