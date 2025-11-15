@@ -885,8 +885,6 @@ class WorkflowManager:
             result_details="Successfully retrieved workflow metadata.",
         )
 
-    # Removed description-specific setter in favor of SetWorkflowMetadataRequest
-
     def _validate_workflow_metadata_updates(self, updates: dict) -> str | None:
         """Validate provided metadata updates for allowed keys and types."""
         allowed_keys_and_types: dict[str, type | tuple[type, type]] = {

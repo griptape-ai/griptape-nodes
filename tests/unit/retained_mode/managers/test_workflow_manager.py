@@ -240,8 +240,6 @@ class TestWorkflowManager:
 
         assert isinstance(result, GetWorkflowMetadataResultFailure)
 
-    # Removed description-specific setter tests; covered by generic SetWorkflowMetadata tests
-
     def test_set_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
         """Ensure SetWorkflowMetadataRequest updates allowed fields and persists."""
         workflow_manager = griptape_nodes.WorkflowManager()
