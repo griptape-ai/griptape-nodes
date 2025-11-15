@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pygit2
-
-from griptape_nodes.utils.file_utils import find_all_files_in_directory, find_file_in_directory
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +109,6 @@ def get_git_remote(library_path: Path) -> str | None:
 
     except pygit2.GitError as e:
         msg = f"Error getting git remote for {library_path}: {e}"
-        logger.error(msg)
         raise GitRemoteError(msg) from e
 
 
@@ -146,7 +141,6 @@ def get_current_branch(library_path: Path) -> str | None:
 
     except pygit2.GitError as e:
         msg = f"Error getting current branch for {library_path}: {e}"
-        logger.error(msg)
         raise GitBranchError(msg) from e
     else:
         # Get the current branch name
@@ -186,91 +180,10 @@ def get_git_repository_root(library_path: Path) -> Path | None:
 
     except pygit2.GitError as e:
         msg = f"Error getting git repository root for {library_path}: {e}"
-        logger.error(msg)
         raise GitRepositoryError(msg) from e
     else:
         # Normal repository - return parent of .git directory
         return git_dir.parent
-
-
-def is_monorepo(library_path: Path) -> bool:
-    """Check if a library is in a monorepo (git repository with multiple library JSON files).
-
-    Args:
-        library_path: The path to the library directory.
-
-    Returns:
-        bool: True if the git repository contains multiple library JSON files, False otherwise.
-    """
-    # Get the git repository root
-    repo_root = get_git_repository_root(library_path)
-    if repo_root is None:
-        return False
-
-    # Search for all library JSON files in the repository
-    library_json_files = find_all_files_in_directory(repo_root, "griptape[-_]nodes[-_]library.json")
-
-    # Monorepo if more than 1 library JSON file exists
-    return len(library_json_files) > 1
-
-
-def clone_and_get_version(remote_url: str) -> str:
-    """Clone a git repository to a temporary directory and extract the library version.
-
-    Args:
-        remote_url: The git remote URL to clone (HTTPS or SSH).
-
-    Returns:
-        str: The library version from griptape_nodes_library.json.
-
-    Raises:
-        GitCloneError: If cloning fails or library metadata is invalid.
-    """
-    # Convert SSH URLs to HTTPS for compatibility
-    original_url = remote_url
-    if _is_ssh_url(remote_url):
-        remote_url = _convert_ssh_to_https(remote_url)
-        logger.info("Converted SSH URL to HTTPS: %s -> %s", original_url, remote_url)
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
-            repo = pygit2.clone_repository(remote_url, temp_dir)
-            if repo is None:
-                msg = f"Failed to clone repository from {remote_url}"
-                logger.error(msg)
-                raise GitCloneError(msg)
-
-        except pygit2.GitError as e:
-            msg = f"Git error while cloning {remote_url}: {e}"
-            logger.error(msg)
-            raise GitCloneError(msg) from e
-
-        # Recursively search for griptape_nodes_library.json file
-        library_json_path = find_file_in_directory(Path(temp_dir), "griptape[-_]nodes[-_]library.json")
-        if library_json_path is None:
-            msg = f"No library JSON file found in cloned repository from {remote_url}"
-            logger.error(msg)
-            raise GitCloneError(msg)
-
-        try:
-            with library_json_path.open() as f:
-                library_data = json.load(f)
-        except json.JSONDecodeError as e:
-            msg = f"JSON decode error reading library metadata from {remote_url}: {e}"
-            logger.error(msg)
-            raise GitCloneError(msg) from e
-
-        if "metadata" not in library_data:
-            msg = f"No metadata found in griptape_nodes_library.json from {remote_url}"
-            logger.error(msg)
-            raise GitCloneError(msg)
-
-        if "library_version" not in library_data["metadata"]:
-            msg = f"No library_version found in metadata from {remote_url}"
-            logger.error(msg)
-            raise GitCloneError(msg)
-
-        return library_data["metadata"]["library_version"]
 
 
 def git_pull_rebase(library_path: Path) -> None:
@@ -285,14 +198,12 @@ def git_pull_rebase(library_path: Path) -> None:
     """
     if not is_git_repository(library_path):
         msg = f"Cannot pull: {library_path} is not a git repository"
-        logger.error(msg)
         raise GitRepositoryError(msg)
 
     try:
         repo_path = pygit2.discover_repository(str(library_path))
         if repo_path is None:
             msg = f"Cannot discover repository at {library_path}"
-            logger.error(msg)
             raise GitRepositoryError(msg)
 
         repo = pygit2.Repository(repo_path)
@@ -300,21 +211,18 @@ def git_pull_rebase(library_path: Path) -> None:
         # Check for detached HEAD
         if repo.head_is_detached:
             msg = f"Repository at {library_path} has detached HEAD"
-            logger.error(msg)
             raise GitPullError(msg)
 
         # Get the current branch
         current_branch = repo.branches.get(repo.head.shorthand)
         if current_branch is None:
             msg = f"Cannot get current branch for repository at {library_path}"
-            logger.error(msg)
             raise GitPullError(msg)
 
         # Check for upstream
         upstream = current_branch.upstream
         if upstream is None:
             msg = f"No upstream branch set for {current_branch.branch_name} at {library_path}"
-            logger.error(msg)
             raise GitPullError(msg)
 
         # Check for origin remote
@@ -322,12 +230,10 @@ def git_pull_rebase(library_path: Path) -> None:
             _ = repo.remotes["origin"]
         except (KeyError, IndexError) as e:
             msg = f"No origin remote found for repository at {library_path}"
-            logger.error(msg)
             raise GitPullError(msg) from e
 
     except pygit2.GitError as e:
         msg = f"Git error during pull --rebase at {library_path}: {e}"
-        logger.error(msg)
         raise GitPullError(msg) from e
 
     # Use subprocess to call git pull --rebase
@@ -343,12 +249,10 @@ def git_pull_rebase(library_path: Path) -> None:
 
         if result.returncode != 0:
             msg = f"Git pull --rebase failed at {library_path}: {result.stderr}"
-            logger.error(msg)
             raise GitPullError(msg)
 
     except subprocess.SubprocessError as e:
         msg = f"Subprocess error during pull --rebase at {library_path}: {e}"
-        logger.error(msg)
         raise GitPullError(msg) from e
 
 
@@ -368,14 +272,12 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
     """
     if not is_git_repository(library_path):
         msg = f"Cannot switch branch: {library_path} is not a git repository"
-        logger.error(msg)
         raise GitRepositoryError(msg)
 
     try:
         repo_path = pygit2.discover_repository(str(library_path))
         if repo_path is None:
             msg = f"Cannot discover repository at {library_path}"
-            logger.error(msg)
             raise GitRepositoryError(msg)
 
         repo = pygit2.Repository(repo_path)
@@ -385,7 +287,6 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
             remote = repo.remotes["origin"]
         except (KeyError, IndexError) as e:
             msg = f"No origin remote found for repository at {library_path}"
-            logger.error(msg)
             raise GitBranchError(msg) from e
 
         # Fetch from remote first
@@ -406,14 +307,12 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
         if remote_branch is None:
             msg = f"Branch {branch_name} not found locally or on remote at {library_path}"
-            logger.error(msg)
             raise GitBranchError(msg)
 
         # Create local tracking branch from remote
         commit = repo.get(remote_branch.target)
         if commit is None:
             msg = f"Failed to get commit for remote branch {remote_branch_name} at {library_path}"
-            logger.error(msg)
             raise GitBranchError(msg)
 
         new_branch = repo.branches.local.create(branch_name, commit)  # type: ignore[arg-type]
@@ -427,7 +326,6 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
     except pygit2.GitError as e:
         msg = f"Git error during branch switch at {library_path}: {e}"
-        logger.error(msg)
         raise GitBranchError(msg) from e
 
 
@@ -468,7 +366,7 @@ def _convert_ssh_to_https(ssh_url: str) -> str:
     return ssh_url
 
 
-def clone_library(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
+def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
     """Clone a git repository to a target directory.
 
     Args:
@@ -481,7 +379,6 @@ def clone_library(git_url: str, target_path: Path, branch_tag_commit: str | None
     """
     if target_path.exists():
         msg = f"Cannot clone: target path {target_path} already exists"
-        logger.error(msg)
         raise GitCloneError(msg)
 
     # Convert SSH URLs to HTTPS for compatibility
@@ -495,7 +392,6 @@ def clone_library(git_url: str, target_path: Path, branch_tag_commit: str | None
         repo = pygit2.clone_repository(git_url, str(target_path))
         if repo is None:
             msg = f"Failed to clone repository from {git_url}"
-            logger.error(msg)
             raise GitCloneError(msg)
 
         # Checkout specific branch/tag/commit if provided
@@ -514,10 +410,8 @@ def clone_library(git_url: str, target_path: Path, branch_tag_commit: str | None
                     logger.info("Checked out %s", branch_tag_commit)
                 except pygit2.GitError as e:
                     msg = f"Failed to checkout {branch_tag_commit}: {e}"
-                    logger.error(msg)
                     raise GitCloneError(msg) from e
 
     except pygit2.GitError as e:
         msg = f"Git error while cloning {git_url} to {target_path}: {e}"
-        logger.error(msg)
         raise GitCloneError(msg) from e
