@@ -2503,10 +2503,7 @@ class FlowManager:
         # Get the start node object from the node name string
         start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
 
-        try:
-            await subflow_machine.start_flow(start_node)
-        except Exception:
-            subflow_machine.cleanup_proxy_nodes()
+        await subflow_machine.start_flow(start_node)
 
         return StartLocalSubflowResultSuccess(result_details=f"Successfully executed local subflow '{flow_name}'")
 
@@ -2996,7 +2993,11 @@ class FlowManager:
         node_uuid_to_deserialized_node_result = {}
         node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
-            original_node_name = serialized_node.create_node_command.node_name
+            # Get the node name from the CreateNodeGroupRequest command if necessary
+            create_cmd = serialized_node.create_node_command
+            original_node_name = (
+                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
+            )
             deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
             if not isinstance(deserialized_node_result, DeserializeNodeFromCommandsResultSuccess):

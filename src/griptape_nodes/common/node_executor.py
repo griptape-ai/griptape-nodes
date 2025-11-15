@@ -161,7 +161,13 @@ class NodeExecutor:
             # If it isn't Local or Private, it must be a library name. We'll try to execute it, and if the library name doesn't exist, it'll raise an error.
             await self._execute_library_workflow(node, execution_type)
             return
-        # We default to local execution if it is not a NodeGroupNode!
+
+        # Handle iterative loop nodes - check if we need to package and execute the loop
+        if isinstance(node, BaseIterativeEndNode):
+            await self.handle_loop_execution(node)
+            return
+
+        # We default to local execution if it is not a NodeGroupNode or BaseIterativeEndNode!
         await node.aprocess()
 
     async def _execute_and_apply_workflow(
@@ -477,8 +483,7 @@ class NodeExecutor:
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
-        execution_type: str,
-    ) -> PackageNodesAsSerializedFlowResultSuccess | None:
+    ) -> tuple[PackageNodesAsSerializedFlowResultSuccess, str] | None:
         """Package the loop body (nodes between start and end) into a serialized flow.
 
         Args:
@@ -519,6 +524,16 @@ class NodeExecutor:
             await self._handle_empty_loop_body(start_node, end_node)
             return None
 
+        # See if they're all in one NodeGroup
+        execution_type = LOCAL_EXECUTION
+        total_node_group = None
+        for check_node in all_nodes:
+            node_group = node_manager.get_node_by_name(check_node).parent_group
+            if isinstance(node_group, NodeGroupNode):
+                total_node_group = node_group
+                break
+        if total_node_group is not None and all_nodes == total_node_group.nodes:
+            execution_type = total_node_group.get_parameter_value(total_node_group.execution_environment.name)
         # Find the first node in the loop body (where start_node.exec_out connects to)
         entry_control_node_name = None
         entry_control_parameter_name = None
@@ -554,11 +569,10 @@ class NodeExecutor:
             node_names=list(all_nodes),
             start_node_type=start_node_type,
             end_node_type=end_node_type,
-            start_end_specific_library_name=library_name,
+            start_node_library_name=library_name,
             entry_control_node_name=entry_control_node_name,
             entry_control_parameter_name=entry_control_parameter_name,
             output_parameter_prefix=f"{end_node.name.replace(' ', '_')}_loop_",
-            proxy_node=None,
         )
 
         package_result = GriptapeNodes.handle_request(request)
@@ -573,7 +587,7 @@ class NodeExecutor:
             end_node.name,
         )
 
-        return package_result
+        return package_result, execution_type
 
     async def _handle_empty_loop_body(
         self,
@@ -833,45 +847,22 @@ class NodeExecutor:
             total_iterations,
         )
 
-        # Get execution type from the end node
-        execution_type = end_node.execution_environment.name
-
         # Package the loop body (nodes between start and end)
-        package_result = await self._package_loop_body(start_node, end_node, execution_type)
+        package_result_and_execution = await self._package_loop_body(start_node, end_node)
 
         # Handle empty loop body (no nodes between start and end)
-        if package_result is None:
+        if package_result_and_execution is None:
             logger.info("Empty loop body - results already set by _package_loop_body")
             return
+        package_result, _ = package_result_and_execution
 
         # Get parameter values per iteration
         parameter_values_per_iteration = self.get_parameter_values_per_iteration(start_node, package_result)
 
         # Get resolved upstream values (constant across all iterations)
-        flow_manager = GriptapeNodes.FlowManager()
-        connections = flow_manager.get_connections()
-        dag_builder = flow_manager.global_dag_builder
-
-        # Collect node names from the control flow
-        nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
-        node_manager = GriptapeNodes.NodeManager()
-        all_nodes: set[str] = set()
-        visited_deps: set[str] = set()
-
-        for node_name in nodes_in_control_flow:
-            if node_name not in dag_builder.node_to_reference:
-                all_nodes.add(node_name)
-                node_obj = node_manager.get_node_by_name(node_name)
-                deps = DagBuilder.collect_data_dependencies_for_node(
-                    node_obj, connections, nodes_in_control_flow, visited_deps
-                )
-                all_nodes.update(deps)
-
-        all_nodes.discard(start_node.name)
-        all_nodes.discard(end_node.name)
-
+        # Reuse the packaged_node_names from package_result instead of recalculating
         resolved_upstream_values = self.get_resolved_upstream_values(
-            packaged_node_names=list(all_nodes), package_result=package_result
+            packaged_node_names=package_result.packaged_node_names, package_result=package_result
         )
 
         # Merge upstream values into each iteration
@@ -961,7 +952,7 @@ class NodeExecutor:
 
         return parameter_values_per_iteration
 
-    async def handle_loop_execution(self, node: BaseIterativeEndNode, execution_type: str) -> None:
+    async def handle_loop_execution(self, node: BaseIterativeEndNode) -> None:
         """Handle execution of a loop by packaging nodes from start to end and running them.
 
         Args:
@@ -992,13 +983,13 @@ class NodeExecutor:
 
         # Parallel execution - package and run all iterations concurrently
         # Package the loop body (nodes between start and end)
-        package_result = await self._package_loop_body(start_node, node, execution_type)
+        package_result_and_execution_type = await self._package_loop_body(start_node, node)
 
         # Handle empty loop body (no nodes between start and end)
-        if package_result is None:
+        if package_result_and_execution_type is None:
             logger.info("Empty loop body - results already set by _package_loop_body")
             return
-
+        package_result, execution_type = package_result_and_execution_type
         # Get parameter values for each iteration
         parameter_values_to_set_before_run = self._get_merged_parameter_values_for_iterations(
             start_node, package_result

@@ -169,7 +169,6 @@ class DagBuilder:
                 # Return early to skip loop body
                 return
 
-
             # Check if we should ignore dependencies (for special nodes like output_selector)
             ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
 
