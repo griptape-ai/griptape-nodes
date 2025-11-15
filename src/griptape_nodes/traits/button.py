@@ -104,7 +104,7 @@ class Button(Trait):
     loading_icon: str | None = None
     loading_icon_class: str | None = None
     tooltip: str | None = None
-    href: str | None = None
+    button_link: str | None = None
 
     element_id: str = field(default_factory=lambda: "Button")
     on_click_callback: OnClickCallback | None = field(default=None, init=False)
@@ -125,7 +125,7 @@ class Button(Trait):
         loading_icon: str | None = None,
         loading_icon_class: str | None = None,
         tooltip: str | None = None,
-        href: str | None = None,
+        button_link: str | None = None,
         on_click: OnClickCallback | None = None,
         get_button_state: GetButtonStateCallback | None = None,
     ) -> None:
@@ -142,17 +142,25 @@ class Button(Trait):
         self.loading_icon = loading_icon
         self.loading_icon_class = loading_icon_class
         self.tooltip = tooltip
-        self.href = href
+        self.button_link = button_link
 
-        # If href is provided and no custom on_click handler, create a default handler
-        if href is not None and on_click is None:
-            self.on_click_callback = self._create_href_handler(href)
+        # Validate that both button_link and on_click are not provided simultaneously
+        if button_link is not None and on_click is not None:
+            error_msg = (
+                "Cannot specify both 'button_link' and 'on_click' for Button. "
+                "Use 'button_link' for simple URL navigation or 'on_click' for custom behavior."
+            )
+            raise ValueError(error_msg)
+
+        # If button_link is provided and no custom on_click handler, create a default handler
+        if button_link is not None:
+            self.on_click_callback = self._create_button_link_handler(button_link)
         else:
             self.on_click_callback = on_click
         self.get_button_state_callback = get_button_state
 
-    def _create_href_handler(self, url: str) -> OnClickCallback:
-        """Create a default handler for href URLs."""
+    def _create_button_link_handler(self, url: str) -> OnClickCallback:
+        """Create a default handler for button_link URLs."""
 
         def handler(
             button: Button,  # noqa: ARG001
