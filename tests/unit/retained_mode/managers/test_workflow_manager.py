@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -274,7 +275,7 @@ class TestWorkflowManager:
                 return_value=WorkflowManager.WriteWorkflowFileResult(success=True, error_details=""),
             ) as write_mock,
         ):
-            result = workflow_manager.on_set_workflow_metadata_request(request)  # type: ignore[attr-defined]
+            result = asyncio.run(workflow_manager.on_set_workflow_metadata_request(request))  # type: ignore[attr-defined]
 
         assert isinstance(result, SetWorkflowMetadataResultSuccess)
         write_mock.assert_called_once()
@@ -284,7 +285,7 @@ class TestWorkflowManager:
         workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
 
         request = SetWorkflowMetadataRequest(workflow_name="my_workflow", updates={"name": "bad"})
-        result = workflow_manager.on_set_workflow_metadata_request(request)  # type: ignore[attr-defined]
+        result = asyncio.run(workflow_manager.on_set_workflow_metadata_request(request))  # type: ignore[attr-defined]
         assert isinstance(result, SetWorkflowMetadataResultFailure)
 
     def test_set_workflow_metadata_rejects_invalid_types(self, griptape_nodes: GriptapeNodes) -> None:
@@ -292,5 +293,5 @@ class TestWorkflowManager:
         workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
 
         request = SetWorkflowMetadataRequest(workflow_name="my_workflow", updates={"is_template": "yes"})
-        result = workflow_manager.on_set_workflow_metadata_request(request)  # type: ignore[attr-defined]
+        result = asyncio.run(workflow_manager.on_set_workflow_metadata_request(request))  # type: ignore[attr-defined]
         assert isinstance(result, SetWorkflowMetadataResultFailure)
