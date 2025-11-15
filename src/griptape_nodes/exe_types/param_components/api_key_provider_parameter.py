@@ -1,12 +1,24 @@
 """API Key Provider parameter component for reusable API key switching functionality."""
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button
+
+
+class ApiKeyValidationResult(NamedTuple):
+    """Result from API key validation.
+
+    Attributes:
+        api_key: The validated API key value
+        use_user_api: True if user API is enabled, False if proxy API is enabled
+    """
+
+    api_key: str
+    use_user_api: bool
 
 
 class ApiKeyProviderParameter:
@@ -29,7 +41,9 @@ class ApiKeyProviderParameter:
         api_key_provider.add_parameters()
 
         # In your node's _process method:
-        api_key, use_user_api = api_key_provider.validate_api_key()
+        validation_result = api_key_provider.validate_api_key()
+        api_key = validation_result.api_key
+        use_user_api = validation_result.use_user_api
         ```
 
     Args:
@@ -160,15 +174,15 @@ class ApiKeyProviderParameter:
             raise ValueError(msg)
         return api_key
 
-    def validate_api_key(self) -> tuple[str, bool]:
-        """Validate and return API key and whether to use user API.
+    def validate_api_key(self) -> ApiKeyValidationResult:
+        """Validate and return API key and determine which API mode to use.
 
         Returns:
-            tuple: (api_key, use_user_api) where use_user_api is True if user API is enabled
+            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
 
         Raises:
             ValueError: If the required API key is not set
         """
         use_user_api = self.is_user_api_enabled()
         api_key = self.get_api_key(use_user_api=use_user_api)
-        return api_key, use_user_api
+        return ApiKeyValidationResult(api_key=api_key, use_user_api=use_user_api)
