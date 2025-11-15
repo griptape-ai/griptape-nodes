@@ -16,9 +16,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # Whether to enable the static server
 STATIC_SERVER_ENABLED = os.getenv("STATIC_SERVER_ENABLED", "true").lower() == "true"
-# Host of the static server
+# Host of the static server (where uvicorn binds)
 STATIC_SERVER_HOST = os.getenv("STATIC_SERVER_HOST", "localhost")
-# Port of the static server
+# Port of the static server (where uvicorn binds)
 STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 # URL path for the static server
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/workspace")
@@ -29,25 +29,20 @@ logger = logging.getLogger("griptape_nodes_api")
 logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
 
 
-"""Create and configure the FastAPI application."""
-app = FastAPI()
-
-
-@app.post("/static-upload-urls")
 async def _create_static_file_upload_url(request: Request) -> dict:
     """Create a URL for uploading a static file.
 
     Similar to a presigned URL, but for uploading files to the static server.
     """
-    base_url = request.base_url
+    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+
     body = await request.json()
     file_path = body["file_path"].lstrip("/")
-    url = urljoin(str(base_url), f"/static-uploads/{file_path}")
+    url = urljoin(base_url, f"/static-uploads/{file_path}")
 
     return {"url": url}
 
 
-@app.put("/static-uploads/{file_path:path}")
 async def _create_static_file(request: Request, file_path: str) -> dict:
     """Upload a static file to the static server."""
     if not STATIC_SERVER_ENABLED:
@@ -72,12 +67,11 @@ async def _create_static_file(request: Request, file_path: str) -> dict:
         logger.error(msg)
         raise HTTPException(status_code=500, detail=msg) from e
 
-    static_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}/{file_path}"
+    base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+    static_url = urljoin(f"{base_url}{STATIC_SERVER_URL}/", file_path)
     return {"url": static_url}
 
 
-@app.get("/static-uploads/{file_path_prefix:path}")
-@app.get("/static-uploads/")
 async def _list_static_files(file_path_prefix: str = "") -> dict:
     """List static files in the static server under the specified path prefix."""
     if not STATIC_SERVER_ENABLED:
@@ -107,7 +101,6 @@ async def _list_static_files(file_path_prefix: str = "") -> dict:
         return {"files": file_names}
 
 
-@app.delete("/static-files/{file_path:path}")
 async def _delete_static_file(file_path: str) -> dict:
     """Delete a static file from the static server."""
     if not STATIC_SERVER_ENABLED:
@@ -139,22 +132,40 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
-def _setup_app() -> None:
-    """Setup FastAPI app with middleware and static files."""
-    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
-    static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
+def start_static_server() -> None:
+    """Run uvicorn server synchronously using uvicorn.run."""
+    logger.debug("Starting static server...")
 
+    # Create FastAPI app
+    app = FastAPI()
+
+    # Register routes
+    app.add_api_route("/static-upload-urls", _create_static_file_upload_url, methods=["POST"])
+    app.add_api_route("/static-uploads/{file_path:path}", _create_static_file, methods=["PUT"])
+    app.add_api_route("/static-uploads/{file_path_prefix:path}", _list_static_files, methods=["GET"])
+    app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
+    app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
+
+    # Build CORS allowed origins list
+    allowed_origins = [
+        os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
+        "https://app.nodes-staging.griptape.ai",
+        "http://localhost:5173",
+        GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
+    ]
+
+    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
-            "https://app.nodes-staging.griptape.ai",
-            "http://localhost:5173",
-        ],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
     )
+
+    # Mount static files
+    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
 
     app.mount(
         STATIC_SERVER_URL,
@@ -169,12 +180,6 @@ def _setup_app() -> None:
         StaticFiles(directory=workspace_directory / static_files_directory),
         name="static",
     )
-
-
-def start_static_server() -> None:
-    """Run uvicorn server synchronously using uvicorn.run."""
-    # Setup the FastAPI app
-    _setup_app()
 
     try:
         # Run server using uvicorn.run

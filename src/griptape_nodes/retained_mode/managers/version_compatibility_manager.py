@@ -17,14 +17,29 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataResultSuccess,
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultSuccess,
+    ListNodeTypesInLibraryRequest,
+    ListNodeTypesInLibraryResultSuccess,
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.deprecated_node_warning_problem import (
+    DeprecatedNodeWarningProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.deprecated_node_in_workflow_problem import (
+    DeprecatedNodeInWorkflowProblem,
+)
+from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_not_found_problem import (
+    NodeTypeNotFoundProblem,
+)
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
+    from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -33,7 +48,7 @@ logger = logging.getLogger("griptape_nodes")
 class LibraryVersionCompatibilityIssue(NamedTuple):
     """Represents a library version compatibility issue found in a library."""
 
-    message: str
+    problem: LibraryProblem
     severity: LibraryStatus
 
 
@@ -52,7 +67,7 @@ class LibraryVersionCompatibilityCheck(ABC):
 class WorkflowVersionCompatibilityIssue(NamedTuple):
     """Represents a workflow version compatibility issue found in a workflow."""
 
-    message: str
+    problem: WorkflowProblem
     severity: WorkflowManager.WorkflowStatus
 
 
@@ -165,7 +180,12 @@ class VersionCompatibilityManager:
         """Check a library for deprecated nodes."""
         return [
             LibraryVersionCompatibilityIssue(
-                message=f"Node '{node.metadata.display_name}' (class: {node.class_name}) is deprecated and {'will be removed in version ' + node.metadata.deprecation.removal_version if node.metadata.deprecation.removal_version else 'may be removed in future versions'}. {node.metadata.deprecation.deprecation_message or ''}".strip(),
+                problem=DeprecatedNodeWarningProblem(
+                    display_name=node.metadata.display_name,
+                    class_name=node.class_name,
+                    removal_version=node.metadata.deprecation.removal_version,
+                    deprecation_message=node.metadata.deprecation.deprecation_message,
+                ),
                 severity=LibraryStatus.FLAWED,
             )
             for node in library_data.nodes
@@ -205,7 +225,7 @@ class VersionCompatibilityManager:
 
         return version_issues
 
-    def _check_workflow_for_deprecated_nodes(  # noqa: C901, PLR0912
+    def _check_workflow_for_deprecated_nodes(  # noqa: C901
         self, workflow_metadata: WorkflowMetadata
     ) -> list[WorkflowVersionCompatibilityIssue]:
         """Check a workflow for deprecated nodes.
@@ -215,18 +235,33 @@ class VersionCompatibilityManager:
         """
         issues: list[WorkflowVersionCompatibilityIssue] = []
 
+        # Get list of registered libraries once (silent check - no error logging)
+        list_request = ListRegisteredLibrariesRequest()
+        list_result = GriptapeNodes.LibraryManager().on_list_registered_libraries_request(list_request)
+
+        if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
+            # Should not happen, but handle gracefully - return empty issues
+            return issues
+
+        registered_libraries = list_result.libraries
+
         for library_name_and_node_type in workflow_metadata.node_types_used:
             library_name = library_name_and_node_type.library_name
             node_type = library_name_and_node_type.node_type
 
-            # Get library metadata to check if library exists and get version
+            # Check if library is registered
+            if library_name not in registered_libraries:
+                # Library not registered - skip this node silently, other checks handle missing libraries
+                continue
+
+            # Get library metadata to get version
             library_metadata_request = GetLibraryMetadataRequest(library=library_name)
             library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
                 library_metadata_request
             )
 
             if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                # Library not found - skip this node, other checks handle missing libraries
+                # Should not happen since we verified library exists, but handle gracefully
                 continue
 
             current_library_version = library_metadata_result.metadata.library_version
@@ -238,27 +273,39 @@ class VersionCompatibilityManager:
                     workflow_library_version = lib_ref.library_version
                     break
 
-            # Get node metadata from library
+            # Check if node type exists in library (silent check - no error logging)
+            list_node_types_request = ListNodeTypesInLibraryRequest(library=library_name)
+            list_node_types_result = GriptapeNodes.LibraryManager().on_list_node_types_in_library_request(
+                list_node_types_request
+            )
+
+            if not isinstance(list_node_types_result, ListNodeTypesInLibraryResultSuccess):
+                # Should not happen since we verified library exists, but handle gracefully
+                continue
+
+            if node_type not in list_node_types_result.node_types:
+                # Node type doesn't exist in current library version
+                issues.append(
+                    WorkflowVersionCompatibilityIssue(
+                        problem=NodeTypeNotFoundProblem(
+                            node_type=node_type,
+                            library_name=library_name,
+                            current_library_version=current_library_version,
+                            workflow_library_version=workflow_library_version,
+                        ),
+                        severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
+                    )
+                )
+                continue
+
+            # Get node metadata from library (we know the node exists now)
             node_metadata_request = GetNodeMetadataFromLibraryRequest(library=library_name, node_type=node_type)
             node_metadata_result = GriptapeNodes.LibraryManager().get_node_metadata_from_library_request(
                 node_metadata_request
             )
 
             if not isinstance(node_metadata_result, GetNodeMetadataFromLibraryResultSuccess):
-                # Node type doesn't exist in current library version
-                message = f"This workflow uses node type '{node_type}' from library '{library_name}', but this node type is not found in the current library version {current_library_version}"
-
-                if workflow_library_version:
-                    message += f". The workflow was saved with library version {workflow_library_version}"
-
-                message += ". This node may have been removed or renamed. Contact the library author for more details."
-
-                issues.append(
-                    WorkflowVersionCompatibilityIssue(
-                        message=message,
-                        severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
-                    )
-                )
+                # Should not happen since we verified node exists, but handle gracefully
                 continue
 
             node_metadata = node_metadata_result.metadata
@@ -268,40 +315,18 @@ class VersionCompatibilityManager:
 
             deprecation = node_metadata.deprecation
 
-            removal_version_reached = False
-            if deprecation.removal_version:
-                try:
-                    current_version = semver.VersionInfo.parse(current_library_version)
-                    removal_version = semver.VersionInfo.parse(deprecation.removal_version)
-                    removal_version_reached = current_version >= removal_version
-                except Exception:
-                    # Errored out trying to parse the version strings; assume not reached.
-                    removal_version_reached = False
-
-            # Build the complete message
-            message = f"This workflow uses node '{node_metadata.display_name}' (class: {node_type}) from library '{library_name}', which is deprecated"
-
-            if deprecation.removal_version:
-                if removal_version_reached:
-                    message += f" and was removed in version {deprecation.removal_version}"
-                else:
-                    message += f" and will be removed in version {deprecation.removal_version}"
-            else:
-                message += " and may be removed in future versions"
-
-            message += f". You are currently using library version: {current_library_version}"
-
-            if workflow_library_version:
-                message += f", and the workflow was saved with library version: {workflow_library_version}"
-
-            if deprecation.deprecation_message:
-                message += f". The library author provided the following message for this deprecation: {deprecation.deprecation_message}"
-            else:
-                message += ". The library author did not provide a message explaining the deprecation. Contact the library author for details on how to remedy this."
-
+            # Create deprecated node problem
             issues.append(
                 WorkflowVersionCompatibilityIssue(
-                    message=message,
+                    problem=DeprecatedNodeInWorkflowProblem(
+                        node_display_name=node_metadata.display_name,
+                        node_type=node_type,
+                        library_name=library_name,
+                        current_library_version=current_library_version,
+                        workflow_library_version=workflow_library_version,
+                        removal_version=deprecation.removal_version,
+                        deprecation_message=deprecation.deprecation_message,
+                    ),
                     severity=GriptapeNodes.WorkflowManager().WorkflowStatus.FLAWED,
                 )
             )

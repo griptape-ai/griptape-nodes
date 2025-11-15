@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers>=0.35.1",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/f3db38c1e74c49de0ff42356515e7b394561ec39.zip",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.17.0",
@@ -190,7 +190,7 @@
         "description": "Generate an Image with Flux via 🤗 Diffusers.",
         "display_name": "Flux",
         "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/ https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
           "removal_version": "0.64.0"
         }
       }

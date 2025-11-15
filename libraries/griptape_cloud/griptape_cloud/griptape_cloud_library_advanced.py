@@ -3,7 +3,10 @@ import logging
 from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 from griptape_nodes.node_library.library_registry import Library, LibrarySchema
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+from griptape_nodes.retained_mode.events.workflow_events import (
+    PublishWorkflowRegisteredEventData,
+    PublishWorkflowRequest,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logging.basicConfig(level=logging.INFO)
@@ -38,4 +41,10 @@ class GriptapeCloudLibraryAdvanced(AdvancedNodeLibrary):
             request_type=PublishWorkflowRequest,
             handler=_publish_workflow_request_handler,
             library_data=library_data,
+            event_data=PublishWorkflowRegisteredEventData(
+                start_flow_node_type="GriptapeCloudStartFlow",
+                start_flow_node_library_name=library_data.name,
+                end_flow_node_type="GriptapeCloudEndFlow",
+                end_flow_node_library_name=library_data.name,
+            ),
         )

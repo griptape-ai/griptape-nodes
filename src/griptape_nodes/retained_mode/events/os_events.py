@@ -58,10 +58,11 @@ class FileSystemEntry:
     """Represents a file or directory in the file system."""
 
     name: str
-    path: str
+    path: str  # Workspace-relative path (for portability)
     is_dir: bool
     size: int
     modified_time: float
+    absolute_path: str  # Absolute resolved path
     mime_type: str | None = None  # None for directories, mimetype for files
 
 
@@ -117,6 +118,8 @@ class ListDirectoryRequest(RequestPayload):
         show_hidden: Whether to show hidden files/folders
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide browsing.
                         If None, workspace constraints don't apply (e.g., cloud environments).
+        pattern: Optional glob pattern to filter entries (e.g., "*.txt", "file_*.json").
+                 Only matches against file/directory names, not full paths.
 
     Results: ListDirectoryResultSuccess (with entries) | ListDirectoryResultFailure (access denied, not found)
     """
@@ -124,6 +127,7 @@ class ListDirectoryRequest(RequestPayload):
     directory_path: str | None = None
     show_hidden: bool = False
     workspace_only: bool | None = True
+    pattern: str | None = None
 
 
 @dataclass
@@ -540,6 +544,102 @@ class CopyFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
     Attributes:
         failure_reason: Classification of why the copy failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileRequest(RequestPayload):
+    """Delete a file or directory.
+
+    Use when: Deleting files/directories through file picker,
+    implementing file deletion functionality, cleaning up temporary files.
+
+    Note: Directories are always deleted with all their contents.
+
+    Args:
+        path: Path to file/directory to delete (mutually exclusive with file_entry)
+        file_entry: FileSystemEntry from directory listing (mutually exclusive with path)
+        workspace_only: If True, constrain to workspace directory
+
+    Results: DeleteFileResultSuccess | DeleteFileResultFailure
+    """
+
+    path: str | None = None
+    file_entry: FileSystemEntry | None = None
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory deleted successfully.
+
+    Attributes:
+        deleted_path: The absolute path that was deleted (primary path)
+        was_directory: Whether the deleted item was a directory
+        deleted_paths: List of all paths that were deleted (for recursive deletes, includes all files/dirs)
+    """
+
+    deleted_path: str
+    was_directory: bool
+    deleted_paths: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory deletion failed.
+
+    Attributes:
+        failure_reason: Classification of why the deletion failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoRequest(RequestPayload):
+    """Get information about a file or directory.
+
+    Use when: Checking if a path exists, determining if path is file/directory,
+    getting file metadata before operations.
+
+    Args:
+        path: Path to file/directory to get info about
+        workspace_only: If True, constrain to workspace directory
+
+    Results: GetFileInfoResultSuccess | GetFileInfoResultFailure
+    """
+
+    path: str
+    workspace_only: bool | None = True
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """File/directory either did not exist (we do not treat this as failure), or the info was retrieved successfully.
+
+    Attributes:
+        file_entry: FileSystemEntry with complete metadata, or None if the file/directory doesn't exist
+    """
+
+    file_entry: FileSystemEntry | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFileInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """File/directory info retrieval failed.
+
+    Attributes:
+        failure_reason: Classification of why retrieval failed
         result_details: Human-readable error message (inherited from ResultPayloadFailure)
     """
 

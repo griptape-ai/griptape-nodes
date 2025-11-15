@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
@@ -9,6 +10,21 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class InitializationPhase(StrEnum):
+    """Initialization phase types for engine startup."""
+
+    LIBRARIES = "libraries"
+    WORKFLOWS = "workflows"
+
+
+class InitializationStatus(StrEnum):
+    """Status types for initialization progress."""
+
+    LOADING = "loading"
+    COMPLETE = "complete"
+    FAILED = "failed"
 
 
 @dataclass
@@ -102,6 +118,28 @@ class AppInitializationComplete(AppPayload):
 @PayloadRegistry.register
 class AppConnectionEstablished(AppPayload):
     """Notification that a connection to the API has been established."""
+
+
+@dataclass
+@PayloadRegistry.register
+class EngineInitializationProgress(AppPayload):
+    """Real-time progress updates during engine initialization (libraries and workflows loading).
+
+    Args:
+        phase: Current initialization phase (libraries or workflows)
+        item_name: Name of the library or workflow being loaded
+        status: Current status of the item (loading, complete, or failed)
+        current: Number of items completed so far
+        total: Total number of items to load
+        error: Error message if status is failed, None otherwise
+    """
+
+    phase: InitializationPhase
+    item_name: str
+    status: InitializationStatus
+    current: int
+    total: int
+    error: str | None = None
 
 
 @dataclass

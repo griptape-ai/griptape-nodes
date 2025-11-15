@@ -33,6 +33,7 @@ class LocalStorageDriver(BaseStorageDriver):
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
         if base_url is None:
+            # Default to localhost - the storage driver creator can pass a proxy URL if needed
             self.base_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}"
         else:
             self.base_url = base_url
@@ -43,14 +44,14 @@ class LocalStorageDriver(BaseStorageDriver):
             response = httpx.post(static_url, json={"file_path": str(path)})
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned URL for file {path}: {e}"
+            msg = f"Failed to create upload URL for file {path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
         url = response_data.get("url")
         if url is None:
-            msg = f"Failed to create presigned URL for file {path}: {response_data}"
+            msg = f"Failed to get upload URL for file {path}: {response_data}"
             logger.error(msg)
             raise ValueError(msg)
 

@@ -2,7 +2,6 @@
 
 import asyncio
 import shutil
-import stat
 import tarfile
 import tempfile
 from pathlib import Path
@@ -17,6 +16,7 @@ from griptape_nodes.cli.shared import (
     NODES_TARBALL_URL,
     console,
 )
+from griptape_nodes.retained_mode.events.os_events import DeleteFileRequest, DeleteFileResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.version_utils import get_current_version, get_install_source
 
@@ -81,7 +81,11 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             if library_dir.is_dir():
                 dest_library_dir = dest_nodes / library_dir.name
                 if dest_library_dir.exists():
-                    shutil.rmtree(dest_library_dir, onexc=_remove_readonly)
+                    # Use DeleteFileRequest for centralized deletion with Windows compatibility
+                    request = DeleteFileRequest(path=str(dest_library_dir), workspace_only=False)
+                    result = await GriptapeNodes.OSManager().on_delete_file_request(request)
+                    if not isinstance(result, DeleteFileResultSuccess):
+                        console.print(f"[yellow]Warning: Failed to delete existing library {library_dir.name}[/yellow]")
                 shutil.copytree(library_dir, dest_library_dir)
                 console.print(f"[green]Synced library: {library_dir.name}[/green]")
 
@@ -95,22 +99,3 @@ async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
             console.print(f"[red]Error initializing libraries: {e}[/red]")
 
     console.print("[bold green]Libraries synced.[/bold green]")
-
-
-def _remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG001
-    """Handles read-only files and long paths on Windows during shutil.rmtree.
-
-    https://stackoverflow.com/a/50924863
-    """
-    if not GriptapeNodes.OSManager().is_windows():
-        return
-
-    long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
-
-    try:
-        Path.chmod(long_path, stat.S_IWRITE)
-        func(long_path)
-    except Exception as e:
-        console.print(f"[red]Error removing read-only file: {path}[/red]")
-        console.print(f"[red]Details: {e}[/red]")
-        raise

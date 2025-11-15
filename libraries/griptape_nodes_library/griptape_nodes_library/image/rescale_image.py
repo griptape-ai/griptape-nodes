@@ -89,7 +89,6 @@ class RescaleImage(BaseImageProcessor):
                     ]
                 )
             )
-            self.add_parameter(resize_mode_param)
 
             # Target size parameter (for width/height modes)
             target_size_param = Parameter(
@@ -99,8 +98,6 @@ class RescaleImage(BaseImageProcessor):
                 tooltip=f"Target size in pixels for width/height modes ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_size_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
-            self.add_parameter(target_size_param)
-            self.hide_parameter_by_name("target_size")
 
             # Percentage scale parameter (for percentage mode)
             percentage_scale_param = Parameter(
@@ -113,7 +110,6 @@ class RescaleImage(BaseImageProcessor):
             percentage_scale_param.add_trait(
                 Slider(min_val=self.MIN_PERCENTAGE_SCALE, max_val=self.MAX_PERCENTAGE_SCALE)
             )
-            self.add_parameter(percentage_scale_param)
 
             # Target width parameter (for width and height mode)
             target_width_param = Parameter(
@@ -123,8 +119,6 @@ class RescaleImage(BaseImageProcessor):
                 tooltip=f"Target width in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_width_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
-            self.add_parameter(target_width_param)
-            self.hide_parameter_by_name("target_width")
 
             # Target height parameter (for width and height mode)
             target_height_param = Parameter(
@@ -134,8 +128,6 @@ class RescaleImage(BaseImageProcessor):
                 tooltip=f"Target height in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_height_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
-            self.add_parameter(target_height_param)
-            self.hide_parameter_by_name("target_height")
 
             # Fit mode parameter (for width and height mode)
             fit_mode_param = Parameter(
@@ -153,8 +145,6 @@ class RescaleImage(BaseImageProcessor):
                     ]
                 )
             )
-            self.add_parameter(fit_mode_param)
-            self.hide_parameter_by_name("fit_mode")
 
             # Background color parameter (for width and height mode with fit/fill)
             background_color_param = Parameter(
@@ -164,8 +154,6 @@ class RescaleImage(BaseImageProcessor):
                 tooltip="Background color for letterboxing/matting",
             )
             background_color_param.add_trait(ColorPicker(format="hex"))
-            self.add_parameter(background_color_param)
-            self.hide_parameter_by_name("background_color")
 
             # Resample filter parameter
             resample_filter_param = Parameter(
@@ -177,9 +165,15 @@ class RescaleImage(BaseImageProcessor):
             resample_filter_param.add_trait(
                 Options(choices=["nearest", "box", "bilinear", "hamming", "bicubic", "lanczos"])
             )
-            self.add_parameter(resample_filter_param)
 
         self.add_node_element(rescale_group)
+
+        # Hide the correct parameters
+        self.hide_parameter_by_name("target_size")
+        self.hide_parameter_by_name("target_width")
+        self.hide_parameter_by_name("target_height")
+        self.hide_parameter_by_name("fit_mode")
+        self.hide_parameter_by_name("background_color")
 
     def _get_processing_description(self) -> str:
         """Get description of what this processor does."""

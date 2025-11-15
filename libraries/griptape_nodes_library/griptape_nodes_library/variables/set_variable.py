@@ -1,9 +1,10 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import ControlNode, NodeResolutionState
 from griptape_nodes_library.variables.variable_utils import (
     create_advanced_parameter_group,
+    get_variable,
     scope_string_to_variable_scope,
 )
 
@@ -39,62 +40,63 @@ class SetVariable(ControlNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.node_events import (
-            GetFlowForNodeRequest,
-            GetFlowForNodeResultSuccess,
-        )
         from griptape_nodes.retained_mode.events.variable_events import (
             SetVariableValueRequest,
             SetVariableValueResultSuccess,
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        variable_name = self.get_parameter_value("variable_name")
-        value = self.get_parameter_value("value")
-        scope_str = self.get_parameter_value("scope")
+        variable_name = self.get_parameter_value(self.variable_name_param.name)
+        value = self.get_parameter_value(self.value_param.name)
+        scope_str = self.get_parameter_value(self.scope_param.name)
 
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        # Get the flow that owns this node
-        flow_request = GetFlowForNodeRequest(node_name=self.name)
-        flow_result = GriptapeNodes.handle_request(flow_request)
-
-        if not isinstance(flow_result, GetFlowForNodeResultSuccess):
-            error_msg = f"Failed to get flow for node '{self.name}': {flow_result.result_details}"
-            raise TypeError(error_msg)
-
-        current_flow_name = flow_result.flow_name
+        # Verify the variable exists using the get_variable helper
+        # This will raise RuntimeError or LookupError if there are issues
+        var_info = get_variable(node_name=self.name, variable_name=variable_name, scope=scope)
 
         request = SetVariableValueRequest(
             value=value,
             name=variable_name,
             lookup_scope=scope,
-            starting_flow=current_flow_name,
+            starting_flow=var_info.owning_flow_name,  # Re-assign at the level the variable is at.
         )
 
         result = GriptapeNodes.handle_request(request)
 
-        if isinstance(result, SetVariableValueResultSuccess):
-            self.parameter_output_values["variable_name"] = variable_name
-        else:
+        if not isinstance(result, SetVariableValueResultSuccess):
             msg = f"Failed to set variable: {result.result_details}"
-            raise TypeError(msg)
+            raise RuntimeError(msg)  # noqa: TRY004
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        """Variable nodes have side effects and need to execute every workflow run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
+        # Set output values.
+        self.parameter_output_values[self.variable_name_param.name] = variable_name
 
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
+    @property
+    def state(self) -> NodeResolutionState:
+        """Overrides BaseNode.state @property to treat it as volatile (if the value has changed, mark as unresolved)."""
+        if self._state == NodeResolutionState.RESOLVED:
+            variable_name = self.get_parameter_value(self.variable_name_param.name)
+            scope_str = self.get_parameter_value(self.scope_param.name)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Variable nodes have side effects and need to execute every time they run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
+            # Convert scope string to VariableScope enum
+            scope = scope_string_to_variable_scope(scope_str)
 
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
+            # This can throw if the variable doesn't exist.
+            try:
+                variable = get_variable(node_name=self.name, variable_name=variable_name, scope=scope)
+
+                var_value = variable.value
+                our_value = self.get_parameter_value(self.value_param.name)
+                if var_value != our_value:
+                    return NodeResolutionState.UNRESOLVED
+            except LookupError:
+                # Variable may not have been created yet; assume unresolved.
+                return NodeResolutionState.UNRESOLVED
+        return super().state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        # Have to override the setter if we override the getter.
+        self._state = new_state

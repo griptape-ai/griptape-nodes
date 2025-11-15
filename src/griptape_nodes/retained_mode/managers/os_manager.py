@@ -3,12 +3,14 @@ import logging
 import mimetypes
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import aioshutil
 from binaryornot.check import is_binary
 from rich.console import Console
 
@@ -28,12 +30,18 @@ from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+    DeleteFileResultSuccess,
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
     GetNextUnusedFilenameRequest,
     GetNextUnusedFilenameResultFailure,
     GetNextUnusedFilenameResultSuccess,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    GetFileInfoResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -168,6 +176,14 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=CopyFileRequest, callback=self.on_copy_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=DeleteFileRequest, callback=self.on_delete_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
             )
 
             # Register for app initialization event to setup system resources
@@ -1026,10 +1042,16 @@ class OSManager:
                     if not request.show_hidden and entry.name.startswith("."):
                         continue
 
+                    # Apply pattern filter if specified
+                    if request.pattern is not None and not entry.match(request.pattern):
+                        continue
+
                     try:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
-                        _is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        _, entry_path = self._validate_workspace_path(entry)
+                        # Also get absolute resolved path
+                        absolute_resolved_path = str(entry.resolve())
                         mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
@@ -1039,6 +1061,7 @@ class OSManager:
                                 size=stat.st_size,
                                 modified_time=stat.st_mtime,
                                 mime_type=mime_type,
+                                absolute_path=absolute_resolved_path,
                             )
                         )
                     except (OSError, PermissionError) as e:
@@ -2004,6 +2027,154 @@ class OSManager:
             destination_path=str(destination_path),
             bytes_copied=bytes_copied,
             result_details=f"File copied successfully: {source_path} -> {destination_path}",
+        )
+
+    @staticmethod
+    def remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG004
+        """Handles read-only files and long paths on Windows during shutil.rmtree.
+
+        https://stackoverflow.com/a/50924863
+        """
+        if not GriptapeNodes.OSManager().is_windows():
+            return
+
+        long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
+
+        try:
+            Path.chmod(long_path, stat.S_IWRITE)
+            func(long_path)
+        except Exception as e:
+            console.print(f"[red]Error removing read-only file: {path}[/red]")
+            console.print(f"[red]Details: {e}[/red]")
+            raise
+
+    async def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+        """Handle a request to delete a file or directory."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate exactly one of path or file_entry provided and determine path to delete
+        if request.path is not None and request.file_entry is not None:
+            msg = "Attempted to delete file with both path and file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        if request.path is not None:
+            path_to_delete = request.path
+        elif request.file_entry is not None:
+            path_to_delete = request.file_entry.path
+        else:
+            msg = "Attempted to delete file with neither path nor file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(path_to_delete, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to invalid path: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists
+        if not resolved_path.exists():
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to path not found"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Determine if this is a directory
+        is_directory = resolved_path.is_dir()
+
+        # Collect all paths that will be deleted (for reporting)
+        if is_directory:
+            # Collect all file and directory paths before deletion
+            deleted_paths = [str(item) for item in resolved_path.rglob("*")]
+            deleted_paths.append(str(resolved_path))
+        else:
+            deleted_paths = [str(resolved_path)]
+
+        # Perform deletion
+        try:
+            if is_directory:
+                await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
+            else:
+                resolved_path.unlink()
+        except PermissionError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to I/O error: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return DeleteFileResultSuccess(
+            deleted_path=str(resolved_path),
+            was_directory=is_directory,
+            deleted_paths=deleted_paths,
+            result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
+        )
+
+    def on_get_file_info_request(  # noqa: PLR0911
+        self, request: GetFileInfoRequest
+    ) -> GetFileInfoResultSuccess | GetFileInfoResultFailure:
+        """Handle a request to get file/directory information."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate path provided
+        if not request.path:
+            msg = "Attempted to get file info with empty path. Failed due to invalid parameters"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(request.path, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to invalid path: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists - if not, return success with None (file doesn't exist)
+        if not resolved_path.exists():
+            msg = f"File info retrieved for path {request.path}: file does not exist"
+            return GetFileInfoResultSuccess(file_entry=None, result_details=msg)
+
+        # Get file information
+        try:
+            is_dir = resolved_path.is_dir()
+            size = 0 if is_dir else resolved_path.stat().st_size
+            modified_time = resolved_path.stat().st_mtime
+
+            # Get MIME type for files only
+            mime_type = None
+            if not is_dir:
+                mime_type = self._detect_mime_type(resolved_path)
+
+            # Get path relative to workspace if within workspace
+            _, file_path = self._validate_workspace_path(resolved_path)
+
+            # Also get absolute resolved path
+            absolute_resolved_path = str(resolved_path.resolve())
+
+            file_entry = FileSystemEntry(
+                name=resolved_path.name,
+                path=str(file_path),
+                is_dir=is_dir,
+                size=size,
+                modified_time=modified_time,
+                mime_type=mime_type,
+                absolute_path=absolute_resolved_path,
+            )
+        except PermissionError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to permission denied: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to I/O error: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return GetFileInfoResultSuccess(
+            file_entry=file_entry,
+            result_details=f"Successfully retrieved file info for path {request.path}",
         )
 
     def _validate_copy_tree_paths(
