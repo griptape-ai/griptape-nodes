@@ -564,6 +564,9 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,
         **kwargs,
     ):
+        # Remove markdown and hide from kwargs to prevent passing them to parent class
+        kwargs.pop("markdown", None)
+        kwargs.pop("hide", None)
         super().__init__(element_type=ParameterMessage.__name__, **kwargs)
         self._variant = variant
         self._title = title
