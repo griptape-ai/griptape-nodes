@@ -44,6 +44,7 @@ class ParameterString(Parameter):
         markdown: bool = False,
         multiline: bool = False,
         placeholder_text: str | None = None,
+        is_full_width: bool = False,
         accept_any: bool = True,
         hide: bool = False,
         hide_label: bool = False,
@@ -78,6 +79,7 @@ class ParameterString(Parameter):
             markdown: Whether to enable markdown rendering
             multiline: Whether to use multiline input
             placeholder_text: Placeholder text for the input field
+            is_full_width: Whether the parameter should take full width in the UI
             accept_any: Whether to accept any input type and convert to string (default: True)
             hide: Whether to hide the entire parameter
             hide_label: Whether to hide the parameter label
@@ -105,6 +107,8 @@ class ParameterString(Parameter):
             ui_options["multiline"] = multiline
         if placeholder_text is not None:
             ui_options["placeholder_text"] = placeholder_text
+        if is_full_width:
+            ui_options["is_full_width"] = is_full_width
 
         # Set up string conversion based on accept_any setting
         if converters is None:
@@ -230,3 +234,26 @@ class ParameterString(Parameter):
             self.ui_options = ui_options
         else:
             self.update_ui_options_key("placeholder_text", value)
+
+    @property
+    def is_full_width(self) -> bool:
+        """Get whether the parameter should take full width in the UI.
+
+        Returns:
+            True if full width is enabled, False otherwise
+        """
+        return self.ui_options.get("is_full_width", False)
+
+    @is_full_width.setter
+    def is_full_width(self, value: bool) -> None:
+        """Set whether the parameter should take full width in the UI.
+
+        Args:
+            value: Whether to enable full width
+        """
+        if value:
+            self.update_ui_options_key("is_full_width", value)
+        else:
+            ui_options = self.ui_options.copy()
+            ui_options.pop("is_full_width", None)
+            self.ui_options = ui_options
