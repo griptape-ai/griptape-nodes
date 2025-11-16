@@ -32,6 +32,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     SetNodeMetadataRequest,
 )
+from griptape_nodes.retained_mode.events.object_events import RenameObjectRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     SetParameterValueRequest,
@@ -47,6 +48,8 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
+    # Objects
+    "RenameObjectRequest": RenameObjectRequest,
     # Connections
     "CreateConnectionRequest": CreateConnectionRequest,
     "DeleteConnectionRequest": DeleteConnectionRequest,
