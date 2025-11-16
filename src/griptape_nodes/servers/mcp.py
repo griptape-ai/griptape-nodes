@@ -23,6 +23,11 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     ListConnectionsForNodeRequest,
 )
+from griptape_nodes.retained_mode.events.execution_events import (
+    ResolveNodeRequest,
+    StartFlowFromNodeRequest,
+    StartFlowRequest,
+)
 from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
@@ -41,10 +46,17 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     SetParameterValueRequest,
 )
+from griptape_nodes.retained_mode.events.workflow_events import RunWorkflowWithCurrentStateRequest
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
+    # Workflows
+    "RunWorkflowWithCurrentStateRequest": RunWorkflowWithCurrentStateRequest,
+    # Execution
+    "ResolveNodeRequest": ResolveNodeRequest,
+    "StartFlowRequest": StartFlowRequest,
+    "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
     # Nodes
     "CreateNodeRequest": CreateNodeRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
