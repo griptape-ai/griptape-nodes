@@ -14,7 +14,8 @@ import aioshutil
 from binaryornot.check import is_binary
 from rich.console import Console
 
-from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
+from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.formats import FormatSpec, NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
@@ -36,12 +37,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
-    GetNextUnusedFilenameRequest,
-    GetNextUnusedFilenameResultFailure,
-    GetNextUnusedFilenameResultSuccess,
     GetFileInfoRequest,
     GetFileInfoResultFailure,
     GetFileInfoResultSuccess,
+    GetNextUnusedFilenameRequest,
+    GetNextUnusedFilenameResultFailure,
+    GetNextUnusedFilenameResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -58,6 +59,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
+from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultSuccess,
@@ -128,6 +130,18 @@ class FilenameParts(NamedTuple):
     directory: Path
     basename: str
     extension: str
+
+
+class PathValidationError(NamedTuple):
+    """Path validation failure details.
+
+    Attributes:
+        reason: Classification of why validation failed
+        message: Human-readable error message
+    """
+
+    reason: FileIOFailureReason
+    message: str
 
 
 @dataclass
@@ -271,6 +285,114 @@ class OSManager:
                 return self._get_workspace_path()
             # Re-raise the exception for non-workspace mode
             raise
+
+    def _resolve_macro_path_to_string(self, macro_path: MacroPath) -> str | MacroResolutionFailure:
+        """Resolve MacroPath to string, handling missing variables.
+
+        Args:
+            macro_path: MacroPath containing parsed macro and variables
+
+        Returns:
+            str: Successfully resolved path string
+            MacroResolutionFailure: Details about resolution failure (missing variables, etc.)
+
+        Examples:
+            # Success case
+            macro_path = MacroPath(ParsedMacro("{outputs}/file.png"), {"outputs": "/path"})
+            result = self._resolve_macro_path_to_string(macro_path)
+            # Returns: "/path/file.png"
+
+            # Missing variable case
+            macro_path = MacroPath(ParsedMacro("{outputs}/{frame}.png"), {"outputs": "/path"})
+            result = self._resolve_macro_path_to_string(macro_path)
+            # Returns: MacroResolutionFailure(missing_variables={"frame"}, ...)
+        """
+        secrets_manager = GriptapeNodes.SecretsManager()
+
+        try:
+            return macro_path.parsed_macro.resolve(macro_path.variables, secrets_manager)
+        except MacroResolutionError as e:
+            return MacroResolutionFailure(
+                failure_reason=e.failure_reason or MacroResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                variable_name=e.variable_name,
+                missing_variables=e.missing_variables,
+                error_details=str(e),
+            )
+
+    def _validate_file_path_for_write(  # noqa: PLR0911
+        self,
+        file_path: Path,
+        *,
+        check_not_exists: bool,
+        create_parents: bool,
+    ) -> None | PathValidationError:
+        """Validate file path is suitable for writing.
+
+        Checks:
+        - Path is not a directory
+        - File doesn't exist (only if check_not_exists=True, for FAIL policy)
+        - Parent directory exists OR create_parents=True
+
+        Args:
+            file_path: Path to validate
+            check_not_exists: If True, fail if file already exists (FAIL policy)
+            create_parents: If True, parent creation allowed (policy check only)
+
+        Returns:
+            None: Validation passed
+            PathValidationError: Details about validation failure
+
+        Examples:
+            # FAIL policy: check file doesn't exist
+            error = self._validate_file_path_for_write(path, check_not_exists=True, create_parents=True)
+
+            # OVERWRITE policy: existence OK
+            error = self._validate_file_path_for_write(path, check_not_exists=False, create_parents=False)
+        """
+        normalized_path = self.normalize_path_for_platform(file_path)
+
+        # Check if path is a directory
+        try:
+            if Path(normalized_path).is_dir():
+                return PathValidationError(
+                    reason=FileIOFailureReason.IS_DIRECTORY,
+                    message=f"Path is a directory, not a file: {file_path}",
+                )
+        except OSError as e:
+            return PathValidationError(
+                reason=FileIOFailureReason.IO_ERROR,
+                message=f"Error checking if path is directory {file_path}: {e}",
+            )
+
+        # Check if file exists (FAIL policy only)
+        if check_not_exists:
+            try:
+                if os.path.exists(normalized_path):  # noqa: PTH110
+                    return PathValidationError(
+                        reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+                        message=f"File exists and existing_file_policy is FAIL: {file_path}",
+                    )
+            except OSError as e:
+                return PathValidationError(
+                    reason=FileIOFailureReason.IO_ERROR,
+                    message=f"Error checking if file exists {file_path}: {e}",
+                )
+
+        # Check parent directory exists or can be created
+        parent_normalized = self.normalize_path_for_platform(file_path.parent)
+        try:
+            if not os.path.exists(parent_normalized) and not create_parents:  # noqa: PTH110
+                return PathValidationError(
+                    reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS,
+                    message=f"Parent directory does not exist and create_parents is False: {file_path.parent}",
+                )
+        except OSError as e:
+            return PathValidationError(
+                reason=FileIOFailureReason.IO_ERROR,
+                message=f"Error checking parent directory {file_path.parent}: {e}",
+            )
+
+        return None
 
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
@@ -1297,21 +1419,16 @@ class OSManager:
                     result_details=msg,
                 )
 
-            # Resolve base path from macro
-            secrets_manager = GriptapeNodes.SecretsManager()
-
             if index_info is None:
                 # No unresolved variables - fall back to suffix injection
-                # Resolve the full path first
-                try:
-                    resolved_path_str = parsed_macro.resolve(variables, secrets_manager)
-                except Exception as e:
-                    msg = f"Error resolving macro path: {e}"
-                    logger.error(msg)
+                # Resolve the full path first using helper
+                resolution_result = self._resolve_macro_path_to_string(macro_path)
+                if isinstance(resolution_result, MacroResolutionFailure):
                     return GetNextUnusedFilenameResultFailure(
-                        failure_reason=FileIOFailureReason.INVALID_PATH,
-                        result_details=msg,
+                        failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                        result_details=resolution_result.error_details,
                     )
+                resolved_path_str = resolution_result
 
                 try:
                     file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
@@ -1371,141 +1488,97 @@ class OSManager:
 
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Handle a request to write content to a file."""
-        # Handle CREATE_NEW policy
-        if request.existing_file_policy == ExistingFilePolicy.CREATE_NEW:
-            # Use GetNextUnusedFilenameRequest to find available filename
-            get_next_request = GetNextUnusedFilenameRequest(
-                file_path=request.file_path,
-                create_placeholder=True,
-                create_parents=request.create_parents,
-            )
-            result = self.on_get_next_unused_filename_request(get_next_request)
-
-            if isinstance(result, GetNextUnusedFilenameResultFailure):
-                # Convert failure to WriteFileResultFailure
-                return WriteFileResultFailure(
-                    failure_reason=result.failure_reason,
-                    result_details=result.result_details,
+        # Phase 1: Policy-specific validation and path resolution
+        match request.existing_file_policy:
+            case ExistingFilePolicy.CREATE_NEW:
+                # Use GetNextUnusedFilenameRequest to find available filename
+                get_next_request = GetNextUnusedFilenameRequest(
+                    file_path=request.file_path,
+                    create_placeholder=True,
+                    create_parents=request.create_parents,
                 )
+                result = self.on_get_next_unused_filename_request(get_next_request)
 
-            # Success - narrow type and use the available filename
-            if not isinstance(result, GetNextUnusedFilenameResultSuccess):
-                msg = "Unexpected result type from GetNextUnusedFilenameRequest"
-                logger.error(msg)
-                return WriteFileResultFailure(
-                    failure_reason=FileIOFailureReason.IO_ERROR,
-                    result_details=msg,
+                if isinstance(result, GetNextUnusedFilenameResultFailure):
+                    # Convert failure to WriteFileResultFailure
+                    return WriteFileResultFailure(
+                        failure_reason=result.failure_reason,
+                        result_details=result.result_details,
+                    )
+
+                # Success - narrow type and use the available filename
+                if not isinstance(result, GetNextUnusedFilenameResultSuccess):
+                    msg = "Unexpected result type from GetNextUnusedFilenameRequest"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR,
+                        result_details=msg,
+                    )
+
+                resolved_path_str = result.available_filename
+
+            case ExistingFilePolicy.FAIL | ExistingFilePolicy.OVERWRITE:
+                # Resolve MacroPath if needed
+                if isinstance(request.file_path, MacroPath):
+                    resolution_result = self._resolve_macro_path_to_string(request.file_path)
+                    if isinstance(resolution_result, MacroResolutionFailure):
+                        return WriteFileResultFailure(
+                            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                            missing_variables=resolution_result.missing_variables,
+                            result_details=resolution_result.error_details,
+                        )
+                    resolved_path_str = resolution_result
+                else:
+                    resolved_path_str = request.file_path
+
+                # Convert to Path object
+                try:
+                    file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
+                except (ValueError, RuntimeError) as e:
+                    msg = f"Invalid path: {e}"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.INVALID_PATH,
+                        result_details=msg,
+                    )
+
+                # Validate path (check not exists only for FAIL policy)
+                check_exists = request.existing_file_policy == ExistingFilePolicy.FAIL and not request.append
+                validation_error = self._validate_file_path_for_write(
+                    file_path,
+                    check_not_exists=check_exists,
+                    create_parents=request.create_parents,
                 )
+                if validation_error:
+                    return WriteFileResultFailure(
+                        failure_reason=validation_error.reason,
+                        result_details=validation_error.message,
+                    )
 
-            available_filename = result.available_filename
-            file_path = Path(available_filename)
+        # Phase 2: Common file write (we have validated path string from match/case)
+        file_path = Path(resolved_path_str)
+        normalized_path = self.normalize_path_for_platform(file_path)
 
-            # Normalize for platform
-            normalized_path = self.normalize_path_for_platform(file_path)
-
-            # Write to the placeholder file (already exists and is reserved)
+        # Create parent directories if needed (validation already checked policy allows it)
+        if request.create_parents:
+            parent_normalized = self.normalize_path_for_platform(file_path.parent)
             try:
-                bytes_written = self._write_file_content(
-                    normalized_path, request.content, request.encoding, append=False
-                )
+                if not os.path.exists(parent_normalized):  # noqa: PTH110
+                    os.makedirs(parent_normalized, exist_ok=True)  # noqa: PTH103
             except PermissionError as e:
-                msg = f"Permission denied writing to file {file_path}: {e}"
+                msg = f"Permission denied creating parent directory {file_path.parent}: {e}"
                 logger.error(msg)
                 return WriteFileResultFailure(
                     failure_reason=FileIOFailureReason.PERMISSION_DENIED,
                     result_details=msg,
                 )
-            except UnicodeEncodeError as e:
-                msg = f"Encoding error writing to file {file_path}: {e}"
-                logger.error(msg)
-                return WriteFileResultFailure(
-                    failure_reason=FileIOFailureReason.ENCODING_ERROR,
-                    result_details=msg,
-                )
             except OSError as e:
-                if "No space left" in str(e) or "Disk full" in str(e):
-                    msg = f"Disk full writing to file {file_path}: {e}"
-                    logger.error(msg)
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.DISK_FULL,
-                        result_details=msg,
-                    )
-                msg = f"I/O error writing to file {file_path}: {e}"
+                msg = f"Error creating parent directory {file_path.parent}: {e}"
                 logger.error(msg)
                 return WriteFileResultFailure(
                     failure_reason=FileIOFailureReason.IO_ERROR,
                     result_details=msg,
                 )
-
-            return WriteFileResultSuccess(
-                final_file_path=str(file_path),
-                bytes_written=bytes_written,
-                result_details=f"File written successfully with CREATE_NEW policy (index: {result.index_used})",
-            )
-
-        # Resolve file path
-        try:
-            file_path = self._resolve_file_path(request.file_path, workspace_only=False)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Invalid path: {e}"
-            logger.error(msg)
-            return WriteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
-
-        # Get normalized path for file operations (handles Windows long paths)
-        normalized_path = self.normalize_path_for_platform(file_path)
-
-        # Check if path is a directory (must check before attempting to write)
-        try:
-            if Path(normalized_path).is_dir():
-                msg = f"Path is a directory, not a file: {file_path}"
-                logger.error(msg)
-                return WriteFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
-        except OSError as e:
-            msg = f"Error checking if path is directory {file_path}: {e}"
-            logger.error(msg)
-            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-
-        # Check existing file policy (only if not appending)
-        if not request.append and request.existing_file_policy == ExistingFilePolicy.FAIL:
-            try:
-                # Use os.path.exists with normalized path to handle Windows long paths
-                if os.path.exists(normalized_path):  # noqa: PTH110
-                    msg = f"File exists and existing_file_policy is FAIL: {file_path}"
-                    logger.error(msg)
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
-                        result_details=msg,
-                    )
-            except OSError as e:
-                msg = f"Error checking if file exists {file_path}: {e}"
-                logger.error(msg)
-                return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-
-        # Check and create parent directory if needed
-        parent_normalized = self.normalize_path_for_platform(file_path.parent)
-        try:
-            if not os.path.exists(parent_normalized):  # noqa: PTH110
-                if not request.create_parents:
-                    msg = f"Parent directory does not exist and create_parents is False: {file_path.parent}"
-                    logger.error(msg)
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS,
-                        result_details=msg,
-                    )
-
-                # Create parent directories using os.makedirs to handle Windows long paths
-                os.makedirs(parent_normalized, exist_ok=True)  # noqa: PTH103
-        except PermissionError as e:
-            msg = f"Permission denied creating parent directory {file_path.parent}: {e}"
-            logger.error(msg)
-            return WriteFileResultFailure(
-                failure_reason=FileIOFailureReason.PERMISSION_DENIED,
-                result_details=msg,
-            )
-        except OSError as e:
-            msg = f"Error creating parent directory {file_path.parent}: {e}"
-            logger.error(msg)
-            return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
         # Write file content
         try:

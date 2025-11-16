@@ -44,6 +44,7 @@ class FileIOFailureReason(StrEnum):
     # Path errors
     INVALID_PATH = "invalid_path"  # Malformed or invalid path
     IS_DIRECTORY = "is_directory"  # Path is a directory, not a file
+    MISSING_MACRO_VARIABLES = "missing_macro_variables"  # MacroPath has unresolved required variables
 
     # Content errors
     ENCODING_ERROR = "encoding_error"  # Text encoding/decoding failed
@@ -436,10 +437,12 @@ class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
     Attributes:
         failure_reason: Classification of why the write failed
+        missing_variables: Set of missing variable names (for MISSING_MACRO_VARIABLES failures)
         result_details: Human-readable error message (inherited from ResultPayloadFailure)
     """
 
     failure_reason: FileIOFailureReason
+    missing_variables: set[str] | None = None
 
 
 @dataclass
