@@ -30,10 +30,13 @@ from griptape_nodes.retained_mode.events.node_events import (
     GetNodeMetadataRequest,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
+    ResetNodeToDefaultsRequest,
     SetNodeMetadataRequest,
 )
 from griptape_nodes.retained_mode.events.object_events import RenameObjectRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
+    GetConnectionsForParameterRequest,
+    GetParameterDetailsRequest,
     GetParameterValueRequest,
     SetParameterValueRequest,
 )
@@ -48,6 +51,7 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
+    "ResetNodeToDefaultsRequest": ResetNodeToDefaultsRequest,
     # Objects
     "RenameObjectRequest": RenameObjectRequest,
     # Connections
@@ -58,6 +62,8 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListParametersOnNodeRequest": ListParametersOnNodeRequest,
     "GetParameterValueRequest": GetParameterValueRequest,
     "SetParameterValueRequest": SetParameterValueRequest,
+    "GetParameterDetailsRequest": GetParameterDetailsRequest,
+    "GetConnectionsForParameterRequest": GetConnectionsForParameterRequest,
 }
 
 GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")
