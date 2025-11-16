@@ -397,6 +397,33 @@ class AgentManager:
                         Rule("Only set generated_image_urls with images generated with your tools."),
                     ],
                 ),
+                # Note: Griptape's MCPTool automatically wraps arguments in a 'values' key, but our MCP server
+                # expects arguments directly. This ruleset instructs the agent to provide arguments without
+                # the 'values' wrapper to avoid validation errors. If MCPTool behavior changes in the future,
+                # this ruleset may need to be updated or removed.
+                Ruleset(
+                    name="mcp_tool_usage",
+                    rules=[
+                        Rule(
+                            "When calling MCP tools (mcpGriptapeNodes), provide arguments directly without wrapping them in a 'values' key. "
+                            "For example, use {'node_type': 'FluxImageGeneration', 'node_name': 'MyNode'} not {'values': {'node_type': 'FluxImageGeneration'}}."
+                        ),
+                    ],
+                ),
+                Ruleset(
+                    name="node_rulesets",
+                    rules=[
+                        Rule(
+                            "When asked to create a node, use ListNodeTypesInLibraryRequest or GetAllInfoForAllLibrariesRequest to check available node types and find the appropriate node."
+                        ),
+                        Rule(
+                            "When matching user requests to node types, account for variations: users may include spaces (e.g., 'Image Generation' vs 'ImageGeneration') or reorder words (e.g., 'Generate Image' vs 'Image Generation'). Match based on the words present, not exact spelling."
+                        ),
+                        Rule(
+                            "If you cannot determine the correct node type or node creation fails, ask the user for clarification."
+                        ),
+                    ],
+                ),
             ],
         )
 
