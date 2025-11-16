@@ -29,6 +29,11 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowRequest,
 )
 from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest
+from griptape_nodes.retained_mode.events.library_events import (
+    ListCategoriesInLibraryRequest,
+    ListNodeTypesInLibraryRequest,
+    ListRegisteredLibrariesRequest,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
@@ -53,6 +58,10 @@ from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     # Workflows
     "RunWorkflowWithCurrentStateRequest": RunWorkflowWithCurrentStateRequest,
+    # Libraries
+    "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
+    "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
+    "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
     # Execution
     "ResolveNodeRequest": ResolveNodeRequest,
     "StartFlowRequest": StartFlowRequest,
