@@ -108,4 +108,3 @@ class YOLOv8FaceDetectionParameters:
 
         with StdoutCapture(callback):
             yield
-

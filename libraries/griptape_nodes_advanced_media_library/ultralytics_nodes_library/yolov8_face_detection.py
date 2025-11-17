@@ -5,14 +5,13 @@ from dataclasses import dataclass
 import PIL.Image
 from griptape.artifacts import ImageUrlArtifact
 from supervision import Detections  # type: ignore[import-untyped]
+from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-
 from ultralytics_nodes_library.yolov8_face_detection_parameters import (
     YOLOv8FaceDetectionParameters,
 )
-from utils.image_utils import load_image_from_url_artifact
 
 logger = logging.getLogger("ultralytics_nodes_library")
 
@@ -123,7 +122,9 @@ class YOLOv8FaceDetection(ControlNode):
         confidence_threshold = float(self.get_parameter_value("confidence_threshold") or 0.5)
         dilation = float(self.get_parameter_value("dilation") or 0.0)
 
-        self.append_value_to_parameter("logs", f"Running face detection (confidence threshold: {confidence_threshold})...\n")
+        self.append_value_to_parameter(
+            "logs", f"Running face detection (confidence threshold: {confidence_threshold})...\n"
+        )
 
         # Run YOLO inference
         results = model(input_image_pil)
@@ -149,13 +150,15 @@ class YOLOv8FaceDetection(ControlNode):
                 if dilation > 0:
                     bbox = self._dilate_bbox(bbox, dilation, img_width, img_height)
 
-                detected_faces.append({
-                    "x": bbox.x,
-                    "y": bbox.y,
-                    "width": bbox.width,
-                    "height": bbox.height,
-                    "confidence": float(confidence),
-                })
+                detected_faces.append(
+                    {
+                        "x": bbox.x,
+                        "y": bbox.y,
+                        "width": bbox.width,
+                        "height": bbox.height,
+                        "confidence": float(confidence),
+                    }
+                )
 
         self.append_value_to_parameter("logs", f"Detected {len(detected_faces)} face(s)\n")
 
