@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from inspect import getmodule, isclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Awaitable, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles
 import semver
@@ -914,8 +914,9 @@ class WorkflowManager:
         if updated_content is None:
             return "Failed to update metadata header."
 
-        write_result = await self._write_workflow_file(
-            file_path=file_path, content=updated_content, file_name=workflow_metadata.name
+        write_result = await cast(
+            Awaitable[WorkflowManager.WriteWorkflowFileResult],
+            self._write_workflow_file(file_path=file_path, content=updated_content, file_name=workflow_metadata.name),
         )
         if not write_result.success:
             return write_result.error_details
@@ -1667,7 +1668,10 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
+        write_result = await cast(
+            Awaitable[WorkflowManager.WriteWorkflowFileResult],
+            self._write_workflow_file(file_path, final_code_output, request.file_name),
+        )
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
