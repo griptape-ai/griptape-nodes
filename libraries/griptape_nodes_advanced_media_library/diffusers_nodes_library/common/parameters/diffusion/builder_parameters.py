@@ -68,6 +68,7 @@ class DiffusionPipelineBuilderParameters:
                 traits={Options(choices=self.provider_choices)},
                 tooltip="AI model provider",
                 allowed_modes={ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "Select Provider"},
             )
         )
 
