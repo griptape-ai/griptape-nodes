@@ -57,14 +57,14 @@ def infer_type_from_value(value: Any) -> str:
         if "." in value:
             float(value)
             return "float"
-        return "int"
+        return "int"  # noqa: TRY300
     except ValueError:
         pass
 
     # Try to parse as float
     try:
         float(value)
-        return "float"
+        return "float"  # noqa: TRY300
     except ValueError:
         pass
 
