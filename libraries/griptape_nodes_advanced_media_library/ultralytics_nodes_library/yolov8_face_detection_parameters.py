@@ -3,9 +3,9 @@ import logging
 from collections.abc import Iterator
 
 import huggingface_hub
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
-from ultralytics import YOLO  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[import-untyped]
+from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[import-untyped]
+from ultralytics import YOLO  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -27,7 +27,7 @@ class YOLOv8FaceDetectionParameters:
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
-        
+
         # Add confidence threshold parameter
         self._node.add_parameter(
             Parameter(
@@ -40,7 +40,7 @@ class YOLOv8FaceDetectionParameters:
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-        
+
         # Add dilation parameter
         self._node.add_parameter(
             Parameter(
