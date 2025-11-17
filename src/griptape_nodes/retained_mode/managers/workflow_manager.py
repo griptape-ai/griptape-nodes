@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles
+import portalocker
 import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
@@ -1269,8 +1270,11 @@ class WorkflowManager:
         success: bool
         error_details: str
 
-    async def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
+    def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
+
+        Uses portalocker for exclusive file locking to prevent concurrent writes.
+        First write wins - if another process is writing, this call fails immediately.
 
         Args:
             file_path: Path where to write the file
@@ -1295,13 +1299,34 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{file_name}'. Failed when creating directory structure: {e}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
 
-        # Write the file content
+        # Write the file content with exclusive lock (non-blocking)
+        error_details = None
         try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(content)
+            with portalocker.Lock(
+                file_path,
+                mode="w",
+                encoding="utf-8",
+                timeout=0,  # Non-blocking: fail immediately if locked
+                flags=portalocker.LockFlags.EXCLUSIVE,
+            ) as fh:
+                fh.write(content)
+        except portalocker.LockException:
+            error_details = (
+                f"Attempted to save workflow '{file_name}'. Another process is currently writing to this workflow file"
+            )
+        except PermissionError as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Permission denied: {e}"
+        except IsADirectoryError:
+            error_details = f"Attempted to save workflow '{file_name}'. Path is a directory, not a file"
+        except UnicodeEncodeError as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Content encoding error: {e}"
         except OSError as e:
-            details = f"Attempted to save workflow '{file_name}'. Failed when writing file content: {e}"
-            return self.WriteWorkflowFileResult(success=False, error_details=details)
+            error_details = f"Attempted to save workflow '{file_name}'. OS error: {e}"
+        except Exception as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Unexpected error: {type(e).__name__}: {e}"
+
+        if error_details:
+            return self.WriteWorkflowFileResult(success=False, error_details=error_details)
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
@@ -1546,7 +1571,10 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3169
+        # This is a synchronous call within an async context and may block the event loop.
+        # Consider using asyncio.to_thread() to run in a thread pool for better async performance.
+        write_result = self._write_workflow_file(file_path, final_code_output, request.file_name)
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
@@ -2482,82 +2510,11 @@ class WorkflowManager:
         workflow_name: str,
         import_recorder: ImportRecorder,
     ) -> list[ast.AST]:
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesRequest"
-        )
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "GetAllInfoForAllLibrariesResultSuccess"
-        )
-        import_recorder.add_from_import(
-            "griptape_nodes.retained_mode.events.library_events", "ReloadAllLibrariesRequest"
-        )
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
 
         code_blocks: list[ast.AST] = []
 
-        response_assign = ast.Assign(
-            targets=[ast.Name(id="response", ctx=ast.Store())],
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Call(
-                        func=ast.Name(id="GetAllInfoForAllLibrariesRequest", ctx=ast.Load()),
-                        args=[],
-                        keywords=[],
-                    )
-                ],
-                keywords=[],
-            ),
-        )
-        ast.fix_missing_locations(response_assign)
-        code_blocks.append(response_assign)
-
-        isinstance_test = ast.Call(
-            func=ast.Name(id="isinstance", ctx=ast.Load()),
-            args=[
-                ast.Name(id="response", ctx=ast.Load()),
-                ast.Name(id="GetAllInfoForAllLibrariesResultSuccess", ctx=ast.Load()),
-            ],
-            keywords=[],
-        )
-        ast.fix_missing_locations(isinstance_test)
-
-        len_call = ast.Call(
-            func=ast.Name(id="len", ctx=ast.Load()),
-            args=[
-                ast.Call(
-                    func=ast.Attribute(
-                        value=ast.Attribute(
-                            value=ast.Name(id="response", ctx=ast.Load()),
-                            attr="library_name_to_library_info",
-                            ctx=ast.Load(),
-                        ),
-                        attr="keys",
-                        ctx=ast.Load(),
-                    ),
-                    args=[],
-                    keywords=[],
-                )
-            ],
-            keywords=[],
-        )
-        compare_len = ast.Compare(
-            left=len_call,
-            ops=[ast.Lt()],
-            comparators=[ast.Constant(value=1)],
-        )
-        ast.fix_missing_locations(compare_len)
-
-        test = ast.BoolOp(
-            op=ast.And(),
-            values=[isinstance_test, compare_len],
-        )
-        ast.fix_missing_locations(test)
-
-        # 3) the body: GriptapeNodes.handle_request(ReloadAllLibrariesRequest())
+        # Generate load libraries request call
         # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
         load_call = ast.Expr(
             value=ast.Call(
@@ -2568,7 +2525,7 @@ class WorkflowManager:
                 ),
                 args=[
                     ast.Call(
-                        func=ast.Name(id="ReloadAllLibrariesRequest", ctx=ast.Load()),
+                        func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
                         args=[],
                         keywords=[],
                     )
@@ -2577,17 +2534,9 @@ class WorkflowManager:
             )
         )
         ast.fix_missing_locations(load_call)
+        code_blocks.append(load_call)
 
-        # 4) assemble the `if` statement
-        if_node = ast.If(
-            test=test,
-            body=[load_call],
-            orelse=[],
-        )
-        ast.fix_missing_locations(if_node)
-        code_blocks.append(if_node)
-
-        # 5) context_manager = GriptapeNodes.ContextManager()
+        # Generate context manager assignment
         assign_context_manager = ast.Assign(
             targets=[ast.Name(id="context_manager", ctx=ast.Store())],
             value=ast.Call(
@@ -2980,6 +2929,7 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeDeprecationMetadata")
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
+        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeGroupRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
         )
@@ -3004,7 +2954,8 @@ class WorkflowManager:
                     create_node_request_args.append(
                         ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                     )
-
+        # Get the actual request class name (CreateNodeRequest or CreateNodeGroupRequest)
+        request_class_name = type(create_node_request).__name__
         # Handle the create node command and assign to node name
         create_node_call_ast = ast.Assign(
             targets=[ast.Name(id=node_variable_name, ctx=ast.Store(), lineno=1, col_offset=0)],
@@ -3019,7 +2970,7 @@ class WorkflowManager:
                     ),
                     args=[
                         ast.Call(
-                            func=ast.Name(id="CreateNodeRequest", ctx=ast.Load(), lineno=1, col_offset=0),
+                            func=ast.Name(id=request_class_name, ctx=ast.Load(), lineno=1, col_offset=0),
                             args=[],
                             keywords=create_node_request_args,
                             lineno=1,
@@ -3030,7 +2981,7 @@ class WorkflowManager:
                     lineno=1,
                     col_offset=0,
                 ),
-                attr="node_name",
+                attr="node_name" if request_class_name == "CreateNodeRequest" else "node_group_name",
                 ctx=ast.Load(),
                 lineno=1,
                 col_offset=0,
@@ -3083,6 +3034,11 @@ class WorkflowManager:
 
             # Generate handle_request calls for element_modification_commands
             for element_command in serialized_node_command.element_modification_commands:
+                # Add import for this element command type
+                element_command_class_name = element_command.__class__.__name__
+                element_command_module = element_command.__class__.__module__
+                import_recorder.add_from_import(element_command_module, element_command_class_name)
+
                 # Strip default values from element_command
                 element_command_args = []
                 if is_dataclass(element_command):

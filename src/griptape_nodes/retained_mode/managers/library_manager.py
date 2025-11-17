@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
@@ -76,6 +76,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListNodeTypesInLibraryResultSuccess,
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
+    LoadLibrariesRequest,
+    LoadLibrariesResultFailure,
+    LoadLibrariesResultSuccess,
     LoadLibraryMetadataFromFileRequest,
     LoadLibraryMetadataFromFileResultFailure,
     LoadLibraryMetadataFromFileResultSuccess,
@@ -142,10 +145,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 console = Console()
 
+TRegisteredEventData = TypeVar("TRegisteredEventData")
+
 
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
+    LIBRARY_CONFIG_GLOB_PATTERN = "griptape[_-]nodes[_-]library.json"
 
     @dataclass
     class LibraryInfo:
@@ -163,11 +169,16 @@ class LibraryManager:
     _library_file_path_to_info: dict[str, LibraryInfo]
 
     @dataclass
-    class RegisteredEventHandler:
-        """Information regarding an event handler from a registered library."""
+    class RegisteredEventHandler(Generic[TRegisteredEventData]):
+        """Information regarding an event handler from a registered library.
+
+        The generic type parameter TRegisteredEventData allows each event type
+        to specify its own structured additional data.
+        """
 
         handler: Callable[[RequestPayload], ResultPayload]
         library_data: LibrarySchema
+        event_data: TRegisteredEventData | None = None
 
     # Stable module namespace mappings for workflow serialization
     # These mappings ensure that dynamically loaded modules can be reliably imported
@@ -193,7 +204,9 @@ class LibraryManager:
         self._dynamic_to_stable_module_mapping = {}
         self._stable_to_dynamic_module_mapping = {}
         self._library_to_stable_modules = {}
-        self._library_event_handler_mappings: dict[type[Payload], dict[str, LibraryManager.RegisteredEventHandler]] = {}
+        self._library_event_handler_mappings: dict[
+            type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
+        ] = {}
         # LibraryDirectory owns the FSMs and manages library lifecycle
         self._library_directory = LibraryDirectory()
         self._libraries_loading_complete = asyncio.Event()
@@ -240,7 +253,8 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(
             UnloadLibraryFromRegistryRequest, self.unload_library_from_registry_request
         )
-        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_all_libraries_request)
+        event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_libraries_request)
+        event_manager.assign_manager_to_request_type(LoadLibrariesRequest, self.load_libraries_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -352,15 +366,23 @@ class LibraryManager:
         request_type: type[RequestPayload],
         handler: Callable[[RequestPayload], ResultPayload],
         library_data: LibrarySchema,
+        event_data: object | None = None,
     ) -> None:
-        """Register an event handler for a specific request type from a library."""
+        """Register an event handler for a specific request type from a library.
+
+        Args:
+            request_type: The type of request payload this handler processes
+            handler: The callable handler function
+            library_data: Schema data for the library registering this handler
+            event_data: Optional structured data specific to this event type
+        """
         if self._library_event_handler_mappings.get(request_type) is None:
             self._library_event_handler_mappings[request_type] = {}
         self._library_event_handler_mappings[request_type][library_data.name] = LibraryManager.RegisteredEventHandler(
-            handler=handler, library_data=library_data
+            handler=handler, library_data=library_data, event_data=event_data
         )
 
-    def get_registered_event_handlers(self, request_type: type[Payload]) -> dict[str, RegisteredEventHandler]:
+    def get_registered_event_handlers(self, request_type: type[Payload]) -> dict[str, RegisteredEventHandler[Any]]:
         """Get all registered event handlers for a specific request type."""
         return self._library_event_handler_mappings.get(request_type, {})
 
@@ -2020,7 +2042,15 @@ class LibraryManager:
             try:
                 module = self._load_module_from_file(candidate_path, LibraryManager.SANDBOX_LIBRARY_NAME)
             except Exception as err:
-                problems.append(f"Could not load module in sandbox library '{candidate_path}': {err}")
+                root_cause = self._get_root_cause_from_exception(err)
+                problems.append(
+                    NodeModuleImportProblem(
+                        class_name=node_def.class_name,
+                        file_path=str(candidate_path),
+                        error_message=str(err),
+                        root_cause=str(root_cause),
+                    )
+                )
                 details = f"Attempted to load module in sandbox library '{candidate_path}'. Failed because an exception occurred: {err}."
                 logger.warning(details)
                 continue  # SKIP IT
@@ -2131,7 +2161,7 @@ class LibraryManager:
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
 
-    async def reload_all_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+    async def reload_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.
         clear_all_request = ClearAllObjectStateRequest(i_know_what_im_doing=True)
         clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
@@ -2164,6 +2194,25 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
+    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        # Check if there are any new libraries in config that haven't been loaded yet
+        discovered_libraries = {str(path) for path in self._discover_library_files()}
+        loaded_libraries = set(self._library_file_path_to_info.keys())
+        unloaded_libraries = discovered_libraries - loaded_libraries
+
+        if not unloaded_libraries:
+            details = "All configured libraries are already loaded, no action needed."
+            return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+        try:
+            await self.load_all_libraries_from_config()
+            details = "Successfully loaded all libraries from configuration."
+            return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+        except Exception as e:
+            details = f"Failed to load libraries from configuration: {e}"
+            logger.error(details)
+            return LoadLibrariesResultFailure(result_details=details)
+
     def _discover_library_files(self) -> list[Path]:
         """Discover library JSON files from config and workspace recursively.
 
@@ -2179,7 +2228,7 @@ class LibraryManager:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Process all library JSON files recursively in the directory
-                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_FILENAME))
+                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
             elif path.suffix == ".json":
                 discovered_libraries.add(path)
 

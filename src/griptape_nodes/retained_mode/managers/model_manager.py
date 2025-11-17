@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
@@ -76,144 +76,186 @@ class DownloadParams:
     ignore_patterns: list[str] | None = None
 
 
-class ModelDownloadTracker(tqdm):
-    """Custom tqdm progress bar that tracks aggregate model download progress."""
+def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
+    """Create a tqdm class with model_id pre-configured.
 
-    _file_lock = threading.Lock()
-    _current_model_id = ""
+    Args:
+        model_id: The model ID to track progress for
 
-    @classmethod
-    def set_current_model_id(cls, model_id: str) -> None:
-        """Set the current model being downloaded."""
-        cls._current_model_id = model_id
+    Returns:
+        A tqdm class that will track progress for the given model
+    """
+    logger.info("Creating progress tracker for model: %s", model_id)
 
-    def __init__(self, *args, model_id: str = "", **kwargs):
-        if not model_id and self._current_model_id:
-            model_id = self._current_model_id
+    class BoundModelDownloadTracker(tqdm):
+        """Tqdm subclass bound to a specific model_id."""
 
-        super().__init__(*args, **kwargs)
-        self.model_id = model_id
-        self.start_time = datetime.now(UTC).isoformat()
+        _file_lock = threading.Lock()
+        _first_update = True
 
-        logger.debug(
-            "ModelDownloadTracker created - model_id: %s, total: %s, desc: %s, args: %s",
-            self.model_id,
-            self.total,
-            getattr(self, "desc", None),
-            args,
-        )
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.model_id = model_id
+            self.start_time = datetime.now(UTC).isoformat()
+            self._cumulative_bytes = 0
 
-        if self.model_id:
-            self._init_status_file()
+            # Check if this is a byte-level progress bar or file enumeration bar
+            unit = getattr(self, "unit", "")
+            desc = getattr(self, "desc", "")
 
-    def update(self, n: int = 1) -> None:
-        """Override update to track progress in status file."""
-        logger.debug(
-            "ModelDownloadTracker update - model_id: %s, n: %s, self.n: %s, total: %s",
-            self.model_id,
-            n,
-            self.n,
-            self.total,
-        )
-        super().update(n)
-        self._update_status_file()
+            # Skip file enumeration bars (unit='it', desc='Fetching N files')
+            # We only want to track byte-level download progress
+            self._should_track = not (unit == "it" and "Fetching" in str(desc))
 
-    def close(self) -> None:
-        """Override close to log download completion."""
-        super().close()
-        self._update_status_file()  # Write final state to status file
-        logger.debug(
-            "ModelDownloadTracker close - model_id: %s, self.n: %s, total: %s", self.model_id, self.n, self.total
-        )
-
-    def _get_status_file_path(self) -> Path:
-        """Get the path to the status file for this model."""
-        status_dir = xdg_data_home() / "griptape_nodes" / "model_downloads"
-        status_dir.mkdir(parents=True, exist_ok=True)
-
-        sanitized_model_id = re.sub(r"[^\w\-_]", "--", self.model_id)
-        return status_dir / f"{sanitized_model_id}.json"
-
-    def _init_status_file(self) -> None:
-        """Initialize the status file for this model."""
-        try:
-            with self._file_lock:
-                status_file = self._get_status_file_path()
-                current_time = datetime.now(UTC).isoformat()
-
+            if not self._should_track:
                 logger.debug(
-                    "ModelDownloadTracker initializing status file: %s (total_files=%s)", status_file, self.total
+                    "ModelDownloadTracker skipping file enumeration bar - model_id: %s, desc: '%s'",
+                    self.model_id,
+                    desc,
                 )
+                return
 
-                data = {
-                    "model_id": self.model_id,
-                    "status": "downloading",
-                    "started_at": current_time,
-                    "updated_at": current_time,
-                    "total_files": self.total or 0,
-                    "downloaded_files": 0,
-                    "progress_percent": 0.0,
-                }
+            logger.debug(
+                "ModelDownloadTracker instantiated for tracking - model_id: %s, total: %s, unit: %s, desc: '%s'",
+                self.model_id,
+                self.total,
+                unit,
+                desc,
+            )
 
-                with status_file.open("w") as f:
-                    json.dump(data, f, indent=2)
+            if self.model_id:
+                self._init_status_file()
 
-                logger.debug("ModelDownloadTracker status file initialized successfully")
+        def update(self, n: int = 1) -> None:
+            """Override update to track progress in status file."""
+            super().update(n)
+            self._cumulative_bytes += n
 
-        except Exception:
-            logger.exception("ModelDownloadTracker._init_status_file failed")
+            # Skip if not tracking this progress bar
+            if not getattr(self, "_should_track", True):
+                return
 
-    def _update_status_file(self) -> None:
-        """Update the status file with current progress."""
-        if not self.model_id:
-            logger.warning("ModelDownloadTracker._update_status_file called with empty model_id")
-            return
+            if self._first_update:
+                logger.debug("ModelDownloadTracker received first update for model: %s", self.model_id)
+                self._first_update = False
 
-        try:
-            with self._file_lock:
-                status_file = self._get_status_file_path()
-                logger.info("ModelDownloadTracker updating status file: %s", status_file)
+            logger.debug(
+                "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
+                self.model_id,
+                n,
+                self._cumulative_bytes,
+                self.total,
+                (self._cumulative_bytes / self.total * 100) if self.total else 0,
+            )
+            self._update_status_file(mark_completed=False)
 
-                if not status_file.exists():
-                    logger.warning("Status file does not exist: %s", status_file)
-                    return
+        def close(self) -> None:
+            """Override close to mark download as completed only if fully downloaded."""
+            super().close()
 
-                with status_file.open() as f:
-                    data = json.load(f)
+            # Skip if not tracking this progress bar
+            if not getattr(self, "_should_track", True):
+                return
 
-                current_time = datetime.now(UTC).isoformat()
-                progress_percent = (self.n / self.total * 100) if self.total else 0
+            # Only mark as completed if we actually downloaded everything
+            is_complete = self.total > 0 and self._cumulative_bytes >= self.total
 
+            if is_complete:
                 logger.info(
-                    "ModelDownloadTracker updating progress: files=%d/%d, percent=%.1f%%",
-                    self.n,
+                    "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes (COMPLETE)",
+                    self.model_id,
+                    self._cumulative_bytes,
                     self.total,
-                    progress_percent,
                 )
+                self._update_status_file(mark_completed=True)
+            else:
+                logger.warning(
+                    "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
+                    self.model_id,
+                    self._cumulative_bytes,
+                    self.total,
+                    (self._cumulative_bytes / self.total * 100) if self.total else 0,
+                )
+                # Don't mark as completed - leave status as "downloading" or "failed"
+                self._update_status_file(mark_completed=False)
 
-                # Check if download is complete
-                is_complete = self.total > 0 and self.n >= self.total
+        def _get_status_file_path(self) -> Path:
+            """Get the path to the status file for this model."""
+            status_dir = xdg_data_home() / "griptape_nodes" / "model_downloads"
+            status_dir.mkdir(parents=True, exist_ok=True)
 
-                update_data = {
-                    "downloaded_files": self.n,
-                    "progress_percent": progress_percent,
-                    "updated_at": current_time,
-                }
+            sanitized_model_id = re.sub(r"[^\w\-_]", "--", self.model_id)
+            return status_dir / f"{sanitized_model_id}.json"
 
-                # Update status to completed if all files are downloaded
-                if is_complete:
-                    update_data["status"] = "completed"
-                    update_data["completed_at"] = current_time
+        def _init_status_file(self) -> None:
+            """Initialize the status file for this model."""
+            try:
+                with self._file_lock:
+                    status_file = self._get_status_file_path()
+                    current_time = datetime.now(UTC).isoformat()
 
-                data.update(update_data)
+                    data = {
+                        "model_id": self.model_id,
+                        "status": "downloading",
+                        "started_at": current_time,
+                        "updated_at": current_time,
+                        "total_bytes": self.total or 0,
+                        "downloaded_bytes": 0,
+                        "progress_percent": 0.0,
+                    }
 
-                with status_file.open("w") as f:
-                    json.dump(data, f, indent=2)
+                    with status_file.open("w") as f:
+                        json.dump(data, f, indent=2)
 
-                logger.debug("ModelDownloadTracker status file updated successfully")
+            except Exception:
+                logger.exception("ModelDownloadTracker._init_status_file failed")
 
-        except Exception:
-            logger.exception("ModelDownloadTracker._update_status_file failed")
+        def _update_status_file(self, *, mark_completed: bool = False) -> None:
+            """Update the status file with current progress.
+
+            Args:
+                mark_completed: If True, mark the download as completed
+            """
+            if not self.model_id:
+                logger.warning("ModelDownloadTracker._update_status_file called with empty model_id")
+                return
+
+            try:
+                with self._file_lock:
+                    status_file = self._get_status_file_path()
+
+                    if not status_file.exists():
+                        logger.warning("Status file does not exist: %s", status_file)
+                        return
+
+                    with status_file.open() as f:
+                        data = json.load(f)
+
+                    current_time = datetime.now(UTC).isoformat()
+                    progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
+
+                    # Always update total_bytes since it grows during aggregated downloads
+                    update_data = {
+                        "total_bytes": self.total or 0,
+                        "downloaded_bytes": self._cumulative_bytes,
+                        "progress_percent": progress_percent,
+                        "updated_at": current_time,
+                    }
+
+                    # Only mark as completed when explicitly requested (from close())
+                    if mark_completed:
+                        update_data["status"] = "completed"
+                        update_data["completed_at"] = current_time
+
+                    data.update(update_data)
+
+                    with status_file.open("w") as f:
+                        json.dump(data, f, indent=2)
+
+            except Exception:
+                logger.exception("ModelDownloadTracker._update_status_file failed")
+
+    return BoundModelDownloadTracker
 
 
 class ModelManager:
@@ -258,7 +300,8 @@ class ModelManager:
         """Direct model download method that can be used without event system.
 
         This method contains the core download logic without going through
-        the event system, avoiding recursion issues.
+        the event system, avoiding recursion issues. It leverages huggingface_hub v1.1.0+
+        aggregated tqdm for clean progress tracking across parallel downloads.
 
         Args:
             model_id: Model ID to download
@@ -273,34 +316,28 @@ class ModelManager:
         Raises:
             Exception: If download fails
         """
-        # Set up progress tracking
-        ModelDownloadTracker.set_current_model_id(model_id)
+        # Build download kwargs with progress tracking
+        download_kwargs = {
+            "repo_id": model_id,
+            "repo_type": "model",
+            "revision": revision,
+            "tqdm_class": _create_progress_tracker(model_id),
+        }
 
-        try:
-            # Build download kwargs
-            download_kwargs = {
-                "repo_id": model_id,
-                "repo_type": "model",
-                "revision": revision,
-                "tqdm_class": ModelDownloadTracker,
-            }
+        # Add optional parameters
+        if local_dir:
+            download_kwargs["local_dir"] = local_dir
+        if allow_patterns:
+            download_kwargs["allow_patterns"] = allow_patterns
+        if ignore_patterns:
+            download_kwargs["ignore_patterns"] = ignore_patterns
 
-            # Add optional parameters
-            if local_dir:
-                download_kwargs["local_dir"] = local_dir
-            if allow_patterns:
-                download_kwargs["allow_patterns"] = allow_patterns
-            if ignore_patterns:
-                download_kwargs["ignore_patterns"] = ignore_patterns
+        logger.info("Calling snapshot_download with custom tqdm_class for model: %s", model_id)
 
-            # Execute download with progress tracking
-            local_path = snapshot_download(**download_kwargs)  # type: ignore[arg-type]
+        # Execute download with progress tracking
+        local_path = snapshot_download(**download_kwargs)  # type: ignore[arg-type]
 
-            return str(local_path)
-
-        finally:
-            # Clear the current model ID when done
-            ModelDownloadTracker.set_current_model_id("")
+        return str(local_path)
 
     def _get_status_directory(self) -> Path:
         """Get the status directory path for model downloads.
@@ -407,9 +444,6 @@ class ModelManager:
         Args:
             download_params: Download parameters
 
-        Returns:
-            str: Local path where the model was downloaded
-
         Raises:
             Exception: If download fails
         """
@@ -417,7 +451,7 @@ class ModelManager:
         logger.info("Starting download for model: %s", model_id)
 
         # Build CLI command
-        cmd = [sys.executable, "-m", "griptape_nodes", "models", "download", download_params.model_id]
+        cmd = [sys.executable, "-m", "griptape_nodes", "--no-update", "models", "download", download_params.model_id]
 
         if download_params.local_dir:
             cmd.extend(["--local-dir", download_params.local_dir])
@@ -726,23 +760,23 @@ class ModelManager:
             with status_file.open() as f:
                 data = json.load(f)
 
-            # Get file counts from simplified structure
-            total_files = data.get("total_files", 0)
-            downloaded_files = data.get("downloaded_files", 0)
+            # Get byte counts from status file
+            total_bytes = data.get("total_bytes", 0)
+            downloaded_bytes = data.get("downloaded_bytes", 0)
 
-            # For simplified tracking, failed_files is calculated
-            failed_files = 0
+            # For simplified tracking, failed_bytes is calculated
+            failed_bytes = 0
             if data.get("status") == "failed":
-                failed_files = total_files - downloaded_files
+                failed_bytes = total_bytes - downloaded_bytes
 
             return ModelDownloadStatus(
                 model_id=data["model_id"],
                 status=data["status"],
                 started_at=data["started_at"],
                 updated_at=data["updated_at"],
-                total_files=total_files,
-                completed_files=downloaded_files,
-                failed_files=failed_files,
+                total_bytes=total_bytes,
+                completed_bytes=downloaded_bytes,
+                failed_bytes=failed_bytes,
                 completed_at=data.get("completed_at"),
                 local_path=data.get("local_path"),
                 failed_at=data.get("failed_at"),
@@ -955,64 +989,6 @@ class ModelManager:
             # If we can't parse the directory, skip it
             return None
 
-    def _download_model(self, download_params: dict[str, str | list[str] | None]) -> Path:
-        """Model download implementation.
-
-        Args:
-            download_params: Dictionary containing download parameters
-
-        Returns:
-            Path: Local path where the model was downloaded
-        """
-        # Validate parameters and build download kwargs
-        download_kwargs = self._build_download_kwargs(download_params)
-
-        # Set the current model ID for progress tracking
-        model_id = download_params["model_id"]
-        if isinstance(model_id, str):
-            ModelDownloadTracker.set_current_model_id(model_id)
-
-        # Execute download with progress tracking
-        local_path = snapshot_download(**download_kwargs)  # type: ignore[arg-type]
-
-        # Clear the current model ID when done
-        ModelDownloadTracker.set_current_model_id("")
-
-        return Path(local_path)
-
-    def _build_download_kwargs(self, download_params: dict[str, str | list[str] | None]) -> dict:
-        """Build kwargs for snapshot_download with validation.
-
-        Args:
-            download_params: Dictionary containing download parameters
-
-        Returns:
-            dict: Validated download kwargs for snapshot_download
-        """
-        param_model_id = download_params["model_id"]
-        local_dir = download_params["local_dir"]
-        revision = download_params["revision"]
-        allow_patterns = download_params["allow_patterns"]
-        ignore_patterns = download_params["ignore_patterns"]
-
-        # Build base kwargs with custom progress tracking
-        download_kwargs: dict[str, Any] = {
-            "repo_id": param_model_id,
-            "repo_type": "model",
-            "revision": revision,
-            "tqdm_class": ModelDownloadTracker,
-        }
-
-        # Add optional parameters
-        if local_dir is not None and isinstance(local_dir, str):
-            download_kwargs["local_dir"] = local_dir
-        if allow_patterns is not None and isinstance(allow_patterns, list):
-            download_kwargs["allow_patterns"] = allow_patterns
-        if ignore_patterns is not None and isinstance(ignore_patterns, list):
-            download_kwargs["ignore_patterns"] = ignore_patterns
-
-        return download_kwargs
-
     def _parse_model_id(self, model_input: str) -> str:
         """Parse model ID from either a direct model ID or a Hugging Face URL.
 
@@ -1086,6 +1062,7 @@ class ModelManager:
                 await cancel_subprocess(process, f"download process for model '{model_id}'")
                 del self._download_processes[model_id]
 
+            # Cancel active download task if it exists
             if model_id in self._download_tasks:
                 task = self._download_tasks[model_id]
                 if not task.done():
