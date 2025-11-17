@@ -176,7 +176,7 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         with self.log_params.append_profile_to_logs("Loading pipeline"):
             pipe = self.params.pipeline_type_parameters.pipeline_type_pipeline_params.build_pipeline()
 
-        with self.log_params.append_profile_to_logs("Configuring FLUX loras"):
+        with self.log_params.append_profile_to_logs("Configuring LoRAs"):
             self.loras_params.configure_loras(pipe)
 
         with self.log_params.append_profile_to_logs("Applying optimizations"):
