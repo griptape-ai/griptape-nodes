@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 
-def infer_type_from_value(value: Any) -> str:
+def infer_type_from_value(value: Any) -> str:  # noqa: PLR0911
     """Infer the actual type of a value, handling string representations of numbers and JSON.
 
     If a value is a string, attempts to determine if it represents an int, float, bool,
