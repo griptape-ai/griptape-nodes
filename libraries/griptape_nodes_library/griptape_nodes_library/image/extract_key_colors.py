@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
