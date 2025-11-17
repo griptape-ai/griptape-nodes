@@ -36,7 +36,9 @@
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1",
-        "json-schema-to-pydantic>=0.4.6"
+        "json-schema-to-pydantic>=0.4.6",
+        "numpy>=1.26.0",
+        "scikit-learn>=1.3.0"
       ]
     }
   },
@@ -1517,6 +1519,17 @@
         "display_name": "Extend Canvas",
         "icon": "frame",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractKeyColors",
+      "file_path": "griptape_nodes_library/image/extract_key_colors.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract key colors from an image",
+        "display_name": "Extract Key Colors",
+        "icon": "palette",
+        "group": "tasks"
       }
     },
     {
