@@ -1,8 +1,10 @@
 import logging
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterType, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.type_utils import infer_type_from_value
 
 
@@ -188,10 +190,14 @@ class DictGetValueByKey(ControlNode):
 
     def _update_output_type(self) -> None:
         """Update the type of the output parameter based on the type of the value."""
+        logger = logging.getLogger("griptape_nodes")
+
         # Check if key is None or empty - if so, don't try to evaluate anything
         key = self.get_parameter_value("key")
         if key is None or key == "":
-            self.output_value.output_type = ParameterTypeBuiltin.ALL.value
+            new_output_type = ParameterTypeBuiltin.ALL.value
+            self.output_value.output_type = new_output_type
+            self._validate_and_remove_incompatible_connections(new_output_type)
             return
 
         # Try to get value and infer type
@@ -200,25 +206,27 @@ class DictGetValueByKey(ControlNode):
             result_value = self._get_value()
         except (ValueError, TypeError, KeyError) as err:
             # If getting value fails, log and use default type
-            logger = logging.getLogger("griptape_nodes")
             logger.warning(
                 "%s: Failed to get value for type inference. Error: %s. Using default type.",
                 self.name,
                 err,
             )
-            self.output_value.output_type = ParameterTypeBuiltin.ALL.value
+            new_output_type = ParameterTypeBuiltin.ALL.value
+            self.output_value.output_type = new_output_type
+            self._validate_and_remove_incompatible_connections(new_output_type)
             return
 
         # Success path: infer type from value
         try:
             inferred_type = infer_type_from_value(result_value)
             if result_value is not None:
-                self.output_value.output_type = inferred_type
+                new_output_type = inferred_type
             else:
-                self.output_value.output_type = ParameterTypeBuiltin.ALL.value
+                new_output_type = ParameterTypeBuiltin.ALL.value
+            self.output_value.output_type = new_output_type
+            self._validate_and_remove_incompatible_connections(new_output_type)
         except Exception as err:
             # If type inference fails, log and use default type
-            logger = logging.getLogger("griptape_nodes")
             value_type = type(result_value).__name__ if result_value is not None else "unknown"
             logger.warning(
                 "%s: Failed to infer output type from value (type: %s). Error: %s. Using default type.",
@@ -226,7 +234,71 @@ class DictGetValueByKey(ControlNode):
                 value_type,
                 err,
             )
-            self.output_value.output_type = ParameterTypeBuiltin.ALL.value
+            new_output_type = ParameterTypeBuiltin.ALL.value
+            self.output_value.output_type = new_output_type
+            self._validate_and_remove_incompatible_connections(new_output_type)
+
+    def _validate_and_remove_incompatible_connections(self, new_output_type: str) -> None:
+        """Validate and remove incompatible outgoing connections when output type changes.
+
+        Args:
+            new_output_type: The new output type that was set
+        """
+        logger = logging.getLogger("griptape_nodes")
+
+        # Get outgoing connections from the output parameter
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing_for_node = connections.outgoing_index.get(self.name, {})
+        connection_ids = outgoing_for_node.get("value", [])
+
+        if not connection_ids:
+            return
+
+        # Validate type compatibility and remove incompatible connections
+        for connection_id in connection_ids:
+            if connection_id not in connections.connections:
+                continue
+
+            connection = connections.connections[connection_id]
+            target_param = connection.target_parameter
+            target_node = connection.target_node
+
+            # Check if target parameter accepts the new output type
+            is_compatible = any(
+                ParameterType.are_types_compatible(new_output_type, input_type)
+                for input_type in target_param.input_types
+            )
+
+            if not is_compatible:
+                logger.info(
+                    "Removing incompatible connection: %s '%s' value (%s) to '%s.%s' (accepts: %s)",
+                    self.__class__.__name__,
+                    self.name,
+                    new_output_type,
+                    target_node.name,
+                    target_param.name,
+                    target_param.input_types,
+                )
+
+                # Remove the incompatible connection
+                delete_result = GriptapeNodes.handle_request(
+                    DeleteConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name="value",
+                        target_node_name=target_node.name,
+                        target_parameter_name=target_param.name,
+                    )
+                )
+
+                if not delete_result.succeeded():
+                    logger.error(
+                        "Failed to delete incompatible connection from %s.%s to %s.%s: %s",
+                        self.name,
+                        "value",
+                        target_node.name,
+                        target_param.name,
+                        delete_result.result_details,
+                    )
 
     def process(self) -> None:
         """Process the node by getting the dictionary value."""
