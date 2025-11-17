@@ -70,4 +70,3 @@ def infer_type_from_value(value: Any) -> str:
 
     # Final fallback: if it can't be parsed as anything else, it's a string
     return "str"
-
