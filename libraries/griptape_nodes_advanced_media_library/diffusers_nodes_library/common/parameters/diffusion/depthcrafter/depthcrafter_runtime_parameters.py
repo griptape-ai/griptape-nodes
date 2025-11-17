@@ -49,32 +49,32 @@ class DepthCrafterPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
                 name="guidance_scale",
                 default_value=1.0,
                 type="float",
-                tooltip="Classifier-free guidance scale. Higher values encourage alignment with prompts at the expense of image quality.",
+                tooltip="Classifier-free guidance scale. Higher values encourage alignment with prompts at the expense of image quality (1 - 1.2 recommended)",
                 ui_options={"slider": {"min_val": 0.1, "max_val": 10.0}, "step": 0.1},
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="window_size",
-                default_value=25,
+                default_value=75,
                 type="int",
-                tooltip="Window size for sliding window processing of long videos. Lower values use less VRAM. Recommended: 25 for 24GB GPU, 50 for 40GB GPU, 110 for 80GB GPU.",
+                tooltip="Window size for sliding window processing of long videos. This can be lowered to save on VRAM at the expense of taking longer to render (75-110 is recommended)",
                 ui_options={"slider": {"min_val": 1, "max_val": 200}},
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="overlap",
-                default_value=10,
+                default_value=25,
                 type="int",
-                tooltip="Overlap between windows during sliding window processing",
+                tooltip="Overlap between windows during sliding window processing (25 recommended)",
                 ui_options={"slider": {"min_val": 0, "max_val": 100}},
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="decode_chunk_size",
-                default_value=2,
+                default_value=6,
                 type="int",
                 tooltip="Number of frames to process at once during VAE encoding/decoding. Lower values use less VRAM but are slower.",
                 ui_options={"slider": {"min_val": 1, "max_val": 16}},
@@ -254,9 +254,12 @@ class DepthCrafterPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
                 progress_callback=progress_callback,
             )
 
-        depth_frames = result.frames[0]  # [B, H, W, C]
+        depth_frames = result.frames[0]  # [B, C, H, W] in PyTorch format when output_type="pt"
 
         self._node.log_params.append_to_logs("Post-processing depth maps...\n")  # type: ignore[reportAttributeAccessIssue]
+
+        # Convert from PyTorch format [B, C, H, W] to numpy format [B, H, W, C]
+        depth_frames = depth_frames.permute(0, 2, 3, 1)  # [B, H, W, C]
 
         # Convert to grayscale depth map
         depth_frames = depth_frames.sum(dim=-1) / depth_frames.shape[-1]  # [B, H, W]

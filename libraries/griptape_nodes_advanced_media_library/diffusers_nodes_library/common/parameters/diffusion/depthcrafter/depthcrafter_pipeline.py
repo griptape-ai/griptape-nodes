@@ -16,7 +16,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline):
-    """Inspired by: https://github.com/akatz-ai/ComfyUI-DepthCrafter-Nodes/blob/main/depthcrafter/depth_crafter_ppl.py."""
+    """Inspired by: https://github.com/Tencent/DepthCrafter/blob/main/depthcrafter/depth_crafter_ppl.py."""
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs) -> Self:
@@ -331,9 +331,13 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
             denoise_event.record()
             torch.cuda.synchronize()
             elapsed_time_ms = encode_event.elapsed_time(denoise_event)
+            msg = f"Elapsed time for denoising video: {elapsed_time_ms} ms"
+            logger.info(msg)
 
         if output_type != "latent":
-            latents_all = latents_all.to(dtype=self.vae.dtype)
+            # cast back to fp16 if needed
+            if needs_upcasting:
+                self.vae.to(dtype=torch.float16)
             frames = self.decode_latents(latents_all, num_frames, decode_chunk_size)
 
             if track_time:
@@ -342,7 +346,7 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
                 decode_event.record()
                 torch.cuda.synchronize()
                 elapsed_time_ms = denoise_event.elapsed_time(decode_event)
-                msg = f"Elapsed time for denoising video: {elapsed_time_ms} ms"
+                msg = f"Elapsed time for decoding video: {elapsed_time_ms} ms"
                 logger.info(msg)
 
             frames = self.video_processor.postprocess_video(video=frames, output_type=output_type)

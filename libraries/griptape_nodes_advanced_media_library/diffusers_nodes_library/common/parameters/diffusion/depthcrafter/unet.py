@@ -8,7 +8,7 @@ from diffusers.models.unets.unet_spatio_temporal_condition import (  # pyright: 
 
 
 class DiffusersUNetSpatioTemporalConditionModelDepthCrafter(diffusers.UNetSpatioTemporalConditionModel):  # pyright: ignore[reportUndefinedVariable]
-    """Inspired by: https://github.com/akatz-ai/ComfyUI-DepthCrafter-Nodes/blob/main/depthcrafter/unet.py."""
+    """Inspired by: https://github.com/Tencent/DepthCrafter/blob/main/depthcrafter/unet.py."""
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs) -> Self:
