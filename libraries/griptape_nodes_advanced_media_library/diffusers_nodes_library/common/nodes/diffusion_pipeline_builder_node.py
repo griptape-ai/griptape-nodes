@@ -1,7 +1,11 @@
+import gc
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
+
+import torch
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
     ParameterConnectionPreservationMixin,
@@ -161,11 +165,25 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
-        def builder() -> Any:
-            return self._build_pipeline()
+        def threaded_process() -> Any:
+            config_hash = self.get_parameter_value("pipeline")
+            try:
+                with self.log_params.append_profile_to_logs("Pipeline building/caching"):
+                    return model_cache.get_or_build_pipeline(config_hash, self._build_pipeline)
+            except Exception as e:
+                logger.error(f"{self.name}: Diffusion Pipeline build failed: {e}")
+                # Remove partial/corrupted pipeline from cache
+                model_cache.remove_pipeline(config_hash)
+                # Aggressive cleanup on failure
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                raise
 
-        with self.log_params.append_profile_to_logs("Pipeline building/caching"):
-            yield lambda: model_cache.get_or_build_pipeline(self.get_parameter_value("pipeline"), builder)
+        # Execute in isolated thread to contain OOM failures
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(threaded_process)
+            yield lambda: future.result()
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 
