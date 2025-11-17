@@ -645,9 +645,7 @@ class GetWorkflowMetadataRequest(RequestPayload):
 class GetWorkflowMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow metadata retrieved successfully."""
 
-    description: str | None
-    image: str | None
-    is_template: bool | None
+    workflow_metadata: WorkflowMetadata
 
 
 @dataclass
@@ -659,14 +657,10 @@ class GetWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFai
 @dataclass
 @PayloadRegistry.register
 class SetWorkflowMetadataRequest(RequestPayload):
-    """Replace selected metadata fields of a workflow and persist to file.
-
-    Allowed fields in 'updates' are strictly: description (str | None), image (str | None), is_template (bool).
-    Any other keys should be rejected as invalid.
-    """
+    """Replace the workflow's metadata entirely and persist to file."""
 
     workflow_name: str
-    updates: dict
+    workflow_metadata: WorkflowMetadata
 
 
 @dataclass
