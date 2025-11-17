@@ -896,7 +896,9 @@ class WorkflowManager:
         file_path_obj = Path(complete_file_path)
         if not file_path_obj.is_file():
             return WorkflowManager.WorkflowPathResolution(
-                workflow=workflow, file_path=None, error=f"Failed to set metadata. File path '{complete_file_path}' does not exist."
+                workflow=workflow,
+                file_path=None,
+                error=f"Failed to set metadata. File path '{complete_file_path}' does not exist.",
             )
 
         return WorkflowManager.WorkflowPathResolution(workflow=workflow, file_path=file_path_obj, error=None)
@@ -1478,7 +1480,9 @@ class WorkflowManager:
             branched_from=branched_from,
             workflow_shape=workflow_shape,
             file_path=str(file_path),
-            pickle_control_flow_result=(request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False),
+            pickle_control_flow_result=(
+                request.pickle_control_flow_result if request.pickle_control_flow_result is not None else False
+            ),
         )
 
         # Execute save and update registry inline
