@@ -1,6 +1,5 @@
 import gc
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
 import torch  # type: ignore[reportMissingImports]
@@ -162,7 +161,7 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
-        def threaded_process() -> Any:
+        def work() -> Any:
             try:
                 return self.pipe_params.runtime_parameters.process_pipeline(pipe)
             except Exception:
@@ -173,7 +172,4 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
                     torch.cuda.empty_cache()
                 raise
 
-        # Execute in isolated thread to contain OOM failures
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(threaded_process)
-            yield lambda: future.result()
+        yield work

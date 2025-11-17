@@ -2,7 +2,6 @@ import gc
 import hashlib
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
 import torch  # type: ignore[reportMissingImports]
@@ -165,7 +164,7 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
-        def threaded_process() -> Any:
+        def work() -> Any:
             config_hash = self.get_parameter_value("pipeline")
             try:
                 with self.log_params.append_profile_to_logs("Pipeline building/caching"):
@@ -180,10 +179,7 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
                     torch.cuda.empty_cache()
                 raise
 
-        # Execute in isolated thread to contain OOM failures
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(threaded_process)
-            yield lambda: future.result()
+        yield work
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 
