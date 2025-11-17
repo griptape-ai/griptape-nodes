@@ -110,7 +110,7 @@
       "file_path": "ultralytics_nodes_library/yolov8_face_detection.py",
       "metadata": {
         "category": "image/detection",
-        "description": "Detect faces in images using YOLOv8 from 🤗 Hugging Face. Returns bounding boxes with confidence scores for each detected face.",
+        "description": "Detect faces in images using a fine-tuned Ultralytics YOLOv8 model from Hugging Face. Returns bounding boxes with confidence scores for each detected face.",
         "display_name": "YOLOv8 Face Detection"
       }
     },
