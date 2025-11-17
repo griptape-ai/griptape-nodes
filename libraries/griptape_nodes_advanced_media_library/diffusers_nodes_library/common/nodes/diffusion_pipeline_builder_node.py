@@ -5,7 +5,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
-import torch
+import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
     ParameterConnectionPreservationMixin,
@@ -170,8 +170,8 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
             try:
                 with self.log_params.append_profile_to_logs("Pipeline building/caching"):
                     return model_cache.get_or_build_pipeline(config_hash, self._build_pipeline)
-            except Exception as e:
-                logger.error(f"{self.name}: Diffusion Pipeline build failed: {e}")
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline build failed", self.name)
                 # Remove partial/corrupted pipeline from cache
                 model_cache.remove_pipeline(config_hash)
                 # Aggressive cleanup on failure

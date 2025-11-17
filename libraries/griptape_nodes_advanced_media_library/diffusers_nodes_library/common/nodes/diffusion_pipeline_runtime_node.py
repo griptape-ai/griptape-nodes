@@ -3,7 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, ClassVar
 
-import torch
+import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
@@ -165,8 +165,8 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
         def threaded_process() -> Any:
             try:
                 return self.pipe_params.runtime_parameters.process_pipeline(pipe)
-            except Exception as e:
-                logger.error(f"{self.name}: Diffusion Pipeline execution failed: {e}")
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline execution failed", self.name)
                 # Aggressive cleanup on failure
                 gc.collect()
                 if torch.cuda.is_available():
