@@ -17,7 +17,6 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowResultFailure,
     RegisterWorkflowResultSuccess,
     SetWorkflowMetadataRequest,
-    SetWorkflowMetadataResultFailure,
     SetWorkflowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -204,31 +203,19 @@ class TestWorkflowManager:
             assert "Config save failed" in error_message
 
     def test_get_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
-        """Ensure GetWorkflowMetadataRequest returns selected metadata from loaded metadata."""
+        """Ensure GetWorkflowMetadataRequest returns workflow.metadata directly."""
         workflow_manager = griptape_nodes.WorkflowManager()
         request = GetWorkflowMetadataRequest(workflow_name="my_workflow")
 
-        mock_workflow = MagicMock()
-        mock_workflow.file_path = "workflows/my_workflow.py"
         mock_metadata = MagicMock()
-        mock_metadata.description = "hello world"
-        mock_metadata.image = "image.webp"
-        mock_metadata.is_template = True
+        mock_workflow = MagicMock()
+        mock_workflow.metadata = mock_metadata
 
-        with (
-            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
-            patch.object(
-                workflow_manager,
-                "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=mock_metadata, result_details="ok"),
-            ),
-        ):
+        with patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow):
             result = workflow_manager.on_get_workflow_metadata_request(request)
 
         assert isinstance(result, GetWorkflowMetadataResultSuccess)
-        assert result.description == "hello world"
-        assert result.image == "image.webp"
-        assert result.is_template is True
+        assert result.workflow_metadata is mock_metadata
 
     def test_get_workflow_metadata_not_found(self, griptape_nodes: GriptapeNodes) -> None:
         """Ensure GetWorkflowMetadataRequest returns failure when workflow missing."""
@@ -241,14 +228,14 @@ class TestWorkflowManager:
         assert isinstance(result, GetWorkflowMetadataResultFailure)
 
     def test_set_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
-        """Ensure SetWorkflowMetadataRequest updates allowed fields and persists."""
+        """Ensure SetWorkflowMetadataRequest replaces metadata and persists header."""
         workflow_manager = griptape_nodes.WorkflowManager()
         workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
 
-        request = SetWorkflowMetadataRequest(
-            workflow_name="my_workflow",
-            updates={"description": "meta desc", "image": "thumb.webp", "is_template": True},
-        )
+        # Provide a full metadata object (mock is fine as we stub header replacement)
+        mock_new_metadata = MagicMock()
+        mock_new_metadata.name = "my_workflow"
+        request = SetWorkflowMetadataRequest(workflow_name="my_workflow", workflow_metadata=mock_new_metadata)
 
         mock_workflow = MagicMock()
         mock_workflow.file_path = "workflows/my_workflow.py"
@@ -262,11 +249,7 @@ class TestWorkflowManager:
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
             patch.object(Path, "is_file", return_value=True),
             patch.object(Path, "read_text", fake_read_text),
-            patch.object(
-                workflow_manager,
-                "on_load_workflow_metadata_request",
-                return_value=LoadWorkflowMetadataResultSuccess(metadata=MagicMock(), result_details="ok"),
-            ),
+            patch.object(workflow_manager, "_replace_workflow_metadata_header", return_value="updated"),
             patch.object(
                 workflow_manager,
                 "_write_workflow_file",
@@ -278,18 +261,4 @@ class TestWorkflowManager:
         assert isinstance(result, SetWorkflowMetadataResultSuccess)
         write_mock.assert_called_once()
 
-    def test_set_workflow_metadata_rejects_invalid_keys(self, griptape_nodes: GriptapeNodes) -> None:
-        workflow_manager = griptape_nodes.WorkflowManager()
-        workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
-
-        request = SetWorkflowMetadataRequest(workflow_name="my_workflow", updates={"name": "bad"})
-        result = asyncio.run(workflow_manager.on_set_workflow_metadata_request(request))  # type: ignore[attr-defined]
-        assert isinstance(result, SetWorkflowMetadataResultFailure)
-
-    def test_set_workflow_metadata_rejects_invalid_types(self, griptape_nodes: GriptapeNodes) -> None:
-        workflow_manager = griptape_nodes.WorkflowManager()
-        workflow_manager._workflows_loading_complete.set()  # type: ignore[attr-defined]
-
-        request = SetWorkflowMetadataRequest(workflow_name="my_workflow", updates={"is_template": "yes"})
-        result = asyncio.run(workflow_manager.on_set_workflow_metadata_request(request))  # type: ignore[attr-defined]
-        assert isinstance(result, SetWorkflowMetadataResultFailure)
+    # Removed tests for invalid keys/types; metadata is replaced as a whole object
