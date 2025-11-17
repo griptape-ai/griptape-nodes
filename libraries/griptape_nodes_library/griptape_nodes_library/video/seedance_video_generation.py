@@ -12,19 +12,19 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SeedanceVideoGeneration"]
 
 
-class SeedanceVideoGeneration(DataNode):
+class SeedanceVideoGeneration(SuccessFailureNode):
     """Generate a video using the Seedance model via Griptape Cloud model proxy.
 
     Inputs:
@@ -42,6 +42,8 @@ class SeedanceVideoGeneration(DataNode):
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (initial POST)
         - video_url (VideoUrlArtifact): Saved static video URL
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
     """
 
     SERVICE_NAME = "Griptape"
@@ -91,6 +93,7 @@ class SeedanceVideoGeneration(DataNode):
                     Options(
                         choices=[
                             "seedance-1-0-pro-250528",
+                            "seedance-1-0-pro-fast-251015",
                             "seedance-1-0-lite-t2v-250428",
                             "seedance-1-0-lite-i2v-250428",
                         ]
@@ -172,7 +175,7 @@ class SeedanceVideoGeneration(DataNode):
                 default_value=None,
                 tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Last Frame", "hide": True},
+                ui_options={"display_name": "Last Frame"},
             )
         )
 
@@ -209,6 +212,13 @@ class SeedanceVideoGeneration(DataNode):
             )
         )
 
+        # Create status parameters for success/failure tracking (at the end)
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
         if parameter.name == "model_id":
@@ -232,16 +242,37 @@ class SeedanceVideoGeneration(DataNode):
         yield lambda: self._process()
 
     def _process(self) -> None:
+        # Clear execution status at the start
+        self._clear_execution_status()
+
         # Get parameters and validate API key
         params = self._get_parameters()
-        api_key = self._validate_api_key()
+
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         # Build and submit request
-        generation_id = self._submit_request(params, headers)
-        if not generation_id:
-            self.parameter_output_values["result"] = None
-            self.parameter_output_values["video_url"] = None
+        try:
+            generation_id = self._submit_request(params, headers)
+            if not generation_id:
+                self.parameter_output_values["result"] = None
+                self.parameter_output_values["video_url"] = None
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                )
+                return
+        except RuntimeError as e:
+            # HTTP error during submission
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
             return
 
         # Poll for result
@@ -280,7 +311,13 @@ class SeedanceVideoGeneration(DataNode):
             self._log(
                 f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
             )
-            msg = f"{self.name} Proxy POST error: {post_resp.status_code}"
+            # Try to parse error response body
+            try:
+                error_json = post_resp.json()
+                error_details = self._extract_error_details(error_json)
+                msg = f"{error_details}"
+            except Exception:
+                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
             raise RuntimeError(msg)
 
         post_json = post_resp.json()
@@ -415,16 +452,24 @@ class SeedanceVideoGeneration(DataNode):
             if monotonic() - start_time > timeout_s:
                 self.parameter_output_values["video_url"] = self._extract_video_url(last_json)
                 self._log("Polling timed out waiting for result")
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                )
                 return
 
             try:
                 get_resp = requests.get(get_url, headers=headers, timeout=60)
                 get_resp.raise_for_status()
                 last_json = get_resp.json()
+                # Update provider_response with latest polling data
+                self.parameter_output_values["provider_response"] = last_json
             except Exception as exc:
                 self._log(f"GET generation failed: {exc}")
-                msg = f"{self.name} GET generation failed: {exc}"
-                raise RuntimeError(msg) from exc
+                error_msg = f"Failed to poll generation status: {exc}"
+                self._set_status_results(was_successful=False, result_details=error_msg)
+                self._handle_failure_exception(RuntimeError(error_msg))
+                return
 
             with suppress(Exception):
                 self._log(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
@@ -434,36 +479,139 @@ class SeedanceVideoGeneration(DataNode):
             attempt += 1
             self._log(f"Polling attempt #{attempt} status={status}")
 
-            if status.lower() in {"succeeded", "success", "completed", "failed", "error"} or is_complete:
-                self._handle_completion(last_json)
+            # Check for explicit failure statuses
+            if status.lower() in {"failed", "error"}:
+                self._log(f"Generation failed with status: {status}")
+                self.parameter_output_values["video_url"] = None
+                # Extract error details from the response
+                error_details = self._extract_error_details(last_json)
+                self._set_status_results(was_successful=False, result_details=error_details)
+                return
+
+            if status.lower() in {"succeeded", "success", "completed"} or is_complete:
+                self._handle_completion(last_json, generation_id)
                 return
 
             sleep(poll_interval_s)
 
-    def _handle_completion(self, last_json: dict[str, Any] | None) -> None:
+    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)
         if not extracted_url:
+            self.parameter_output_values["video_url"] = None
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no video URL was found in the response.",
+            )
             return
 
         try:
             self._log("Downloading video bytes from provider URL")
             video_bytes = self._download_bytes_from_url(extracted_url)
-        except Exception:
+        except Exception as e:
+            self._log(f"Failed to download video: {e}")
             video_bytes = None
 
         if video_bytes:
             try:
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
-                filename = f"seedance_video_{int(time.time())}.mp4"
+                filename = (
+                    f"seedance_video_{generation_id}.mp4" if generation_id else f"seedance_video_{int(time.time())}.mp4"
+                )
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 self._log(f"Saved video to static storage as {filename}")
-            except Exception:
+                self._set_status_results(
+                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                )
+            except Exception as e:
+                self._log(f"Failed to save to static storage: {e}, using provider URL")
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+            )
+
+    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+        """Extract error details from API response.
+
+        Args:
+            response_json: The JSON response from the API that may contain error information
+
+        Returns:
+            A formatted error message string
+        """
+        if not response_json:
+            return "Generation failed with no error details provided by API."
+
+        top_level_error = response_json.get("error")
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+
+        # Try to extract from provider response first (more detailed)
+        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+        if provider_error_msg:
+            return provider_error_msg
+
+        # Fall back to top-level error
+        if top_level_error:
+            return self._format_top_level_error(top_level_error)
+
+        # Final fallback
+        status = self._extract_status(response_json) or "unknown"
+        return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
+
+    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
+        """Parse provider_response if it's a JSON string."""
+        if isinstance(provider_response, str):
+            try:
+                return _json.loads(provider_response)
+            except Exception:
+                return None
+        if isinstance(provider_response, dict):
+            return provider_response
+        return None
+
+    def _format_provider_error(
+        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
+    ) -> str | None:
+        """Format error message from parsed provider response."""
+        if not parsed_provider_response:
+            return None
+
+        provider_error = parsed_provider_response.get("error")
+        if not provider_error:
+            return None
+
+        if isinstance(provider_error, dict):
+            error_message = provider_error.get("message", "")
+            details = f"{error_message}"
+
+            if error_code := provider_error.get("code"):
+                details += f"\nError Code: {error_code}"
+            if error_type := provider_error.get("type"):
+                details += f"\nError Type: {error_type}"
+            if top_level_error:
+                details = f"{top_level_error}\n\n{details}"
+            return details
+
+        error_msg = str(provider_error)
+        if top_level_error:
+            return f"{top_level_error}\n\nProvider error: {error_msg}"
+        return f"Generation failed. Provider error: {error_msg}"
+
+    def _format_top_level_error(self, top_level_error: Any) -> str:
+        """Format error message from top-level error field."""
+        if isinstance(top_level_error, dict):
+            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
+            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
+        return f"Generation failed with error: {top_level_error!s}"
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""

@@ -8,8 +8,10 @@ from griptape.structures import Agent
 from griptape.tasks import PromptTask
 from griptape.tools import MCPTool
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
@@ -34,10 +36,8 @@ class MCPTaskNode(SuccessFailureNode):
         mcp_servers = get_available_mcp_servers()
         default_mcp_server = mcp_servers[0] if mcp_servers else None
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="mcp_server_name",
-                input_types=["str"],
-                type="str",
                 default_value=default_mcp_server,
                 tooltip="Select an MCP server to use",
                 traits={
@@ -50,7 +50,7 @@ class MCPTaskNode(SuccessFailureNode):
                         on_click=self._reload_mcp_servers,
                     ),
                 },
-                ui_options={"placeholder_text": "Select MCP server..."},
+                placeholder_text="Select MCP server...",
             )
         )
         self.add_parameter(
@@ -63,26 +63,40 @@ class MCPTaskNode(SuccessFailureNode):
             )
         )
         self.add_parameter(
-            Parameter(
-                name="prompt",
-                input_types=["str"],
-                type="str",
-                default_value=None,
-                tooltip="The prompt to use",
-                ui_options={"multiline": True, "placeholder_text": "Input text to process"},
+            ParameterInt(
+                name="max_subtasks",
+                default_value=20,
+                hide=True,
+                tooltip="The maximum number of subtasks to allow.",
+                min_val=1,
+                max_val=100,
             )
         )
-        self.output = Parameter(
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                default_value=None,
+                tooltip="The prompt to use",
+                multiline=True,
+                placeholder_text="Input text to process",
+            )
+        )
+        self.add_parameter(
+            ParameterList(
+                name="context",
+                tooltip="Additional context to add to the prompt",
+                input_types=["Any"],
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
+        self.output = ParameterString(
             name="output",
-            input_types=["str"],
-            type="str",
             default_value=None,
             tooltip="The output of the task",
             allowed_modes={ParameterMode.OUTPUT},
-            ui_options={
-                "multiline": True,
-                "placeholder_text": "Input text to process",
-            },  # TODO: (jason) Make this markdown output to handle images: https://github.com/griptape-ai/griptape-nodes/issues/2403
+            multiline=True,
+            markdown=True,
+            placeholder_text="The results of the MCP task will be displayed here.",
         )
         self.add_parameter(self.output)
 
@@ -162,7 +176,7 @@ class MCPTaskNode(SuccessFailureNode):
 
         return self._mcp_tools[mcp_server_name]
 
-    async def aprocess(self) -> None:
+    def process(self) -> AsyncResult:
         # Reset execution state and set failure defaults
         self._clear_execution_status()
         self._set_failure_output_values()
@@ -171,6 +185,12 @@ class MCPTaskNode(SuccessFailureNode):
         # Get parameter values
         mcp_server_name = self.get_parameter_value("mcp_server_name")
         prompt = self.get_parameter_value("prompt")
+        max_subtasks = self.get_parameter_value("max_subtasks")
+        context = self.get_parameter_list_value("context")
+
+        # add any context to the prompt
+        if context:
+            prompt += f"\n{context!s}"
 
         # Get MCP server configuration
         server_config = get_server_config(mcp_server_name)
@@ -181,7 +201,7 @@ class MCPTaskNode(SuccessFailureNode):
             return
 
         # Get MCP tool
-        tool = self._get_mcp_tool(mcp_server_name, server_config)
+        tool = yield lambda: self._get_mcp_tool(mcp_server_name, server_config)
         if tool is None:
             error_details = f"Failed to create MCP tool for server '{mcp_server_name}'"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
@@ -197,14 +217,14 @@ class MCPTaskNode(SuccessFailureNode):
             return
 
         # Add task to agent
-        if not self._add_task_to_agent(agent, tool, driver, tools, rulesets):
+        if not self._add_task_to_agent(agent, tool, driver, tools, rulesets, max_subtasks):
             error_details = "Failed to add task to agent"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
             logger.error(f"{self.name}: {error_details}")
             return
 
         # Execute with streaming
-        self._execute_with_streaming(agent, prompt, mcp_server_name)
+        yield lambda: self._execute_with_streaming(agent, prompt, mcp_server_name)
 
     def _get_mcp_tool(self, mcp_server_name: str, server_config: dict[str, Any]) -> MCPTool | None:
         """Get or create MCP tool."""
@@ -238,10 +258,14 @@ class MCPTaskNode(SuccessFailureNode):
             return None, None, [], []
         return agent, driver, tools, rulesets
 
-    def _add_task_to_agent(self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list) -> bool:
+    def _add_task_to_agent(  # noqa: PLR0913
+        self, agent: Agent, tool: MCPTool, driver: Any, tools: list, rulesets: list, max_subtasks: int
+    ) -> bool:
         """Add task to agent."""
         try:
-            prompt_task = PromptTask(tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets)
+            prompt_task = PromptTask(
+                tools=[*tools, tool], prompt_driver=driver, rulesets=rulesets, max_subtasks=max_subtasks
+            )
             agent.add_task(prompt_task)
         except Exception as e:
             msg = f"{self.name}: Failed to add task to agent: {e}"
@@ -259,7 +283,7 @@ class MCPTaskNode(SuccessFailureNode):
             execution_time = time.time() - execution_start
             logger.debug(f"MCPTaskNode '{self.name}': Agent execution completed in {execution_time:.2f}s")
 
-            self._set_success_output_values(prompt, result)
+            self._set_success_output_values(result)
             success_details = f"Successfully executed MCP task with server '{mcp_server_name}'"
             self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
             logger.info(f"MCPTaskNode '{self.name}': {success_details}")
@@ -313,9 +337,8 @@ class MCPTaskNode(SuccessFailureNode):
             stream=True,
         )
 
-    def _set_success_output_values(self, prompt: str, result: Agent) -> None:
+    def _set_success_output_values(self, result: Agent) -> None:
         """Set output parameter values on success."""
-        self.parameter_output_values["prompt"] = prompt
         self.parameter_output_values["output"] = str(result.output) if result.output else ""
         # Remove the MCP Tool from the agent
         if isinstance(result.tasks[0], PromptTask) and result.tasks[0].tools:
@@ -326,5 +349,4 @@ class MCPTaskNode(SuccessFailureNode):
 
     def _set_failure_output_values(self) -> None:
         """Set output parameter values to defaults on failure."""
-        self.parameter_output_values["prompt"] = ""
         self.parameter_output_values["output"] = ""

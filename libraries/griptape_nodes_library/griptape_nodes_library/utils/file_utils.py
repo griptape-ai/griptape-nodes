@@ -1,7 +1,5 @@
 """File utility functions for generating filenames and managing file operations."""
 
-from datetime import UTC, datetime
-
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -44,11 +42,8 @@ def generate_filename(
     workflow_name = "".join(c for c in workflow_name if c.isalnum() or c in ("-", "_")).rstrip()
     node_name = "".join(c for c in node_name if c.isalnum() or c in ("-", "_")).rstrip()
 
-    # Get current timestamp for cache busting
-    timestamp = int(datetime.now(UTC).timestamp())
-
-    # Create filename with meaningful structure and timestamp as query parameter
-    filename = f"{workflow_name}_{node_name}{suffix}.{extension}?t={timestamp}"
+    # Create filename with meaningful structure
+    filename = f"{workflow_name}_{node_name}{suffix}.{extension}"
 
     return filename
 

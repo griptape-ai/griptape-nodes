@@ -1,9 +1,10 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import ControlNode, NodeResolutionState
 from griptape_nodes_library.variables.variable_utils import (
     create_advanced_parameter_group,
+    has_variable,
     scope_string_to_variable_scope,
 )
 
@@ -27,6 +28,7 @@ class HasVariable(ControlNode):
         self.exists_param = Parameter(
             name="exists",
             type="bool",
+            default_value=False,
             allowed_modes={ParameterMode.OUTPUT},
             tooltip="Whether the workflow variable exists",
         )
@@ -38,62 +40,44 @@ class HasVariable(ControlNode):
         self.add_node_element(advanced.parameter_group)
 
     def process(self) -> None:
-        # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.node_events import (
-            GetFlowForNodeRequest,
-            GetFlowForNodeResultSuccess,
-        )
-        from griptape_nodes.retained_mode.events.variable_events import (
-            HasVariableRequest,
-            HasVariableResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        variable_name = self.get_parameter_value("variable_name")
-        scope_str = self.get_parameter_value("scope")
+        variable_name = self.get_parameter_value(self.variable_name_param.name)
+        scope_str = self.get_parameter_value(self.scope_param.name)
 
         # Convert scope string to VariableScope enum
         scope = scope_string_to_variable_scope(scope_str)
 
-        # Get the flow that owns this node
-        flow_request = GetFlowForNodeRequest(node_name=self.name)
-        flow_result = GriptapeNodes.handle_request(flow_request)
+        # This can throw.
+        exists = has_variable(node_name=self.name, variable_name=variable_name, scope=scope)
 
-        if not isinstance(flow_result, GetFlowForNodeResultSuccess):
-            error_msg = f"Failed to get flow for node '{self.name}': {flow_result.result_details}"
-            raise TypeError(error_msg)
+        self.set_parameter_value(self.exists_param.name, exists)
 
-        current_flow_name = flow_result.flow_name
+        # Set output values.
+        self.parameter_output_values[self.exists_param.name] = exists
+        self.parameter_output_values[self.variable_name_param.name] = variable_name
 
-        request = HasVariableRequest(
-            name=variable_name,
-            lookup_scope=scope,
-            starting_flow=current_flow_name,
-        )
+    @property
+    def state(self) -> NodeResolutionState:
+        """Overrides BaseNode.state @property to treat it as volatile (always be re-evaluated every time it is executed)."""
+        if self._state == NodeResolutionState.RESOLVED:
+            variable_name = self.get_parameter_value(self.variable_name_param.name)
+            scope_str = self.get_parameter_value(self.scope_param.name)
 
-        result = GriptapeNodes.handle_request(request)
+            # Convert scope string to VariableScope enum
+            scope = scope_string_to_variable_scope(scope_str)
 
-        if isinstance(result, HasVariableResultSuccess):
-            self.parameter_output_values["exists"] = result.exists
-            self.parameter_output_values["variable_name"] = variable_name
-        else:
-            msg = f"Failed to check variable existence: {result.result_details}"
-            raise TypeError(msg)
+            # This can throw.
+            try:
+                var_exists = has_variable(node_name=self.name, variable_name=variable_name, scope=scope)
+                our_exists = self.get_parameter_value(self.exists_param.name)
+                if var_exists != our_exists:
+                    # We're dirty.
+                    return NodeResolutionState.UNRESOLVED
+            except RuntimeError:
+                # Variable may not be created yet; assume unresolved.
+                return NodeResolutionState.UNRESOLVED
+        return super().state
 
-    def validate_before_workflow_run(self) -> list[Exception] | None:
-        """Variable nodes have side effects and need to execute every workflow run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
-
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Variable nodes have side effects and need to execute every time they run."""
-        from griptape_nodes.exe_types.node_types import NodeResolutionState
-
-        self.make_node_unresolved(
-            current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
-        )
-        return None
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        # Have to override the setter if we override the getter.
+        self._state = new_state

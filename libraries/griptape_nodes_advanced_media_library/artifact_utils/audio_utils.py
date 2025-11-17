@@ -1,7 +1,7 @@
 import base64
 import uuid
 
-from artifact_utils.audio_url_artifact import AudioUrlArtifact
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 
 def dict_to_audio_url_artifact(audio_dict: dict, audio_format: str | None = None) -> AudioUrlArtifact:

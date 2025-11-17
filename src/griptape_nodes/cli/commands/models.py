@@ -239,17 +239,34 @@ def _format_download_row(download: "ModelDownloadStatus") -> tuple[str, str, str
 
 def _format_progress(download: "ModelDownloadStatus") -> str:
     """Format download progress information."""
-    if download.total_files is not None and download.completed_files is not None and download.total_files > 0:
-        progress_percent = (download.completed_files / download.total_files) * 100
+    if download.total_bytes is not None and download.completed_bytes is not None and download.total_bytes > 0:
+        progress_percent = (download.completed_bytes / download.total_bytes) * 100
         return f"{progress_percent:.1f}%"
     return "Unknown"
 
 
 def _format_size(download: "ModelDownloadStatus") -> str:
     """Format download size information."""
-    if download.total_files is not None and download.completed_files is not None:
-        return f"{download.completed_files}/{download.total_files} files"
+    if download.total_bytes is not None and download.completed_bytes is not None:
+        return f"{_format_bytes(download.completed_bytes)}/{_format_bytes(download.total_bytes)}"
     return "Unknown"
+
+
+def _format_bytes(num_bytes: int) -> str:
+    """Format bytes to human-readable string."""
+    if num_bytes == 0:
+        return "0 B"
+
+    bytes_per_unit = 1024.0
+    units = ["B", "KB", "MB", "GB", "TB"]
+    unit_index = 0
+    size = float(num_bytes)
+
+    while size >= bytes_per_unit and unit_index < len(units) - 1:
+        size /= bytes_per_unit
+        unit_index += 1
+
+    return f"{size:.2f} {units[unit_index]}"
 
 
 def _format_eta(download: "ModelDownloadStatus") -> str:

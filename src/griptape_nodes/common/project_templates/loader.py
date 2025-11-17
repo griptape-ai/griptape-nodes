@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from pydantic import ValidationError
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
@@ -17,6 +18,19 @@ from ruamel.yaml.error import YAMLError
 if TYPE_CHECKING:
     from griptape_nodes.common.project_templates.project import ProjectTemplate
     from griptape_nodes.common.project_templates.validation import ProjectValidationInfo
+
+# Field name constants
+FIELD_NAME = "name"
+FIELD_SITUATIONS = "situations"
+FIELD_DIRECTORIES = "directories"
+FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION = "project_template_schema_version"
+FIELD_ENVIRONMENT = "environment"
+FIELD_DESCRIPTION = "description"
+
+# Special constants
+ROOT_FIELD_PATH = "<root>"
+DEFAULT_SCHEMA_VERSION = "0.1.0"
+DEFAULT_PROJECT_NAME = "Invalid Project"
 
 
 @dataclass
@@ -121,7 +135,7 @@ def load_yaml_with_line_tracking(yaml_text: str) -> YAMLParseResult:
     return YAMLParseResult(data=data, line_info=line_info)
 
 
-def load_project_template_from_yaml(
+def load_project_template_from_yaml(  # noqa: C901
     yaml_text: str,
     validation_info: ProjectValidationInfo,
 ) -> ProjectTemplate | None:
@@ -129,7 +143,7 @@ def load_project_template_from_yaml(
 
     Two-pass approach:
     1. Load raw YAML with line tracking (may raise YAMLError)
-    2. Build ProjectTemplate via from_dict(), collecting validation problems
+    2. Build ProjectTemplate via Pydantic validation, collecting validation problems
 
     Args:
         yaml_text: YAML text to parse
@@ -138,8 +152,8 @@ def load_project_template_from_yaml(
     Returns:
         ProjectTemplate on success, None if fatal errors prevent construction
     """
-    # Lazy import required: circular dependency between this module and project module
-    # loader imports from project, project imports from directory/situation, which import YAMLLineInfo from loader
+    # Lazy import required: circular dependency between this module and project.py
+    # project.py imports ProjectOverlayData from this file, and we need ProjectTemplate from project.py
     from griptape_nodes.common.project_templates.project import ProjectTemplate
 
     # Pass 1: Load YAML with line tracking
@@ -148,16 +162,60 @@ def load_project_template_from_yaml(
     except YAMLError as e:
         # YAML syntax error - cannot proceed
         validation_info.add_error(
-            field_path="<root>",
+            field_path=ROOT_FIELD_PATH,
             message=f"YAML syntax error: {e}",
             line_number=None,
         )
         return None
 
-    # Pass 2: Build ProjectTemplate with validation
-    template = ProjectTemplate.from_dict(result.data, validation_info, result.line_info)
+    # Pass 2: Build ProjectTemplate with Pydantic validation
+    data = result.data
+    line_info = result.line_info
 
-    return template
+    # Add names to situations and directories before validation
+    if FIELD_SITUATIONS in data and isinstance(data[FIELD_SITUATIONS], dict):
+        for sit_name, sit_data in data[FIELD_SITUATIONS].items():
+            if isinstance(sit_data, dict):
+                sit_data[FIELD_NAME] = sit_name
+
+    if FIELD_DIRECTORIES in data and isinstance(data[FIELD_DIRECTORIES], dict):
+        for dir_name, dir_data in data[FIELD_DIRECTORIES].items():
+            if isinstance(dir_data, dict):
+                dir_data[FIELD_NAME] = dir_name
+
+    try:
+        template = ProjectTemplate.model_validate(data)
+    except ValidationError as e:
+        # Convert Pydantic validation errors to our validation_info format
+        for error in e.errors():
+            # Build field path from error location
+            field_path = ".".join(str(loc) for loc in error["loc"])
+            message = error["msg"]
+
+            # Try to get line number from our line tracking
+            line_number = line_info.get_line(field_path)
+
+            validation_info.add_error(
+                field_path=field_path,
+                message=message,
+                line_number=line_number,
+            )
+
+        return None
+    else:
+        # Add warnings for schema version mismatches
+        if template.project_template_schema_version != ProjectTemplate.LATEST_SCHEMA_VERSION:
+            message = (
+                f"Schema version '{template.project_template_schema_version}' "
+                f"differs from latest '{ProjectTemplate.LATEST_SCHEMA_VERSION}'"
+            )
+            validation_info.add_warning(
+                field_path=FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION,
+                message=message,
+                line_number=line_info.get_line(FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION),
+            )
+
+        return template
 
 
 def load_partial_project_template(
@@ -173,7 +231,7 @@ def load_partial_project_template(
 
     Does NOT:
     - Construct full SituationTemplate/DirectoryDefinition objects
-    - Validate situation schemas or policy values
+    - Validate situation macros or policy values
     - Check directory references
 
     Use this for loading user overlay templates before merge.
@@ -193,83 +251,83 @@ def load_partial_project_template(
         line_info = result.line_info
     except YAMLError as e:
         validation_info.add_error(
-            field_path="<root>",
+            field_path=ROOT_FIELD_PATH,
             message=f"YAML syntax error: {e}",
             line_number=None,
         )
         return None
 
     # Validate required field: name
-    name = data.get("name")
+    name = data.get(FIELD_NAME)
     if name is None:
         validation_info.add_error(
-            field_path="name",
-            message="Required field 'name' missing",
-            line_number=line_info.get_line("name"),
+            field_path=FIELD_NAME,
+            message=f"Required field '{FIELD_NAME}' missing",
+            line_number=line_info.get_line(FIELD_NAME),
         )
-        name = "Invalid Project"
+        name = DEFAULT_PROJECT_NAME
     elif not isinstance(name, str):
         validation_info.add_error(
-            field_path="name",
-            message=f"Field 'name' must be string, got {type(name).__name__}",
-            line_number=line_info.get_line("name"),
+            field_path=FIELD_NAME,
+            message=f"Field '{FIELD_NAME}' must be string, got {type(name).__name__}",
+            line_number=line_info.get_line(FIELD_NAME),
         )
-        name = "Invalid Project"
+        name = DEFAULT_PROJECT_NAME
 
     # Validate required field: project_template_schema_version
-    schema_version = data.get("project_template_schema_version")
+    schema_version = data.get(FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION)
     if schema_version is None:
         validation_info.add_error(
-            field_path="project_template_schema_version",
-            message="Required field 'project_template_schema_version' missing",
-            line_number=line_info.get_line("project_template_schema_version"),
+            field_path=FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION,
+            message=f"Required field '{FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION}' missing",
+            line_number=line_info.get_line(FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION),
         )
-        schema_version = "0.1.0"
+        schema_version = DEFAULT_SCHEMA_VERSION
     elif not isinstance(schema_version, str):
         validation_info.add_error(
-            field_path="project_template_schema_version",
+            field_path=FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION,
             message=f"Must be string, got {type(schema_version).__name__}",
-            line_number=line_info.get_line("project_template_schema_version"),
+            line_number=line_info.get_line(FIELD_PROJECT_TEMPLATE_SCHEMA_VERSION),
         )
-        schema_version = "0.1.0"
+        schema_version = DEFAULT_SCHEMA_VERSION
 
     # Optional field: situations (default to empty dict)
-    situations = data.get("situations", {})
+    situations = data.get(FIELD_SITUATIONS, {})
     if not isinstance(situations, dict):
         validation_info.add_error(
-            field_path="situations",
+            field_path=FIELD_SITUATIONS,
             message=f"Must be dict, got {type(situations).__name__}",
-            line_number=line_info.get_line("situations"),
+            line_number=line_info.get_line(FIELD_SITUATIONS),
         )
         situations = {}
 
     # Optional field: directories (default to empty dict)
-    directories = data.get("directories", {})
+    directories = data.get(FIELD_DIRECTORIES, {})
     if not isinstance(directories, dict):
         validation_info.add_error(
-            field_path="directories",
+            field_path=FIELD_DIRECTORIES,
             message=f"Must be dict, got {type(directories).__name__}",
-            line_number=line_info.get_line("directories"),
+            line_number=line_info.get_line(FIELD_DIRECTORIES),
         )
         directories = {}
 
     # Optional field: environment (default to empty dict)
-    environment = data.get("environment", {})
+    environment = data.get(FIELD_ENVIRONMENT, {})
     if not isinstance(environment, dict):
         validation_info.add_error(
-            field_path="environment",
+            field_path=FIELD_ENVIRONMENT,
             message=f"Must be dict, got {type(environment).__name__}",
-            line_number=line_info.get_line("environment"),
+            line_number=line_info.get_line(FIELD_ENVIRONMENT),
         )
         environment = {}
 
     # Optional field: description
-    description = data.get("description")
+    description = data.get(FIELD_DESCRIPTION)
     if description is not None and not isinstance(description, str):
         validation_info.add_error(
-            field_path="description",
+            field_path=FIELD_DESCRIPTION,
             message=f"Must be string, got {type(description).__name__}",
-            line_number=line_info.get_line("description"),
+            line_number=line_info.get_line(FIELD_DESCRIPTION),
         )
         description = None
 

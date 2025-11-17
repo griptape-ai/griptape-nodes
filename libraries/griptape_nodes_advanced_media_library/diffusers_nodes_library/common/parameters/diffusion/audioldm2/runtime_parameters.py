@@ -129,9 +129,12 @@ class Audioldm2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             if i < num_inference_steps - 1:
                 self.publish_output_audio_preview(pipe, callback_kwargs["latents"])
                 self._node.log_params.append_to_logs(f"Starting inference step {i + 2} of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
+                self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
             return {}
 
         self._node.log_params.append_to_logs(f"Starting inference step 1 of {num_inference_steps}...\n")  # type: ignore[reportAttributeAccessIssue]
+        self._node.progress_bar_component.initialize(num_inference_steps)  # type: ignore[reportAttributeAccessIssue]
+        self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
         output_audio = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),
             callback_on_step_end=callback_on_step_end,

@@ -14,12 +14,16 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing Griptape Cloud APIs and services.",
-    "library_version": "0.58.0",
-    "engine_version": "0.58.0",
-    "tags": ["Griptape", "AI", "Cloud"],
+    "library_version": "0.60.2",
+    "engine_version": "0.60.2",
+    "tags": [
+      "Griptape",
+      "AI",
+      "Cloud"
+    ],
     "dependencies": {
       "pip_dependencies": [
-        "git+https://github.com/griptape-ai/griptape-cloud-python-client.git@main"
+        "griptape-cloud-client==0.1.1"
       ]
     }
   },
@@ -117,6 +121,24 @@
         "category": "griptape_cloud/buckets",
         "description": "Griptape Node that retrieves a specific bucket.",
         "display_name": "Get Bucket"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudStartFlow",
+      "file_path": "griptape_cloud/publish_workflow/griptape_cloud_start_flow.py",
+      "metadata": {
+        "category": "griptape_cloud/published_workflows",
+        "description": "Node that defines the start of a workflow and passes parameters for a flow on Griptape Cloud.",
+        "display_name": "Griptape Cloud Start Flow"
+      }
+    },
+    {
+      "class_name": "GriptapeCloudEndFlow",
+      "file_path": "griptape_cloud/publish_workflow/griptape_cloud_end_flow.py",
+      "metadata": {
+        "category": "griptape_cloud/published_workflows",
+        "description": "Node that defines the end of a workflow and passes parameters for a flow on Griptape Cloud.",
+        "display_name": "Griptape Cloud End Flow"
       }
     },
     {

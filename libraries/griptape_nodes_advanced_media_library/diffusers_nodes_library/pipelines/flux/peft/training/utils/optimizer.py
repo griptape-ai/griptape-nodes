@@ -6,7 +6,7 @@ from accelerate import Accelerator  # type: ignore[reportMissingImports]
 from accelerate.utils.deepspeed import DummyOptim  # type: ignore[reportMissingImports]
 from torch.optim import Optimizer  # type: ignore[reportMissingImports]
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 def create_optimizer(accelerator: Accelerator, args: argparse.Namespace, params_to_optimize: list[dict]) -> Optimizer:

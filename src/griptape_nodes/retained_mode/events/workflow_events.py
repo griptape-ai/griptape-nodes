@@ -10,6 +10,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.execution_events import ExecutionPayload
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
@@ -376,6 +377,16 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 
 @dataclass
+class PublishWorkflowRegisteredEventData:
+    """Data specific to registering a PublishWorkflowRequest event handler."""
+
+    start_flow_node_type: str
+    start_flow_node_library_name: str
+    end_flow_node_type: str
+    end_flow_node_library_name: str
+
+
+@dataclass
 @PayloadRegistry.register
 class PublishWorkflowRequest(RequestPayload):
     """Publish a workflow for distribution.
@@ -388,9 +399,11 @@ class PublishWorkflowRequest(RequestPayload):
 
     workflow_name: str
     publisher_name: str
-    execute_on_publish: bool = False
+    # This can be removed after GUI release
+    execute_on_publish: bool | None = None
     published_workflow_file_name: str | None = None
     pickle_control_flow_result: bool = False
+    metadata: dict | None = None
 
 
 @dataclass
@@ -403,12 +416,27 @@ class PublishWorkflowResultSuccess(ResultPayloadSuccess):
     """
 
     published_workflow_file_path: str
+    metadata: dict | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class PublishWorkflowResultFailure(ResultPayloadFailure):
     """Workflow publish failed. Common causes: workflow not found, publish error, file system error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class PublishWorkflowProgressEvent(ExecutionPayload):
+    """Event emitted to indicate progress during workflow publishing.
+
+    Args:
+        progress: Progress percentage (0-100)
+        message: Optional progress message
+    """
+
+    progress: float
+    message: str | None = None
 
 
 @dataclass

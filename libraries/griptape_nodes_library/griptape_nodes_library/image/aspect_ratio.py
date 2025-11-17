@@ -152,6 +152,17 @@ class AspectRatio(SuccessFailureNode):
                 validators=[validate_width],
             )
 
+            # Hidden parameter to store fractional width for precise ratio calculations
+            self._internal_width_float_parameter = Parameter(
+                name="internal_width_float",
+                type="float",
+                tooltip="Internal fractional width for precise aspect ratio calculations",
+                default_value=None,
+                allowed_modes={ParameterMode.PROPERTY},
+                settable=False,
+                hide=True,
+            )
+
             self._height_parameter = Parameter(
                 name="height",
                 type="int",
@@ -159,6 +170,17 @@ class AspectRatio(SuccessFailureNode):
                 default_value=1024,
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_height],
+            )
+
+            # Hidden parameter to store fractional height for precise ratio calculations
+            self._internal_height_float_parameter = Parameter(
+                name="internal_height_float",
+                type="float",
+                tooltip="Internal fractional height for precise aspect ratio calculations",
+                default_value=None,
+                allowed_modes={ParameterMode.PROPERTY},
+                settable=False,
+                hide=True,
             )
 
             self._ratio_str_parameter = Parameter(
@@ -605,14 +627,18 @@ class AspectRatio(SuccessFailureNode):
 
         # Calculate new dimensions - swap dimensions and ratio if height is primary
         if width_is_primary:
-            new_width, new_height = self._calculate_dimensions_from_primary(
+            new_width, new_height, width_float, height_float = self._calculate_dimensions_from_primary(
                 current_width, current_height, preset_aspect_width, preset_aspect_height
             )
+            self.set_parameter_value(self._internal_width_float_parameter.name, width_float)
+            self.set_parameter_value(self._internal_height_float_parameter.name, height_float)
         else:
             # Height is primary - swap everything
-            new_height, new_width = self._calculate_dimensions_from_primary(
+            new_height, new_width, height_float, width_float = self._calculate_dimensions_from_primary(
                 current_height, current_width, preset_aspect_height, preset_aspect_width
             )
+            self.set_parameter_value(self._internal_width_float_parameter.name, width_float)
+            self.set_parameter_value(self._internal_height_float_parameter.name, height_float)
 
         # Validate calculated dimensions before updating (negative values are invalid)
         if new_width < 0 or new_height < 0:
@@ -631,7 +657,7 @@ class AspectRatio(SuccessFailureNode):
 
     def _calculate_dimensions_from_primary(
         self, primary_dimension: int | None, secondary_dimension: int | None, primary_aspect: int, secondary_aspect: int
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, float, float]:
         """Calculate dimensions using primary dimension and aspect ratio.
 
         Args:
@@ -641,7 +667,8 @@ class AspectRatio(SuccessFailureNode):
             secondary_aspect: The secondary aspect ratio value (e.g., 3 in 4:3 if width is primary)
 
         Returns:
-            Tuple of (primary_result, secondary_result) in the same order as inputs
+            Tuple of (primary_result_int, secondary_result_int, primary_result_float, secondary_result_float)
+            Integer values are rounded down for output, float values preserve fractional precision
         """
         has_valid_primary = primary_dimension is not None and primary_dimension >= 0
         has_valid_secondary = secondary_dimension is not None and secondary_dimension >= 0
@@ -659,36 +686,50 @@ class AspectRatio(SuccessFailureNode):
                     error_msg = "Internal error: dimensions should not be None after validation."
                     raise ValueError(error_msg)
                 larger_dimension = max(primary_dimension, secondary_dimension)
+                new_primary_float = float(larger_dimension)
+                new_secondary_float = new_primary_float * secondary_aspect / primary_aspect
                 new_primary = larger_dimension
-                new_secondary = round(new_primary * secondary_aspect / primary_aspect)
+                new_secondary = int(new_secondary_float)
             case (True, False):
                 # Only primary dimension available - use it directly
                 if primary_dimension is None:
                     error_msg = "Internal error: primary dimension should not be None after validation."
                     raise ValueError(error_msg)
+                new_primary_float = float(primary_dimension)
+                new_secondary_float = new_primary_float * secondary_aspect / primary_aspect
                 new_primary = primary_dimension
-                new_secondary = round(new_primary * secondary_aspect / primary_aspect)
+                new_secondary = int(new_secondary_float)
             case (False, True):
                 # Only secondary dimension available - calculate primary from it
                 if secondary_dimension is None:
                     error_msg = "Internal error: secondary dimension should not be None after validation."
                     raise ValueError(error_msg)
+                new_secondary_float = float(secondary_dimension)
+                new_primary_float = new_secondary_float * primary_aspect / secondary_aspect
                 new_secondary = secondary_dimension
-                new_primary = round(new_secondary * primary_aspect / secondary_aspect)
+                new_primary = int(new_primary_float)
             case _:
                 # This should be unreachable due to early-out above
                 error_msg = "Internal error: unreachable case in dimension calculation."
                 raise ValueError(error_msg)
 
-        return (new_primary, new_secondary)
+        return (new_primary, new_secondary, new_primary_float, new_secondary_float)
 
     def _handle_width_change(self, width: int) -> None:
         """Handle width parameter changes - update ratio and set to Custom."""
+        # Clear fractional values since user provided explicit integer
+        self.set_parameter_value(self._internal_width_float_parameter.name, None)
+        self.set_parameter_value(self._internal_height_float_parameter.name, None)
+
         height = self.get_parameter_value(self._height_parameter.name)
         self._handle_dimension_change(width, height)
 
     def _handle_height_change(self, height: int) -> None:
         """Handle height parameter changes - update ratio and set to Custom."""
+        # Clear fractional values since user provided explicit integer
+        self.set_parameter_value(self._internal_width_float_parameter.name, None)
+        self.set_parameter_value(self._internal_height_float_parameter.name, None)
+
         width = self.get_parameter_value(self._width_parameter.name)
         self._handle_dimension_change(width, height)
 
@@ -726,14 +767,18 @@ class AspectRatio(SuccessFailureNode):
         # Recalculate dimensions based on new ratio (use larger dimension as primary)
         width_is_primary = aspect_width >= aspect_height
         if width_is_primary:
-            new_width, new_height = self._calculate_dimensions_from_primary(
+            new_width, new_height, width_float, height_float = self._calculate_dimensions_from_primary(
                 current_width, current_height, aspect_width, aspect_height
             )
+            self.set_parameter_value(self._internal_width_float_parameter.name, width_float)
+            self.set_parameter_value(self._internal_height_float_parameter.name, height_float)
         else:
             # Height is primary - swap everything
-            new_height, new_width = self._calculate_dimensions_from_primary(
+            new_height, new_width, height_float, width_float = self._calculate_dimensions_from_primary(
                 current_height, current_width, aspect_height, aspect_width
             )
+            self.set_parameter_value(self._internal_width_float_parameter.name, width_float)
+            self.set_parameter_value(self._internal_height_float_parameter.name, height_float)
 
         # Validate calculated dimensions before updating
         if new_width < 0 or new_height < 0:
@@ -777,7 +822,11 @@ class AspectRatio(SuccessFailureNode):
         return ratio_str, ratio_decimal
 
     def _calculate_ratio(self, width: int, height: int) -> tuple[int, int] | None:
-        """Calculate GCD-reduced ratio from width and height."""
+        """Calculate GCD-reduced ratio from width and height.
+
+        If fractional internal dimensions are available, uses those for calculation
+        to preserve the original aspect ratio despite rounding.
+        """
         # Special case: 0 dimensions result in 0:0 ratio
         if width == 0 or height == 0:
             return (0, 0)
@@ -786,6 +835,41 @@ class AspectRatio(SuccessFailureNode):
         if width < 0 or height < 0:
             return None
 
+        # Use fractional values if available for more accurate ratio calculation
+        width_float = self.get_parameter_value(self._internal_width_float_parameter.name)
+        height_float = self.get_parameter_value(self._internal_height_float_parameter.name)
+
+        if width_float is not None and height_float is not None:
+            # Calculate ratio from fractional values
+            # Round to reasonable precision to detect common ratios
+
+            # Try common aspect ratios first (within 0.1% tolerance)
+            ratio_decimal = width_float / height_float
+            common_ratios = [
+                (16, 9),
+                (9, 16),
+                (4, 3),
+                (3, 4),
+                (21, 9),
+                (9, 21),
+                (16, 10),
+                (10, 16),
+                (3, 2),
+                (2, 3),
+                (5, 4),
+                (4, 5),
+                (1, 1),
+            ]
+
+            tolerance = 0.001  # 0.1% tolerance
+            for ratio_w, ratio_h in common_ratios:
+                expected_decimal = ratio_w / ratio_h
+                if abs(ratio_decimal - expected_decimal) / expected_decimal < tolerance:
+                    return (ratio_w, ratio_h)
+
+            # If no common ratio matches, fall through to GCD calculation
+
+        # Use GCD reduction on integer dimensions
         divisor = gcd(width, height)
         ratio_width = width // divisor
         ratio_height = height // divisor

@@ -19,9 +19,6 @@ from diffusers_nodes_library.common.parameters.diffusion.audioldm.runtime_parame
 from diffusers_nodes_library.common.parameters.diffusion.audioldm2.runtime_parameters import (
     Audioldm2PipelineRuntimeParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.cosmos.runtime_parameters import (
-    Cosmos2TextToImagePipelineRuntimeParameters,
-)
 from diffusers_nodes_library.common.parameters.diffusion.flux.controlnet_runtime_parameters import (
     FluxControlNetPipelineRuntimeParameters,
 )
@@ -39,6 +36,12 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.runtime_parameters
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.upscale_runtime_parameters import (
     FluxUpscalePipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_plus_runtime_parameters import (
+    QwenImageEditPlusPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_runtime_parameters import (
+    QwenEditPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.img2img_runtime_parameters import (
     QwenImg2ImgPipelineRuntimeParameters,
@@ -127,12 +130,14 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = AudioldmPipelineRuntimeParameters(self._node)
             case "AudioLDM2Pipeline":
                 self._runtime_parameters = Audioldm2PipelineRuntimeParameters(self._node)
-            case "Cosmos2TextToImagePipeline":
-                self._runtime_parameters = Cosmos2TextToImagePipelineRuntimeParameters(self._node)
             case "QwenImagePipeline":
                 self._runtime_parameters = QwenPipelineRuntimeParameters(self._node)
             case "QwenImageImg2ImgPipeline":
                 self._runtime_parameters = QwenImg2ImgPipelineRuntimeParameters(self._node)
+            case "QwenImageEditPipeline":
+                self._runtime_parameters = QwenEditPipelineRuntimeParameters(self._node)
+            case "QwenImageEditPlusPipeline":
+                self._runtime_parameters = QwenImageEditPlusPipelineRuntimeParameters(self._node)
             case "QwenImageUpscalePipeline":
                 self._runtime_parameters = QwenUpscalePipelineRuntimeParameters(self._node)
             case "StableDiffusionPipeline":

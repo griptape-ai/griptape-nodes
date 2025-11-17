@@ -653,19 +653,3 @@ class ProgressEvent:
     value: Any = field()
     node_name: str = field()
     parameter_name: str = field()
-
-
-# Special internal request for flushing parameter changes
-@dataclass(kw_only=True)
-class FlushParameterChangesRequest(RequestPayload, WorkflowNotAlteredMixin):
-    pass
-
-
-@dataclass
-class FlushParameterChangesResultSuccess(ResultPayloadSuccess):
-    pass
-
-
-@dataclass
-class FlushParameterChangesResultFailure(ResultPayloadFailure):
-    pass

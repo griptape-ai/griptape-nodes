@@ -1,1 +1,1 @@
-"""Universal file loading functionality with pluggable providers."""
+"""File scripting nodes for working with files and directories."""

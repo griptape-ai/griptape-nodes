@@ -8,12 +8,13 @@ from griptape_cloud.mixins.griptape_cloud_api_mixin import GriptapeCloudApiMixin
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-DEFAULT_GRIPTAPE_CLOUD_ENDPOINT = urljoin(base=os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai"), url="/api/")
+DEFAULT_GRIPTAPE_CLOUD_URL = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+DEFAULT_GRIPTAPE_CLOUD_ENDPOINT = urljoin(base=DEFAULT_GRIPTAPE_CLOUD_URL, url="/api/")
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 

@@ -7,15 +7,14 @@ from collections import defaultdict
 from dataclasses import fields
 from typing import TYPE_CHECKING, Any, cast
 
+from asyncio_thread_runner import ThreadRunner
 from typing_extensions import TypedDict, TypeVar
 
+from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
-    EventRequest,
     EventResultFailure,
     EventResultSuccess,
-    FlushParameterChangesRequest,
-    FlushParameterChangesResultSuccess,
     RequestPayload,
     ResultPayload,
 )
@@ -30,15 +29,9 @@ AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
 
 # Result types that should NOT trigger a flush request.
 #
-# After most requests complete, we queue a FlushParameterChangesRequest to flush any tracked
-# parameter changes to the UI. However, when the FlushParameterChangesRequest itself completes,
-# it returns a FlushParameterChangesResultSuccess. If we don't exclude this result type, it would
-# trigger another FlushParameterChangesRequest, which would return another FlushParameterChangesResultSuccess,
-# creating an infinite loop of flush requests.
-#
 # Add result types to this set if they should never trigger a flush (typically because they ARE
 # the flush operation itself, or other internal operations that don't modify workflow state).
-RESULT_TYPES_THAT_SKIP_FLUSH = {FlushParameterChangesResultSuccess}
+RESULT_TYPES_THAT_SKIP_FLUSH = {}
 
 
 class ResultContext(TypedDict, total=False):
@@ -52,8 +45,6 @@ class EventManager:
         self._request_type_to_manager: dict[type[RequestPayload], Callable] = defaultdict(list)  # pyright: ignore[reportAttributeAccessIssue]
         # Dictionary to store ALL SUBSCRIBERS to app events.
         self._app_event_listeners: dict[type[AppPayload], set[Callable]] = {}
-        # Boolean that lets us know if there is currently a FlushParameterChangesRequest in the event queue.
-        self._flush_in_queue: bool = False
         # Event queue for publishing events
         self._event_queue: asyncio.Queue | None = None
         # Keep track of which thread the event loop runs on
@@ -67,9 +58,6 @@ class EventManager:
             msg = "Event queue has not been initialized. Please call 'initialize_queue' with an asyncio.Queue instance before accessing the event queue."
             raise ValueError(msg)
         return self._event_queue
-
-    def clear_flush_in_queue(self) -> None:
-        self._flush_in_queue = False
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.
@@ -97,6 +85,19 @@ class EventManager:
                 self._event_loop = None
                 self._loop_thread_id = None
 
+    def _is_cross_thread_call(self) -> bool:
+        """Check if the current call is from a different thread than the event loop.
+
+        Returns:
+            True if we're on a different thread and need thread-safe operations
+        """
+        current_thread_id = threading.get_ident()
+        return (
+            self._loop_thread_id is not None
+            and current_thread_id != self._loop_thread_id
+            and self._event_loop is not None
+        )
+
     def put_event(self, event: Any) -> None:
         """Put event into async queue from sync context (non-blocking).
 
@@ -108,15 +109,9 @@ class EventManager:
         if self._event_queue is None:
             return
 
-        # Check if we need thread-safe operation
-        current_thread_id = threading.get_ident()
-
-        if (
-            self._loop_thread_id is not None
-            and current_thread_id != self._loop_thread_id
-            and self._event_loop is not None
-        ):
+        if self._is_cross_thread_call() and self._event_loop is not None:
             # We're in a different thread from the event loop, use thread-safe method
+            # _is_cross_thread_call() guarantees _event_loop is not None
             self._event_loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
         else:
             # We're on the same thread as the event loop or no loop thread tracked, use direct method
@@ -125,13 +120,21 @@ class EventManager:
     async def aput_event(self, event: Any) -> None:
         """Put event into async queue from async context.
 
+        Automatically detects if we're in a different thread and uses thread-safe operations.
+
         Args:
             event: The event to publish to the queue
         """
         if self._event_queue is None:
             return
 
-        await self._event_queue.put(event)
+        if self._is_cross_thread_call() and self._event_loop is not None:
+            # We're in a different thread from the event loop, use thread-safe method
+            # _is_cross_thread_call() guarantees _event_loop is not None
+            self._event_loop.call_soon_threadsafe(self._event_queue.put_nowait, event)
+        else:
+            # We're on the same thread as the event loop or no loop thread tracked, use async method
+            await self._event_queue.put(event)
 
     def assign_manager_to_request_type(
         self,
@@ -237,9 +240,8 @@ class EventManager:
 
         # Queue flush request for async context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                await self.aput_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -276,8 +278,8 @@ class EventManager:
         if inspect.iscoroutinefunction(callback):
             try:
                 asyncio.get_running_loop()
-                msg = "Async handler cannot be called with sync handle_request. Use ahandle_request instead."
-                raise ValueError(msg)
+                with ThreadRunner() as runner:
+                    result_payload: ResultPayload = runner.run(callback(request))
             except RuntimeError:
                 # No event loop running, safe to use asyncio.run
                 result_payload: ResultPayload = asyncio.run(callback(request))
@@ -286,9 +288,8 @@ class EventManager:
 
         # Queue flush request for sync context (unless result type should skip flush)
         with operation_depth_mgr:
-            if not self._flush_in_queue and type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
-                self.put_event(EventRequest(request=FlushParameterChangesRequest()))
-                self._flush_in_queue = True
+            if type(result_payload) not in RESULT_TYPES_THAT_SKIP_FLUSH:
+                self._flush_tracked_parameter_changes()
 
         return self._handle_request_core(
             request,
@@ -317,10 +318,17 @@ class EventManager:
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
 
-            await asyncio.gather(
-                *[
-                    asyncio.create_task(call_function(listener_callback, app_event))
-                    for listener_callback in listener_set
-                ],
-                return_exceptions=True,
-            )
+            async with asyncio.TaskGroup() as tg:
+                for listener_callback in listener_set:
+                    tg.create_task(call_function(listener_callback, app_event))
+
+    def _flush_tracked_parameter_changes(self) -> None:
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        obj_manager = GriptapeNodes.ObjectManager()
+        # Get all flows and their nodes
+        nodes = obj_manager.get_filtered_subset(type=BaseNode)
+        for node in nodes.values():
+            # Only flush if there are actually tracked parameters
+            if node._tracked_parameters:
+                node.emit_parameter_changes()

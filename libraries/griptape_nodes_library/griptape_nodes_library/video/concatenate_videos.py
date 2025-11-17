@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
@@ -19,16 +19,19 @@ class ConcatenateVideos(BaseVideoProcessor):
     """Concatenate multiple videos into a single video file using FFmpeg."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
-        # Initialize the base ControlNode first (skip BaseVideoProcessor custom init)
-        from griptape_nodes.exe_types.node_types import ControlNode
-
-        ControlNode.__init__(self, name, metadata)
+        # Initialize the base SuccessFailureNode first (skip BaseVideoProcessor custom init)
+        SuccessFailureNode.__init__(self, name, metadata)
 
         # Add our custom video_inputs parameter first
         self.add_parameter(
             ParameterList(
                 name="video_inputs",
-                input_types=["VideoArtifact", "VideoUrlArtifact", "list[VideoArtifact]", "list[VideoUrlArtifact]"],
+                input_types=[
+                    "VideoArtifact",
+                    "VideoUrlArtifact",
+                    "list[VideoArtifact]",
+                    "list[VideoUrlArtifact]",
+                ],
                 default_value=[],
                 tooltip="Connect individual videos or a list of videos to concatenate (supports both VideoArtifact and VideoUrlArtifact)",
                 allowed_modes={ParameterMode.INPUT},
@@ -72,6 +75,12 @@ class ConcatenateVideos(BaseVideoProcessor):
 
         # Setup logging group
         self._setup_logging_group()
+
+        # Add status parameters using the helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video concatenation operation result",
+            result_details_placeholder="Details on the concatenation attempt will be presented here.",
+        )
 
     def _setup_logging_group(self) -> None:
         """Setup the common logging parameter group."""
@@ -235,6 +244,9 @@ class ConcatenateVideos(BaseVideoProcessor):
 
     def process(self) -> AsyncResult[None]:
         """Concatenate multiple videos and save as VideoUrlArtifact."""
+        # Clear execution status at start
+        self._clear_execution_status()
+
         # Get custom parameters
         custom_params = self._get_custom_parameters()
         video_inputs = custom_params["video_inputs"]
@@ -248,11 +260,21 @@ class ConcatenateVideos(BaseVideoProcessor):
             yield lambda: self._process_concatenation(**custom_params)
             self.append_value_to_parameter("logs", "[Finished video concatenation.]\n")
 
-        except Exception as e:
+        except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, httpx.HTTPError) as e:
             error_message = str(e)
             msg = f"{self.name}: Error concatenating videos: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
+
+            # Report failure
+            failure_details = f"Video concatenation failed: {error_message}"
+            self._set_status_results(was_successful=False, result_details=failure_details)
+
+            # Handle failure exception (raises if no failure output connected)
+            self._handle_failure_exception(ValueError(msg))
+
+        # Report success (only reached if no exception)
+        result_details = f"Successfully concatenated {len(video_inputs)} videos"
+        self._set_status_results(was_successful=True, result_details=result_details)
 
     def _raise_download_error(self, message: str, cause: Exception | None = None) -> None:
         """Raise a download error with proper formatting."""
@@ -271,22 +293,30 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.append_value_to_parameter("logs", f"{self._get_processing_description()}\n")
 
             # Prepare video inputs and create concat list
-            temp_files, concat_list_file = self._prepare_video_inputs(video_inputs)
+            try:
+                temp_files, concat_list_file = self._prepare_video_inputs(video_inputs)
+            except (ValueError, OSError, httpx.HTTPError) as e:
+                error_message = str(e)
+                msg = f"{self.name}: Error preparing video inputs: {error_message}"
+                self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
+                raise ValueError(msg) from e
+
             # Execute FFmpeg concatenation
-            output_artifact = self._execute_ffmpeg_concatenation(
-                temp_files, concat_list_file, output_path, output_path_obj, output_format, **kwargs
-            )
+            try:
+                output_artifact = self._execute_ffmpeg_concatenation(
+                    temp_files, concat_list_file, output_path, output_path_obj, output_format, **kwargs
+                )
+            except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                error_message = str(e)
+                msg = f"{self.name}: Error executing FFmpeg concatenation: {error_message}"
+                self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
+                raise ValueError(msg) from e
 
             self.append_value_to_parameter("logs", f"Successfully concatenated {len(video_inputs)} videos\n")
 
             # Save to parameter
             self.parameter_output_values["output"] = output_artifact
 
-        except Exception as e:
-            error_message = str(e)
-            msg = f"{self.name}: Error processing video concatenation: {error_message}"
-            self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
-            raise ValueError(msg) from e
         finally:
             self._cleanup_temp_files(temp_files, concat_list_file, output_path_obj)
 
@@ -449,7 +479,7 @@ class ConcatenateVideos(BaseVideoProcessor):
             with concat_list_file.open("r") as debug_f:
                 concat_contents = debug_f.read()
                 self.append_value_to_parameter("logs", f"Concat file contents:\n{concat_contents}\n")
-        except Exception as e:
+        except OSError as e:
             self.append_value_to_parameter("logs", f"Could not read concat file for debugging: {e}\n")
 
     def _execute_ffmpeg_concatenation(
@@ -509,7 +539,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         if concat_list_file and concat_list_file.exists():
             try:
                 concat_list_file.unlink()
-            except Exception as e:
+            except OSError as e:
                 self.append_value_to_parameter("logs", f"Warning: Failed to clean up concat list file: {e}\n")
 
         # Clean up main output file
@@ -533,7 +563,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         except httpx.HTTPError as e:
             msg = f"Error downloading video from {video_url}: {e!s}"
             self._raise_download_error(msg, e)
-        except Exception as e:
+        except OSError as e:
             msg = f"Error saving video to {output_path}: {e!s}"
             self._raise_download_error(msg, e)
 
@@ -600,7 +630,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         except (KeyError, ValueError) as e:
             msg = f"Error extracting video dimensions: {e!s}"
             raise ValueError(msg) from e
-        except Exception as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
             msg = f"Error getting video dimensions: {e!s}"
             raise ValueError(msg) from e
 
@@ -650,6 +680,6 @@ class ConcatenateVideos(BaseVideoProcessor):
             if not output_file.exists() or output_file.stat().st_size == 0:
                 _raise_resize_output_error()
 
-        except Exception as e:
+        except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as e:
             msg = f"Error resizing video: {e!s}"
             raise ValueError(msg) from e

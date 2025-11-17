@@ -10,12 +10,14 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.audio.audio_url_artifact import AudioUrlArtifact
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +211,30 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
             )
         )
 
+        # Voice Settings
+        with ParameterGroup(name="Voice_Settings", collapsed=True) as voice_settings_group:
+            ParameterString(
+                name="stability",
+                default_value="Natural",
+                tooltip="Controls voice consistency. Creative (0.0) = more variable and emotional, Natural (0.5) = balanced, Robust (1.0) = most stable and consistent.",
+                allow_input=True,
+                allow_property=True,
+                allow_output=False,
+                traits={Options(choices=["Creative", "Natural", "Robust"])},
+            )
+            ParameterFloat(
+                name="speed",
+                default_value=1.0,
+                min_val=0.7,
+                max_val=1.2,
+                slider=True,
+                tooltip="Controls speech rate. Default is 1.0 (normal pace). Values below 1.0 slow down speech (minimum 0.7), values above 1.0 speed up speech (maximum 1.2). Extreme values may affect quality.",
+                allow_input=True,
+                allow_property=True,
+                allow_output=False,
+            )
+        self.add_node_element(voice_settings_group)
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -299,7 +325,17 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         self._clear_execution_status()
 
         model = self.get_parameter_value("model") or "eleven_v3"
-        params = self._get_parameters(model)
+
+        try:
+            params = self._get_parameters(model)
+        except Exception as e:
+            self._set_safe_defaults()
+            error_message = str(e)
+            self._set_status_results(was_successful=False, result_details=error_message)
+            self._handle_failure_exception(e)
+            # EARLY OUT OF PROCESS.
+            return
+
         api_key = self._get_api_key()
         headers = self._build_headers(api_key)
 
@@ -323,12 +359,14 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_message)
             self._handle_failure_exception(e)
 
-    def _get_parameters(self, model: str) -> dict[str, Any]:
+    def _get_parameters(self, model: str) -> dict[str, Any]:  # noqa: C901, PLR0912
         text = self.get_parameter_value("text") or ""
         language_code = self.get_parameter_value("language_code")
         seed = self.get_parameter_value("seed")
         previous_text = self.get_parameter_value("previous_text")
         next_text = self.get_parameter_value("next_text")
+        stability_str = self.get_parameter_value("stability")
+        speed = self.get_parameter_value("speed")
 
         # Handle voice ID selection based on preset
         voice_preset = self.get_parameter_value("voice_preset")
@@ -351,6 +389,27 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
             params["previous_text"] = previous_text
         if next_text:
             params["next_text"] = next_text
+
+        # Add voice_settings with stability and speed
+        voice_settings = {}
+
+        if stability_str is not None:
+            match stability_str:
+                case "Creative":
+                    voice_settings["stability"] = 0.0
+                case "Natural":
+                    voice_settings["stability"] = 0.5
+                case "Robust":
+                    voice_settings["stability"] = 1.0
+                case _:
+                    msg = f"{self.name} received invalid stability value: {stability_str}. Must be one of: Creative, Natural, or Robust"
+                    raise ValueError(msg)
+
+        if speed is not None:
+            voice_settings["speed"] = speed
+
+        if voice_settings:
+            params["voice_settings"] = voice_settings
 
         return params
 

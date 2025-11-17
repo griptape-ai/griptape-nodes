@@ -13,11 +13,11 @@ import requests
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SeedreamImageGeneration"]
 
@@ -64,7 +64,7 @@ SIZE_OPTIONS = {
 SEEDREAM_4_0_MAX_IMAGES = 10
 
 
-class SeedreamImageGeneration(DataNode):
+class SeedreamImageGeneration(SuccessFailureNode):
     """Generate images using Seedream models via Griptape model proxy.
 
     Supports three models:
@@ -85,6 +85,8 @@ class SeedreamImageGeneration(DataNode):
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
         - image_url (ImageUrlArtifact): Generated image as URL artifact
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
     """
 
     SERVICE_NAME = "Griptape"
@@ -168,7 +170,7 @@ class SeedreamImageGeneration(DataNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="2048x2048",
+                default_value="1K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=SIZE_OPTIONS["seedream-4.0"])},
@@ -234,6 +236,13 @@ class SeedreamImageGeneration(DataNode):
             )
         )
 
+        # Create status parameters for success/failure tracking (at the end)
+        self._create_status_parameters(
+            result_details_tooltip="Details about the image generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
         # Initialize parameter visibility based on default model (seedream-4.0)
         self._initialize_parameter_visibility()
 
@@ -260,6 +269,7 @@ class SeedreamImageGeneration(DataNode):
         """Update size options and parameter visibility based on model selection."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             new_choices = SIZE_OPTIONS[value]
+            current_size = self.get_parameter_value("size")
 
             # Set appropriate parameters for each model
             if value == "seedream-4.0":
@@ -267,9 +277,12 @@ class SeedreamImageGeneration(DataNode):
                 self.hide_parameter_by_name("image")
                 self.show_parameter_by_name("images")
                 self.hide_parameter_by_name("guidance_scale")
-                # Update size choices and set default to 2K for v4
-                default_size = "2K" if "2K" in new_choices else new_choices[0]
-                self._update_option_choices("size", new_choices, default_size)
+                # Update size choices and preserve current size if valid, otherwise default to 1K for v4
+                if current_size in new_choices:
+                    self._update_option_choices("size", new_choices, current_size)
+                else:
+                    default_size = "1K" if "1K" in new_choices else new_choices[0]
+                    self._update_option_choices("size", new_choices, default_size)
 
             elif value == "seedream-3.0-t2i":
                 # Hide image inputs (not supported), show guidance scale
@@ -278,8 +291,11 @@ class SeedreamImageGeneration(DataNode):
                 self.show_parameter_by_name("guidance_scale")
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and set default to 2048x2048 for v3 t2i
-                self._update_option_choices("size", new_choices, "2048x2048")
+                # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
+                if current_size in new_choices:
+                    self._update_option_choices("size", new_choices, current_size)
+                else:
+                    self._update_option_choices("size", new_choices, "2048x2048")
 
             elif value == "seededit-3.0-i2i":
                 # Show single image input (required), hide images list, show guidance scale
@@ -293,8 +309,11 @@ class SeedreamImageGeneration(DataNode):
                     image_param.ui_options["display_name"] = "Input Image"
                 # Set default guidance scale
                 self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and set default to adaptive for seededit
-                self._update_option_choices("size", new_choices, "adaptive")
+                # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
+                if current_size in new_choices:
+                    self._update_option_choices("size", new_choices, current_size)
+                else:
+                    self._update_option_choices("size", new_choices, "adaptive")
 
         return super().after_value_set(parameter, value)
 
@@ -323,25 +342,45 @@ class SeedreamImageGeneration(DataNode):
         yield lambda: self._process()
 
     def _process(self) -> None:
+        # Clear execution status at the start
+        self._clear_execution_status()
+
         params = self._get_parameters()
-        api_key = self._validate_api_key()
+
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         model = params["model"]
         self._log(f"Generating image with {model}")
 
-        response = self._submit_request(params, headers)
-        if response:
-            self._handle_response(response)
-        else:
-            self._set_safe_defaults()
+        try:
+            response = self._submit_request(params, headers)
+            if response:
+                self._handle_response(response)
+            else:
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No response received from API. Cannot proceed with generation.",
+                )
+        except RuntimeError as e:
+            # HTTP error or other runtime error during submission
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         params = {
             "model": self.get_parameter_value("model") or "seedream-4.0",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": self.get_parameter_value("image"),
-            "size": self.get_parameter_value("size") or "2048x2048",
+            "size": self.get_parameter_value("size") or "1K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
@@ -371,13 +410,19 @@ class SeedreamImageGeneration(DataNode):
         self._log_request(payload)
 
         try:
-            response = requests.post(proxy_url, json=payload, headers=headers, timeout=60)
+            response = requests.post(proxy_url, json=payload, headers=headers, timeout=None)  # noqa: S113
             response.raise_for_status()
             response_json = response.json()
             self._log("Request submitted successfully")
         except requests.exceptions.HTTPError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            msg = f"{self.name} API error: {e.response.status_code}"
+            # Try to parse error response body
+            try:
+                error_json = e.response.json()
+                error_details = self._extract_error_details(error_json)
+                msg = f"{error_details}"
+            except Exception:
+                msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
         except Exception as e:
             self._log(f"Request failed: {e}")
@@ -531,6 +576,9 @@ class SeedreamImageGeneration(DataNode):
         if not data:
             self._log("No image data in response")
             self.parameter_output_values["image_url"] = None
+            self._set_status_results(
+                was_successful=False, result_details="Generation completed but no image data was found in the response."
+            )
             return
 
         # Take first image from response
@@ -539,28 +587,117 @@ class SeedreamImageGeneration(DataNode):
         # Always using URL format
         image_url = image_data.get("url")
         if image_url:
-            self._save_image_from_url(image_url)
+            self._save_image_from_url(image_url, generation_id)
         else:
             self._log("No image URL in response")
             self.parameter_output_values["image_url"] = None
+            self._set_status_results(
+                was_successful=False, result_details="Generation completed but no image URL was found in the response."
+            )
 
-    def _save_image_from_url(self, image_url: str) -> None:
+    def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
         try:
             self._log("Downloading image from URL")
             image_bytes = self._download_bytes_from_url(image_url)
             if image_bytes:
-                filename = f"seedream_image_{int(time.time())}.jpg"
+                filename = (
+                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
+                )
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
                 self._log(f"Saved image to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+                )
             else:
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+                )
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
+            )
+
+    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+        """Extract error details from API response.
+
+        Args:
+            response_json: The JSON response from the API that may contain error information
+
+        Returns:
+            A formatted error message string
+        """
+        if not response_json:
+            return "Generation failed with no error details provided by API."
+
+        top_level_error = response_json.get("error")
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+
+        # Try to extract from provider response first (more detailed)
+        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+        if provider_error_msg:
+            return provider_error_msg
+
+        # Fall back to top-level error
+        if top_level_error:
+            return self._format_top_level_error(top_level_error)
+
+        # Final fallback
+        return f"Generation failed.\n\nFull API response:\n{response_json}"
+
+    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
+        """Parse provider_response if it's a JSON string."""
+        if isinstance(provider_response, str):
+            try:
+                return _json.loads(provider_response)
+            except Exception:
+                return None
+        if isinstance(provider_response, dict):
+            return provider_response
+        return None
+
+    def _format_provider_error(
+        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
+    ) -> str | None:
+        """Format error message from parsed provider response."""
+        if not parsed_provider_response:
+            return None
+
+        provider_error = parsed_provider_response.get("error")
+        if not provider_error:
+            return None
+
+        if isinstance(provider_error, dict):
+            error_message = provider_error.get("message", "")
+            details = f"{error_message}"
+
+            if error_code := provider_error.get("code"):
+                details += f"\nError Code: {error_code}"
+            if error_type := provider_error.get("type"):
+                details += f"\nError Type: {error_type}"
+            if top_level_error:
+                details = f"{top_level_error}\n\n{details}"
+            return details
+
+        error_msg = str(provider_error)
+        if top_level_error:
+            return f"{top_level_error}\n\nProvider error: {error_msg}"
+        return f"Generation failed. Provider error: {error_msg}"
+
+    def _format_top_level_error(self, top_level_error: Any) -> str:
+        """Format error message from top-level error field."""
+        if isinstance(top_level_error, dict):
+            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
+            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
+        return f"Generation failed with error: {top_level_error!s}"
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""

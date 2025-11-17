@@ -3,12 +3,14 @@ import logging
 import mimetypes
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import aioshutil
 from binaryornot.check import is_binary
 from rich.console import Console
 
@@ -24,9 +26,15 @@ from griptape_nodes.retained_mode.events.os_events import (
     CreateFileRequest,
     CreateFileResultFailure,
     CreateFileResultSuccess,
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+    DeleteFileResultSuccess,
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    GetFileInfoResultSuccess,
     ListDirectoryRequest,
     ListDirectoryResultFailure,
     ListDirectoryResultSuccess,
@@ -137,6 +145,14 @@ class OSManager:
                 request_type=CopyFileRequest, callback=self.on_copy_file_request
             )
 
+            event_manager.assign_manager_to_request_type(
+                request_type=DeleteFileRequest, callback=self.on_delete_file_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
+            )
+
             # Register for app initialization event to setup system resources
             event_manager.add_listener_to_app_event(AppInitializationComplete, self.on_app_initialization_complete)
 
@@ -155,7 +171,49 @@ class OSManager:
         """
         # Expand environment variables first, then tilde
         expanded_vars = os.path.expandvars(path_str)
-        return Path(expanded_vars).expanduser().resolve()
+        return self.resolve_path_safely(Path(expanded_vars).expanduser())
+
+    def resolve_path_safely(self, path: Path) -> Path:
+        """Resolve a path consistently across platforms.
+
+        Unlike Path.resolve() which behaves differently on Windows vs Unix
+        for non-existent paths, this method provides consistent behavior:
+        - Converts relative paths to absolute (using CWD as base)
+        - Normalizes path separators and removes . and ..
+        - Does NOT resolve symlinks if path doesn't exist
+        - Does NOT change path based on CWD for absolute paths
+
+        Use this instead of .resolve() when:
+        - Path might not exist (file creation, validation, user input)
+        - You need consistent cross-platform comparison
+        - You're about to create the file/directory
+
+        Use .resolve() when:
+        - Path definitely exists and you need symlink resolution
+        - You're checking actual file locations
+
+        Args:
+            path: Path to resolve (relative or absolute, existing or not)
+
+        Returns:
+            Absolute, normalized Path object
+
+        Examples:
+            # Relative path
+            resolve_path_safely(Path("relative/file.txt"))
+            → Path("/current/dir/relative/file.txt")
+
+            # Absolute non-existent path (Windows safe)
+            resolve_path_safely(Path("/abs/nonexistent/path"))
+            → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
+        """
+        # Convert to absolute if relative
+        if not path.is_absolute():
+            path = Path.cwd() / path
+
+        # Normalize (remove . and .., collapse slashes) without resolving symlinks
+        # This works consistently even for non-existent paths on Windows
+        return Path(os.path.normpath(path))
 
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
@@ -172,7 +230,7 @@ class OSManager:
                 # Expand tilde and environment variables for absolute paths or paths starting with ~
                 return self._expand_path(path_str)
             # Both workspace and system-wide modes resolve relative to current directory
-            return (self._get_workspace_path() / path_str).resolve()
+            return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
             if workspace_only:
                 msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
@@ -193,8 +251,11 @@ class OSManager:
         workspace = GriptapeNodes.ConfigManager().workspace_path
 
         # Ensure both paths are resolved for comparison
+        # Both path and workspace should use .resolve() to follow symlinks consistently
+        # (e.g., /var -> /private/var on macOS). Even if path doesn't exist yet,
+        # .resolve() will resolve parent directories and symlinks in the path.
         path = path.resolve()
-        workspace = workspace.resolve()
+        workspace = workspace.resolve()  # Workspace should always exist
 
         msg = f"Validating path: {path} against workspace: {workspace}"
         logger.debug(msg)
@@ -210,12 +271,15 @@ class OSManager:
         logger.debug(msg)
         return True, relative
 
-    def _normalize_path_for_platform(self, path: Path) -> str:
+    def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
         need the \\?\ prefix to work correctly. This method transparently adds
         the prefix when needed on Windows.
+
+        Note: This method assumes the path exists or will exist. For non-existent
+        paths that need cross-platform normalization, use resolve_path_safely() first.
 
         Args:
             path: Path object to convert to string
@@ -226,7 +290,7 @@ class OSManager:
         path_str = str(path.resolve())
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
-        if self.is_windows() and len(path_str) > WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
+        if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
             # UNC paths (\\server\share) need \\?\UNC\ prefix
             if path_str.startswith("\\\\"):
                 return f"\\\\?\\UNC\\{path_str[2:]}"
@@ -366,12 +430,12 @@ class OSManager:
             if self.is_windows():
                 # Linter complains but this is the recommended way on Windows
                 # We can ignore this warning as we've validated the path
-                os.startfile(self._normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
+                os.startfile(self.normalize_path_for_platform(path))  # noqa: S606 # pyright: ignore[reportAttributeAccessIssue]
                 logger.info("Opened path on Windows: %s", path)
             elif self.is_mac():
                 # On macOS, open should be in a standard location
                 subprocess.run(  # noqa: S603
-                    ["/usr/bin/open", self._normalize_path_for_platform(path)],
+                    ["/usr/bin/open", self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -391,7 +455,7 @@ class OSManager:
                     )
 
                 subprocess.run(  # noqa: S603
-                    [xdg_path, self._normalize_path_for_platform(path)],
+                    [xdg_path, self.normalize_path_for_platform(path)],
                     check=True,  # Explicitly use check
                     capture_output=True,
                     text=True,
@@ -422,7 +486,7 @@ class OSManager:
             return None
 
         try:
-            mime_type, _ = mimetypes.guess_type(self._normalize_path_for_platform(file_path), strict=True)
+            mime_type, _ = mimetypes.guess_type(self.normalize_path_for_platform(file_path), strict=True)
             if mime_type is None:
                 mime_type = "text/plain"
             return mime_type  # noqa: TRY300
@@ -443,7 +507,7 @@ class OSManager:
                 directory = self._expand_path(request.directory_path)
             else:
                 # Both workspace and system-wide modes resolve relative to current directory
-                directory = (self._get_workspace_path() / request.directory_path).resolve()
+                directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
 
             # Check if directory exists
             if not directory.exists():
@@ -470,10 +534,16 @@ class OSManager:
                     if not request.show_hidden and entry.name.startswith("."):
                         continue
 
+                    # Apply pattern filter if specified
+                    if request.pattern is not None and not entry.match(request.pattern):
+                        continue
+
                     try:
                         stat = entry.stat()
                         # Get path relative to workspace if within workspace
-                        _is_entry_in_workspace, entry_path = self._validate_workspace_path(entry)
+                        _, entry_path = self._validate_workspace_path(entry)
+                        # Also get absolute resolved path
+                        absolute_resolved_path = str(entry.resolve())
                         mime_type = self._detect_mime_type(entry)
                         entries.append(
                             FileSystemEntry(
@@ -483,6 +553,7 @@ class OSManager:
                                 size=stat.st_size,
                                 modified_time=stat.st_mtime,
                                 mime_type=mime_type,
+                                absolute_path=absolute_resolved_path,
                             )
                         )
                     except (OSError, PermissionError) as e:
@@ -585,7 +656,7 @@ class OSManager:
         file_size = file_path.stat().st_size
 
         # Determine MIME type and compression encoding
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
         mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
         if mime_type is None:
             mime_type = "text/plain"
@@ -695,7 +766,7 @@ class OSManager:
             return WriteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Get normalized path for file operations (handles Windows long paths)
-        normalized_path = self._normalize_path_for_platform(file_path)
+        normalized_path = self.normalize_path_for_platform(file_path)
 
         # Check if path is a directory (must check before attempting to write)
         try:
@@ -725,7 +796,7 @@ class OSManager:
                 return WriteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
         # Check and create parent directory if needed
-        parent_normalized = self._normalize_path_for_platform(file_path.parent)
+        parent_normalized = self.normalize_path_for_platform(file_path.parent)
         try:
             if not os.path.exists(parent_normalized):  # noqa: PTH110
                 if not request.create_parents:
@@ -804,8 +875,8 @@ class OSManager:
             PermissionError: If permission denied
         """
         # Normalize both paths for platform (handles Windows long paths)
-        src_normalized = self._normalize_path_for_platform(src_path)
-        dest_normalized = self._normalize_path_for_platform(dest_path)
+        src_normalized = self.normalize_path_for_platform(src_path)
+        dest_normalized = self.normalize_path_for_platform(dest_path)
 
         # Copy file preserving metadata
         shutil.copy2(src_normalized, dest_normalized)
@@ -1056,9 +1127,9 @@ class OSManager:
 
         # Resolve path - if absolute, use as-is; if relative, align to workspace
         if is_absolute:
-            file_path = Path(full_path_str).resolve()
+            file_path = self.resolve_path_safely(Path(full_path_str))
         else:
-            file_path = (self._get_workspace_path() / full_path_str).resolve()
+            file_path = self.resolve_path_safely(self._get_workspace_path() / full_path_str)
 
         # Check if it already exists - warn but treat as success
         if file_path.exists():
@@ -1196,7 +1267,7 @@ class OSManager:
         # Resolve source path
         try:
             source_path = self._resolve_file_path(request.source_path, workspace_only=False)
-            source_normalized = self._normalize_path_for_platform(source_path)
+            source_normalized = self.normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -1217,7 +1288,7 @@ class OSManager:
         # Resolve destination path
         try:
             destination_path = self._resolve_file_path(request.destination_path, workspace_only=False)
-            dest_normalized = self._normalize_path_for_platform(destination_path)
+            dest_normalized = self.normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)
@@ -1272,6 +1343,154 @@ class OSManager:
             result_details=f"File copied successfully: {source_path} -> {destination_path}",
         )
 
+    @staticmethod
+    def remove_readonly(func, path, excinfo) -> None:  # noqa: ANN001, ARG004
+        """Handles read-only files and long paths on Windows during shutil.rmtree.
+
+        https://stackoverflow.com/a/50924863
+        """
+        if not GriptapeNodes.OSManager().is_windows():
+            return
+
+        long_path = Path(GriptapeNodes.OSManager().normalize_path_for_platform(Path(path)))
+
+        try:
+            Path.chmod(long_path, stat.S_IWRITE)
+            func(long_path)
+        except Exception as e:
+            console.print(f"[red]Error removing read-only file: {path}[/red]")
+            console.print(f"[red]Details: {e}[/red]")
+            raise
+
+    async def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+        """Handle a request to delete a file or directory."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate exactly one of path or file_entry provided and determine path to delete
+        if request.path is not None and request.file_entry is not None:
+            msg = "Attempted to delete file with both path and file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        if request.path is not None:
+            path_to_delete = request.path
+        elif request.file_entry is not None:
+            path_to_delete = request.file_entry.path
+        else:
+            msg = "Attempted to delete file with neither path nor file_entry. Failed due to invalid parameters"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(path_to_delete, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to invalid path: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists
+        if not resolved_path.exists():
+            msg = f"Attempted to delete file at path {path_to_delete}. Failed due to path not found"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+
+        # Determine if this is a directory
+        is_directory = resolved_path.is_dir()
+
+        # Collect all paths that will be deleted (for reporting)
+        if is_directory:
+            # Collect all file and directory paths before deletion
+            deleted_paths = [str(item) for item in resolved_path.rglob("*")]
+            deleted_paths.append(str(resolved_path))
+        else:
+            deleted_paths = [str(resolved_path)]
+
+        # Perform deletion
+        try:
+            if is_directory:
+                await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
+            else:
+                resolved_path.unlink()
+        except PermissionError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to I/O error: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return DeleteFileResultSuccess(
+            deleted_path=str(resolved_path),
+            was_directory=is_directory,
+            deleted_paths=deleted_paths,
+            result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
+        )
+
+    def on_get_file_info_request(  # noqa: PLR0911
+        self, request: GetFileInfoRequest
+    ) -> GetFileInfoResultSuccess | GetFileInfoResultFailure:
+        """Handle a request to get file/directory information."""
+        # FAILURE CASES FIRST (per CLAUDE.md)
+
+        # Validate path provided
+        if not request.path:
+            msg = "Attempted to get file info with empty path. Failed due to invalid parameters"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Resolve and validate path
+        try:
+            resolved_path = self._resolve_file_path(request.path, workspace_only=request.workspace_only is True)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to invalid path: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
+
+        # Check if path exists - if not, return success with None (file doesn't exist)
+        if not resolved_path.exists():
+            msg = f"File info retrieved for path {request.path}: file does not exist"
+            return GetFileInfoResultSuccess(file_entry=None, result_details=msg)
+
+        # Get file information
+        try:
+            is_dir = resolved_path.is_dir()
+            size = 0 if is_dir else resolved_path.stat().st_size
+            modified_time = resolved_path.stat().st_mtime
+
+            # Get MIME type for files only
+            mime_type = None
+            if not is_dir:
+                mime_type = self._detect_mime_type(resolved_path)
+
+            # Get path relative to workspace if within workspace
+            _, file_path = self._validate_workspace_path(resolved_path)
+
+            # Also get absolute resolved path
+            absolute_resolved_path = str(resolved_path.resolve())
+
+            file_entry = FileSystemEntry(
+                name=resolved_path.name,
+                path=str(file_path),
+                is_dir=is_dir,
+                size=size,
+                modified_time=modified_time,
+                mime_type=mime_type,
+                absolute_path=absolute_resolved_path,
+            )
+        except PermissionError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to permission denied: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+        except OSError as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to I/O error: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+        except Exception as e:
+            msg = f"Attempted to get file info at path {request.path}. Failed due to unexpected error: {type(e).__name__}: {e}"
+            return GetFileInfoResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+
+        # SUCCESS PATH AT END
+        return GetFileInfoResultSuccess(
+            file_entry=file_entry,
+            result_details=f"Successfully retrieved file info for path {request.path}",
+        )
+
     def _validate_copy_tree_paths(
         self, source_str: str, dest_str: str, *, dirs_exist_ok: bool
     ) -> CopyTreeValidationResult | CopyTreeResultFailure:
@@ -1283,7 +1502,7 @@ class OSManager:
         # Resolve and normalize source path
         try:
             source_path = self._resolve_file_path(source_str, workspace_only=False)
-            source_normalized = self._normalize_path_for_platform(source_path)
+            source_normalized = self.normalize_path_for_platform(source_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid source path: {e}"
             logger.error(msg)
@@ -1304,7 +1523,7 @@ class OSManager:
         # Resolve and normalize destination path
         try:
             destination_path = self._resolve_file_path(dest_str, workspace_only=False)
-            dest_normalized = self._normalize_path_for_platform(destination_path)
+            dest_normalized = self.normalize_path_for_platform(destination_path)
         except (ValueError, RuntimeError) as e:
             msg = f"Invalid destination path: {e}"
             logger.error(msg)

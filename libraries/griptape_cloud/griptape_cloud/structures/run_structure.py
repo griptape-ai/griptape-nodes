@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 if TYPE_CHECKING:
     from griptape_cloud_client.models.structure_detail import StructureDetail
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 logger.setLevel(logging.INFO)
 
 

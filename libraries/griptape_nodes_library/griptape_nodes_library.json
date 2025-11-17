@@ -29,15 +29,16 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.50.0",
     "engine_version": "0.50.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.7.1",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
         "json-repair>=0.46.1",
-        "static-ffmpeg>=2.8"
+        "static-ffmpeg>=2.8",
+        "jmespath>=1.0.1",
+        "json-schema-to-pydantic>=0.4.6",
+        "numpy>=1.26.0",
+        "scikit-learn>=1.3.0"
       ]
     }
   },
@@ -99,6 +100,15 @@
       }
     },
     {
+      "files": {
+        "color": "border-blue-500",
+        "title": "Files",
+        "description": "File and directory manipulation nodes",
+        "icon": "Folder",
+        "group": "create"
+      }
+    },
+    {
       "engine": {
         "color": "border-red-500",
         "title": "Engine",
@@ -152,7 +162,7 @@
     },
     {
       "image": {
-        "color": "border-slate-500",
+        "color": "border-purple-500",
         "title": "Image",
         "description": "Image related nodes",
         "icon": "Image",
@@ -166,54 +176,6 @@
         "description": "Image Generation Models for Griptape Agents",
         "icon": "brain",
         "group": "create"
-      }
-    },
-    {
-      "image/depth": {
-        "color": "border-purple-500",
-        "title": "image/depth",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/edge": {
-        "color": "border-purple-500",
-        "title": "image/edge",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux": {
-        "color": "border-purple-500",
-        "title": "image/flux",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux/controlnet": {
-        "color": "border-purple-500",
-        "title": "image/flux/controlnet",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/flux/loras": {
-        "color": "border-purple-500",
-        "title": "image/flux/loras",
-        "description": "",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/upscale": {
-        "color": "border-purple-500",
-        "title": "Image/Upscale",
-        "description": "Image upscaling related nodes",
-        "icon": "Image"
       }
     },
     {
@@ -297,107 +259,11 @@
       }
     },
     {
-      "audio/audioldm": {
-        "color": "border-sky-500",
-        "title": "Audio/AudioLDM",
-        "description": "Audio generation with AudioLDM",
-        "icon": "SpeakerWave"
-      }
-    },
-    {
-      "audio/audioldm2": {
-        "color": "border-sky-500",
-        "title": "Audio/AudioLDM2",
-        "description": "Audio generation with AudioLDM 2",
-        "icon": "SpeakerWave"
-      }
-    },
-    {
-      "image/amused": {
-        "color": "border-purple-500",
-        "title": "Image/aMUSEd",
-        "description": "Image generation with aMUSEd",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion": {
-        "color": "border-purple-500",
-        "title": "Image/Stable Diffusion",
-        "description": "Image generation with Stable Diffusion",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_3": {
-        "color": "border-purple-500",
-        "title": "Image/Stable Diffusion 3",
-        "description": "Image generation with Stable Diffusion 3",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_attend_and_excite": {
-        "color": "border-purple-500",
-        "title": "Image/SD Attend and Excite",
-        "description": "Enhanced attention control",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/stable_diffusion_diffedit": {
-        "color": "border-purple-500",
-        "title": "Image/SD DiffEdit",
-        "description": "Image editing with DiffEdit",
-        "icon": "Image"
-      }
-    },
-    {
-      "image/würstchen": {
-        "color": "border-purple-500",
-        "title": "image/würstchen",
-        "description": "Efficient generation with Würstchen",
-        "icon": "Image"
-      }
-    },
-    {
-      "video/allegro": {
-        "color": "border-pink-500",
-        "title": "Video/Allegro",
-        "description": "Video generation with Allegro",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan": {
-        "color": "border-pink-500",
-        "title": "video/wan",
+      "lora": {
+        "color": "border-rose-500",
+        "title": "LoRA",
         "description": "",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan/aux": {
-        "color": "border-pink-500",
-        "title": "Video/WAN/Aux",
-        "description": "Auxiliary nodes for WAN video generation",
-        "icon": "Video"
-      }
-    },
-    {
-      "video/wan/loras": {
-        "color": "border-pink-500",
-        "title": "video/wan/loras",
-        "description": "",
-        "icon": "Video"
-      }
-    },
-    {
-      "image/cosmos": {
-        "color": "border-purple-500",
-        "title": "Image/Cosmos",
-        "description": "Image generation with Cosmos",
-        "icon": "Image"
+        "icon": "layers-2"
       }
     }
   ],
@@ -525,6 +391,16 @@
       }
     },
     {
+      "class_name": "SelectFromList",
+      "file_path": "griptape_nodes_library/lists/select_from_list.py",
+      "metadata": {
+        "category": "lists",
+        "description": "Lets the user select an  item from a list.",
+        "display_name": "Select From List",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "GetIndexOfItem",
       "file_path": "griptape_nodes_library/lists/get_index_of_item.py",
       "metadata": {
@@ -616,6 +492,16 @@
         "description": "Takes a list input and creates output parameters for each item in the list",
         "display_name": "Display List",
         "group": "display"
+      }
+    },
+    {
+      "class_name": "ListToDictKeys",
+      "file_path": "griptape_nodes_library/convert/list_to_dict_keys.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts a list to dictionary keys with empty string values",
+        "display_name": "List To Dict Keys",
+        "group": "edit"
       }
     },
     {
@@ -732,6 +618,28 @@
       }
     },
     {
+      "class_name": "CombineAudio",
+      "file_path": "griptape_nodes_library/audio/combine_audio.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Combine multiple audio tracks into a single audio file using ffmpeg",
+        "display_name": "Combine Audio",
+        "icon": "layers",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "AudioDetails",
+      "file_path": "griptape_nodes_library/audio/audio_details.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Extract detailed information from an audio file including duration, format, bitrate, and sample rate",
+        "display_name": "Audio Details",
+        "icon": "info",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "LoadVideo",
       "file_path": "griptape_nodes_library/video/load_video.py",
       "metadata": {
@@ -761,6 +669,17 @@
         "description": "Resize a video using imageio_ffmpeg",
         "display_name": "Resize Video",
         "icon": "picture-in-picture",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "CropVideo",
+      "file_path": "griptape_nodes_library/video/crop_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Crop a video to a specific size with preview visualization showing the crop area",
+        "display_name": "Crop Video",
+        "icon": "crop",
         "group": "edit"
       }
     },
@@ -806,6 +725,39 @@
         "display_name": "Sora 2 Video Generation",
         "icon": "Sparkles",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "WanTextToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_text_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from text using WAN models via Griptape model proxy",
+        "display_name": "WAN Text to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "WanImageToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_image_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from images using WAN models via Griptape model proxy",
+        "display_name": "WAN Image to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "SeedVRVideoUpscale",
+      "file_path": "griptape_nodes_library/video/seedvr_video_upscale.py",
+      "metadata": {
+        "category": "video",
+        "description": "Upscale video using SeedVR models via Griptape Cloud model proxy",
+        "display_name": "SeedVR Video Upscale",
+        "icon": "Sparkles",
+        "group": "edit"
       }
     },
     {
@@ -997,7 +949,7 @@
       "file_path": "griptape_nodes_library/json/json_extract_value.py",
       "metadata": {
         "category": "json",
-        "description": "Extract a value from JSON using dot notation path",
+        "description": "Extract values from JSON using JMESPath expressions (e.g., '[*].assignee' for all assignees)",
         "display_name": "JSON Extract Value",
         "icon": "search",
         "group": "describe"
@@ -1011,6 +963,17 @@
         "description": "Create a JSON node from input data",
         "display_name": "JSON Input",
         "icon": "file-json",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "CreateAgentSchema",
+      "file_path": "griptape_nodes_library/json/json_schema_from_example.py",
+      "metadata": {
+        "category": "agents",
+        "description": "Generate a JSON schema from an example JSON structure for Agent nodes. Provide an example of the data structure you want, and this node will automatically create a schema that can be used with Agent nodes for structured output validation.",
+        "display_name": "Create Agent Schema",
+        "icon": "file-code",
         "group": "create"
       }
     },
@@ -1034,6 +997,17 @@
         "display_name": "JSON Replace",
         "icon": "edit",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "JsonFind",
+      "file_path": "griptape_nodes_library/json/json_find.py",
+      "metadata": {
+        "category": "json",
+        "description": "Find items in JSON arrays based on search criteria",
+        "display_name": "JSON Find",
+        "icon": "search",
+        "group": "describe"
       }
     },
     {
@@ -1396,6 +1370,28 @@
       }
     },
     {
+      "class_name": "QwenImageGeneration",
+      "file_path": "griptape_nodes_library/image/qwen_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Qwen models via Griptape model proxy",
+        "display_name": "Qwen Image Generation",
+        "group": "create",
+        "icon": "Sparkles"
+      }
+    },
+    {
+      "class_name": "QwenImageEdit",
+      "file_path": "griptape_nodes_library/image/qwen_image_edit.py",
+      "metadata": {
+        "category": "image",
+        "description": "Edit images using Qwen image editing models via Griptape model proxy",
+        "display_name": "Qwen Image Edit",
+        "group": "edit",
+        "icon": "Sparkles"
+      }
+    },
+    {
       "class_name": "AddTextToImage",
       "file_path": "griptape_nodes_library/image/add_text_to_image.py",
       "metadata": {
@@ -1404,6 +1400,17 @@
         "display_name": "Add Text to Image",
         "group": "create",
         "icon": "Type"
+      }
+    },
+    {
+      "class_name": "SeedVRImageUpscale",
+      "file_path": "griptape_nodes_library/image/seedvr_image_upscale.py",
+      "metadata": {
+        "category": "image",
+        "description": "Upscales an image using SeedVR models (seedvr-2.0) via Griptape model proxy",
+        "display_name": "SeedVR Image Upscale",
+        "group": "edit",
+        "icon": "Sparkles"
       }
     },
     {
@@ -1444,7 +1451,7 @@
         "category": "image",
         "description": "Calculate aspect ratios with preset selection and dimension modifiers",
         "display_name": "Aspect Ratio",
-        "icon": "aspect-ratio",
+        "icon": "ratio",
         "group": "edit"
       }
     },
@@ -1532,6 +1539,17 @@
         "display_name": "Extend Canvas",
         "icon": "frame",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractKeyColors",
+      "file_path": "griptape_nodes_library/image/extract_key_colors.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract key colors from an image",
+        "display_name": "Extract Key Colors",
+        "icon": "palette",
+        "group": "tasks"
       }
     },
     {
@@ -1623,6 +1641,16 @@
       }
     },
     {
+      "class_name": "ImagesToPdf",
+      "file_path": "griptape_nodes_library/image/images_to_pdf.py",
+      "metadata": {
+        "category": "image",
+        "description": "Convert multiple images to a single PDF file",
+        "display_name": "Images to PDF",
+        "icon": "file-text"
+      }
+    },
+    {
       "class_name": "BloomEffect",
       "file_path": "griptape_nodes_library/image/bloom_effect.py",
       "metadata": {
@@ -1663,6 +1691,17 @@
         "description": "Create a color picker node to select a color in various formats",
         "display_name": "ColorPicker",
         "icon": "pipette",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "LoggerNode",
+      "file_path": "griptape_nodes_library/misc/logger_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Log messages to the console with configurable log levels, timestamps, and formatting",
+        "display_name": "Logger",
+        "icon": "file-text",
         "group": "create"
       }
     },
@@ -2177,16 +2216,87 @@
     },
     {
       "class_name": "ListFiles",
-      "file_path": "griptape_nodes_library/engine/list_files.py",
+      "file_path": "griptape_nodes_library/files/list_files.py",
       "metadata": {
-        "category": "engine",
+        "category": "files",
         "description": "List files in a directory with optional pattern matching and recursive search",
         "display_name": "List Files",
         "icon": "FolderOpen"
       }
+    },
+    {
+      "class_name": "DeleteFile",
+      "file_path": "griptape_nodes_library/files/delete_file.py",
+      "metadata": {
+        "category": "files",
+        "description": "Delete a file or directory from the file system. Directories are deleted with all their contents.",
+        "display_name": "Delete File",
+        "icon": "Trash"
+      }
+    },
+    {
+      "class_name": "FilePathComponents",
+      "file_path": "griptape_nodes_library/files/path.py",
+      "metadata": {
+        "category": "files",
+        "description": "Extract path components from a file path (filename, stem, extension, parent, query params)",
+        "display_name": "FilePath Components",
+        "icon": "FileText"
+      }
+    },
+    {
+      "class_name": "PathJoin",
+      "file_path": "griptape_nodes_library/files/path_join.py",
+      "metadata": {
+        "category": "files",
+        "description": "Join multiple path components together to create a file path using appropriate path separators",
+        "display_name": "Path Join",
+        "icon": "Combine"
+      }
+    },
+    {
+      "class_name": "PathAddExtension",
+      "file_path": "griptape_nodes_library/files/path_add_extension.py",
+      "metadata": {
+        "category": "files",
+        "description": "Add or replace a file extension on a path, with option to strip query parameters",
+        "display_name": "Path Add Extension",
+        "icon": "FileText"
+      }
+    },
+    {
+      "class_name": "CopyFiles",
+      "file_path": "griptape_nodes_library/files/copy_files.py",
+      "metadata": {
+        "category": "files",
+        "description": "Copy files and/or directories from source to destination. Supports glob patterns and multiple sources.",
+        "display_name": "Copy Files",
+        "icon": "Copy"
+      }
+    },
+    {
+      "class_name": "MoveFiles",
+      "file_path": "griptape_nodes_library/files/move_files.py",
+      "metadata": {
+        "category": "files",
+        "description": "Move files and/or directories from source to destination. Implemented as copy + delete. Supports glob patterns and multiple sources.",
+        "display_name": "Move Files",
+        "icon": "ArrowRight"
+      }
+    },
+    {
+      "class_name": "RenameFile",
+      "file_path": "griptape_nodes_library/files/rename_file.py",
+      "metadata": {
+        "category": "files",
+        "description": "Rename a file or directory. Can rename to a new name in the same directory or to a full path.",
+        "display_name": "Rename File",
+        "icon": "Edit"
+      }
     }
   ],
   "workflows": [
+    "workflows/templates/fill_in_the_story.py",
     "workflows/templates/prompt_an_image.py",
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",

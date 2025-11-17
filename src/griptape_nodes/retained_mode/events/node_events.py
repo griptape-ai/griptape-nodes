@@ -10,7 +10,11 @@ from griptape_nodes.exe_types.node_types import NodeResolutionState
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.exe_types.node_types import NodeDependencies
-    from griptape_nodes.retained_mode.events.connection_events import ListConnectionsForNodeResultSuccess
+    from griptape_nodes.retained_mode.events.connection_events import (
+        IncomingConnection,
+        ListConnectionsForNodeResultSuccess,
+        OutgoingConnection,
+    )
     from griptape_nodes.retained_mode.events.parameter_events import (
         GetParameterDetailsResultSuccess,
         GetParameterValueResultSuccess,
@@ -437,7 +441,7 @@ class SerializedNodeCommands:
         set_parameter_value_command: SetParameterValueRequest
         unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
-    create_node_command: CreateNodeRequest
+    create_node_command: CreateNodeRequest | CreateNodeGroupRequest
     element_modification_commands: list[RequestPayload]
     node_dependencies: NodeDependencies
     lock_node_command: SetLockNodeStateRequest | None = None
@@ -818,4 +822,239 @@ class GetFlowForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
     """Flow for node retrieval failed.
 
     Common causes: node not found, node not assigned to any flow.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsRequest(RequestPayload):
+    """Check if a node can be reset to its default state.
+
+    Use when: Need to validate whether a node reset operation is allowed before attempting it,
+    implementing UI state (enabled/disabled reset button), or providing user feedback.
+    Checks for conditions that would prevent reset (locked state, missing metadata, etc.).
+
+    Args:
+        node_name: Name of the node to check (None for current context node)
+
+    Results: CanResetNodeToDefaultsResultSuccess (with can_reset flag and reason) | CanResetNodeToDefaultsResultFailure (validation failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Node reset check completed successfully.
+
+    Args:
+        can_reset: True if the node can be reset to defaults, False otherwise
+        editor_tooltip_reason: Optional explanation if node cannot be reset (e.g., "Cannot reset locked node")
+    """
+
+    can_reset: bool
+    editor_tooltip_reason: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetNodeToDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Node reset check failed.
+
+    Common causes: node not found, no current context, no library metadata.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsRequest(RequestPayload):
+    """Reset a node to its default state while preserving connections where possible.
+
+    Use when: Need to reset a node's configuration back to defaults, clear customizations,
+    fix broken node state, or restore a node to its initial state. Creates a fresh instance
+    of the same node type and reconnects it to the workflow.
+
+    Args:
+        node_name: Name of the node to reset (None for current context node)
+
+    Results: ResetNodeToDefaultsResultSuccess (with reconnection status) | ResetNodeToDefaultsResultFailure (reset failed)
+    """
+
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node reset to defaults successfully.
+
+    Args:
+        node_name: Name of the reset node
+        failed_incoming_connections: List of incoming connections that failed to reconnect
+        failed_outgoing_connections: List of outgoing connections that failed to reconnect
+    """
+
+    node_name: str
+    failed_incoming_connections: list[IncomingConnection]
+    failed_outgoing_connections: list[OutgoingConnection]
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetNodeToDefaultsResultFailure(ResultPayloadFailure):
+    """Node reset to defaults failed.
+
+    Common causes: node not found, no current context, failed to create new node,
+    failed to delete old node, failed to rename new node.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class AddNodesToNodeGroupRequest(RequestPayload):
+    """Adds nodes to a NodeGroup.
+
+    Use when: Need to add nodes to an existing NodeGroup, building node groups programmatically,
+    organizing nodes into logical groups.
+
+    Args:
+        node_name: Name of the node to add to the group
+        node_group_name: Name of the NodeGroup to add the node to
+        flow_name: Optional flow name to search in (None for current context flow)
+
+    Results: AddNodesToNodeGroupResultSuccess | AddNodeToNodeGroupResultFailure (node not found, group not found, add failed)
+    """
+
+    node_names: list[str]
+    node_group_name: str
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class AddNodesToNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node added to NodeGroup successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AddNodesToNodeGroupResultFailure(ResultPayloadFailure):
+    """Adding node to NodeGroup failed.
+
+    Common causes: node not found, NodeGroup not found, node already in group,
+    flow not found, no current context.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveNodeFromNodeGroupRequest(RequestPayload):
+    """Remove nodes from a NodeGroup.
+
+    Use when: Need to remove nodes from a NodeGroup, reorganizing workflow structure,
+    implementing undo operations.
+
+    Args:
+        node_names: Names of the nodes to remove from the group
+        node_group_name: Name of the NodeGroup to remove the nodes from
+        flow_name: Optional flow name to search in (None for current context flow)
+
+    Results: RemoveNodeFromNodeGroupResultSuccess | RemoveNodeFromNodeGroupResultFailure (node not found, group not found, node not in group)
+    """
+
+    node_names: list[str]
+    node_group_name: str
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveNodeFromNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Nodes removed from NodeGroup successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveNodeFromNodeGroupResultFailure(ResultPayloadFailure):
+    """Removing node from NodeGroup failed.
+
+    Common causes: node not found, NodeGroup not found, node not in group,
+    flow not found, no current context.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateNodeGroupRequest(RequestPayload):
+    """Create a new NodeGroup node.
+
+    Use when: Need to create a new NodeGroup for organizing nodes, building workflows
+    with grouped nodes programmatically.
+
+    Args:
+        node_group_name: Desired name for the NodeGroup node (None for auto-generated)
+        flow_name: Optional flow name to create the NodeGroup in (None for current context flow)
+        metadata: Initial metadata for the NodeGroup (position, display properties)
+
+    Results: CreateNodeGroupResultSuccess (with assigned name) | CreateNodeGroupResultFailure (creation failed)
+    """
+
+    node_group_name: str | None = None
+    flow_name: str | None = None
+    metadata: dict | None = None
+    node_names_to_add: list[str] = field(default_factory=list)
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """NodeGroup created successfully. NodeGroup is now available for adding nodes.
+
+    Args:
+        node_group_name: Final assigned name (may differ from requested)
+    """
+
+    node_group_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateNodeGroupResultFailure(ResultPayloadFailure):
+    """NodeGroup creation failed.
+
+    Common causes: flow not found, no current context, instantiation errors,
+    NodeGroup node type not available.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteNodeGroupRequest(RequestPayload):
+    """Delete a NodeGroup node.
+
+    Use when: Removing obsolete NodeGroups, cleaning up workflow structure,
+    implementing undo. Handles cascading cleanup of the NodeGroup node.
+
+    Args:
+        node_group_name: Name of the NodeGroup node to delete
+
+    Results: DeleteNodeGroupResultSuccess | DeleteNodeGroupResultFailure (NodeGroup not found, deletion failed)
+    """
+
+    node_group_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """NodeGroup deleted successfully. NodeGroup node removed from workflow."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DeleteNodeGroupResultFailure(ResultPayloadFailure):
+    """NodeGroup deletion failed.
+
+    Common causes: NodeGroup not found, deletion cleanup failed, node is not a NodeGroup.
     """

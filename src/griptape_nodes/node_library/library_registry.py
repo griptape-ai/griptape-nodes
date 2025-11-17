@@ -5,11 +5,15 @@ from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field
 
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
+    DuplicateNodeRegistrationProblem,
+)
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
+    from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -177,16 +181,19 @@ class LibraryRegistry(metaclass=SingletonMeta):
         return sorted_list
 
     @classmethod
-    def register_node_type_from_library(cls, library: Library, node_class_name: str) -> str | None:
-        """Register a node type from a library. Returns an error string for forensics."""
+    def register_node_type_from_library(cls, library: Library, node_class_name: str) -> LibraryProblem | None:
+        """Register a node type from a library. Returns a LibraryProblem if registration fails."""
         # Does a node class of this name already exist?
         library_collisions = LibraryRegistry.get_libraries_with_node_type(node_class_name)
         if library_collisions:
             library_data = library.get_library_data()
             if library_data.name in library_collisions:
-                details = f"Attempted to register Node class '{node_class_name}' from Library '{library_data.name}', but a Node with that name from that Library was already registered. Check to ensure you aren't re-adding the same libraries multiple times."
-                logger.error(details)
-                return details
+                logger.error(
+                    "Attempted to register node class '%s' from library '%s', but a node with that name from that library was already registered",
+                    node_class_name,
+                    library_data.name,
+                )
+                return DuplicateNodeRegistrationProblem(class_name=node_class_name, library_name=library_data.name)
 
         return None
 
@@ -301,19 +308,19 @@ class Library:
         self._node_metadata = {}
         self._advanced_library = advanced_library
 
-    def register_new_node_type(self, node_class: type[BaseNode], metadata: NodeMetadata) -> str | None:
-        """Register a new node type in this library. Returns an error string for forensics, or None if all clear."""
+    def register_new_node_type(self, node_class: type[BaseNode], metadata: NodeMetadata) -> LibraryProblem | None:
+        """Register a new node type in this library. Returns a LibraryProblem if registration fails, or None if all clear."""
         # We only need to register the name of the node within the library.
         node_class_as_str = node_class.__name__
 
         # Let the registry know.
-        registry_details = LibraryRegistry.register_node_type_from_library(
+        library_problem = LibraryRegistry.register_node_type_from_library(
             library=self, node_class_name=node_class_as_str
         )
 
         self._node_types[node_class_as_str] = node_class
         self._node_metadata[node_class_as_str] = metadata
-        return registry_details
+        return library_problem
 
     def get_library_data(self) -> LibrarySchema:
         return self._library_data

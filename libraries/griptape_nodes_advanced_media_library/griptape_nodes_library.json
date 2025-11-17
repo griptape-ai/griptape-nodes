@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers>=0.35.1",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/f3db38c1e74c49de0ff42356515e7b394561ec39.zip",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
         "peft>=0.17.0",
@@ -59,11 +59,10 @@
         "prodigyopt>=1.1.2; sys_platform == 'win32'",
         "bitsandbytes>=0.46.0; sys_platform == 'win32'",
         "ftfy>=6.3.1",
-        "git+https://github.com/dylanholmes/cosmos-guardrail.git",
         "sam2>=1.1.0",
         "scipy>=1.10.0",
         "matplotlib>=3.10.3",
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.7.1"
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
       "pip_install_flags": [
         "--preview",
@@ -85,7 +84,6 @@
           "deprecation_message": "Use 'Grayscale Image' from the Griptape Nodes Library instead under `Image/Edit/Grayscale Image`",
           "removal_version": "0.64.0"
         }
-
       }
     },
     {
@@ -100,7 +98,6 @@
           "deprecation_message": "Use 'Gaussian Blur Image' from the Griptape Nodes Library instead under `Image/Effects/Gaussian Blur Image`",
           "removal_version": "0.64.0"
         }
-
       }
     },
     {
@@ -167,6 +164,16 @@
       }
     },
     {
+      "class_name": "MorphologyImage",
+      "file_path": "opencv_nodes_library/morphology_image.py",
+      "metadata": {
+        "category": "image/edge",
+        "description": "Apply OpenCV morphological operations (erode, dilate, open, close) to grayscale images",
+        "display_name": "Morphology",
+        "icon": "circle-dot"
+      }
+    },
+    {
       "class_name": "AnylineDetector",
       "file_path": "controlnet_aux_nodes_library/anyline_detector.py",
       "metadata": {
@@ -183,7 +190,7 @@
         "description": "Generate an Image with Flux via 🤗 Diffusers.",
         "display_name": "Flux",
         "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/ https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
+          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
           "removal_version": "0.64.0"
         }
       }
@@ -219,7 +226,7 @@
       "file_path": "diffusers_nodes_library/pipelines/flux/diptych_flux_fill_pipeline.py",
       "metadata": {
         "category": "image/flux",
-        "description": "Generate a prompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux Lora. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
+        "description": "Generate a prompt-controlled Image Variation with Flux via 🤗 Diffusers. Pairs best with the RiverZ Flux LoRA. Project page (paper, demos, gallery): https://river-zhang.github.io/ICEdit-gh-pages/",
         "display_name": "Flux ICEdit ",
         "deprecation": {
           "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
@@ -271,44 +278,52 @@
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/flux_lora_from_file.py",
       "metadata": {
         "category": "image/flux/loras",
-        "description": "Load Flux Lora from File for use with 🤗 Diffusers based Flux Nodes. Path must be on the engine's filesystem.",
-        "display_name": "Flux Lora File"
+        "description": "Load Flux LoRA from File for use with 🤗 Diffusers based Flux Nodes. Path must be on the engine's filesystem.",
+        "display_name": "Flux LoRA File",
+        "deprecation": {
+          "deprecation_message": "Use 'Load LoRA' from the Griptape Nodes Advanced Media Library instead under `LoRAs/Load LoRA`",
+          "removal_version": "0.64.0"
+        }
       }
     },
     {
       "class_name": "LumatalesFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/lumatales_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
-        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/Lumatales-FL",
-        "display_name": "Flux Lora: Lumatales-FL "
+        "category": "lora/flux",
+        "description": "Load the Flux LoRA for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/Lumatales-FL",
+        "display_name": "Flux LoRA: Lumatales-FL ",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "MicroLandscapeOnPhoneFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/micro_landscape_on_phone_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
-        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
-        "display_name": "Flux Lora: Micro Landscape on Mobile Phone"
+        "category": "lora/flux",
+        "description": "Load the Flux LoRA for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Micro-landscape-on-Mobile-Phone",
+        "display_name": "Flux LoRA: Micro Landscape on Mobile Phone",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "MiniatureWorldFluxLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/miniature_world_flux_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
-        "description": "Load the Flux Lora for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
-        "display_name": "Flux Lora: Miniature World"
+        "category": "lora/flux",
+        "description": "Load the Flux LoRA for use with 🤗 Diffusers based Flux Nodes. 🤗 Model Card: https://huggingface.co/Shakker-Labs/FLUX.1-dev-LoRA-Miniature-World",
+        "display_name": "Flux LoRA: Miniature World",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "RiverZNormalDiptychFluxFillLora",
       "file_path": "diffusers_nodes_library/pipelines/flux/lora/river_z_normal_diptych_flux_fill_lora.py",
       "metadata": {
-        "category": "image/flux/loras",
-        "description": "Load the Flux Lora for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
-        "display_name": "Flux ICEdit Lora: RiverZ Normal"
+        "category": "lora/flux",
+        "description": "Load the Flux LoRA for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
+        "display_name": "Flux ICEdit LoRA: RiverZ Normal",
+        "group": "diffusion"
       }
     },
     {
@@ -356,7 +371,7 @@
       "metadata": {
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
-        "display_name": "Train Flux Lora"
+        "display_name": "Train Flux LoRA"
       }
     },
     {
@@ -590,18 +605,20 @@
       "class_name": "Kijai1Dot3BWanLora",
       "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_1_dot_3_b_wan_lora.py",
       "metadata": {
-        "category": "video/wan/loras",
+        "category": "lora/wan",
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
-        "display_name": "Kijai CausVid 1.3B"
+        "display_name": "Kijai CausVid 1.3B",
+        "group": "diffusion"
       }
     },
     {
       "class_name": "Kijai14BWanLora",
       "file_path": "diffusers_nodes_library/pipelines/wan/lora/kijai_14_b_wan_lora.py",
       "metadata": {
-        "category": "video/wan/loras",
+        "category": "lora/wan",
         "description": "Experimental LoRA extractions from CausVid finetunes. Enables generating videos in 2-8 steps.",
-        "display_name": "Kijai CausVid 14B"
+        "display_name": "Kijai CausVid 14B",
+        "group": "diffusion"
       }
     },
     {
@@ -618,24 +635,11 @@
       }
     },
     {
-      "class_name": "Cosmos2TextToImagePipeline",
-      "file_path": "diffusers_nodes_library/pipelines/cosmos/cosmos_2_text_to_image_pipeline.py",
-      "metadata": {
-        "category": "image/cosmos",
-        "description": "Generate images with Cosmos2 text-to-image via 🤗 Diffusers.",
-        "display_name": "Cosmos2 Text2Image",
-        "deprecation": {
-          "deprecation_message": "Use 'Diffusion Pipeline Builder' and 'Generate Image (Diffusion Pipeline)' nodes instead: https://docs.griptapenodes.com/en/stable/nodes/advanced_media_library/diffusion_pipelines/",
-          "removal_version": "0.64.0"
-        }
-      }
-    },
-    {
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
         "category": "image",
-        "description": "Build and cache 🤗 Diffuser Pipelines for reuse across multiple execution nodes.",
+        "description": "Build and cache 🤗 Diffusers Pipelines for reuse across multiple execution nodes.",
         "display_name": "Diffusion Pipeline Builder",
         "group": "diffusion"
       }
@@ -645,8 +649,18 @@
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_runtime_node.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images via 🤗 Diffuser Pipelines.",
+        "description": "Generate images via 🤗 Diffusers Pipelines.",
         "display_name": "Generate Image (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "LoadLora",
+      "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
+      "metadata": {
+        "category": "lora",
+        "description": "Load LoRA from file ('.safetensors', '.pt', '.bin', '.json', '.lora') for use with 🤗 Diffusers based Nodes. Path must be on the engine's filesystem.",
+        "display_name": "Load LoRA",
         "group": "diffusion"
       }
     }

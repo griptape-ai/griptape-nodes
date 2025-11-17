@@ -171,15 +171,15 @@ class ListModelDownloadsRequest(RequestPayload):
 
 @dataclass
 class ModelDownloadStatus:
-    """Model download status tracking multiple files."""
+    """Model download status tracking byte-level progress."""
 
     model_id: str
     status: str  # "downloading", "completed", "failed"
     started_at: str
     updated_at: str
-    total_files: int | None = None
-    completed_files: int | None = None
-    failed_files: int | None = None
+    total_bytes: int | None = None
+    completed_bytes: int | None = None
+    failed_bytes: int | None = None
     # Optional fields for completed downloads
     completed_at: str | None = None
     local_path: str | None = None
