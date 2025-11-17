@@ -320,52 +320,58 @@ class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class GetNextUnusedFilenameRequest(RequestPayload):
-    """Find the next available filename with auto-incrementing index.
+    """Find the next available filename with auto-incrementing index (preview only - no file creation).
 
-    Use when: Finding available filenames without file collision, reserving filenames
-    before actual write operations, implementing CREATE_NEW policy.
+    Use when: Finding available filenames without file collision before actual write operations.
 
-    This request scans the filesystem for existing files matching the pattern and returns
-    the next available filename with an auto-incremented index. Optionally creates a
-    placeholder (0-byte file) to reserve the filename.
+    This request scans the filesystem and returns the next available filename.
+    This is a preview operation that DOES NOT create any files or acquire any locks.
 
     Args:
         file_path: Path to the file (str for direct path, MacroPath for macro resolution)
-        create_placeholder: If True, atomically create 0-byte file to reserve filename (default: False)
-        create_parents: If True, create parent directories when creating placeholder (default: True)
 
     Results: GetNextUnusedFilenameResultSuccess | GetNextUnusedFilenameResultFailure
 
     Examples:
-        # Simple path - auto-injects _{index} before extension
+        # Simple string path - cleanest for most use cases
         file_path = "/outputs/render.png"
-        # Returns: "/outputs/render_1.png", "/outputs/render_2.png", etc.
+        # Returns: "/outputs/render.png" if available
+        #          "/outputs/render_1.png" if render.png exists
+        #          "/outputs/render_2.png" if render_1.png exists, etc.
 
-        # Macro path with explicit {index} placement
+        # MacroPath with required {_index} and padding
         file_path = MacroPath(
-            parsed_macro=ParsedMacro("{outputs}/frame_{index:05}.png"),
+            parsed_macro=ParsedMacro("{outputs}/frame_{_index:05}.png"),
             variables={"outputs": "/abs/path"}
         )
         # Returns: "/abs/path/frame_00001.png", "/abs/path/frame_00002.png", etc.
+        # Note: Always includes index, cannot return "frame.png"
+
+        # MacroPath with optional {_index} - limited by separator position
+        file_path = MacroPath(
+            parsed_macro=ParsedMacro("{outputs}/frame{_index?:_}.png"),
+            variables={"outputs": "/abs/path"}
+        )
+        # Returns: "/abs/path/frame.png" if {_index} omitted
+        #          "/abs/path/frame1_.png" if {_index}=1 (separator goes after value)
+        # Note: Cannot achieve "frame.png" → "frame_1.png" with optional variable
     """
 
     file_path: str | MacroPath
-    create_placeholder: bool = False
-    create_parents: bool = True
 
 
 @dataclass
 @PayloadRegistry.register
 class GetNextUnusedFilenameResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Next unused filename found and optionally reserved.
+    """Next unused filename found (preview only - no file created).
 
     Attributes:
         available_filename: Absolute path to the available filename
-        index_used: The index number that was used (e.g., 1, 2, 3...)
+        index_used: The index number that was used (e.g., 1, 2, 3...), or None if base filename is available
     """
 
     available_filename: str
-    index_used: int
+    index_used: int | None
 
 
 @dataclass
