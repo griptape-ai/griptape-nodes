@@ -7,9 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.error import URLError
-from urllib.parse import urlparse
 
-import httpx
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
@@ -17,6 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils import is_url, load_content_from_uri
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -103,15 +102,18 @@ def validate_pil_format(format_str: str, param_name: str = "format") -> None:
 
 
 def is_local(url: str) -> bool:
-    """Check if a URL is a local file path."""
+    """Check if a URL is a local file path (not a file:// URI).
+
+    Note: file:// URIs are not considered "local" for the purposes of this function,
+    as they should be handled by the URI loading system.
+    """
+    # Check if it's a URL/URI (http://, https://, file://)
+    if is_url(url):
+        return False
+
+    # Not a URL, so check if it's a plain file path
     try:
-        url_parsed = urlparse(url)
-        if url_parsed.scheme in ("file", ""):
-            # Handle file:// URLs by extracting the actual path
-            path = url_parsed.path if url_parsed.scheme == "file" else url
-            return Path(path).exists()
-        else:  # noqa: RET505 (one linter said use else, another said it was unnecessary)
-            return False
+        return Path(url).exists()
     except (ValueError, OSError):
         return False
 
@@ -239,10 +241,13 @@ def save_pil_image_with_named_filename(
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL or local file path using httpx or PIL."""
-    # Check if it's a local file path
+    """Load image from URL/URI or local file path.
+
+    Supports http://, https://, file://, and plain file paths.
+    """
+    # Check if it's a local file path (not a URI)
     if is_local(url):
-        # Local file path - load directly with PIL
+        # Plain file path - load directly with PIL
         try:
             return Image.open(url)
         except Exception as e:
@@ -250,13 +255,12 @@ def load_pil_from_url(url: str) -> Image.Image:
             logger.error(msg)
             raise ValueError(msg) from e
 
-    # HTTP/HTTPS URL - use httpx
-    response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
-    response.raise_for_status()
+    # URL/URI (http://, https://, file://) - use centralized loader
     try:
-        return Image.open(BytesIO(response.content))
+        content = load_content_from_uri(url, timeout=DEFAULT_TIMEOUT)
+        return Image.open(BytesIO(content))
     except Exception as e:
-        msg = f"Failed to load image from URL: {url}\nError: {e}"
+        msg = f"Failed to load image from URI: {url}\nError: {e}"
         logger.error(msg)
         raise ValueError(msg) from e
 
