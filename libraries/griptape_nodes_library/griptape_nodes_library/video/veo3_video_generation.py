@@ -31,15 +31,16 @@ class Veo3VideoGeneration(SuccessFailureNode):
         - prompt (str): Text prompt for the video
         - model_id (str): Provider model id (default: veo-3.1-generate-preview)
         - negative_prompt (str): Negative prompt to avoid certain content
-        - image (ImageArtifact|ImageUrlArtifact|str): Optional start frame image (URL or base64 data URI)
-        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image (URL or base64 data URI)
-        - reference_images (list[ImageArtifact]|list[ImageUrlArtifact]|list[str]): Optional reference images (max 3 for asset, max 1 for style)
+        - image (ImageArtifact|ImageUrlArtifact|str): Optional start frame image (supported by all models)
+        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image (only veo-3.1-generate-preview and veo-3.1-fast-generate-preview)
+        - reference_images (list[ImageArtifact]|list[ImageUrlArtifact]|list[str]): Optional reference images (only veo-3.1-generate-preview, max 3 for asset, max 1 for style)
         - reference_type (str): Reference type (default: asset, options: asset, style)
         - aspect_ratio (str): Output aspect ratio (default: 16:9, options: 16:9, 9:16)
         - resolution (str): Output resolution (default: 720p, options: 720p, 1080p)
-        - duration_seconds (str): Video duration in seconds (default: 6, options: 4, 6, 8)
+        - duration_seconds (str): Video duration in seconds (default: 6, options: 4, 6, 8; must be 8 when referenceImages provided)
         - person_generation (str): Person generation policy (default: allow_adult, options: allow_all, allow_adult, dont_allow)
-        - seed (int): Optional seed for reproducible results
+        - generate_audio (bool): Generate audio for the video (default: True, supported by all veo3* models)
+        - seed (int): Random seed for reproducible results (default: -1, -1 means don't specify a seed, 0 or above will be sent)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
@@ -230,16 +231,29 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
         )
 
+        # Generate audio option
+        self.add_parameter(
+            Parameter(
+                name="generate_audio",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip="Generate audio for the video (supported by all veo3* models)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "generate audio"},
+            )
+        )
+
         # Seed for reproducibility
         self.add_parameter(
             Parameter(
                 name="seed",
                 input_types=["int", "str"],
                 type="int",
-                default_value=None,
-                tooltip="Optional seed for reproducible results",
+                default_value=-1,
+                tooltip="Random seed for reproducible results (-1 to not specify a seed)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "seed (optional)"},
+                ui_options={"display_name": "seed"},
             )
         )
 
@@ -283,15 +297,60 @@ class Veo3VideoGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+        # Set initial parameter visibility based on default model
+        self._initialize_parameter_visibility()
+
+    def _initialize_parameter_visibility(self) -> None:
+        """Initialize parameter visibility based on default model selection."""
+        default_model = self.get_parameter_value("model_id") or "veo-3.1-generate-preview"
+        self._update_parameter_visibility_for_model(default_model)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
-        if parameter.name == "resolution" and value == "1080p":
+        if parameter.name == "model_id":
+            self._update_parameter_visibility_for_model(value)
+        elif parameter.name == "resolution" and value == "1080p":
             # 1080p only supports 8 second duration
             current_duration = self.get_parameter_value("duration_seconds")
             if current_duration != "8":
                 logger.warning("%s: 1080p resolution only supports 8 second duration", self.name)
+        elif parameter.name == "reference_images":
+            self._handle_reference_images_change(value)
 
         return super().after_value_set(parameter, value)
+
+    def _update_parameter_visibility_for_model(self, model_id: str) -> None:
+        """Update parameter visibility based on selected model."""
+        # last_frame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
+        if model_id in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+            self.show_parameter_by_name("last_frame")
+        else:
+            self.hide_parameter_by_name("last_frame")
+
+        # reference_images and reference_type are only supported by veo-3.1-generate-preview
+        if model_id == "veo-3.1-generate-preview":
+            self.show_parameter_by_name("reference_images")
+            self.show_parameter_by_name("reference_type")
+        else:
+            self.hide_parameter_by_name("reference_images")
+            self.hide_parameter_by_name("reference_type")
+
+    def _handle_reference_images_change(self, reference_images: Any) -> None:
+        """Handle reference images changes - enforce duration=8 when reference images are provided."""
+        has_reference_images = False
+        if isinstance(reference_images, list):
+            has_reference_images = len(reference_images) > 0
+        elif reference_images is not None:
+            has_reference_images = True
+
+        if has_reference_images:
+            # When reference images are provided, duration must be 8 seconds
+            current_duration = self.get_parameter_value("duration_seconds")
+            if current_duration != "8":
+                logger.warning(
+                    "%s: Setting duration to 8 seconds (required when reference images are provided)", self.name
+                )
+                self.set_parameter_value("duration_seconds", "8")
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
@@ -309,6 +368,15 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         try:
             api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        # Validate model-specific parameter support
+        try:
+            self._validate_model_parameters(params)
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
@@ -337,6 +405,14 @@ class Veo3VideoGeneration(SuccessFailureNode):
         self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
+        generate_audio = self.get_parameter_value("generate_audio")
+        if generate_audio is None:
+            generate_audio = True
+
+        seed = self.get_parameter_value("seed")
+        if seed is None:
+            seed = -1
+
         return {
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": self.get_parameter_value("model_id") or "veo-3.1-generate-preview",
@@ -349,7 +425,8 @@ class Veo3VideoGeneration(SuccessFailureNode):
             "resolution": self.get_parameter_value("resolution") or "720p",
             "duration_seconds": self.get_parameter_value("duration_seconds") or "6",
             "person_generation": self.get_parameter_value("person_generation") or "allow_adult",
-            "seed": self.get_parameter_value("seed"),
+            "seed": seed,
+            "generate_audio": generate_audio,
         }
 
     def _validate_api_key(self) -> str:
@@ -359,6 +436,32 @@ class Veo3VideoGeneration(SuccessFailureNode):
             msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
             raise ValueError(msg)
         return api_key
+
+    def _validate_model_parameters(self, params: dict[str, Any]) -> None:
+        """Validate that parameters are supported by the selected model.
+
+        Raises ValueError if invalid parameter combinations are detected.
+        """
+        model_id = params["model_id"]
+
+        # lastFrame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
+        if params.get("last_frame") and model_id not in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+            msg = f"{self.name}: lastFrame parameter is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview models. Current model: {model_id}"
+            raise ValueError(msg)
+
+        # referenceImages are only supported by veo-3.1-generate-preview
+        reference_images = params.get("reference_images", [])
+        has_reference_images = reference_images and len(reference_images) > 0
+        if has_reference_images:
+            if model_id != "veo-3.1-generate-preview":
+                msg = f"{self.name}: referenceImages parameter is only supported by veo-3.1-generate-preview model. Current model: {model_id}"
+                raise ValueError(msg)
+
+            # When referenceImages are provided, duration must be 8 seconds
+            duration = params.get("duration_seconds", "6")
+            if duration != "8":
+                msg = f"{self.name}: When referenceImages are provided, duration must be 8 seconds. Current duration: {duration}"
+                raise ValueError(msg)
 
     def _convert_image_to_base64_dict(self, image_input: Any) -> dict[str, str] | None:
         """Convert image input to base64 format required by Google's API.
@@ -452,7 +555,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
     def _download_url_to_base64_dict(self, url: str) -> dict[str, str] | None:
         """Download image from URL and convert to base64 dict."""
         try:
-            with httpx.Client(timeout=20.0) as client:
+            with httpx.Client(timeout=60.0) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
 
@@ -557,17 +660,22 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if params["resolution"]:
             parameters["resolution"] = params["resolution"]
 
-        # Add duration
+        # Add duration (convert to integer)
         if params["duration_seconds"]:
-            parameters["durationSeconds"] = params["duration_seconds"]
+            parameters["durationSeconds"] = int(params["duration_seconds"])
 
         # Add person generation
         if params["person_generation"]:
             parameters["personGeneration"] = params["person_generation"]
 
-        # Add seed if provided
-        if params.get("seed") is not None:
-            parameters["seed"] = int(params["seed"])
+        # Add seed if >= 0 (-1 means don't specify)
+        seed = params.get("seed", -1)
+        if seed is not None and seed >= 0:
+            parameters["seed"] = int(seed)
+
+        # Add generateAudio if provided
+        if params.get("generate_audio") is not None:
+            parameters["generateAudio"] = bool(params["generate_audio"])
 
         return {"instances": [instance], "parameters": parameters}
 
@@ -587,7 +695,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             return url
 
         try:
-            with httpx.Client(timeout=20.0) as client:
+            with httpx.Client(timeout=60.0) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
 
