@@ -7,6 +7,8 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL.Image import Image
 
+from griptape_nodes.utils.url_utils import strip_file_scheme
+
 
 def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
     """Converts Griptape ImageArtifact to Pillow Image."""
@@ -41,7 +43,7 @@ def pil_to_image_artifact(pil_image: Image, directory_path: str = "") -> ImageUr
         # No directory prefix - direct storage
         filename = f"{uuid.uuid4()}.png"
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+    url = GriptapeNodes.FileManager().write_file(image_bytes, filename)
     return ImageUrlArtifact(url)
 
 
@@ -57,7 +59,8 @@ def video_url_artifact_to_pil_images(video_artifact: VideoUrlArtifact) -> list[I
     import diffusers.utils  # type: ignore[reportMissingImports]
 
     # Use diffusers' load_video utility to convert video URL to PIL frames
-    return diffusers.utils.loading_utils.load_video(video_artifact.value)
+    # Convert file:// URI to path for diffusers compatibility
+    return diffusers.utils.loading_utils.load_video(strip_file_scheme(video_artifact.value))
 
 
 def pad_mirror(image: Image, target_size: tuple[int, int]) -> Image:

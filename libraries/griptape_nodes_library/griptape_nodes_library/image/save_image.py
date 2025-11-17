@@ -386,7 +386,7 @@ class SaveImage(SuccessFailureNode):
 
         # Save to static storage
         try:
-            return GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, output_file)
+            return GriptapeNodes.FileManager().write_file(image_bytes, output_file)
         except Exception as e:
             error_details = f"Failed to save image to static storage: {e!s}"
             raise RuntimeError(error_details) from e

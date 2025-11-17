@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils import is_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -530,8 +531,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if image_value.startswith("data:image/"):
             return image_value
 
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
+        # If it's a URL (http://, https://, file://), download and convert to base64
+        if is_url(image_value):
             return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix
@@ -730,9 +731,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
     async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
+            return await GriptapeNodes.FileManager().aread_file(url)
+        except ValueError:
             return None

@@ -1,8 +1,7 @@
-from urllib.error import URLError
-
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from requests.exceptions import RequestException
+
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageArtifact:
@@ -18,14 +17,14 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
         ValueError: If image download fails with descriptive error message
     """
     try:
-        image_bytes = image_url_artifact.to_bytes()
-    except (URLError, RequestException, ConnectionError, TimeoutError) as err:
+        image_bytes = GriptapeNodes.FileManager().read_file(image_url_artifact.value)
+    except ValueError as e:
         details = (
             f"Failed to download image at '{image_url_artifact.value}'.\n"
             f"If this workflow was shared from another engine installation, "
             f"that image file will need to be regenerated.\n"
-            f"Error: {err}"
+            f"Error: {e}"
         )
-        raise ValueError(details) from err
+        raise ValueError(details) from e
 
     return ImageLoader().parse(image_bytes)

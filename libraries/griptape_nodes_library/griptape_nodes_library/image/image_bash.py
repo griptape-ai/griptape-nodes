@@ -3,7 +3,6 @@ from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact, JsonArtifact
 from PIL import Image, ImageEnhance
 
@@ -160,10 +159,8 @@ class ImageBash(DataNode):
     def _get_image_dimensions(self, image_url: str) -> tuple[int, int]:
         """Get the width and height of an image from its URL."""
         try:
-            response = httpx.get(image_url, timeout=30)
-            response.raise_for_status()
-
-            with Image.open(BytesIO(response.content)) as img:
+            image_data = GriptapeNodes.FileManager().read_file(image_url)
+            with Image.open(BytesIO(image_data)) as img:
                 return img.size  # Returns (width, height)
         except Exception:
             # Fallback to default dimensions if we can't load the image
@@ -722,7 +719,7 @@ class ImageBash(DataNode):
 
         # Save composed image and publish
         filename = self._generate_filename("png")
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(self._pil_to_bytes(canvas, "PNG"), filename)
+        static_url = GriptapeNodes.FileManager().write_file(self._pil_to_bytes(canvas, "PNG"), filename)
         output_artifact = ImageUrlArtifact(value=static_url)
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact

@@ -46,11 +46,12 @@ class BaseStorageDriver(ABC):
         ...
 
     @abstractmethod
-    def create_signed_download_url(self, path: Path) -> str:
+    def create_signed_download_url(self, path: Path, *, is_external: bool = False) -> str:
         """Create a signed download URL for the given path.
 
         Args:
             path: The path of the file to create a signed URL for.
+            is_external: Whether the file is external to the workspace (only supported by local storage).
 
         Returns:
             str: The signed URL for downloading the file.

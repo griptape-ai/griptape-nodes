@@ -4,12 +4,9 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.error import URLError
-from urllib.parse import urlparse
 
-import httpx
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
@@ -105,20 +102,6 @@ def validate_pil_format(format_str: str, param_name: str = "format") -> None:
         raise ValueError(msg)
 
 
-def is_local(url: str) -> bool:
-    """Check if a URL is a local file path."""
-    try:
-        url_parsed = urlparse(url)
-        if url_parsed.scheme in ("file", ""):
-            # Handle file:// URLs by extracting the actual path
-            path = url_parsed.path if url_parsed.scheme == "file" else url
-            return Path(path).exists()
-        else:  # noqa: RET505 (one linter said use else, another said it was unnecessary)
-            return False
-    except (ValueError, OSError):
-        return False
-
-
 @dataclass
 class ResizedImageResult:
     """Result of resizing an image for a cell."""
@@ -206,7 +189,7 @@ def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None
         else:
             image_format = "png"
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.{image_format}")
+    url = GriptapeNodes.FileManager().write_file(image_bytes, f"{uuid.uuid4()}.{image_format}")
     return ImageUrlArtifact(url)
 
 
@@ -220,7 +203,7 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
     image_bytes = buffer.getvalue()
 
     filename = f"{uuid.uuid4()}.{image_format.lower()}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+    url = GriptapeNodes.FileManager().write_file(image_bytes, filename)
 
     return ImageUrlArtifact(url)
 
@@ -236,28 +219,16 @@ def save_pil_image_with_named_filename(
     image.save(buffer, format=image_format)
     image_bytes = buffer.getvalue()
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+    url = GriptapeNodes.FileManager().write_file(image_bytes, filename)
 
     return ImageUrlArtifact(url)
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL or local file path using httpx or PIL."""
-    # Check if it's a local file path
-    if is_local(url):
-        # Local file path - load directly with PIL
-        try:
-            return Image.open(url)
-        except Exception as e:
-            msg = f"Failed to load image from local file: {url}\nError: {e}"
-            logger.error(msg)
-            raise ValueError(msg) from e
-
-    # HTTP/HTTPS URL - use httpx
-    response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
-    response.raise_for_status()
+    """Load image from URL or local file path."""
     try:
-        return Image.open(BytesIO(response.content))
+        image_data = GriptapeNodes.FileManager().read_file(url)
+        return Image.open(BytesIO(image_data))
     except Exception as e:
         msg = f"Failed to load image from URL: {url}\nError: {e}"
         logger.error(msg)
@@ -300,17 +271,17 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
         ValueError: If image download fails with descriptive error message
     """
     try:
-        image_bytes = image_url_artifact.to_bytes()
-    except (URLError, RequestException, ConnectionError, TimeoutError) as err:
+        image_data = GriptapeNodes.FileManager().read_file(image_url_artifact.value)
+    except ValueError as e:
         details = (
             f"Failed to download image at '{image_url_artifact.value}'.\n"
             f"If this workflow was shared from another engine installation, "
             f"that image file will need to be regenerated.\n"
-            f"Error: {err}"
+            f"Error: {e}"
         )
-        raise ValueError(details) from err
+        raise ValueError(details) from e
 
-    return ImageLoader().parse(image_bytes)
+    return ImageLoader().parse(image_data)
 
 
 def _extract_from_rgb(image: Image.Image, channel: str) -> Image.Image:

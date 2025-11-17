@@ -132,7 +132,7 @@ class WanPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         try:
             preview_video_path = self.latents_to_video_mp4(pipe, latents)
             filename = f"preview_{uuid.uuid4()}.mp4"
-            url = GriptapeNodes.StaticFilesManager().save_static_file(preview_video_path.read_bytes(), filename)
+            url = GriptapeNodes.FileManager().write_file(preview_video_path.read_bytes(), filename)
             self._node.publish_update_to_parameter("output_video", VideoUrlArtifact(url))
         except Exception as e:
             logger.warning("Failed to generate video preview from latents: %s", e)
@@ -143,5 +143,5 @@ class WanPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def publish_output_video(self, video_path: Path) -> None:
         filename = f"{uuid.uuid4()}{video_path.suffix}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), filename)
         self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

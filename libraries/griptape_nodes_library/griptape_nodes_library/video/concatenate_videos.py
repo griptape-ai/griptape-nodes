@@ -10,6 +10,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
@@ -548,19 +549,16 @@ class ConcatenateVideos(BaseVideoProcessor):
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL to local file."""
         try:
-            response = httpx.get(video_url, timeout=30.0)
-            response.raise_for_status()
+            video_bytes = GriptapeNodes.FileManager().read_file(video_url)
 
             output_file = Path(output_path)
-            with output_file.open("wb") as f:
-                for chunk in response.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
+            output_file.write_bytes(video_bytes)
 
             # Verify file was downloaded
             if not output_file.exists() or output_file.stat().st_size == 0:
                 self._raise_download_error("Downloaded video file is empty or does not exist")
 
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, ValueError, FileNotFoundError) as e:
             msg = f"Error downloading video from {video_url}: {e!s}"
             self._raise_download_error(msg, e)
         except OSError as e:

@@ -2,19 +2,14 @@ import base64
 import json
 import re
 import subprocess
-import tempfile
 import uuid
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-
-import httpx
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
+from griptape_nodes.utils import is_url
 from griptape_nodes.utils.async_utils import subprocess_run
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -106,7 +101,7 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
 
     # Save to static file server
     filename = f"{uuid.uuid4()}.{video_format}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+    url = GriptapeNodes.FileManager().write_file(video_bytes, filename)
 
     return VideoUrlArtifact(url)
 
@@ -146,17 +141,17 @@ def is_downloadable_video_url(obj: Any) -> bool:
         obj: Object to check (string, VideoUrlArtifact, etc.)
 
     Returns:
-        True if object contains an http/https URL that needs downloading
+        True if object contains an http/https/file URI that needs downloading
     """
     # Direct URL string
-    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+    if isinstance(obj, str) and is_url(obj):
         return True
 
     # Any VideoUrlArtifact-like object with downloadable URL
     if is_video_url_artifact(obj) and hasattr(obj, "value"):
         value = obj.value  # type: ignore[attr-defined]
         if isinstance(value, str):
-            return value.startswith(("http://", "https://"))
+            return is_url(value)
 
     return False
 
@@ -179,15 +174,6 @@ def extract_url_from_video_object(obj: Any) -> str | None:
             return value
 
     return None
-
-
-def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for ffmpeg processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
 
 
 async def get_video_duration(video_url: str) -> float:
@@ -299,54 +285,3 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r"[^\w\s\-.]+", "_", name.strip())
     name = re.sub(r"\s+", "_", name)
     return name or "segment"
-
-
-@dataclass
-class VideoDownloadResult:
-    """Result of video download operation."""
-
-    temp_file_path: Path
-    detected_format: str | None = None
-
-
-async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
-    """Download video from URL to temporary file using async httpx streaming.
-
-    Args:
-        url: The video URL to download
-
-    Returns:
-        VideoDownloadResult with path to temp file and detected format
-
-    Raises:
-        ValueError: If URL is invalid or download fails
-    """
-    # Validate URL first using existing function
-    if not validate_url(url):
-        error_details = f"Invalid or unsafe URL: {url}"
-        raise ValueError(error_details)
-
-    # Create temp file with generic extension initially
-    with tempfile.NamedTemporaryFile(suffix=".video", delete=False) as temp_file:
-        temp_path = Path(temp_file.name)
-
-    try:
-        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            # Use sync file operations for writing chunks - this is appropriate for streaming
-            with temp_path.open("wb") as f:  # noqa: ASYNC230
-                async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                    f.write(chunk)
-
-        # Detect format from URL or use default
-        detected_format = detect_video_format({"value": url})
-
-        return VideoDownloadResult(temp_file_path=temp_path, detected_format=detected_format)
-
-    except Exception as e:
-        # Cleanup on failure
-        if temp_path.exists():
-            temp_path.unlink()
-        error_details = f"Failed to download video from {url}: {e}"
-        raise ValueError(error_details) from e

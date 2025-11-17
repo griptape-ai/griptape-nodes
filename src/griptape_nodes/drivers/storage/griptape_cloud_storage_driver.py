@@ -70,7 +70,11 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             "file_path": str(path),
         }
 
-    def create_signed_download_url(self, path: Path) -> str:
+    def create_signed_download_url(self, path: Path, *, is_external: bool = False) -> str:
+        if is_external:
+            msg = "External files are not supported with Griptape Cloud storage"
+            raise ValueError(msg)
+
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)

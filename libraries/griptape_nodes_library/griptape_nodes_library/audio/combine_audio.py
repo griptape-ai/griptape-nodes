@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
@@ -211,24 +210,15 @@ class CombineAudio(SuccessFailureNode):
         """Download an audio file to a temporary file."""
         # FAILURE CASES FIRST
         try:
-            response = httpx.get(audio_artifact.value, timeout=60)
-        except httpx.TimeoutException as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: timeout after 60 seconds"
-            raise RuntimeError(error_msg) from e
-        except httpx.RequestError as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: network error - {e}"
-            raise RuntimeError(error_msg) from e
-
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: HTTP {e.response.status_code}"
+            audio_content = GriptapeNodes.FileManager().read_file(audio_artifact.value)
+        except ValueError as e:
+            error_msg = f"{self.name}: Failed to download audio file {index + 1}: {e}"
             raise RuntimeError(error_msg) from e
 
         try:
             # Create temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-                temp_file.write(response.content)
+                temp_file.write(audio_content)
                 temp_file_path = Path(temp_file.name)
         except OSError as e:
             error_msg = f"{self.name}: Failed to create temporary file for audio {index + 1}: {e}"

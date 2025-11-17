@@ -180,7 +180,8 @@ class TranscribeAudio(ControlNode):
             audio_artifact = audio
 
         if isinstance(audio_artifact, AudioUrlArtifact):
-            audio_artifact = AudioLoader().parse(audio_artifact.to_bytes())
+            audio_bytes = GriptapeNodes.FileManager().read_file(audio_artifact.value)
+            audio_artifact = AudioLoader().parse(audio_bytes)
         task = AudioTranscriptionTask(audio_artifact, audio_transcription_driver=driver)
 
         # Set the new audio transcription task

@@ -1,7 +1,6 @@
 from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
@@ -85,7 +84,7 @@ class PaintMask(DataNode):
                 suffix="_mask",
                 extension="png",
             )
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
+            mask_url = GriptapeNodes.FileManager().write_file(mask_buffer.getvalue(), mask_filename)
 
             # Create ImageUrlArtifact directly with source_image_url in meta
             mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": input_image.value})
@@ -136,7 +135,7 @@ class PaintMask(DataNode):
             suffix="_mask",
             extension="png",
         )
-        mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
+        mask_url = GriptapeNodes.FileManager().write_file(mask_buffer.getvalue(), mask_filename)
         output_mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
         self.set_parameter_value("output_mask", output_mask_artifact)
         self.set_parameter_value("output_image", image_artifact)
@@ -154,15 +153,13 @@ class PaintMask(DataNode):
             if isinstance(meta, dict) and meta.get("maskEdited", False):
                 # If mask was edited, keep it but update source image URL
                 mask_url = output_mask_value.value
-                response = httpx.get(mask_url, timeout=30)
-                response.raise_for_status()
-                mask_content = response.content
+                mask_content = GriptapeNodes.FileManager().read_file(mask_url)
                 new_mask_filename = generate_filename(
                     node_name=self.name,
                     suffix="_mask",
                     extension="png",
                 )
-                mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
+                mask_url = GriptapeNodes.FileManager().write_file(mask_content, new_mask_filename)
                 mask_artifact = ImageUrlArtifact(
                     mask_url, meta={"source_image_url": image_artifact.value, "maskEdited": True}
                 )
@@ -249,10 +246,9 @@ class PaintMask(DataNode):
         return mask.convert("RGB")
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using httpx."""
-        response = httpx.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))
+        """Load image from URL/URI using read_file helper."""
+        image_data = GriptapeNodes.FileManager().read_file(url)
+        return Image.open(BytesIO(image_data))
 
     def _extract_alpha_from_mask(self, mask_pil: Image.Image) -> Image.Image:
         """Extract red channel from mask image to use as alpha channel."""

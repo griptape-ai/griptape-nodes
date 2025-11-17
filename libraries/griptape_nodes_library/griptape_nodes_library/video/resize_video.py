@@ -14,10 +14,10 @@ from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes.utils import validate_url
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     to_video_artifact,
-    validate_url,
 )
 
 
@@ -255,7 +255,7 @@ class ResizeVideo(ControlNode):
             # Extract original filename from URL and create new filename
             original_filename = Path(input_url).stem  # Get filename without extension
             filename = f"{original_filename}_resized_{int(percentage)}_{scaling_algorithm}.{detected_format}"
-            url = GriptapeNodes.StaticFilesManager().save_static_file(resized_video_bytes, filename)
+            url = GriptapeNodes.FileManager().write_file(resized_video_bytes, filename)
 
             self.append_value_to_parameter("logs", f"Successfully resized video: {filename}\n")
 

@@ -130,7 +130,7 @@ class ImagesToPdf(ControlNode):
         pdf_buffer.close()
 
         # Save to static files
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+        static_url = GriptapeNodes.FileManager().write_file(
             pdf_bytes,
             filename,
         )

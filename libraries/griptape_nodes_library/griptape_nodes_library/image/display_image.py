@@ -1,7 +1,6 @@
 from io import BytesIO
 from typing import Any
 
-import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
@@ -10,7 +9,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 
 class DisplayImage(DataNode):
@@ -75,9 +74,7 @@ class DisplayImage(DataNode):
         if isinstance(image, ImageArtifact):
             return image.width, image.height
         if isinstance(image, ImageUrlArtifact):
-            response = requests.get(image.value, timeout=30)
-            response.raise_for_status()
-            image_data = response.content
+            image_data = GriptapeNodes.FileManager().read_file(image.value)
             pil_image = Image.open(BytesIO(image_data))
             return pil_image.width, pil_image.height
         if image:

@@ -10,11 +10,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import aioshutil
 import portalocker
 from binaryornot.check import is_binary
 from rich.console import Console
+from upath import UPath
 
 from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailureReason
@@ -72,6 +75,7 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
+from griptape_nodes.utils.url_utils import is_url
 
 console = Console()
 
@@ -285,27 +289,69 @@ class OSManager:
         # This works consistently even for non-existent paths on Windows
         return Path(os.path.normpath(path))
 
-    def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
-        """Resolve a file path, handling absolute, relative, and tilde paths.
+    def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path | UPath:
+        """Resolve a file path, handling absolute, relative, tilde paths, and URLs.
+
+        Uses UPath for all paths, which returns different types based on scheme:
+        - Regular paths → PosixUPath/WindowsUPath (Path subclasses)
+        - file:// URIs → decoded then PosixUPath/WindowsUPath (Path subclasses)
+        - http://, https:// → HTTPPath (NOT a Path subclass, uses fsspec)
+        - s3:// → S3Path (NOT a Path subclass, uses s3fs)
 
         Args:
-            path_str: Path string that may be absolute, relative, or start with ~
+            path_str: Path string that may be absolute, relative, start with ~, or be a URL
             workspace_only: If True and path is invalid, fall back to workspace directory
+                           (ignored for remote URLs)
 
         Returns:
-            Resolved Path object
+            Path instance for local files, UPath instance for remote URLs
+
+        Raises:
+            ValueError: If path resolution fails
         """
         try:
-            if Path(path_str).is_absolute() or path_str.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
-                return self._expand_path(path_str)
+            # Check for URLs first
+            if is_url(path_str):
+                # Decode file:// URLs to regular paths (percent-encoding must be decoded first)
+                if path_str.startswith("file://"):
+                    parsed = urlparse(path_str)
+                    file_path = url2pathname(parsed.path)
+                    # Pass decoded path to UPath → returns PosixUPath/WindowsUPath (Path subclass)
+                    path_str = file_path
+                else:
+                    # Remote URLs (http://, https://, s3://) - return UPath directly
+                    # UPath with fsspec returns HTTPPath, S3Path, etc. (NOT Path subclasses)
+                    return UPath(path_str)
+
+            # Use UPath for all local paths (returns PosixUPath/WindowsUPath which ARE Path subclasses)
+            path = UPath(path_str)
+
+            # Type assertion: PosixUPath/WindowsUPath are Path subclasses
+            # This helps the type checker understand the return type
+            if not isinstance(path, Path):
+                # This shouldn't happen for local paths, but handle gracefully
+                msg = f"Unexpected UPath type {type(path)} for local path: {path_str}"
+                raise TypeError(msg)
+
+            if path.is_absolute():
+                # For absolute paths, resolve safely
+                resolved_path = self.resolve_path_safely(path)
+                # Convert back to UPath to maintain Path subclass
+                return UPath(str(resolved_path))  # type: ignore[return-value]
+
+            if str(path).startswith("~"):
+                # Expand tilde and environment variables for paths starting with ~
+                expanded = self._expand_path(str(path))
+                return UPath(str(expanded))  # type: ignore[return-value]
+
             # Both workspace and system-wide modes resolve relative to current directory
-            return self.resolve_path_safely(self._get_workspace_path() / path_str)
+            resolved = self.resolve_path_safely(self._get_workspace_path() / path_str)
+            return UPath(str(resolved))  # type: ignore[return-value]
         except (ValueError, RuntimeError):
             if workspace_only:
                 msg = f"Path '{path_str}' not found, using workspace directory: {self._get_workspace_path()}"
                 logger.warning(msg)
-                return self._get_workspace_path()
+                return UPath(str(self._get_workspace_path()))  # type: ignore[return-value]
             # Re-raise the exception for non-workspace mode
             raise
 
@@ -418,16 +464,19 @@ class OSManager:
                 reason=FileIOFailureReason.IO_ERROR,
             ) from e
 
-    def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
+    def _validate_workspace_path(self, path: Path | UPath) -> tuple[bool, Path | UPath]:
         """Check if a path is within workspace and return relative path if it is.
 
         Args:
-            path: Path to validate
+            path: Path to validate (may be PosixUPath/WindowsUPath which are Path subclasses)
 
         Returns:
             Tuple of (is_workspace_path, relative_or_absolute_path)
         """
         workspace = GriptapeNodes.ConfigManager().workspace_path
+
+        # Note: PosixUPath/WindowsUPath ARE Path subclasses, so no special handling needed
+        # _resolve_file_path already handles file:// URI decoding and rejects remote URLs
 
         # Ensure both paths are resolved for comparison
         # Both path and workspace should use .resolve() to follow symlinks consistently
@@ -931,7 +980,7 @@ class OSManager:
         # No gaps - use max + 1
         return max(existing_indices) + 1
 
-    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
+    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path | UPath, str]:  # noqa: C901
         """Validate read file request and return resolved file path and path string."""
         # Validate that exactly one of file_path or file_entry is provided
         if request.file_path is None and request.file_entry is None:
@@ -959,22 +1008,35 @@ class OSManager:
 
         file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
 
-        # Check if file exists and is actually a file
-        if not file_path.exists():
-            msg = f"File does not exist: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-        if not file_path.is_file():
-            msg = f"File is not a file: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
+        # Detect if this is a remote URL
+        is_remote_url = not isinstance(file_path, Path)
 
-        # Check workspace constraints
-        is_workspace_path, _ = self._validate_workspace_path(file_path)
-        if request.workspace_only and not is_workspace_path:
-            msg = f"File is outside workspace: {file_path}"
+        # Check if file exists and is actually a file
+        # Note: UPath types (HTTPPath, S3Path) support .exists() and .is_file()
+        try:
+            if not file_path.exists():
+                msg = f"File does not exist: {file_path}"
+                logger.error(msg)
+                raise FileNotFoundError(msg)  # noqa: TRY301
+            if not file_path.is_file():
+                msg = f"File is not a file: {file_path}"
+                logger.error(msg)
+                raise FileNotFoundError(msg)  # noqa: TRY301
+        except FileNotFoundError:
+            raise  # Re-raise our own FileNotFoundError
+        except Exception as e:
+            # Network error or other issue checking file
+            msg = f"Error checking if file exists: {file_path}: {e}"
             logger.error(msg)
-            raise ValueError(msg)
+            raise FileNotFoundError(msg) from e
+
+        # Check workspace constraints (skip for remote URLs)
+        if not is_remote_url:
+            is_workspace_path, _ = self._validate_workspace_path(file_path)
+            if request.workspace_only and not is_workspace_path:
+                msg = f"File is outside workspace: {file_path}"
+                logger.error(msg)
+                raise ValueError(msg)
 
         return file_path, file_path_str
 
@@ -1285,23 +1347,47 @@ class OSManager:
             result_details="File read successfully.",
         )
 
-    def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
-        """Read file content and return FileContentResult with all file information."""
-        # Get file size
+    def _read_file_content(self, file_path: Path | UPath, request: ReadFileRequest) -> FileContentResult:
+        """Read file content from local Path or remote UPath.
+
+        Args:
+            file_path: Path or UPath instance (HTTPPath, S3Path, etc.)
+            request: ReadFileRequest with encoding and thumbnail options
+
+        Returns:
+            FileContentResult with content, MIME type, encoding, and metadata
+
+        Note:
+            UPath types (HTTPPath, S3Path) support .stat(), .open() methods like Path.
+        """
+        # Get file size (UPath supports .stat() just like Path)
         file_size = file_path.stat().st_size
 
         # Determine MIME type and compression encoding
-        normalized_path = self.normalize_path_for_platform(file_path)
+        # Handle Path vs UPath differently for normalize_path_for_platform()
+        if isinstance(file_path, Path):
+            normalized_path = self.normalize_path_for_platform(file_path)
+        else:
+            # Remote URL - use string representation
+            normalized_path = str(file_path)
+
         mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
         if mime_type is None:
             mime_type = "text/plain"
 
         # Determine if file is binary
-        try:
-            is_binary_file = is_binary(normalized_path)
-        except Exception as e:
-            msg = f"binaryornot detection failed for {file_path}: {e}"
-            logger.warning(msg)
+        if isinstance(file_path, Path):
+            # Local file - use binaryornot
+            try:
+                is_binary_file = is_binary(normalized_path)
+            except Exception as e:
+                msg = f"binaryornot detection failed for {file_path}: {e}"
+                logger.warning(msg)
+                is_binary_file = not mime_type.startswith(
+                    ("text/", "application/json", "application/xml", "application/yaml")
+                )
+        else:
+            # Remote URL - use MIME type only (binaryornot doesn't support remote files)
             is_binary_file = not mime_type.startswith(
                 ("text/", "application/json", "application/xml", "application/yaml")
             )
@@ -1324,7 +1410,7 @@ class OSManager:
             file_size=file_size,
         )
 
-    def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
+    def _read_text_file(self, file_path: Path | UPath, requested_encoding: str) -> tuple[bytes | str, str | None]:
         """Read file as text with fallback encodings."""
         try:
             with file_path.open(encoding=requested_encoding) as f:
@@ -1338,9 +1424,12 @@ class OSManager:
                     return f.read(), None
 
     def _read_binary_file(
-        self, file_path: Path, mime_type: str, *, should_transform_to_thumbnail: bool
+        self, file_path: Path | UPath, mime_type: str, *, should_transform_to_thumbnail: bool
     ) -> tuple[bytes | str, None]:
-        """Read file as binary, with optional thumbnail generation for images."""
+        """Read file as binary, with optional thumbnail generation for images.
+
+        Works with both local Path and remote UPath (HTTPPath, S3Path) instances.
+        """
         with file_path.open("rb") as f:
             content = f.read()
 
@@ -1349,43 +1438,49 @@ class OSManager:
 
         return content, None
 
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
-        """Handle image content by creating previews or returning static URLs."""
+    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | UPath, mime_type: str) -> str:
+        """Handle image content by creating previews or returning static URLs.
+
+        For remote URLs (UPath), always creates a preview since they're not in workspace.
+        """
         # Store original bytes for preview creation
         original_image_bytes = content
 
         # Check if file is already in the static files directory
-        config_manager = GriptapeNodes.ConfigManager()
-        static_dir = config_manager.workspace_path
+        # Skip this check for remote URLs
+        if isinstance(file_path, Path):
+            config_manager = GriptapeNodes.ConfigManager()
+            static_dir = config_manager.workspace_path
 
-        try:
-            # Check if file is within the static files directory
-            file_relative_to_static = file_path.relative_to(static_dir)
-            # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
-            msg = f"Image already in workspace directory, returning URL: {static_url}"
-            logger.debug(msg)
-        except ValueError:
-            # File is not in static directory, create small preview
-            from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+            try:
+                # Check if file is within the static files directory
+                file_relative_to_static = file_path.relative_to(static_dir)
+                # File is in static directory, construct URL directly
+                static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+                msg = f"Image already in workspace directory, returning URL: {static_url}"
+                logger.debug(msg)
+                return static_url  # noqa: TRY300
+            except ValueError:
+                pass  # Fall through to preview creation
 
-            preview_data_url = create_image_preview_from_bytes(
-                original_image_bytes,  # type: ignore[arg-type]
-                max_width=200,
-                max_height=200,
-                quality=85,
-                image_format="WEBP",
-            )
+        # File is not in static directory (or is a remote URL), create small preview
+        from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
 
-            if preview_data_url:
-                logger.debug("Image preview created (file not moved)")
-                return preview_data_url
-            # Fallback to data URL if preview creation fails
-            data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
-            logger.debug("Fallback to full image data URL")
-            return data_url
-        else:
-            return static_url
+        preview_data_url = create_image_preview_from_bytes(
+            original_image_bytes,  # type: ignore[arg-type]
+            max_width=200,
+            max_height=200,
+            quality=85,
+            image_format="WEBP",
+        )
+
+        if preview_data_url:
+            logger.debug("Image preview created (file not moved)")
+            return preview_data_url
+        # Fallback to data URL if preview creation fails
+        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        logger.debug("Fallback to full image data URL")
+        return data_url
 
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""

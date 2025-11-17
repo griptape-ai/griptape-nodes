@@ -12,7 +12,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import (
     SUPPORTED_VIDEO_EXTENSIONS,
-    download_video_to_temp_file,
+    detect_video_format,
     extract_url_from_video_object,
     is_downloadable_video_url,
     is_video_url_artifact,
@@ -228,31 +228,25 @@ class SaveVideo(SuccessFailureNode):
             was_successful=True, result_details=f"Downloading video from URL: {video_input.source_url}"
         )
 
-        # Download to temp file
-        download_result = await download_video_to_temp_file(video_input.source_url)
+        # Download directly to bytes using aread_file helper
+        video_bytes = await GriptapeNodes.FileManager().aread_file(video_input.source_url)
 
-        try:
-            # Update status to show download completed
-            file_size = download_result.temp_file_path.stat().st_size
-            size_mb = file_size / (1024 * 1024)
-            self._set_status_results(
-                was_successful=True,
-                result_details=f"Downloaded video ({size_mb:.1f}MB) to temporary file, processing...",
-            )
+        # Get file size from bytes
+        file_size = len(video_bytes)
+        size_mb = file_size / (1024 * 1024)
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Downloaded video ({size_mb:.1f}MB), processing...",
+        )
 
-            # Read video bytes from temp file
-            video_bytes = download_result.temp_file_path.read_bytes()
+        # Detect format from URL
+        detected_format = detect_video_format({"value": video_input.source_url})
 
-            return VideoInput(
-                data=video_bytes,
-                source_url=video_input.source_url,
-                format_hint=download_result.detected_format or video_input.format_hint,
-            )
-
-        finally:
-            # Always cleanup temp file
-            if download_result.temp_file_path.exists():
-                download_result.temp_file_path.unlink(missing_ok=True)
+        return VideoInput(
+            data=video_bytes,
+            source_url=video_input.source_url,
+            format_hint=detected_format or video_input.format_hint,
+        )
 
     def _save_video_bytes(self, video_bytes: bytes, format_hint: str | None) -> str:
         """Save bytes to appropriate location, return saved path."""
@@ -368,7 +362,7 @@ class SaveVideo(SuccessFailureNode):
                 raise RuntimeError(msg)
 
         # Save to static storage
-        return GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, output_file)
+        return GriptapeNodes.FileManager().write_file(video_bytes, output_file)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []

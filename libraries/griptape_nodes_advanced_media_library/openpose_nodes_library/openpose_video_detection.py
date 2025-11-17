@@ -11,7 +11,6 @@ import cv2  # type: ignore[reportMissingImports]
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
 import numpy as np
-import requests
 from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignore[reportMissingImports]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
@@ -23,7 +22,7 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file_parameter import (
-    HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
+    HuggingFaceRepoFileParameter,
 )
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -217,14 +216,14 @@ class OpenPoseVideoDetection(ControlNode):
         if isinstance(input_video_artifact, dict):
             input_video_artifact = dict_to_video_url_artifact(input_video_artifact)
 
-        # Download video from URL to temporary file
-        response = requests.get(input_video_artifact.value, timeout=30)
+        # Download video from URL or file:// URI to temporary file
+        video_bytes = GriptapeNodes.FileManager().read_file(input_video_artifact.value)
         # Use mkstemp for safe temporary file creation
         fd, temp_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd)  # Close the file descriptor immediately
         try:
             with Path(temp_path).open("wb") as f:
-                f.write(response.content)
+                f.write(video_bytes)
         except Exception:
             # Clean up on failure
             Path(temp_path).unlink(missing_ok=True)
@@ -237,7 +236,7 @@ class OpenPoseVideoDetection(ControlNode):
 
     def publish_output_video(self, video_path: Path) -> None:
         filename = f"{uuid.uuid4()}{video_path.suffix}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), filename)
         self.parameter_output_values["output_video"] = VideoUrlArtifact(url)
 
     def get_openpose_model(self) -> tuple[Body | Hand, str]:

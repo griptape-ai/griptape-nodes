@@ -31,6 +31,6 @@ def dict_to_audio_url_artifact(audio_dict: dict, audio_format: str | None = None
 
     # Save to static file server
     filename = f"{uuid.uuid4()}.{audio_format}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)
+    url = GriptapeNodes.FileManager().write_file(audio_bytes, filename)
 
     return AudioUrlArtifact(url)
