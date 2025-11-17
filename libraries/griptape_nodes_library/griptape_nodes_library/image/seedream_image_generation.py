@@ -400,7 +400,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self._log_request(payload)
 
         try:
-            response = requests.post(proxy_url, json=payload, headers=headers, timeout=120)
+            response = requests.post(proxy_url, json=payload, headers=headers, timeout=1200)
             response.raise_for_status()
             response_json = response.json()
             self._log("Request submitted successfully")
@@ -697,7 +697,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
     @staticmethod
     def _download_bytes_from_url(url: str) -> bytes | None:
         try:
-            resp = requests.get(url, timeout=120)
+            resp = requests.get(url, timeout=300)
             resp.raise_for_status()
         except Exception:
             return None
