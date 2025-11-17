@@ -5,10 +5,10 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+
+from griptape_nodes.utils import is_url, stream_download_to_file, validate_uri
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -139,17 +139,17 @@ def is_downloadable_video_url(obj: Any) -> bool:
         obj: Object to check (string, VideoUrlArtifact, etc.)
 
     Returns:
-        True if object contains an http/https URL that needs downloading
+        True if object contains an http/https/file URI that needs downloading
     """
-    # Direct URL string
-    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+    # Direct URL/URI string
+    if isinstance(obj, str) and is_url(obj):
         return True
 
     # Any VideoUrlArtifact-like object with downloadable URL
     if is_video_url_artifact(obj) and hasattr(obj, "value"):
         value = obj.value  # type: ignore[attr-defined]
         if isinstance(value, str):
-            return value.startswith(("http://", "https://"))
+            return is_url(value)
 
     return False
 
@@ -175,12 +175,11 @@ def extract_url_from_video_object(obj: Any) -> str | None:
 
 
 def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for ffmpeg processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
+    """Validate that the URL/URI is safe for processing.
+
+    Supports http://, https://, and file:// URIs.
+    """
+    return validate_uri(url)
 
 
 def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
@@ -253,10 +252,12 @@ class VideoDownloadResult:
 
 
 async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
-    """Download video from URL to temporary file using async httpx streaming.
+    """Download video from URL/URI to temporary file.
+
+    Supports http://, https://, and file:// URIs.
 
     Args:
-        url: The video URL to download
+        url: The video URL/URI to download
 
     Returns:
         VideoDownloadResult with path to temp file and detected format
@@ -264,7 +265,7 @@ async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
     Raises:
         ValueError: If URL is invalid or download fails
     """
-    # Validate URL first using existing function
+    # Validate URL/URI first
     if not validate_url(url):
         error_details = f"Invalid or unsafe URL: {url}"
         raise ValueError(error_details)
@@ -274,13 +275,8 @@ async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
         temp_path = Path(temp_file.name)
 
     try:
-        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            # Use sync file operations for writing chunks - this is appropriate for streaming
-            with temp_path.open("wb") as f:  # noqa: ASYNC230
-                async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                    f.write(chunk)
+        # Use centralized stream download function
+        await stream_download_to_file(url, temp_path, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
 
         # Detect format from URL or use default
         detected_format = detect_video_format({"value": url})

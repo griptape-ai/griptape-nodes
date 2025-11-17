@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.utils.video_utils import validate_url
+from griptape_nodes.utils import get_content_type_from_extension, is_url, load_content_from_uri, validate_uri
 
 
 def default_extract_url_from_artifact_value(
@@ -127,11 +127,11 @@ class ArtifactPathValidator(Trait):
 
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
-            # Check if it's a URL
-            if path_str.startswith(("http://", "https://")):
-                valid = validate_url(path_str)
+            # Check if it's a URL/URI (http://, https://, file://)
+            if is_url(path_str):
+                valid = validate_uri(path_str)
                 if not valid:
-                    error_msg = f"Invalid URL: '{path_str}'"
+                    error_msg = f"Invalid URL/URI: '{path_str}'"
                     raise ValueError(error_msg)
             else:
                 self._validate_file_path(path_str)
@@ -513,8 +513,11 @@ class ArtifactPathTethering:
         return value
 
     def _is_url(self, path: str) -> bool:
-        """Check if the path is a URL."""
-        return path.startswith(("http://", "https://"))
+        """Check if the path is a URL/URI.
+
+        Supports http://, https://, and file:// URIs.
+        """
+        return is_url(path)
 
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""
@@ -671,20 +674,41 @@ class ArtifactPathTethering:
         unique_id = str(uuid.uuid4())[:8]
         return f"{domain}_{unique_id}.{self.config.default_extension}"
 
-    def _download_and_upload_url(self, url: str) -> str:
-        """Download artifact from URL and upload to static storage, return download URL."""
+    def _download_and_upload_url(self, url: str) -> str:  # noqa: C901, PLR0912, PLR0915
+        """Download artifact from URL/URI and upload to static storage, return download URL.
+
+        Supports http://, https://, and file:// URIs.
+        """
+        # Load content from URI using centralized loader
         try:
-            response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
-            response.raise_for_status()
+            content = load_content_from_uri(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
         except Exception as e:
-            error_msg = f"Failed to download artifact from URL '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
+            error_msg = f"Failed to load artifact from URI '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e
 
         # Validate content type
-        content_type = response.headers.get("content-type", "")
+        parsed = urlparse(url)
+        if parsed.scheme == "file":
+            # For file:// URIs, validate content type by file extension
+            file_path = Path(unquote(parsed.path))
+            content_type = get_content_type_from_extension(file_path)
+            if content_type is None:
+                error_msg = f"Unable to determine content type from file extension for '{url}'"
+                raise ValueError(error_msg)
+        else:
+            # For http/https URLs, get content type from HTTP response
+            try:
+                response = httpx.head(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";")[0].strip()
+            except Exception as e:
+                error_msg = f"Failed to get content type from URL '{url}': {e}"
+                raise ValueError(error_msg) from e
+
+        # Validate content type matches expected prefix
         if not content_type.startswith(self.config.url_content_type_prefix):
             artifact_type = self.config.url_content_type_prefix.rstrip("/")
-            error_msg = f"URL '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
+            error_msg = f"URI '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
             raise ValueError(error_msg)
 
         # Generate filename from URL
@@ -712,18 +736,18 @@ class ArtifactPathTethering:
             error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{filename}')"
             raise TypeError(error_msg)
 
-        # Upload the downloaded artifact data
+        # Upload the loaded artifact data
         try:
             upload_response = httpx.request(
                 upload_result.method,
                 upload_result.url,
-                content=response.content,
+                content=content,
                 headers=upload_result.headers,
             )
             upload_response.raise_for_status()
         except Exception as e:
-            content_size = len(response.content)
-            error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
+            content_size = len(content)
+            error_msg = f"Failed to upload loaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Get download URL
