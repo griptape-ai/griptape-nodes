@@ -32,17 +32,18 @@ Use this node when you need to:
    - Add a "YOLOv8 Face Detection" node to your workflow
    - The node will automatically download the model on first use (requires Hugging Face access)
 
-2. **Connect Input**:
+1. **Connect Input**:
 
    - Connect an `ImageArtifact` or `ImageUrlArtifact` to the `input_image` parameter
    - This can come from file loaders, image generation nodes, or other image processing nodes
 
-3. **Configure Parameters**:
+1. **Configure Parameters**:
 
    - Set the `confidence_threshold` (0.0-1.0) to filter detections
    - Optionally set `dilation` (0-100%) to expand the detected bounding boxes
 
-4. **Run Detection**:
+1. **Run Detection**:
+
    - Execute the node to detect faces in the input image
    - The `detected_faces` output will contain a list of face detections
 
@@ -84,6 +85,7 @@ Use this node when you need to:
     - `confidence`: Detection confidence score (0.0-1.0)
 
 - **logs**
+
   - Type: `string`
   - Detailed logs of the detection process including:
     - Model loading status
@@ -111,22 +113,22 @@ The bounding box coordinates are in pixels relative to the input image dimension
 #### Basic Face Detection
 
 1. Load an image using "File to Bytes" or similar node
-2. Connect to YOLOv8 Face Detection's `input_image`
-3. Set `confidence_threshold` to `0.5` for balanced detection
-4. The `detected_faces` output contains all face locations and confidence scores
+1. Connect to YOLOv8 Face Detection's `input_image`
+1. Set `confidence_threshold` to `0.5` for balanced detection
+1. The `detected_faces` output contains all face locations and confidence scores
 
 #### Face Cropping Pipeline
 
 1. Detect faces using YOLOv8 Face Detection
-2. Set `dilation` to `10.0` to include some background around faces
-3. Connect `detected_faces` to a "Crop Image" node
-4. Extract individual face images for further processing
+1. Set `dilation` to `10.0` to include some background around faces
+1. Connect `detected_faces` to a "Crop Image" node
+1. Extract individual face images for further processing
 
 #### High-Confidence Detection Only
 
 1. Set `confidence_threshold` to `0.8` or higher
-2. This filters out uncertain detections
-3. Ideal for applications requiring high precision
+1. This filters out uncertain detections
+1. Ideal for applications requiring high precision
 
 ### Advanced Features
 
