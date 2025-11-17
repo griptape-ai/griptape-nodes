@@ -28,66 +28,67 @@ Use this node when you need to:
 ### Basic Setup
 
 1. **Add the Node**:
-    - Add a "YOLOv8 Face Detection" node to your workflow
-    - The node will automatically download the model on first use (requires Hugging Face access)
+
+   - Add a "YOLOv8 Face Detection" node to your workflow
+   - The node will automatically download the model on first use (requires Hugging Face access)
 
 2. **Connect Input**:
-    - Connect an `ImageArtifact` or `ImageUrlArtifact` to the `input_image` parameter
-    - This can come from file loaders, image generation nodes, or other image processing nodes
+
+   - Connect an `ImageArtifact` or `ImageUrlArtifact` to the `input_image` parameter
+   - This can come from file loaders, image generation nodes, or other image processing nodes
 
 3. **Configure Parameters**:
-    - Set the `confidence_threshold` (0.0-1.0) to filter detections
-    - Optionally set `dilation` (0-100%) to expand the detected bounding boxes
+
+   - Set the `confidence_threshold` (0.0-1.0) to filter detections
+   - Optionally set `dilation` (0-100%) to expand the detected bounding boxes
 
 4. **Run Detection**:
-    - Execute the node to detect faces in the input image
-    - The `detected_faces` output will contain a list of face detections
+   - Execute the node to detect faces in the input image
+   - The `detected_faces` output will contain a list of face detections
 
 ### Parameters
 
 #### Input Parameters
 
 - **input_image** (required)
-    - Type: `ImageArtifact` or `ImageUrlArtifact`
-    - The image to analyze for face detection
+
+  - Type: `ImageArtifact` or `ImageUrlArtifact`
+  - The image to analyze for face detection
 
 - **confidence_threshold**
-    - Type: `float` (0.0-1.0)
-    - Default: `0.5`
-    - Minimum confidence score for a detection to be included in the results
-    - Higher values = fewer but more confident detections
-    - Lower values = more detections but may include false positives
+
+  - Type: `float` (0.0-1.0)
+  - Default: `0.5`
+  - Minimum confidence score for a detection to be included in the results
+  - Higher values = fewer but more confident detections
+  - Lower values = more detections but may include false positives
 
 - **dilation**
-    - Type: `float` (0.0-100.0)
-    - Default: `0.0`
-    - Percentage to expand bounding boxes while keeping them centered
-    - Useful for including more context around detected faces
-    - Example: `10.0` expands the box by 10% in all directions
 
-- **hugging_face_repo**
-    - Type: `string`
-    - Default: `arnabdhar/YOLOv8-Face-Detection`
-    - The Hugging Face repository containing the YOLOv8 face detection model
-    - Can be changed to use different versions or custom models
+  - Type: `float` (0.0-100.0)
+  - Default: `0.0`
+  - Percentage to expand bounding boxes while keeping them centered
+  - Useful for including more context around detected faces
+  - Example: `10.0` expands the box by 10% in all directions
 
 #### Output Parameters
 
 - **detected_faces**
-    - Type: `list`
-    - A list of detected faces, each containing:
-        - `x`: Top-left x-coordinate of the bounding box
-        - `y`: Top-left y-coordinate of the bounding box
-        - `width`: Width of the bounding box
-        - `height`: Height of the bounding box
-        - `confidence`: Detection confidence score (0.0-1.0)
+
+  - Type: `list`
+  - A list of detected faces, each containing:
+    - `x`: Top-left x-coordinate of the bounding box
+    - `y`: Top-left y-coordinate of the bounding box
+    - `width`: Width of the bounding box
+    - `height`: Height of the bounding box
+    - `confidence`: Detection confidence score (0.0-1.0)
 
 - **logs**
-    - Type: `string`
-    - Detailed logs of the detection process including:
-        - Model loading status
-        - Detection parameters
-        - Number of faces detected
+  - Type: `string`
+  - Detailed logs of the detection process including:
+    - Model loading status
+    - Detection parameters
+    - Number of faces detected
 
 ### Output Format
 
@@ -144,7 +145,7 @@ The bounding box coordinates are in pixels relative to the input image dimension
 
 ## Common Issues
 
-- **Missing API Key**: Ensure the Hugging Face API token is set as `HUGGINGFACE_HUB_ACCESS_TOKEN`; instructions for that are in [this guide](../../how_to/installs/hugging_face.md)
+- **Missing API Key**: Ensure the Hugging Face API token is set as `HF_TOKEN`; instructions for that are in [this guide](../../how_to/installs/hugging_face.md)
 - **Model Not Found**: If you see "model not available" warnings, click the provided link to open the Model Manager and download the model
 - **No Faces Detected**: Try lowering the `confidence_threshold` if you expect faces but none are detected
 - **Too Many False Positives**: Increase the `confidence_threshold` to filter out low-confidence detections
@@ -157,4 +158,3 @@ The bounding box coordinates are in pixels relative to the input image dimension
 - **Dependencies**: `ultralytics>=8.0.0`, `supervision>=0.20.0`
 - **Output Format**: Standard bounding box format (x, y, width, height) with confidence scores
 - **Processing**: Single-pass detection, optimized for speed and accuracy
-
