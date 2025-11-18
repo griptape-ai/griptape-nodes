@@ -22,6 +22,10 @@ Version 0.64.0 removes deprecated nodes that were previously marked for removal.
 | Gaussian Blur | `Gaussian Blur Image` from Griptape Nodes Library<br/>Location: `Image/Effects/Gaussian Blur Image`<br/>[See details ↓](#for-image-processing-nodes) |
 | Rescale Image | `Rescale Image` from Griptape Nodes Library<br/>Location: `Image/Edit/Rescale Image`<br/>[See details ↓](#for-image-processing-nodes)                |
 
+#### Example Replacement Nodes
+
+![Grayscale Image node](https://github.com/user-attachments/assets/e3799cb9-bb79-485a-8446-aca639b66aa7) ![Gaussian Blur Image node](https://github.com/user-attachments/assets/8a602390-bfd5-4452-873f-0f8e94cc292e) ![Rescale Image node](https://github.com/user-attachments/assets/925cb3e5-cda5-44b0-9132-99e74e98dda2)
+
 ### Diffusion Pipeline Nodes
 
 All diffusion pipeline nodes have been replaced with the **Diffusion Pipeline Builder** system, which provides a more flexible and composable approach to working with diffusion models.
@@ -123,18 +127,28 @@ Replace deprecated nodes with these specific nodes from the main Griptape Nodes 
 
     - Location: `Image/Edit/Grayscale Image`
     - Same functionality: converts color images to grayscale
+    - Additional features: The new node provides more control over output format, allowing you to choose PNG, JPEG, or WEBP, and adjust quality levels
 
 1. **Gaussian Blur** → Replace with **`Gaussian Blur Image`**
 
     - Location: `Image/Effects/Gaussian Blur Image`
     - Same functionality: applies gaussian blur with configurable radius
+    - Additional features: The new node provides more control over output format, allowing you to choose PNG, JPEG, or WEBP, and adjust quality levels
 
 1. **Rescale Image** → Replace with **`Rescale Image`**
 
     - Location: `Image/Edit/Rescale Image`
-    - Same functionality: resizes images with various interpolation methods
+    - **Important:** The new Rescale Image node has changed significantly from the deprecated version
+    - The old node used an `nx` scaling basis (scale by 2, 3, 4, etc.)
+    - The new node offers multiple resize modes:
+        - **percentage** - scales via a percentage basis (e.g., to achieve the old 2x scaling, use 200%)
+        - **specific** - resize to exact dimensions in pixels
+        - **fit** - scales to fit within specified dimensions while maintaining aspect ratio
+        - **cover** - scales to cover specified dimensions while maintaining aspect ratio
+        - **fill** - scales to exact dimensions without maintaining aspect ratio
+    - Additional features: More control over output format (PNG, JPEG, or WEBP) and quality levels
 
-The replacement nodes have equivalent functionality and similar parameters.
+The Grayscale Image and Gaussian Blur Image replacement nodes have equivalent functionality to their deprecated counterparts, with additional output format controls.
 
 ### For Diffusion Pipeline Nodes
 
