@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import load_content_from_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -402,21 +403,46 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        if not isinstance(url, str):
             return url
 
-        try:
-            rff = requests.get(url, timeout=20)
-            rff.raise_for_status()
-            ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
-            if not ct.startswith("image/"):
+        # Handle file:// URIs - convert to data URI
+        if url.startswith("file://"):
+            try:
+                # Use load_content_from_uri which handles file://, http://, and https:// URIs
+                image_content = load_content_from_uri(url, timeout=20.0)
+                # Try to detect content type from file extension or default to jpeg
                 ct = "image/jpeg"
-            b64 = base64.b64encode(rff.content).decode("utf-8")
-            self._log("Frame URL converted to data URI for proxy")
-            return f"data:{ct};base64,{b64}"  # noqa: TRY300
-        except Exception as e:
-            self._log(f"Warning: failed to inline frame URL: {e}")
-            return url
+                if url.lower().endswith(".png"):
+                    ct = "image/png"
+                elif url.lower().endswith(".webp"):
+                    ct = "image/webp"
+                elif url.lower().endswith(".gif"):
+                    ct = "image/gif"
+                b64 = base64.b64encode(image_content).decode("utf-8")
+                self._log("Frame file:// URI converted to data URI for proxy")
+                return f"data:{ct};base64,{b64}"  # noqa: TRY300
+            except Exception as e:
+                self._log(f"Warning: failed to inline frame file:// URI: {e}")
+                return url
+
+        # Handle http:// and https:// URLs
+        if url.startswith(("http://", "https://")):
+            try:
+                rff = requests.get(url, timeout=20)
+                rff.raise_for_status()
+                ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
+                if not ct.startswith("image/"):
+                    ct = "image/jpeg"
+                b64 = base64.b64encode(rff.content).decode("utf-8")
+                self._log("Frame URL converted to data URI for proxy")
+                return f"data:{ct};base64,{b64}"  # noqa: TRY300
+            except Exception as e:
+                self._log(f"Warning: failed to inline frame URL: {e}")
+                return url
+
+        # Already a data URI or other format, return as-is
+        return url
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         def _sanitize_body(b: dict[str, Any]) -> dict[str, Any]:
@@ -701,13 +727,17 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             v = val.strip()
             if not v:
                 return None
-            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
+            # Return as-is if it's already a URL (http://, https://, file://) or data URI
+            if v.startswith(("http://", "https://", "file://", "data:image/")):
+                return v
+            # Otherwise treat as base64 and wrap in data URI
+            return f"data:image/png;base64,{v}"
 
         # Artifact-like objects
         try:
             # ImageUrlArtifact: .value holds URL string
             v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
+            if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
                 return v
             # ImageArtifact: .base64 holds raw or data-URI
             b64 = getattr(val, "base64", None)
