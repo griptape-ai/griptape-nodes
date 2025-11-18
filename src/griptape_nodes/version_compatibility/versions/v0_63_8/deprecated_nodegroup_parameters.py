@@ -19,7 +19,6 @@ from griptape_nodes.retained_mode.managers.version_compatibility_manager import 
 )
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -41,19 +40,19 @@ class DeprecatedNodeGroupParametersCheck(SetParameterVersionCompatibilityCheck):
         super().__init__()
         self._warned_workflows: set[str] = set()
 
-    def applies_to_set_parameter(self, node: BaseNode, parameter: Parameter, _value: Any) -> bool:
+    def applies_to_set_parameter(self, node: BaseNode, parameter_name: str, _value: Any) -> bool:
         """Return True if this is a deprecated parameter on a non-NodeGroup node.
 
         Args:
             node: The node instance
-            parameter: The parameter being set
+            parameter_name: Name of the parameter being set
             _value: The value being set (unused)
 
         Returns:
             True if this check should handle this parameter
         """
         # Check parameter name first (fastest check)
-        if parameter.name not in self.DEPRECATED_PARAMETERS:
+        if parameter_name not in self.DEPRECATED_PARAMETERS:
             return False
 
         # Check if node is NOT a NodeGroup (we only block for non-NodeGroup nodes)
@@ -70,12 +69,12 @@ class DeprecatedNodeGroupParametersCheck(SetParameterVersionCompatibilityCheck):
         )
         return current_version >= self.REMOVAL_VERSION
 
-    def set_parameter_value(self, node: BaseNode, parameter: Parameter, _value: Any) -> SetParameterValueResultSuccess:
+    def set_parameter_value(self, node: BaseNode, parameter_name: str, _value: Any) -> SetParameterValueResultSuccess:
         """Handle the deprecated parameter by logging a warning and returning success with empty value.
 
         Args:
             node: The node instance
-            parameter: The parameter being set
+            parameter_name: Name of the parameter being set
             _value: The value being set (unused)
 
         Returns:
@@ -91,15 +90,15 @@ class DeprecatedNodeGroupParametersCheck(SetParameterVersionCompatibilityCheck):
                 "%s: Parameter '%s' was removed in engine version %s. "
                 "This workflow uses deprecated parameters. Please resave your workflow to remove this warning.",
                 node.name,
-                parameter.name,
+                parameter_name,
                 self.REMOVAL_VERSION,
             )
             # Mark this workflow as warned
             self._warned_workflows.add(workflow_name)
 
-        # Return success with empty list as the value
+        # Return success with None as the value (parameter doesn't exist, so no meaningful value to return)
         return SetParameterValueResultSuccess(
-            finalized_value=[],
-            data_type=parameter.type,
-            result_details=f"Parameter '{parameter.name}' was removed in v{self.REMOVAL_VERSION}. Please resave this workflow.",
+            finalized_value=None,
+            data_type="any",
+            result_details=f"Parameter '{parameter_name}' was removed in v{self.REMOVAL_VERSION}. Please resave this workflow.",
         )

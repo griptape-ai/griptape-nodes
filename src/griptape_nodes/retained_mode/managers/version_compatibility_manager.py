@@ -35,7 +35,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
-    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
@@ -93,12 +92,12 @@ class SetParameterVersionCompatibilityCheck(ABC):
     """Abstract base class for runtime parameter set version compatibility checks."""
 
     @abstractmethod
-    def applies_to_set_parameter(self, node: BaseNode, parameter: Parameter, value: Any) -> bool:
+    def applies_to_set_parameter(self, node: BaseNode, parameter_name: str, value: Any) -> bool:
         """Return True if this check applies to the given parameter set operation.
 
         Args:
             node: The node instance
-            parameter: The parameter being set
+            parameter_name: Name of the parameter being set
             value: The value being set
 
         Returns:
@@ -107,13 +106,13 @@ class SetParameterVersionCompatibilityCheck(ABC):
 
     @abstractmethod
     def set_parameter_value(
-        self, node: BaseNode, parameter: Parameter, value: Any
+        self, node: BaseNode, parameter_name: str, value: Any
     ) -> SetParameterValueResultSuccess | SetParameterValueResultFailure:
         """Handle setting the parameter value with version compatibility logic.
 
         Args:
             node: The node instance
-            parameter: The parameter being set
+            parameter_name: Name of the parameter being set
             value: The value being set
 
         Returns:
@@ -356,13 +355,13 @@ class VersionCompatibilityManager:
         return issues
 
     def check_set_parameter_version_compatibility(
-        self, node: BaseNode, parameter: Parameter, value: Any
+        self, node: BaseNode, parameter_name: str, value: Any
     ) -> SetParameterValueResultSuccess | SetParameterValueResultFailure | None:
         """Check if a parameter set operation requires version compatibility handling.
 
         Args:
             node: The node instance
-            parameter: The parameter being set
+            parameter_name: Name of the parameter being set
             value: The value being set
 
         Returns:
@@ -370,9 +369,9 @@ class VersionCompatibilityManager:
         """
         # Iterate through registered checks and find the first one that applies
         for check_instance in self._set_parameter_compatibility_checks:
-            if check_instance.applies_to_set_parameter(node, parameter, value):
+            if check_instance.applies_to_set_parameter(node, parameter_name, value):
                 # First matching check handles the parameter
-                return check_instance.set_parameter_value(node, parameter, value)
+                return check_instance.set_parameter_value(node, parameter_name, value)
 
         # No checks applied
         return None
