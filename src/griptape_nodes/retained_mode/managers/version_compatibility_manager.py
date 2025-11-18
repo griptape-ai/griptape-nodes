@@ -179,18 +179,15 @@ class VersionCompatibilityManager:
                 continue
 
             # Register based on which base class it inherits from
-            if issubclass(attr, LibraryVersionCompatibilityCheck) and attr is not LibraryVersionCompatibilityCheck:
+            if issubclass(attr, LibraryVersionCompatibilityCheck):
                 check_instance = attr()
                 self._compatibility_checks.append(check_instance)
                 logger.debug("Registered library version compatibility check: %s", attr_name)
-            elif issubclass(attr, WorkflowVersionCompatibilityCheck) and attr is not WorkflowVersionCompatibilityCheck:
+            elif issubclass(attr, WorkflowVersionCompatibilityCheck):
                 check_instance = attr()
                 self._workflow_compatibility_checks.append(check_instance)
                 logger.debug("Registered workflow version compatibility check: %s", attr_name)
-            elif (
-                issubclass(attr, SetParameterVersionCompatibilityCheck)
-                and attr is not SetParameterVersionCompatibilityCheck
-            ):
+            elif issubclass(attr, SetParameterVersionCompatibilityCheck):
                 check_instance = attr()
                 self._set_parameter_compatibility_checks.append(check_instance)
                 logger.debug("Registered set parameter version compatibility check: %s", attr_name)
