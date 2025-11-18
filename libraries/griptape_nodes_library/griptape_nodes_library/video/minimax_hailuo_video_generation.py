@@ -53,24 +53,24 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     MODEL_CAPABILITIES: ClassVar[dict[str, Any]] = {
         "MiniMax-Hailuo-2.3": {
             "durations": [6, 10],
-            "resolutions": {"6": ["768P", "1080P"], "10": ["768P"]},
-            "default_resolution": {"6": "768P", "10": "768P"},
+            "resolutions": {"6": ["768p", "1080p"], "10": ["768p"]},
+            "default_resolution": {"6": "768p", "10": "768p"},
             "supports_first_frame": True,
             "supports_last_frame": False,
             "supports_fast_pretreatment": True,
         },
         "MiniMax-Hailuo-02": {
             "durations": [6, 10],
-            "resolutions": {"6": ["768P", "1080P"], "10": ["768P"]},
-            "default_resolution": {"6": "768P", "10": "768P"},
+            "resolutions": {"6": ["768p", "1080p"], "10": ["768p"]},
+            "default_resolution": {"6": "768p", "10": "768p"},
             "supports_first_frame": True,
             "supports_last_frame": True,
             "supports_fast_pretreatment": True,
         },
         "MiniMax-Hailuo-2.3-Fast": {
             "durations": [6],
-            "resolutions": {"6": ["720P", "1080P"]},
-            "default_resolution": {"6": "720P"},
+            "resolutions": {"6": ["720p", "1080p"]},
+            "default_resolution": {"6": "720p"},
             "supports_first_frame": True,
             "supports_last_frame": False,
             "supports_fast_pretreatment": False,
@@ -79,8 +79,6 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.category = "API Nodes"
-        self.description = "Generate video via MiniMax Hailuo through Griptape Cloud model proxy"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
@@ -147,10 +145,10 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 name="resolution",
                 input_types=["str"],
                 type="str",
-                default_value="768P",
+                default_value="768p",
                 tooltip="Output resolution (options depend on model and duration)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["720P", "768P", "1080P"])},
+                traits={Options(choices=["720p", "768p", "1080p"])},
             )
         )
 
@@ -341,7 +339,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": model_id,
             "duration": self.get_parameter_value("duration"),
-            "resolution": self.get_parameter_value("resolution") or "768P",
+            "resolution": self.get_parameter_value("resolution") or "768p",
             "prompt_optimizer": self.get_parameter_value("prompt_optimizer"),
             "fast_pretreatment": self.get_parameter_value("fast_pretreatment"),
             "first_frame_image": self.get_parameter_value("first_frame_image"),
@@ -418,9 +416,9 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         if params["duration"] is not None:
             payload["duration"] = int(params["duration"])
 
-        # Add resolution
+        # Add resolution (uppercase for API)
         if params["resolution"]:
-            payload["resolution"] = params["resolution"]
+            payload["resolution"] = params["resolution"].upper()
 
         # Always send prompt_optimizer (defaults to False)
         payload["prompt_optimizer"] = bool(params["prompt_optimizer"])
