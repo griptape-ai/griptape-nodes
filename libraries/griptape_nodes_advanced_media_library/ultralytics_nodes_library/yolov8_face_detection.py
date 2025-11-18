@@ -58,9 +58,7 @@ class YOLOv8FaceDetection(ControlNode):
     @property
     def state(self) -> NodeResolutionState:
         """Overrides BaseNode.state @property to compute state based on model's existence in model_cache, ensuring model rebuild if missing."""
-        if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(
-            self.params.get_cache_key()
-        ):
+        if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(self.params.get_cache_key()):
             logger.debug("Model not found in cache, marking node as UNRESOLVED")
             return NodeResolutionState.UNRESOLVED
         return super().state
