@@ -85,16 +85,18 @@ class DeprecatedNodeGroupParametersCheck(SetParameterVersionCompatibilityCheck):
 
         # Check if we've already warned for this workflow
         if workflow_name not in self._warned_workflows:
-            # Log warning
-            logger.warning(
-                "%s: Parameter '%s' was removed in engine version %s. "
-                "This workflow uses deprecated parameters. Please resave your workflow to remove this warning.",
-                node.name,
-                parameter_name,
-                self.REMOVAL_VERSION,
-            )
             # Mark this workflow as warned
             self._warned_workflows.add(workflow_name)
+
+            # Log warning with all deprecated parameters
+            deprecated_params_list = ", ".join(sorted(self.DEPRECATED_PARAMETERS))
+            logger.warning(
+                "%s: This workflow uses deprecated parameters (%s) that were removed in engine version %s. "
+                "Please resave your workflow and this warning will go away.",
+                node.name,
+                deprecated_params_list,
+                self.REMOVAL_VERSION,
+            )
 
         # Return success with None as the value (parameter doesn't exist, so no meaningful value to return)
         return SetParameterValueResultSuccess(
