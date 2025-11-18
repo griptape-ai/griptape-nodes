@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes.utils.url_utils import load_content_from_uri
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact
 
 logger = logging.getLogger(__name__)
@@ -118,10 +119,14 @@ class ExtractKeyColors(DataNode):
             if isinstance(image_artifact, dict):
                 # Convert dict to ImageUrlArtifact first
                 image_url_artifact = dict_to_image_url_artifact(image_artifact)
-                return image_url_artifact.to_bytes()
-            # Handle artifact objects directly
-            if isinstance(image_artifact, (ImageArtifact, ImageUrlArtifact)):
-                return image_artifact.to_bytes()
+                # Use load_content_from_uri which handles file://, http://, and https:// URIs
+                return load_content_from_uri(image_url_artifact.value)
+            # Handle ImageUrlArtifact - use load_content_from_uri for file:// support
+            if isinstance(image_artifact, ImageUrlArtifact):
+                return load_content_from_uri(image_artifact.value)
+            # Handle ImageArtifact - value is already bytes
+            if isinstance(image_artifact, ImageArtifact):
+                return image_artifact.value
             # Try to convert to bytes if it's a different artifact type
             return image_artifact.to_bytes()
 
