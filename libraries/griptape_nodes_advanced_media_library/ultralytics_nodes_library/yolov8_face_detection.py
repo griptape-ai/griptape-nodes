@@ -1,14 +1,16 @@
 import io
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import PIL.Image
+from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from griptape.artifacts import ImageUrlArtifact
 from supervision import Detections  # type: ignore[import-untyped]
 from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from ultralytics_nodes_library.yolov8_face_detection_parameters import (
     YOLOv8FaceDetectionParameters,
 )
@@ -52,6 +54,20 @@ class YOLOv8FaceDetection(ControlNode):
         )
 
         self.params.add_logs_output_parameter()
+
+    @property
+    def state(self) -> NodeResolutionState:
+        """Overrides BaseNode.state @property to compute state based on model's existence in model_cache, ensuring model rebuild if missing."""
+        if self._state == NodeResolutionState.RESOLVED and not model_cache.has_pipeline(
+            self.params.get_cache_key()
+        ):
+            logger.debug("Model not found in cache, marking node as UNRESOLVED")
+            return NodeResolutionState.UNRESOLVED
+        return super().state
+
+    @state.setter
+    def state(self, new_state: NodeResolutionState) -> None:
+        self._state = new_state
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = self.params.validate_before_node_run()
@@ -101,9 +117,19 @@ class YOLOv8FaceDetection(ControlNode):
         return BoundingBox(x=new_x, y=new_y, width=new_width, height=new_height)
 
     def process(self) -> AsyncResult | None:
-        yield lambda: self._process()
+        self.append_value_to_parameter("logs", "Loading YOLOv8 face detection model...\n")
 
-    def _process(self) -> AsyncResult | None:
+        cache_key = self.params.get_cache_key()
+        builder = self.params.get_model_builder()
+
+        with self.params.append_stdout_to_logs():
+            model = yield lambda: model_cache.get_or_build_pipeline(cache_key, builder)
+
+        self.append_value_to_parameter("logs", "Model loading complete.\n")
+
+        yield lambda: self._process(model)
+
+    def _process(self, model: Any) -> AsyncResult | None:
         input_image_artifact = self.get_parameter_value("input_image")
 
         # Convert ImageUrlArtifact to ImageArtifact if needed
@@ -113,10 +139,6 @@ class YOLOv8FaceDetection(ControlNode):
         # Use BytesIO pattern to load PIL image
         input_image_pil = PIL.Image.open(io.BytesIO(input_image_artifact.value))
         input_image_pil = input_image_pil.convert("RGB")
-
-        self.append_value_to_parameter("logs", "Loading YOLOv8 face detection model...\n")
-        with self.params.append_stdout_to_logs():
-            model = self.params.load_model()
 
         # Get parameters
         confidence_threshold = float(self.get_parameter_value("confidence_threshold") or 0.5)

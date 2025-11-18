@@ -1,9 +1,8 @@
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import huggingface_hub
-from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[import-untyped]
 from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[import-untyped]
 from ultralytics import YOLO  # type: ignore[import-untyped]
 
@@ -68,35 +67,31 @@ class YOLOv8FaceDetectionParameters:
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
 
-    def load_model(self) -> YOLO:
+    def get_cache_key(self) -> str:
+        """Generate cache key for the current model configuration."""
+        repo_id, revision = self.get_repo_revision()
+        return f"yolov8_face_{repo_id}_{revision}"
+
+    def get_model_builder(self) -> Callable[[], YOLO]:
+        """Return a builder function that loads the YOLO model."""
         repo_id, revision = self.get_repo_revision()
 
-        # Create a cache key for this specific model
-        cache_key = f"yolov8_face_{repo_id}_{revision}"
+        def builder() -> YOLO:
+            # Download the model.pt file from HuggingFace
+            model_path = huggingface_hub.hf_hub_download(
+                repo_id=repo_id,
+                revision=revision,
+                filename="model.pt",
+                local_files_only=True,
+            )
 
-        # Try to get from cache first
-        cached_model = model_cache.get_pipeline(cache_key)
-        if cached_model is not None:
-            logger.info("Using cached YOLOv8 model: %s", cache_key)
-            return cached_model
+            # Load YOLO model
+            logger.info("Loading YOLOv8 model from: %s", model_path)
+            model = YOLO(model_path)
 
-        # Download the model.pt file from HuggingFace
-        model_path = huggingface_hub.hf_hub_download(
-            repo_id=repo_id,
-            revision=revision,
-            filename="model.pt",
-            local_files_only=True,
-        )
+            return model
 
-        # Load YOLO model
-        logger.info("Loading YOLOv8 model from: %s", model_path)
-        model = YOLO(model_path)
-
-        # Cache the model
-        model_cache._pipeline_cache[cache_key] = model
-        logger.info("Cached YOLOv8 model: %s", cache_key)
-
-        return model
+        return builder
 
     def validate_before_node_run(self) -> list[Exception] | None:
         return self._huggingface_repo_parameter.validate_before_node_run()
