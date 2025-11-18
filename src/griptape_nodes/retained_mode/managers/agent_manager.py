@@ -180,6 +180,11 @@ class AgentManager:
                 self.prompt_driver = self._initialize_prompt_driver()
             for key, value in request.prompt_driver.items():
                 setattr(self.prompt_driver, key, value)
+
+            if self.image_tool is None:
+                self.image_tool = self._initialize_image_tool()
+            for key, value in request.image_generation_driver.items():
+                setattr(self.image_tool.image_generation_driver, key, value)
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
@@ -480,7 +485,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return NodesPromptImageGenerationTool(
-            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="gpt-image-1"),
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key),
             static_files_manager=self.static_files_manager,
         )
 

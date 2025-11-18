@@ -60,7 +60,7 @@ def _sync_libraries() -> None:
     console.print("[bold green]Syncing libraries...[/bold green]")
     try:
         subprocess.run(
-            ["griptape-nodes", "libraries", "sync"],  # noqa: S607
+            ["griptape-nodes", "--no-update", "libraries", "sync"],  # noqa: S607
             text=True,
             capture_output=True,
             check=True,
