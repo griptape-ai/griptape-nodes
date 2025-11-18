@@ -97,7 +97,7 @@ class PublicArtifactUrlParameter:
         self._node.add_node_element(
             ParameterMessage(
                 name=f"artifact_url_parameter_message_{self._parameter.name}",
-                title="Artifact URL Upload",
+                title="Media Upload",
                 variant="warning",
                 value=self.get_help_message(),
                 traits={
@@ -122,7 +122,7 @@ class PublicArtifactUrlParameter:
         return (
             f"The {self._node.name} node requires a public URL for the parameter: {self._parameter.name}.\n\n"
             f"{self._disclaimer_message or ''}\n"
-            "Executing this node will generate a short lived, public URL for the artifact, which will be cleaned up after execution.\n"
+            "Executing this node will generate a short lived, public URL for the media artifact, which will be cleaned up after execution.\n"
         )
 
     def get_public_url_for_parameter(self) -> str:
