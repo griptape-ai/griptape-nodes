@@ -98,21 +98,7 @@ class DisplayList(ControlNode):
 
         new_ui_options["hide"] = False
         item_type = self._determine_item_type(list_values[0])
-
-        # Configure UI options for dict display
-        if item_type == "dict":
-            new_ui_options["multiline"] = True
-            new_ui_options["placeholder_text"] = "The dictionary content will be displayed here."
-
-        # Apply both changes first
-        # We have to change all three because parameters are created with all three initialized.
-        self.items_list.type = item_type
-        if item_type == ParameterTypeBuiltin.ANY.value:
-            self.items_list.output_type = ParameterTypeBuiltin.ALL.value
-        else:
-            self.items_list.output_type = item_type
-        self.items_list.input_types = [item_type]
-        self.items_list.ui_options = new_ui_options
+        self._configure_list_type_and_ui(item_type, new_ui_options)
         # Only delete excess parameters if explicitly requested (e.g., during process())
         if delete_excess_parameters:
             self.delete_excess_parameters(list_values)
@@ -156,21 +142,43 @@ class DisplayList(ControlNode):
             # Remove the parameter from the list
         self.items_list.clear_list()
 
+    def _configure_list_type_and_ui(self, item_type: str, ui_options: dict[str, Any]) -> None:
+        """Configure the items_list parameter type and UI options based on item type.
+
+        Args:
+            item_type: The type string for list items
+            ui_options: Dictionary of UI options to configure
+        """
+        # Configure UI options for dict display
+        if item_type == "dict":
+            ui_options["multiline"] = True
+            ui_options["placeholder_text"] = "The dictionary content will be displayed here."
+
+        # We have to change all three because parameters are created with all three initialized.
+        self.items_list.type = item_type
+        if item_type == ParameterTypeBuiltin.ANY.value:
+            self.items_list.output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            self.items_list.output_type = item_type
+        self.items_list.input_types = [item_type]
+        self.items_list.ui_options = ui_options
+
     def _determine_item_type(self, item: Any) -> str:
         """Determine the type of an item for parameter type assignment."""
-        if isinstance(item, str):
-            return ParameterTypeBuiltin.STR.value
+        result = ParameterTypeBuiltin.ANY.value
         if isinstance(item, bool):
-            return ParameterTypeBuiltin.BOOL.value
-        if isinstance(item, int):
-            return ParameterTypeBuiltin.INT.value
-        if isinstance(item, float):
-            return ParameterTypeBuiltin.FLOAT.value
-        if isinstance(item, dict):
-            return "dict"
-        if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            return "ImageUrlArtifact"
-        return ParameterTypeBuiltin.ANY.value
+            result = ParameterTypeBuiltin.BOOL.value
+        elif isinstance(item, str):
+            result = ParameterTypeBuiltin.STR.value
+        elif isinstance(item, int):
+            result = ParameterTypeBuiltin.INT.value
+        elif isinstance(item, float):
+            result = ParameterTypeBuiltin.FLOAT.value
+        elif isinstance(item, dict):
+            result = "dict"
+        elif isinstance(item, (ImageUrlArtifact, ImageArtifact)):
+            result = "ImageUrlArtifact"
+        return result
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update display list when a value is assigned to the items parameter."""
