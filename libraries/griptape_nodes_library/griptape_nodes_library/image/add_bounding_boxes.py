@@ -55,7 +55,7 @@ class AddBoundingBoxes(BaseImageProcessor):
                 max_val=10,
                 slider=True,
                 tooltip="Thickness of the bounding box lines in pixels",
-                allow_output=False
+                allow_output=False,
             )
         )
 
@@ -117,76 +117,97 @@ class AddBoundingBoxes(BaseImageProcessor):
             return exceptions
 
         # Normalize to list for validation
-        boxes_list = []
-        if isinstance(bounding_boxes, dict):
-            boxes_list = [bounding_boxes]
-        elif isinstance(bounding_boxes, list):
-            boxes_list = bounding_boxes
-        else:
-            msg = f"{self.name}: Bounding boxes must be a dict or list of dicts. Example: {{'x': 10, 'y': 20, 'width': 100, 'height': 150}}"
-            exceptions.append(ValueError(msg))
-            return exceptions
+        boxes_list = self._normalize_bounding_boxes_to_list(bounding_boxes, exceptions)
+        if not boxes_list:
+            return exceptions if exceptions else None
 
         # Validate each bounding box
         required_keys = {"x", "y", "width", "height"}
         for idx, box in enumerate(boxes_list):
-            if not isinstance(box, dict):
-                msg = f"{self.name}: Bounding box at index {idx} must be a dict, got {type(box).__name__}"
-                exceptions.append(ValueError(msg))
-                continue
-
-            # Check for required keys
-            missing_keys = required_keys - box.keys()
-            if missing_keys:
-                msg = f"{self.name}: Bounding box at index {idx} missing required keys: {missing_keys}. Required keys: x, y, width, height (all must be integers or convertible strings)"
-                exceptions.append(ValueError(msg))
-                continue
-
-            # Validate key values are integers or convertible strings
-            for key in required_keys:
-                value = box.get(key)
-
-                # If it's already an int, it's valid
-                if isinstance(value, int):
-                    continue
-
-                # If it's a string, try to convert it
-                if isinstance(value, str):
-                    try:
-                        converted_value = int(value)
-                        # Store the converted value back in the dict
-                        box[key] = converted_value
-                    except (ValueError, TypeError):
-                        msg = f"{self.name}: Bounding box at index {idx} has invalid '{key}' value: '{value}'. Cannot convert string to integer. All coordinate values must be integers or convertible strings."
-                        exceptions.append(ValueError(msg))
-                else:
-                    msg = f"{self.name}: Bounding box at index {idx} has invalid '{key}' value. Expected int or string, got {type(value).__name__}. All coordinate values must be integers or convertible strings."
-                    exceptions.append(ValueError(msg))
-
-            # Validate values are non-negative and width/height are positive
-            # At this point, values should be integers (either originally or converted)
-            x = box.get("x")
-            y = box.get("y")
-            width = box.get("width")
-            height = box.get("height")
-
-            if isinstance(x, int) and x < 0:
-                msg = f"{self.name}: Bounding box at index {idx} has negative x value: {x}. x must be >= 0"
-                exceptions.append(ValueError(msg))
-
-            if isinstance(y, int) and y < 0:
-                msg = f"{self.name}: Bounding box at index {idx} has negative y value: {y}. y must be >= 0"
-                exceptions.append(ValueError(msg))
-
-            if isinstance(width, int) and width <= 0:
-                msg = f"{self.name}: Bounding box at index {idx} has non-positive width value: {width}. width must be > 0"
-                exceptions.append(ValueError(msg))
-
-            if isinstance(height, int) and height <= 0:
-                msg = f"{self.name}: Bounding box at index {idx} has non-positive height value: {height}. height must be > 0"
-                exceptions.append(ValueError(msg))
+            self._validate_single_box(box, idx, required_keys, exceptions)
 
         return exceptions if exceptions else None
+
+    def _normalize_bounding_boxes_to_list(
+        self, bounding_boxes: dict | list, exceptions: list[Exception]
+    ) -> list[dict] | None:
+        """Normalize bounding boxes to a list format."""
+        if isinstance(bounding_boxes, dict):
+            return [bounding_boxes]
+        if isinstance(bounding_boxes, list):
+            return bounding_boxes
+
+        msg = f"{self.name}: Bounding boxes must be a dict or list of dicts. Example: {{'x': 10, 'y': 20, 'width': 100, 'height': 150}}"
+        exceptions.append(ValueError(msg))
+        return None
+
+    def _validate_single_box(
+        self, box: Any, idx: int, required_keys: set[str], exceptions: list[Exception]
+    ) -> None:
+        """Validate a single bounding box."""
+        if not isinstance(box, dict):
+            msg = f"{self.name}: Bounding box at index {idx} must be a dict, got {type(box).__name__}"
+            exceptions.append(ValueError(msg))
+            return
+
+        # Check for required keys
+        missing_keys = required_keys - box.keys()
+        if missing_keys:
+            msg = f"{self.name}: Bounding box at index {idx} missing required keys: {missing_keys}. Required keys: x, y, width, height (all must be integers or convertible strings)"
+            exceptions.append(ValueError(msg))
+            return
+
+        # Validate and convert key values
+        self._validate_and_convert_box_values(box, idx, required_keys, exceptions)
+
+        # Validate coordinate ranges
+        self._validate_box_coordinate_ranges(box, idx, exceptions)
+
+    def _validate_and_convert_box_values(
+        self, box: dict, idx: int, required_keys: set[str], exceptions: list[Exception]
+    ) -> None:
+        """Validate and convert bounding box coordinate values to integers."""
+        for key in required_keys:
+            value = box.get(key)
+
+            # If it's already an int, it's valid
+            if isinstance(value, int):
+                continue
+
+            # If it's a string, try to convert it
+            if isinstance(value, str):
+                try:
+                    converted_value = int(value)
+                    box[key] = converted_value
+                except (ValueError, TypeError):
+                    msg = f"{self.name}: Bounding box at index {idx} has invalid '{key}' value: '{value}'. Cannot convert string to integer. All coordinate values must be integers or convertible strings."
+                    exceptions.append(ValueError(msg))
+            else:
+                msg = f"{self.name}: Bounding box at index {idx} has invalid '{key}' value. Expected int or string, got {type(value).__name__}. All coordinate values must be integers or convertible strings."
+                exceptions.append(ValueError(msg))
+
+    def _validate_box_coordinate_ranges(self, box: dict, idx: int, exceptions: list[Exception]) -> None:
+        """Validate that bounding box coordinates are within valid ranges."""
+        x = box.get("x")
+        y = box.get("y")
+        width = box.get("width")
+        height = box.get("height")
+
+        if isinstance(x, int) and x < 0:
+            msg = f"{self.name}: Bounding box at index {idx} has negative x value: {x}. x must be >= 0"
+            exceptions.append(ValueError(msg))
+
+        if isinstance(y, int) and y < 0:
+            msg = f"{self.name}: Bounding box at index {idx} has negative y value: {y}. y must be >= 0"
+            exceptions.append(ValueError(msg))
+
+        if isinstance(width, int) and width <= 0:
+            msg = f"{self.name}: Bounding box at index {idx} has non-positive width value: {width}. width must be > 0"
+            exceptions.append(ValueError(msg))
+
+        if isinstance(height, int) and height <= 0:
+            msg = f"{self.name}: Bounding box at index {idx} has non-positive height value: {height}. height must be > 0"
+            exceptions.append(ValueError(msg))
 
     def _get_image_input_data_safe(self) -> tuple[Image.Image, str] | None:
         """Safely get PIL image and detected format, returning None if not available."""
@@ -207,16 +228,14 @@ class AddBoundingBoxes(BaseImageProcessor):
         if not hasattr(image, "value") or not image.value:
             return None
 
+        # Load PIL image using existing utility
         try:
-            # Load PIL image using existing utility
             pil_image = load_pil_from_url(image.value)
-
-            # Detect format
             detected_format = self._detect_image_format(pil_image)
-
-            return pil_image, detected_format
         except Exception:
             return None
+        else:
+            return pil_image, detected_format
 
     def process(self) -> AsyncResult[None]:
         """Override process to make image input optional."""
@@ -278,106 +297,125 @@ class AddBoundingBoxes(BaseImageProcessor):
             msg = f"{self.name}: Bounding boxes parameter is required"
             raise ValueError(msg)
 
-        # Parse color to RGBA tuple
-        try:
-            color_rgba = parse_color_to_rgba(box_color)
-            # Use RGB only for drawing
-            color_rgb = color_rgba[:3]
-        except Exception as e:
-            msg = f"{self.name}: Failed to parse box color '{box_color}': {e}"
-            raise ValueError(msg) from e
-
-        # Normalize bounding_boxes to list
+        # Parse color and prepare drawing context
+        color_rgb = self._parse_box_color(box_color)
         boxes_list = [bounding_boxes] if isinstance(bounding_boxes, dict) else bounding_boxes
 
         # Create a copy of the image to draw on
         image_copy = pil_image.copy()
         draw = ImageDraw.Draw(image_copy)
 
-        # Calculate font size based on image height and load font
-        font_size = int(pil_image.height * self.LABEL_HEIGHT_PERCENT)
-        try:
-            font = ImageFont.load_default(size=font_size)
-        except Exception:
-            # Fallback to default font if size parameter fails
-            try:
-                font = ImageFont.load_default()
-            except Exception:
-                font = None
+        # Load font for labels
+        font = self._load_font_for_labels(pil_image.height)
 
         # Draw each bounding box
+        draw_config = {
+            "color_rgb": color_rgb,
+            "line_thickness": line_thickness,
+            "show_labels": show_labels,
+            "label_key": label_key,
+            "font": font,
+        }
         for box in boxes_list:
-            x = box["x"]
-            y = box["y"]
-            width = box["width"]
-            height = box["height"]
-
-            # Calculate rectangle coordinates
-            x1, y1 = x, y
-            x2, y2 = x + width, y + height
-
-            # Draw rectangle
-            draw.rectangle(
-                [(x1, y1), (x2, y2)],
-                outline=color_rgb,
-                width=line_thickness,
-            )
-
-            # Draw label if specified and show_labels is enabled
-            if show_labels and label_key and label_key != "none" and label_key.strip():
-                # Process template string by replacing {key} patterns with values
-                label_value = label_key
-
-                # Find all {key} patterns and replace with values from box
-                pattern = r"\{(\w+)\}"
-                matches = re.findall(pattern, label_key)
-
-                for key in matches:
-                    if key in box:
-                        # Replace {key} with the actual value
-                        label_value = label_value.replace(f"{{{key}}}", str(box[key]))
-                    else:
-                        # If key doesn't exist, leave the {key} as is
-                        pass
-
-                # Only draw if we have a label value after substitution
-                if (label_value and label_value != label_key) or not matches:
-                    # Calculate text dimensions to position it properly
-                    if font:
-                        try:
-                            # Get text bbox at origin to measure dimensions
-                            temp_bbox = draw.textbbox((0, 0), label_value, font=font)
-                            text_height = temp_bbox[3] - temp_bbox[1]  # y1 - y0
-
-                            # Position label so its bottom edge is clear of the bounding box top
-                            # Add padding equal to half the text height between label bottom and box top
-                            label_x = x1
-                            gap = text_height // 2
-                            label_y = y1 - text_height - gap
-
-                            # If label would go off top of image, position it inside the box at the top
-                            if label_y < 0:
-                                label_y = y1 + gap  # Position inside box, with half-height gap below top edge
-
-                            # Draw text background for better visibility
-                            label_bbox = draw.textbbox((label_x, label_y), label_value, font=font)
-                            draw.rectangle(label_bbox, fill=(0, 0, 0, 180))
-
-                            # Draw text label
-                            draw.text(
-                                (label_x, label_y),
-                                label_value,
-                                fill=(255, 255, 255),
-                                font=font,
-                            )
-                        except Exception as e:
-                            # Log warning but continue - text rendering is optional
-                            self.append_value_to_parameter("logs", f"Warning: Could not draw text label: {e}\n")
-                    else:
-                        # No font available, skip label
-                        self.append_value_to_parameter("logs", "Warning: Font not available for label rendering\n")
+            self._draw_single_bounding_box(draw, box, draw_config)
 
         return image_copy
+
+    def _parse_box_color(self, box_color: str) -> tuple[int, int, int]:
+        """Parse color string to RGB tuple."""
+        try:
+            color_rgba = parse_color_to_rgba(box_color)
+            return color_rgba[:3]  # Use RGB only for drawing
+        except Exception as e:
+            msg = f"{self.name}: Failed to parse box color '{box_color}': {e}"
+            raise ValueError(msg) from e
+
+    def _load_font_for_labels(self, image_height: int) -> Any:
+        """Load font for label rendering based on image height."""
+        font_size = int(image_height * self.LABEL_HEIGHT_PERCENT)
+        try:
+            return ImageFont.load_default(size=font_size)
+        except Exception:
+            try:
+                return ImageFont.load_default()
+            except Exception:
+                return None
+
+    def _draw_single_bounding_box(self, draw: ImageDraw.ImageDraw, box: dict, config: dict) -> None:
+        """Draw a single bounding box with optional label."""
+        x, y, width, height = box["x"], box["y"], box["width"], box["height"]
+
+        # Calculate rectangle coordinates
+        x1, y1 = x, y
+        x2, y2 = x + width, y + height
+
+        # Draw rectangle
+        draw.rectangle(
+            [(x1, y1), (x2, y2)], outline=config["color_rgb"], width=config["line_thickness"]
+        )
+
+        # Draw label if enabled
+        show_labels = config["show_labels"]
+        label_key = config["label_key"]
+        if show_labels and label_key and label_key != "none" and label_key.strip():
+            self._draw_label_for_box(draw, box, label_key, (x1, y1), font=config["font"])
+
+    def _draw_label_for_box(
+        self, draw: ImageDraw.ImageDraw, box: dict, label_key: str, position: tuple[int, int], *, font: Any
+    ) -> None:
+        """Draw label for a bounding box."""
+        x1, y1 = position
+        # Process template string by replacing {key} patterns with values
+        label_value = self._process_label_template(label_key, box)
+
+        # Only draw if we have a valid label value
+        if not label_value:
+            return
+
+        if not font:
+            self.append_value_to_parameter("logs", "Warning: Font not available for label rendering\n")
+            return
+
+        try:
+            # Get text bbox at origin to measure dimensions
+            temp_bbox = draw.textbbox((0, 0), label_value, font=font)
+            text_height = temp_bbox[3] - temp_bbox[1]
+
+            # Position label with gap above bounding box
+            label_x = x1
+            gap = text_height // 2
+            label_y = y1 - text_height - gap
+
+            # If label would go off top of image, position it inside the box
+            if label_y < 0:
+                label_y = y1 + gap
+
+            # Draw text background for better visibility
+            label_bbox = draw.textbbox((label_x, label_y), label_value, font=font)
+            draw.rectangle(label_bbox, fill=(0, 0, 0, 180))
+
+            # Draw text label
+            draw.text((label_x, label_y), label_value, fill=(255, 255, 255), font=font)
+        except Exception as e:
+            self.append_value_to_parameter("logs", f"Warning: Could not draw text label: {e}\n")
+
+    def _process_label_template(self, label_key: str, box: dict) -> str:
+        """Process label template by replacing {key} patterns with values from box."""
+        label_value = label_key
+
+        # Find all {key} patterns and replace with values from box
+        pattern = r"\{(\w+)\}"
+        matches = re.findall(pattern, label_key)
+
+        for key in matches:
+            if key in box:
+                label_value = label_value.replace(f"{{{key}}}", str(box[key]))
+
+        # Return value if substitution happened or if no patterns were found
+        if (label_value and label_value != label_key) or not matches:
+            return label_value
+
+        return ""
 
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get custom parameters for processing."""
@@ -385,7 +423,9 @@ class AddBoundingBoxes(BaseImageProcessor):
             "bounding_boxes": self.get_parameter_value("bounding_boxes"),
             "box_color": self.get_parameter_value("box_color") or "#FF0000",
             "line_thickness": self.get_parameter_value("line_thickness") or 2,
-            "show_labels": self.get_parameter_value("show_labels") if self.get_parameter_value("show_labels") is not None else True,
+            "show_labels": self.get_parameter_value("show_labels")
+            if self.get_parameter_value("show_labels") is not None
+            else True,
             "label_key": self.get_parameter_value("label_key") or "none",
         }
 
@@ -396,4 +436,3 @@ class AddBoundingBoxes(BaseImageProcessor):
         if isinstance(bounding_boxes, list):
             num_boxes = len(bounding_boxes)
         return f"_bboxes_{num_boxes}"
-
