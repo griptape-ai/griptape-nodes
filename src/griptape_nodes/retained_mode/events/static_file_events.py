@@ -106,12 +106,18 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
     enabling temporary download links, controlling file access permissions.
 
     Args:
-        file_name: Name of the file to be downloaded
+        file_name: Name of the file to be downloaded (deprecated, use file_path)
+        file_path: Path to the file (absolute or workspace-relative). If relative,
+                   resolved relative to workspace root. If outside workspace, file
+                   will be copied to staticfiles directory.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
+
+    Note: Exactly one of file_name or file_path must be provided.
     """
 
-    file_name: str
+    file_name: str | None = None
+    file_path: str | None = None
 
 
 @dataclass
@@ -136,3 +142,40 @@ class CreateStaticFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPa
     """
 
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathRequest(RequestPayload):
+    """Resolve a static file URL back to its original file path.
+
+    Use when: Converting static storage URLs to file paths, handling browser uploads,
+    normalizing URLs to file:// URIs, retrieving original file locations.
+
+    Args:
+        url: Static file URL to resolve (e.g., http://localhost:5000/static/photo.jpg)
+
+    Results: ResolveStaticFilePathResultSuccess (with file_path) | ResolveStaticFilePathResultFailure (resolution error)
+
+    Note: Only works for local static storage URLs. External URLs cannot be resolved.
+    """
+
+    url: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Static file path resolved successfully.
+
+    Args:
+        file_uri: file:// URI for the original file
+    """
+
+    file_uri: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Static file path resolution failed."""

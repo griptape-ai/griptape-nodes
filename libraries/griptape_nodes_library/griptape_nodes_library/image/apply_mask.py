@@ -1,7 +1,6 @@
 from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
@@ -10,6 +9,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import load_content_from_uri
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     apply_mask_transformations,
@@ -133,10 +133,10 @@ class ApplyMask(DataNode):
             self._apply_mask_to_input(input_image, input_mask, channel)
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using httpx."""
-        response = httpx.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))
+        """Load image from URL/URI using load_content_from_uri."""
+        # Use load_content_from_uri which handles file://, http://, and https:// URIs
+        image_data = load_content_from_uri(url, timeout=30.0)
+        return Image.open(BytesIO(image_data))
 
     def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any, channel: str) -> None:
         """Apply mask to input image using specified channel as alpha and set as output_image."""
