@@ -4,6 +4,8 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from requests.exceptions import RequestException
 
+from griptape_nodes.utils.url_utils import load_content_from_uri
+
 
 def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageArtifact:
     """Load an ImageArtifact from an ImageUrlArtifact with proper error handling.
@@ -18,8 +20,9 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
         ValueError: If image download fails with descriptive error message
     """
     try:
-        image_bytes = image_url_artifact.to_bytes()
-    except (URLError, RequestException, ConnectionError, TimeoutError) as err:
+        # Use load_content_from_uri which handles file://, http://, and https:// URIs
+        image_bytes = load_content_from_uri(image_url_artifact.value)
+    except (URLError, RequestException, ConnectionError, TimeoutError, ValueError, FileNotFoundError) as err:
         details = (
             f"Failed to download image at '{image_url_artifact.value}'.\n"
             f"If this workflow was shared from another engine installation, "

@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import async_load_content_from_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -419,8 +420,8 @@ class FluxImageGeneration(SuccessFailureNode):
         if image_value.startswith("data:image/"):
             return image_value
 
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
+        # If it's a URL/URI (http://, https://, or file://), download and convert to base64
+        if image_value.startswith(("http://", "https://", "file://")):
             return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix
@@ -668,11 +669,9 @@ class FluxImageGeneration(SuccessFailureNode):
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
+        """Download bytes from a URL/URI."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
+            # Use async_load_content_from_uri which handles file://, http://, and https:// URIs
+            return await async_load_content_from_uri(url, timeout=120.0)
         except Exception:
             return None

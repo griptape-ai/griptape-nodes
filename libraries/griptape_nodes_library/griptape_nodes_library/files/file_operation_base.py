@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from griptape.artifacts import UrlArtifact
 
@@ -69,22 +69,33 @@ class FileOperationBaseNode(SuccessFailureNode):
     - Glob pattern detection
     """
 
-    def _resolve_localhost_url_to_path(self, url: str) -> str:
-        """Resolve localhost static file URLs to workspace file paths.
+    def _resolve_url_or_uri_to_path(self, url_or_uri: str) -> str:
+        """Resolve URLs or URIs to file paths.
 
-        Converts URLs like http://localhost:8124/workspace/static_files/file.jpg
-        to actual workspace file paths like static_files/file.jpg
+        Handles:
+        - file:// URIs: Uses Path to convert to file path (handles Windows automatically)
+        - localhost URLs: Converts to workspace-relative paths
+        - Other strings: Returns as-is
 
         Args:
-            url: URL string that may be a localhost URL
+            url_or_uri: URL or URI string that may need conversion
 
         Returns:
-            Resolved file path relative to workspace, or original string if not a localhost URL
+            Resolved file path, or original string if not a convertible URL/URI
         """
-        if not isinstance(url, str):
-            return url
+        if not isinstance(url_or_uri, str):
+            return url_or_uri
+
+        # Handle file:// URIs using Path (like url_utils.py does)
+        if url_or_uri.startswith("file://"):
+            parsed = urlparse(url_or_uri)
+            if parsed.scheme == "file":
+                # Use Path to handle file:// URIs - automatically handles Windows paths
+                file_path = Path(unquote(parsed.path))
+                return str(file_path)
 
         # Strip query parameters (cachebuster ?t=...)
+        url = url_or_uri
         if "?" in url:
             url = url.split("?")[0]
 
@@ -96,41 +107,37 @@ class FileOperationBaseNode(SuccessFailureNode):
                 workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
                 return workspace_relative_path
 
-        # Not a localhost workspace URL, return as-is
-        return url
+        # Not a convertible URL/URI, return as-is
+        return url_or_uri
 
     def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
 
-        Also resolves localhost URLs to workspace paths.
+        Also resolves file:// URIs and localhost URLs to file paths.
 
         Args:
             value: Artifact object, dict with "value" key, or string
 
         Returns:
-            String value extracted from the artifact, with URLs resolved
+            String value extracted from the artifact, with URLs/URIs resolved
         """
         if isinstance(value, str):
-            # Resolve localhost URLs to workspace paths
-            return self._resolve_localhost_url_to_path(value)
+            return self._resolve_url_or_uri_to_path(value)
 
         if isinstance(value, dict):
             extracted = str(value.get("value", value))
-            # Resolve URLs if it's a string
             if isinstance(extracted, str):
-                return self._resolve_localhost_url_to_path(extracted)
+                return self._resolve_url_or_uri_to_path(extracted)
             return extracted
 
         if isinstance(value, UrlArtifact):
             extracted = str(value.value)
-            # Resolve URLs
-            return self._resolve_localhost_url_to_path(extracted)
+            return self._resolve_url_or_uri_to_path(extracted)
 
         if hasattr(value, "value"):
             extracted = str(value.value)
-            # Resolve URLs if it's a string
             if isinstance(extracted, str):
-                return self._resolve_localhost_url_to_path(extracted)
+                return self._resolve_url_or_uri_to_path(extracted)
             return extracted
 
         return str(value)
@@ -148,16 +155,15 @@ class FileOperationBaseNode(SuccessFailureNode):
             return None
 
         if isinstance(value, str):
-            # Resolve localhost URLs to workspace paths
-            return self._resolve_localhost_url_to_path(value)
+            return self._resolve_url_or_uri_to_path(value)
 
         if isinstance(value, list):
             return [self._extract_artifacts_from_value(item) for item in value]
 
-        # Extract from artifact, then resolve URL if needed
+        # Extract from artifact, then resolve URL/URI if needed
         extracted = self._extract_value_from_artifact(value)
         if isinstance(extracted, str):
-            return self._resolve_localhost_url_to_path(extracted)
+            return self._resolve_url_or_uri_to_path(extracted)
         return extracted
 
     def _is_glob_pattern(self, path_str: str) -> bool:
