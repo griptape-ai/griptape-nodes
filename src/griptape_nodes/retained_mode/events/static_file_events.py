@@ -142,3 +142,40 @@ class CreateStaticFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPa
     """
 
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathRequest(RequestPayload):
+    """Resolve a static file URL back to its original file path.
+
+    Use when: Converting static storage URLs to file paths, handling browser uploads,
+    normalizing URLs to file:// URIs, retrieving original file locations.
+
+    Args:
+        url: Static file URL to resolve (e.g., http://localhost:5000/static/photo.jpg)
+
+    Results: ResolveStaticFilePathResultSuccess (with file_path) | ResolveStaticFilePathResultFailure (resolution error)
+
+    Note: Only works for local static storage URLs. External URLs cannot be resolved.
+    """
+
+    url: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Static file path resolved successfully.
+
+    Args:
+        file_uri: file:// URI for the original file
+    """
+
+    file_uri: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveStaticFilePathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Static file path resolution failed."""
