@@ -13,8 +13,6 @@ Use this node when you want to:
 - Annotate images with coordinate-based regions of interest
 - Create visual feedback for computer vision workflows
 - Debug and verify detection model outputs
-- Generate labeled training data visualizations
-- Track objects across video frames with labeled boxes
 - Combine multiple detection results on a single image
 
 ## How to use it
