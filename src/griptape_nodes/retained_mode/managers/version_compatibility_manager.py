@@ -178,6 +178,10 @@ class VersionCompatibilityManager:
             if not isinstance(attr, type):
                 continue
 
+            # Skip abstract base classes
+            if ABC in getattr(attr, "__bases__", ()):
+                continue
+
             # Register based on which base class it inherits from
             if issubclass(attr, LibraryVersionCompatibilityCheck):
                 check_instance = attr()
