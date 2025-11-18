@@ -41,8 +41,8 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
             self._node,
             repo_files=[
-                ("griptape/4x_ClearRealityV1", "4x-ClearRealityV1.pth"),
-                ("griptape/4x_UltraSharp", "4x-UltraSharp.pth"),
+                ("griptape/4x-ClearRealityV1", "4x-ClearRealityV1.pth"),
+                ("griptape/4x-UltraSharp", "4x-UltraSharp.pth"),
             ],
             parameter_name="upscale_model",
         )
