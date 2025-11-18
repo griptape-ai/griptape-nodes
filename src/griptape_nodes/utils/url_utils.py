@@ -2,7 +2,8 @@ import logging
 import mimetypes
 from pathlib import Path
 from typing import Literal
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import httpx
 
@@ -136,7 +137,7 @@ def load_content_from_uri(
     if parsed.scheme == "file":
         # Parse file path from URI
         # file:///path/to/file -> /path/to/file
-        file_path = Path(unquote(parsed.path))
+        file_path = Path(url2pathname(parsed.path))
 
         if not file_path.exists():
             msg = f"File not found: {file_path}"
@@ -188,7 +189,7 @@ async def async_load_content_from_uri(
 
     # Handle file:// URIs - file operations are synchronous
     if parsed.scheme == "file":
-        file_path = Path(unquote(parsed.path))
+        file_path = Path(url2pathname(parsed.path))
 
         if not file_path.exists():
             msg = f"File not found: {file_path}"
@@ -246,7 +247,7 @@ async def stream_download_to_file(
 
     # Handle file:// URIs - just copy the file
     if parsed.scheme == "file":
-        source_path = Path(unquote(parsed.path))
+        source_path = Path(url2pathname(parsed.path))
 
         if not source_path.exists():
             msg = f"File not found: {source_path}"
@@ -292,7 +293,7 @@ def get_content_type_from_uri(uri: str) -> str | None:
 
     # For file:// URIs, use extension
     if parsed.scheme == "file":
-        file_path = Path(unquote(parsed.path))
+        file_path = Path(url2pathname(parsed.path))
         return get_content_type_from_extension(file_path)
 
     # For http/https URIs, make HEAD request

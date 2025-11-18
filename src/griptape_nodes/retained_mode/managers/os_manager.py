@@ -10,7 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import aioshutil
 import portalocker
@@ -296,7 +297,7 @@ class OSManager:
             parsed = urlparse(path_str)
             if parsed.scheme == "file":
                 # Extract the absolute path from file:// URI and decode percent-encoding
-                return self.resolve_path_safely(Path(unquote(parsed.path)))
+                return self.resolve_path_safely(Path(url2pathname(parsed.path)))
 
             if Path(path_str).is_absolute() or path_str.startswith("~"):
                 # Expand tilde and environment variables for absolute paths or paths starting with ~

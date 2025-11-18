@@ -3,7 +3,8 @@ import binascii
 import logging
 import threading
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from xdg_base_dirs import xdg_config_home
 
@@ -178,7 +179,7 @@ class StaticFilesManager:
         parsed = urlparse(file_path)
         if parsed.scheme == "file":
             # Extract absolute path from file:// URI and decode percent-encoding
-            path = Path(unquote(parsed.path))
+            path = Path(url2pathname(parsed.path))
         else:
             # Convert to Path object
             path = Path(file_path)
