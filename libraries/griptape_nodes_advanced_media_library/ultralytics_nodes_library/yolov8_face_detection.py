@@ -122,8 +122,7 @@ class YOLOv8FaceDetection(ControlNode):
         cache_key = self.params.get_cache_key()
         builder = self.params.get_model_builder()
 
-        with self.params.append_stdout_to_logs():
-            model = yield lambda: model_cache.get_or_build_pipeline(cache_key, builder)
+        model = yield lambda: model_cache.get_or_build_pipeline(cache_key, builder)
 
         self.append_value_to_parameter("logs", "Model loading complete.\n")
 
