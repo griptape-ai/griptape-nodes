@@ -99,6 +99,11 @@ class DisplayList(ControlNode):
         new_ui_options["hide"] = False
         item_type = self._determine_item_type(list_values[0])
 
+        # Configure UI options for dict display
+        if item_type == "dict":
+            new_ui_options["multiline"] = True
+            new_ui_options["placeholder_text"] = "The dictionary content will be displayed here."
+
         # Apply both changes first
         # We have to change all three because parameters are created with all three initialized.
         self.items_list.type = item_type
@@ -161,6 +166,8 @@ class DisplayList(ControlNode):
             return ParameterTypeBuiltin.INT.value
         if isinstance(item, float):
             return ParameterTypeBuiltin.FLOAT.value
+        if isinstance(item, dict):
+            return "dict"
         if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
             return "ImageUrlArtifact"
         return ParameterTypeBuiltin.ANY.value
