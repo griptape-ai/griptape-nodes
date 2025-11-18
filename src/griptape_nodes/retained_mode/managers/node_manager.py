@@ -1929,6 +1929,18 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
+
+        # Let versioning system potentially squelch removed parameters.
+        # This check runs even if parameter is None to handle deprecated parameters
+        if parameter is not None:
+            version_compat_result = (
+                GriptapeNodes.VersionCompatibilityManager().check_set_parameter_version_compatibility(
+                    node, parameter, request.value
+                )
+            )
+            if version_compat_result is not None:
+                return version_compat_result
+
         if parameter is None:
             details = f"Attempted to set parameter value for '{node_name}.{param_name}'. Failed because no parameter with that name could be found."
 
