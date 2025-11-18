@@ -1,6 +1,6 @@
 # v0.64.0
 
-This guide documents the removal of deprecated nodes from the Griptape Nodes Advanced Media Library in version 0.64.0.
+This guide documents the removal of deprecated nodes from Griptape Nodes libraries in version 0.64.0.
 
 ## Overview
 
@@ -10,6 +10,7 @@ Version 0.64.0 removes deprecated nodes that were previously marked for removal.
 
 | Library                               | Version |
 | ------------------------------------- | ------- |
+| Griptape Nodes Library                | 0.64.0  |
 | Griptape Nodes Advanced Media Library | 0.64.0  |
 
 ## Removed Nodes and Replacements
@@ -102,6 +103,12 @@ All diffusion pipeline nodes have been replaced with the **Diffusion Pipeline Bu
 | -------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Flux LoRA File | `Load LoRA` from Griptape Nodes Advanced Media Library<br/>Location: `LoRAs/Load LoRA`<br/>[See details ↓](#for-lora-nodes) |
 
+### Audio Nodes (from Griptape Nodes Library)
+
+| Display Name            | Replacement                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven Music Generation | `Eleven Labs Music Generation` from Griptape Nodes Library<br/>Location: `Audio/Eleven Labs Music Generation`<br/>[See details ↓](#for-audio-nodes) |
+
 ## Removed Dependencies
 
 The following Python package dependencies were removed from the Advanced Media Library:
@@ -171,3 +178,11 @@ The Grayscale Image and Gaussian Blur Image replacement nodes have equivalent fu
 1. Replace **Flux LoRA File** with the new `Load LoRA` node
 1. The new node is available under `LoRAs/Load LoRA` in the Advanced Media Library
 1. Connect the output to your Diffusion Pipeline Builder
+
+### For Audio Nodes
+
+1. Replace **Eleven Music Generation** with **`Eleven Labs Music Generation`**
+    - Location: `Audio/Eleven Labs Music Generation` in the main Griptape Nodes Library
+    - Same functionality: generates music using the Eleven Labs Music Generation API
+    - The replacement node has identical functionality and uses the same underlying API
+    - Simply swap the deprecated node for the new one - all parameters work the same way
