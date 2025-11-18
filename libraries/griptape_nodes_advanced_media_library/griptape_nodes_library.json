@@ -28,9 +28,12 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.59.3",
-    "engine_version": "0.59.3",
-    "tags": ["Griptape", "AI"],
+    "library_version": "0.60.0",
+    "engine_version": "0.63.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
@@ -57,7 +60,10 @@
         "matplotlib>=3.10.3",
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
-      "pip_install_flags": ["--preview", "--torch-backend=auto"]
+      "pip_install_flags": [
+        "--preview",
+        "--torch-backend=auto"
+      ]
     }
   },
   "categories": [],

@@ -27,9 +27,12 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.50.0",
-    "engine_version": "0.50.0",
-    "tags": ["Griptape", "AI"],
+    "library_version": "0.51.0",
+    "engine_version": "0.63.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
