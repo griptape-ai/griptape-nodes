@@ -3,6 +3,7 @@ import binascii
 import logging
 import threading
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from xdg_base_dirs import xdg_config_home
 
@@ -173,8 +174,14 @@ class StaticFilesManager:
         """
         workspace_path = self.config_manager.workspace_path
 
-        # Convert to Path object
-        path = Path(file_path)
+        # Check if it's a file:// URI and extract the path
+        parsed = urlparse(file_path)
+        if parsed.scheme == "file":
+            # Extract absolute path from file:// URI and decode percent-encoding
+            path = Path(unquote(parsed.path))
+        else:
+            # Convert to Path object
+            path = Path(file_path)
 
         # Resolve relative paths relative to workspace
         if not path.is_absolute():
