@@ -24,7 +24,7 @@ class KeyValuePair(DataNode):
         self.add_parameter(
             Parameter(
                 name="value",
-                input_types=["str"],
+                input_types=["str","int","float","bool"],
                 default_value="",
                 type="str",
                 tooltip="Value for the dictionary",
