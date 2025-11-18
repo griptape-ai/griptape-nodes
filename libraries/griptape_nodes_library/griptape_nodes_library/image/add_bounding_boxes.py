@@ -141,9 +141,7 @@ class AddBoundingBoxes(BaseImageProcessor):
         exceptions.append(ValueError(msg))
         return None
 
-    def _validate_single_box(
-        self, box: Any, idx: int, required_keys: set[str], exceptions: list[Exception]
-    ) -> None:
+    def _validate_single_box(self, box: Any, idx: int, required_keys: set[str], exceptions: list[Exception]) -> None:
         """Validate a single bounding box."""
         if not isinstance(box, dict):
             msg = f"{self.name}: Bounding box at index {idx} must be a dict, got {type(box).__name__}"
@@ -206,7 +204,9 @@ class AddBoundingBoxes(BaseImageProcessor):
             exceptions.append(ValueError(msg))
 
         if isinstance(height, int) and height <= 0:
-            msg = f"{self.name}: Bounding box at index {idx} has non-positive height value: {height}. height must be > 0"
+            msg = (
+                f"{self.name}: Bounding box at index {idx} has non-positive height value: {height}. height must be > 0"
+            )
             exceptions.append(ValueError(msg))
 
     def _get_image_input_data_safe(self) -> tuple[Image.Image, str] | None:
@@ -350,9 +350,7 @@ class AddBoundingBoxes(BaseImageProcessor):
         x2, y2 = x + width, y + height
 
         # Draw rectangle
-        draw.rectangle(
-            [(x1, y1), (x2, y2)], outline=config["color_rgb"], width=config["line_thickness"]
-        )
+        draw.rectangle([(x1, y1), (x2, y2)], outline=config["color_rgb"], width=config["line_thickness"])
 
         # Draw label if enabled
         show_labels = config["show_labels"]
