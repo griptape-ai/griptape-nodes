@@ -47,6 +47,7 @@
         "peft>=0.17.0",
         "pillow>=11.2.1",
         "cmake==3.31.6",
+        "spandrel>=0.4.1",
         "torch>=2.7.0",
         "torchvision>=0.22.0",
         "transformers>=4.51.2",
