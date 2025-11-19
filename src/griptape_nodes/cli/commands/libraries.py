@@ -6,11 +6,14 @@ import typer
 
 from griptape_nodes.cli.shared import console
 from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
+    DownloadLibraryResultSuccess,
     LoadLibrariesRequest,
     SyncLibrariesRequest,
     SyncLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.git_utils import normalize_github_url
 
 app = typer.Typer(help="Manage local libraries.")
 
@@ -66,3 +69,46 @@ async def _sync_libraries() -> None:
         console.print("[bold green]Libraries synced successfully.[/bold green]")
     else:
         console.print(f"[red]Failed to sync libraries: {result.result_details}[/red]")
+
+
+@app.command()
+def download(
+    git_url: str = typer.Argument(..., help="Git repository URL to download"),
+    branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit to checkout"),
+    target_dir: str | None = typer.Option(None, "--target-dir", help="Target directory name"),
+    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
+) -> None:
+    """Download a library from a git repository."""
+    asyncio.run(_download_library(git_url, branch, target_dir, install_dependencies=not no_deps))
+
+
+async def _download_library(
+    git_url: str,
+    branch_tag_commit: str | None,
+    target_directory_name: str | None,
+    *,
+    install_dependencies: bool,
+) -> None:
+    """Download a library from a git repository."""
+    # Normalize GitHub shorthand to full URL
+    git_url = normalize_github_url(git_url)
+
+    console.print(f"[bold cyan]Downloading library from {git_url}...[/bold cyan]")
+
+    # Create the download request
+    request = DownloadLibraryRequest(
+        git_url=git_url,
+        branch_tag_commit=branch_tag_commit,
+        target_directory_name=target_directory_name,
+        install_dependencies=install_dependencies,
+    )
+
+    # Execute the download
+    result = await GriptapeNodes.ahandle_request(request)
+
+    # Display results
+    if isinstance(result, DownloadLibraryResultSuccess):
+        console.print(f"[bold green]Library '{result.library_name}' downloaded successfully![/bold green]")
+        console.print(f"[green]Downloaded to: {result.library_path}[/green]")
+    else:
+        console.print(f"[red]Failed to download library: {result.result_details}[/red]")
