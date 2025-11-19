@@ -530,16 +530,14 @@ class ArtifactPathTethering:
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         # Resolve to absolute path relative to workspace
-        if not path.is_absolute():
-            path = workspace_path / path
-        else:
+        if path.is_absolute():
             # If absolute, check if it's within workspace
-            try:
+            if path.is_relative_to(workspace_path):
                 path = path.relative_to(workspace_path)
                 path = workspace_path / path
-            except ValueError:
-                # Path is outside workspace, use as-is
-                pass
+            # If path is outside workspace, use as-is
+        else:
+            path = workspace_path / path
 
         # Determine the relative path to use for static storage
         # If file is already within staticfiles, preserve the subdirectory structure
