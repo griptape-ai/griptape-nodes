@@ -212,6 +212,90 @@ def get_current_branch(library_path: Path) -> str | None:
         return repo.head.shorthand
 
 
+def get_current_tag(library_path: Path) -> str | None:
+    """Get the current tag name if HEAD is pointing to a tag.
+
+    Args:
+        library_path: The path to the library directory.
+
+    Returns:
+        str | None: The current tag name if found, None if not on a tag or not a git repository.
+
+    Raises:
+        GitError: If an error occurs while getting the current tag.
+    """
+    if not is_git_repository(library_path):
+        return None
+
+    try:
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            return None
+
+        repo = pygit2.Repository(repo_path)
+
+        # Get the current HEAD commit
+        if repo.head_is_unborn:
+            return None
+
+        head_commit = repo.head.target
+
+        # Check all tags to see if any point to HEAD
+        for tag_name in repo.references:
+            if not tag_name.startswith("refs/tags/"):
+                continue
+
+            tag_ref = repo.references[tag_name]
+            # Handle both lightweight and annotated tags
+            if hasattr(tag_ref, "peel"):
+                tag_target = tag_ref.peel(pygit2.Commit).id
+            else:
+                tag_target = tag_ref.target
+
+            if tag_target == head_commit:
+                # Return tag name without refs/tags/ prefix
+                return tag_name.replace("refs/tags/", "")
+    except pygit2.GitError as e:
+        msg = f"Error getting current tag for {library_path}: {e}"
+        raise GitError(msg) from e
+    else:
+        return None
+
+
+def is_on_tag(library_path: Path) -> bool:
+    """Check if HEAD is currently pointing to a tag.
+
+    Args:
+        library_path: The path to the library directory.
+
+    Returns:
+        bool: True if HEAD is on a tag, False otherwise.
+    """
+    return get_current_tag(library_path) is not None
+
+
+def get_current_ref(library_path: Path) -> str | None:
+    """Get the current git reference (branch or tag name).
+
+    Args:
+        library_path: The path to the library directory.
+
+    Returns:
+        str | None: The current branch or tag name if found, None if not a git repository.
+    """
+    # Try to get branch first
+    branch = get_current_branch(library_path)
+    if branch is not None:
+        return branch
+
+    # If not on a branch, try to get tag
+    tag = get_current_tag(library_path)
+    if tag is not None:
+        return tag
+
+    return None
+
+
 def get_git_repository_root(library_path: Path) -> Path | None:
     """Get the root directory of the git repository containing the given path.
 
@@ -321,6 +405,123 @@ def git_pull_rebase(library_path: Path) -> None:
         raise GitPullError(msg) from e
 
 
+def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
+    """Update library to the latest version of a moving tag.
+
+    This function is designed for tags that are force-pushed to point to new commits
+    (e.g., a 'latest' tag that always points to the newest release).
+
+    Args:
+        library_path: The path to the library directory.
+        tag_name: The name of the tag to update to (e.g., "latest").
+
+    Raises:
+        GitRepositoryError: If the path is not a valid git repository.
+        GitPullError: If the tag update operation fails.
+    """
+    if not is_git_repository(library_path):
+        msg = f"Cannot update tag: {library_path} is not a git repository"
+        raise GitRepositoryError(msg)
+
+    try:
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            msg = f"Cannot discover repository at {library_path}"
+            raise GitRepositoryError(msg)
+
+        repo = pygit2.Repository(repo_path)
+
+        # Check for origin remote
+        try:
+            _ = repo.remotes["origin"]
+        except (KeyError, IndexError) as e:
+            msg = f"No origin remote found for repository at {library_path}"
+            raise GitPullError(msg) from e
+
+    except pygit2.GitError as e:
+        msg = f"Git error during tag update at {library_path}: {e}"
+        raise GitPullError(msg) from e
+
+    # Use subprocess to fetch tags and checkout
+    try:
+        # Step 1: Fetch all tags, force update existing ones
+        fetch_result = subprocess.run(
+            ["git", "fetch", "--tags", "--force", "origin"],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if fetch_result.returncode != 0:
+            msg = f"Git fetch --tags --force failed at {library_path}: {fetch_result.stderr}"
+            raise GitPullError(msg)
+
+        # Step 2: Checkout the tag (this will put us in detached HEAD state, which is expected)
+        checkout_result = subprocess.run(  # noqa: S603
+            ["git", "checkout", f"tags/{tag_name}"],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if checkout_result.returncode != 0:
+            msg = f"Git checkout tags/{tag_name} failed at {library_path}: {checkout_result.stderr}"
+            raise GitPullError(msg)
+
+    except subprocess.SubprocessError as e:
+        msg = f"Subprocess error during tag update at {library_path}: {e}"
+        raise GitPullError(msg) from e
+
+
+def update_library_git(library_path: Path) -> None:
+    """Update a library to the latest version using the appropriate git strategy.
+
+    This function automatically detects whether the library uses a branch-based or
+    tag-based workflow and applies the correct update mechanism:
+    - Branch-based: Uses git pull --rebase
+    - Tag-based: Uses git fetch --tags --force + git checkout
+
+    Args:
+        library_path: The path to the library directory.
+
+    Raises:
+        GitRepositoryError: If the path is not a valid git repository.
+        GitPullError: If the update operation fails.
+    """
+    if not is_git_repository(library_path):
+        msg = f"Cannot update: {library_path} is not a git repository"
+        raise GitRepositoryError(msg)
+
+    try:
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            msg = f"Cannot discover repository at {library_path}"
+            raise GitRepositoryError(msg)
+
+        repo = pygit2.Repository(repo_path)
+
+        # Detect workflow type
+        if repo.head_is_detached:
+            # Detached HEAD - likely on a tag
+            tag_name = get_current_tag(library_path)
+            if tag_name is None:
+                msg = f"Repository at {library_path} is in detached HEAD state but not on a known tag. Cannot auto-update."
+                raise GitPullError(msg)
+
+            logger.info("Detected tag-based workflow for %s (tag: %s)", library_path, tag_name)
+            update_to_moving_tag(library_path, tag_name)
+        else:
+            # On a branch - use standard pull --rebase
+            logger.info("Detected branch-based workflow for %s", library_path)
+            git_pull_rebase(library_path)
+
+    except pygit2.GitError as e:
+        msg = f"Git error during library update at {library_path}: {e}"
+        raise GitPullError(msg) from e
+
+
 def switch_branch(library_path: Path, branch_name: str) -> None:
     """Switch to a different branch in a library directory.
 
@@ -391,6 +592,58 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
     except pygit2.GitError as e:
         msg = f"Git error during branch switch at {library_path}: {e}"
+        raise GitBranchError(msg) from e
+
+
+def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
+    """Switch to a different branch or tag in a library directory.
+
+    Fetches from remote first, then checks out the specified branch or tag.
+    Automatically detects whether the ref is a branch or tag.
+
+    Args:
+        library_path: The path to the library directory.
+        ref_name: The name of the branch or tag to switch to.
+
+    Raises:
+        GitRepositoryError: If the path is not a valid git repository.
+        GitBranchError: If the switch operation fails.
+    """
+    if not is_git_repository(library_path):
+        msg = f"Cannot switch ref: {library_path} is not a git repository"
+        raise GitRepositoryError(msg)
+
+    try:
+        # Use subprocess for fetching to get both branches and tags
+        fetch_result = subprocess.run(
+            ["git", "fetch", "--tags", "origin"],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if fetch_result.returncode != 0:
+            msg = f"Git fetch failed at {library_path}: {fetch_result.stderr}"
+            raise GitBranchError(msg)
+
+        # Try to checkout the ref (works for both branches and tags)
+        checkout_result = subprocess.run(  # noqa: S603
+            ["git", "checkout", ref_name],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if checkout_result.returncode != 0:
+            msg = f"Git checkout {ref_name} failed at {library_path}: {checkout_result.stderr}"
+            raise GitBranchError(msg)
+
+        logger.info("Checked out %s at %s", ref_name, library_path)
+
+    except subprocess.SubprocessError as e:
+        msg = f"Subprocess error during ref switch at {library_path}: {e}"
         raise GitBranchError(msg) from e
 
 
