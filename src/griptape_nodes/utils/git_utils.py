@@ -55,6 +55,39 @@ def is_git_url(url: str) -> bool:
     return url.startswith(git_url_patterns)
 
 
+def normalize_github_url(url_or_shorthand: str) -> str:
+    """Normalize a GitHub URL or shorthand to a full HTTPS git URL.
+
+    Converts GitHub shorthand (e.g., "owner/repo") to full HTTPS URLs.
+    Ensures .git suffix on GitHub URLs. Passes through non-GitHub URLs unchanged.
+
+    Args:
+        url_or_shorthand: Either a full git URL or GitHub shorthand (e.g., "user/repo").
+
+    Returns:
+        A normalized HTTPS git URL.
+
+    Examples:
+        "griptape-ai/griptape-nodes-library-topazlabs" -> "https://github.com/griptape-ai/griptape-nodes-library-topazlabs.git"
+        "https://github.com/user/repo" -> "https://github.com/user/repo.git"
+        "git@github.com:user/repo.git" -> "git@github.com:user/repo.git"
+        "https://gitlab.com/user/repo" -> "https://gitlab.com/user/repo"
+    """
+    url = url_or_shorthand.strip().rstrip("/")
+
+    # Check if it's GitHub shorthand: owner/repo (no protocol, single slash, no domain)
+    if not is_git_url(url) and "/" in url and url.count("/") == 1:
+        # Assume GitHub shorthand
+        return f"https://github.com/{url}.git"
+
+    # If it's a GitHub URL, ensure .git suffix
+    if "github.com" in url and not url.endswith(".git"):
+        return f"{url}.git"
+
+    # Pass through all other URLs unchanged
+    return url
+
+
 def is_git_repository(path: Path) -> bool:
     """Check if a directory is a git repository.
 
