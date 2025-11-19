@@ -561,7 +561,7 @@ class ArtifactPathTethering:
             # Path resolution failed, fall back to filename
             file_name_for_storage = path.name
 
-        # Create upload URL
+        # FAILURE CASES FIRST: Validate upload URL creation
         upload_request = CreateStaticFileUploadUrlRequest(file_name=file_name_for_storage)
         upload_result = GriptapeNodes.handle_request(upload_request)
 
@@ -573,14 +573,21 @@ class ArtifactPathTethering:
             error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name_for_storage}')"
             raise TypeError(error_msg)
 
-        # Read and upload file (path is already resolved above)
+        # FAILURE CASES FIRST: Read file with specific exception handling
         try:
             file_data = path.read_bytes()
             file_size = len(file_data)
-        except Exception as e:
+        except FileNotFoundError:
+            error_msg = f"File not found: '{file_path}'"
+            raise ValueError(error_msg) from None
+        except PermissionError:
+            error_msg = f"Permission denied reading file: '{file_path}'"
+            raise ValueError(error_msg) from None
+        except OSError as e:
             error_msg = f"Failed to read file '{file_path}': {e}"
             raise ValueError(error_msg) from e
 
+        # FAILURE CASES FIRST: Upload file with specific exception handling
         try:
             response = httpx.request(
                 upload_result.method,
@@ -589,11 +596,14 @@ class ArtifactPathTethering:
                 headers=upload_result.headers,
             )
             response.raise_for_status()
-        except Exception as e:
-            error_msg = f"Failed to upload file '{file_path}' to static storage (method: {upload_result.method}, size: {file_size} bytes): {e}"
+        except httpx.HTTPStatusError as e:
+            error_msg = f"Failed to upload file '{file_path}' to static storage (HTTP {e.response.status_code}, method: {upload_result.method}, size: {file_size} bytes): {e}"
+            raise ValueError(error_msg) from e
+        except httpx.RequestError as e:
+            error_msg = f"Failed to upload file '{file_path}' to static storage (network error, method: {upload_result.method}, size: {file_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
-        # Get download URL
+        # FAILURE CASES FIRST: Validate download URL creation
         download_request = CreateStaticFileDownloadUrlRequest(file_name=file_name_for_storage)
         download_result = GriptapeNodes.handle_request(download_request)
 
@@ -605,6 +615,7 @@ class ArtifactPathTethering:
             error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name_for_storage}')"
             raise TypeError(error_msg)
 
+        # SUCCESS PATH AT END
         return download_result.url
 
     def _generate_filename_from_url(self, url: str) -> str:
