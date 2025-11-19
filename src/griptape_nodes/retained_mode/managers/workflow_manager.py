@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from inspect import getmodule, isclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, ClassVar, NamedTuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles
 import semver
@@ -914,9 +914,8 @@ class WorkflowManager:
         if updated_content is None:
             return "Failed to update metadata header."
 
-        write_result = await cast(
-            Awaitable[WorkflowManager.WriteWorkflowFileResult],
-            self._write_workflow_file(file_path=file_path, content=updated_content, file_name=workflow_metadata.name),
+        write_result = await self._write_workflow_file(
+            file_path=file_path, content=updated_content, file_name=workflow_metadata.name
         )
         if not write_result.success:
             return write_result.error_details
@@ -1455,20 +1454,18 @@ class WorkflowManager:
             return SaveWorkflowResultFailure(result_details=details)
         commands = serialized_flow_result.serialized_flow_commands
 
-        workflow_shape = self._safe_extract_workflow_shape(file_name)
+        # Extract workflow shape if available; ignore failures
+        try:
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            workflow_shape = WorkflowShape(
+                inputs=workflow_shape_dict["input"],
+                outputs=workflow_shape_dict["output"],
+            )
+        except ValueError:
+            workflow_shape = None
 
         # Build save request inline (preserve existing description/image/is_template if present)
-        existing_description: str | None = None
-        existing_image: str | None = None
-        existing_is_template: bool | None = None
-        if WorkflowRegistry.has_workflow_with_name(file_name):
-            try:
-                existing = WorkflowRegistry.get_workflow_by_name(file_name)
-                existing_description = existing.metadata.description
-                existing_image = existing.metadata.image
-                existing_is_template = existing.metadata.is_template
-            except Exception as err:
-                logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
+        existing_description, existing_image, existing_is_template = self._get_existing_metadata(file_name)
 
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=commands,
@@ -1499,12 +1496,9 @@ class WorkflowManager:
 
         registered_workflows = WorkflowRegistry.list_workflows()
         if file_name not in registered_workflows:
-            if not Path(relative_file_path).is_absolute():
-                try:
-                    GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
-                except OSError as e:
-                    details = f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
-                    return SaveWorkflowResultFailure(result_details=details)
+            error_details = self._ensure_user_workflow_json_saved(relative_file_path, file_path, file_name)
+            if error_details:
+                return SaveWorkflowResultFailure(result_details=error_details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
 
         existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
@@ -1513,6 +1507,29 @@ class WorkflowManager:
         return SaveWorkflowResultSuccess(
             file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
         )
+
+    def _get_existing_metadata(self, file_name: str) -> tuple[str | None, str | None, bool | None]:
+        """Return (description, image, is_template) for existing workflow if present; otherwise Nones."""
+        if not WorkflowRegistry.has_workflow_with_name(file_name):
+            return None, None, None
+        try:
+            existing = WorkflowRegistry.get_workflow_by_name(file_name)
+        except Exception as err:
+            logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
+            return None, None, None
+        else:
+            return existing.metadata.description, existing.metadata.image, existing.metadata.is_template
+
+    def _ensure_user_workflow_json_saved(self, relative_file_path: str, file_path: Path, file_name: str) -> str | None:
+        """Save user workflow JSON when needed; return error details on failure, else None."""
+        if Path(relative_file_path).is_absolute():
+            return None
+        try:
+            GriptapeNodes.ConfigManager().save_user_workflow_json(str(file_path))
+        except OSError as e:
+            return f"Attempted to save workflow '{file_name}'. Failed when saving configuration: {e}"
+        else:
+            return None
 
     def _determine_save_target(
         self, requested_file_name: str | None, current_workflow_name: str | None
@@ -1605,18 +1622,6 @@ class WorkflowManager:
             branched_from=branched_from,
         )
 
-    # Removed: _SerializedFlowResult and _get_serialized_top_level_flow; inlined at call site
-
-    def _safe_extract_workflow_shape(self, file_name: str) -> WorkflowShape | None:
-        """Extract workflow shape if available; return None on failure."""
-        try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
-            return WorkflowShape(inputs=workflow_shape_dict["input"], outputs=workflow_shape_dict["output"])
-        except ValueError:
-            return None
-
-    # Removed: _build_save_file_request and _persist_save_and_update_registry; both are inlined at call site
-
     async def on_save_workflow_file_from_serialized_flow_request(
         self, request: SaveWorkflowFileFromSerializedFlowRequest
     ) -> ResultPayload:
@@ -1668,10 +1673,7 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = await cast(
-            Awaitable[WorkflowManager.WriteWorkflowFileResult],
-            self._write_workflow_file(file_path, final_code_output, request.file_name),
-        )
+        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
