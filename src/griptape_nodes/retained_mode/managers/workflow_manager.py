@@ -146,7 +146,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Awaitable, Callable, Sequence
     from types import TracebackType
 
     from griptape_nodes.exe_types.core_types import Parameter
@@ -914,9 +914,10 @@ class WorkflowManager:
         if updated_content is None:
             return "Failed to update metadata header."
 
-        write_result = await self._write_workflow_file(
+        write_coro: Awaitable[WorkflowManager.WriteWorkflowFileResult] = self._write_workflow_file(
             file_path=file_path, content=updated_content, file_name=workflow_metadata.name
         )
+        write_result = await write_coro
         if not write_result.success:
             return write_result.error_details
         return None
@@ -1673,7 +1674,10 @@ class WorkflowManager:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=details)
 
         # Write the workflow file
-        write_result = await self._write_workflow_file(file_path, final_code_output, request.file_name)
+        write_task: Awaitable[WorkflowManager.WriteWorkflowFileResult] = self._write_workflow_file(
+            file_path, final_code_output, request.file_name
+        )
+        write_result = await write_task
         if not write_result.success:
             return SaveWorkflowFileFromSerializedFlowResultFailure(result_details=write_result.error_details)
 
