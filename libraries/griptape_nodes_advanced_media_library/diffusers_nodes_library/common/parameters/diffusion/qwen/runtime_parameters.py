@@ -38,7 +38,7 @@ class QwenPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.add_parameter(
             Parameter(
                 name="true_cfg_scale",
-                default_value=1.0,
+                default_value=4.0,
                 type="float",
                 tooltip="True classifier-free guidance (guidance scale) is enabled when true_cfg_scale > 1 and negative_prompt is provided.",
             )

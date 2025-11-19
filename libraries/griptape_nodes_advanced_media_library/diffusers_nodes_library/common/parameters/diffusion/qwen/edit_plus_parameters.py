@@ -36,10 +36,7 @@ class QwenImageEditPlusPipelineParameters(DiffusionPipelineTypePipelineParameter
         )
 
         self._scheduler_parameters = SchedulerParameters(
-            node,
-            scheduler_types=[
-                diffusers.FlowMatchEulerDiscreteScheduler
-            ]
+            node, scheduler_types=[diffusers.FlowMatchEulerDiscreteScheduler]
         )
 
     def add_input_parameters(self) -> None:
@@ -56,7 +53,7 @@ class QwenImageEditPlusPipelineParameters(DiffusionPipelineTypePipelineParameter
         return {
             "model": self._node.get_parameter_value("model"),
             "text_encoder": self._node.get_parameter_value("text_encoder"),
-            **self._scheduler_parameters.get_config_kwargs()
+            **self._scheduler_parameters.get_config_kwargs(),
         }
 
     @property
