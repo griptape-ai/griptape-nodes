@@ -38,11 +38,7 @@ async def _sync_libraries() -> None:
     console.print("[bold cyan]Syncing libraries...[/bold cyan]")
 
     # Create sync request with default parameters
-    request = SyncLibrariesRequest(
-        check_updates_only=False,
-        install_dependencies=True,
-        exclude_libraries=None,
-    )
+    request = SyncLibrariesRequest(check_updates_only=False, install_dependencies=True)
 
     # Execute the sync
     result = await GriptapeNodes.ahandle_request(request)
@@ -62,9 +58,6 @@ async def _sync_libraries() -> None:
                     console.print(f"  [red]✗ {lib_name}: {update_info.get('error', 'Unknown error')}[/red]")
         else:
             console.print("[green]All libraries are up to date[/green]")
-
-        if result.libraries_skipped > 0:
-            console.print(f"[yellow]Skipped {result.libraries_skipped} libraries[/yellow]")
 
         console.print("[bold green]Libraries synced successfully.[/bold green]")
     else:

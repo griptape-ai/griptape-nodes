@@ -2777,22 +2777,87 @@ class LibraryManager:
             library_name=library_name, dependencies_installed=len(pip_dependencies), result_details=details
         )
 
-    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
+    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         """Sync all libraries to latest versions and ensure dependencies are installed."""
+        from griptape_nodes.utils.git_utils import extract_repo_name_from_url, is_git_url
+
         check_updates_only = request.check_updates_only
         install_dependencies = request.install_dependencies
-        exclude_libraries = request.exclude_libraries or []
 
+        # Phase 1: Download missing libraries from config
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if not libraries_dir_setting:
+            details = "Cannot sync libraries: libraries_directory setting is not configured."
+            return SyncLibrariesResultFailure(result_details=details)
+
+        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+        libraries_downloaded = 0
+        update_summary = {}
+
+        # Process git URLs from config and download if missing
+        async def download_library_if_missing(git_url: str) -> tuple[str, bool, str | None]:
+            """Download a library from git URL if not already present.
+
+            Returns:
+                Tuple of (git_url, success, library_name_or_error)
+            """
+            target_directory_name = extract_repo_name_from_url(git_url)
+            target_path = libraries_path / target_directory_name
+
+            if target_path.exists():
+                logger.info("Library at '%s' already exists, skipping download", target_path)
+                return git_url, False, None
+
+            logger.info("Downloading library from '%s' to '%s'", git_url, target_path)
+            download_result = await GriptapeNodes.ahandle_request(
+                DownloadLibraryRequest(git_url=git_url, install_dependencies=install_dependencies)
+            )
+
+            if isinstance(download_result, DownloadLibraryResultSuccess):
+                library_name = download_result.library_name
+                logger.info("Successfully downloaded library '%s' from %s", library_name, git_url)
+                return git_url, True, library_name
+
+            error = str(download_result.result_details)
+            logger.warning("Failed to download library from '%s': %s", git_url, error)
+            return git_url, False, error
+
+        # Download missing libraries concurrently
+        git_urls_to_download = [entry for entry in config_libraries if is_git_url(entry)]
+
+        if git_urls_to_download:
+            logger.info("Found %d git URLs in config, checking for missing libraries", len(git_urls_to_download))
+            async with asyncio.TaskGroup() as tg:
+                download_tasks = [tg.create_task(download_library_if_missing(url)) for url in git_urls_to_download]
+
+            # Collect download results
+            for task in download_tasks:
+                git_url, success, library_name_or_error = task.result()
+                if success and library_name_or_error:
+                    libraries_downloaded += 1
+                    update_summary[library_name_or_error] = {
+                        "status": "downloaded",
+                        "git_url": git_url,
+                    }
+                elif library_name_or_error:
+                    logger.warning("Download failed for '%s': %s", git_url, library_name_or_error)
+
+        logger.info("Downloaded %d new libraries", libraries_downloaded)
+
+        # Phase 2: Check and update all registered libraries
         # Get all registered libraries
         list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             details = "Failed to list registered libraries for sync"
             return SyncLibrariesResultFailure(result_details=details)
 
-        all_libraries = list_result.libraries
-        libraries_to_check = [lib for lib in all_libraries if lib not in exclude_libraries]
+        libraries_to_check = list_result.libraries
 
-        logger.info("Syncing %d libraries (excluded: %d)", len(libraries_to_check), len(exclude_libraries))
+        logger.info("Checking %d registered libraries for updates", len(libraries_to_check))
 
         # Check all libraries for updates concurrently using task group
         async def check_library_for_update(library_name: str) -> tuple[str, ResultPayload]:
@@ -2814,8 +2879,6 @@ class LibraryManager:
         # Process check results and determine which libraries need updates
         libraries_checked = len(libraries_to_check)
         libraries_updated = 0
-        libraries_skipped = len(exclude_libraries)
-        update_summary = {}
         libraries_to_update: list[tuple[str, str, str]] = []  # (library_name, old_version, new_version)
 
         for library_name, check_result in check_results.items():
@@ -2845,13 +2908,13 @@ class LibraryManager:
 
         # If only checking for updates, return early
         if check_updates_only:
-            updates_available = len(update_summary)
-            details = f"Checked {libraries_checked} libraries. {updates_available} update(s) available, {libraries_skipped} skipped."
+            updates_available = len([s for s in update_summary.values() if s.get("status") == "available"])
+            details = f"Downloaded {libraries_downloaded} libraries. Checked {libraries_checked} libraries. {updates_available} update(s) available."
             logger.info(details)
             return SyncLibrariesResultSuccess(
+                libraries_downloaded=libraries_downloaded,
                 libraries_checked=libraries_checked,
                 libraries_updated=0,
-                libraries_skipped=libraries_skipped,
                 update_summary=update_summary,
                 result_details=details,
             )
@@ -2899,12 +2962,12 @@ class LibraryManager:
             )
 
         # Build result details
-        details = f"Synced {libraries_checked} libraries. {libraries_updated} updated, {libraries_skipped} skipped."
+        details = f"Downloaded {libraries_downloaded} libraries. Checked {libraries_checked} libraries. {libraries_updated} updated."
         logger.info(details)
         return SyncLibrariesResultSuccess(
+            libraries_downloaded=libraries_downloaded,
             libraries_checked=libraries_checked,
             libraries_updated=libraries_updated,
-            libraries_skipped=libraries_skipped,
             update_summary=update_summary,
             result_details=details,
         )
