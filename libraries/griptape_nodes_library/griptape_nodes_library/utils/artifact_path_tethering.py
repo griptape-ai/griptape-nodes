@@ -583,6 +583,9 @@ class ArtifactPathTethering:
         except OSError as e:
             error_msg = f"Failed to read file '{file_path}': {e}"
             raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error reading file '{file_path}': {e}"
+            raise ValueError(error_msg) from e
 
         file_size = len(file_data)
         return file_data, file_size
@@ -604,6 +607,9 @@ class ArtifactPathTethering:
             raise ValueError(error_msg) from e
         except httpx.RequestError as e:
             error_msg = f"Failed to upload file '{file_path}' to static storage (network error, method: {upload_result.method}, size: {file_size} bytes): {e}"
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error uploading file '{file_path}' to static storage (method: {upload_result.method}, size: {file_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
     def _create_download_url(self, file_name_for_storage: str) -> CreateStaticFileDownloadUrlResultSuccess:
