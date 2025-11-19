@@ -7,7 +7,7 @@ import transformers  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
-from diffusers_nodes_library.common.parameters.scheduler_parameters import SchedulerParameters
+from diffusers_nodes_library.common.parameters.diffusion.scheduler_parameters import SchedulerParameters
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 
