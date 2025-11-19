@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import subprocess
+import sys
 
 from rich.console import Console
 
@@ -60,7 +61,7 @@ def _sync_libraries() -> None:
     console.print("[bold green]Syncing libraries...[/bold green]")
     try:
         subprocess.run(
-            ["griptape-nodes", "--no-update", "libraries", "sync"],  # noqa: S607
+            [sys.executable, "--no-update", "libraries", "sync"],
             text=True,
             capture_output=True,
             check=True,
