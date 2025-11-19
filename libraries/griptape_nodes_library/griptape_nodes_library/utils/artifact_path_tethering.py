@@ -527,23 +527,53 @@ class ArtifactPathTethering:
     def _upload_file_to_static_storage(self, file_path: str) -> str:
         """Upload file to static storage and return download URL."""
         path = Path(file_path)
-        file_name = path.name
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+        # Resolve to absolute path relative to workspace
+        if not path.is_absolute():
+            path = workspace_path / path
+        else:
+            # If absolute, check if it's within workspace
+            try:
+                path = path.relative_to(workspace_path)
+                path = workspace_path / path
+            except ValueError:
+                # Path is outside workspace, use as-is
+                pass
+
+        # Determine the relative path to use for static storage
+        # If file is already within staticfiles, preserve the subdirectory structure
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value(
+            "static_files_directory", default="staticfiles"
+        )
+        static_files_path = workspace_path / static_files_dir
+
+        try:
+            # Check if file is within staticfiles directory
+            if path.is_relative_to(static_files_path):
+                # Preserve the relative path from staticfiles directory
+                relative_path = path.relative_to(static_files_path)
+                file_name_for_storage = str(relative_path.as_posix())
+            else:
+                # File is outside staticfiles, use just the filename
+                file_name_for_storage = path.name
+        except (ValueError, AttributeError):
+            # Path resolution failed, fall back to filename
+            file_name_for_storage = path.name
 
         # Create upload URL
-        upload_request = CreateStaticFileUploadUrlRequest(file_name=file_path)
+        upload_request = CreateStaticFileUploadUrlRequest(file_name=file_name_for_storage)
         upload_result = GriptapeNodes.handle_request(upload_request)
 
         if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL for file '{file_name}': {upload_result.error}"
+            error_msg = f"Failed to create upload URL for file '{file_name_for_storage}': {upload_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name}')"
+            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name_for_storage}')"
             raise TypeError(error_msg)
 
-        # Read and upload file
-        if not path.is_absolute():
-            path = GriptapeNodes.ConfigManager().workspace_path / path
+        # Read and upload file (path is already resolved above)
         try:
             file_data = path.read_bytes()
             file_size = len(file_data)
@@ -564,15 +594,15 @@ class ArtifactPathTethering:
             raise ValueError(error_msg) from e
 
         # Get download URL
-        download_request = CreateStaticFileDownloadUrlRequest(file_name=file_path)
+        download_request = CreateStaticFileDownloadUrlRequest(file_name=file_name_for_storage)
         download_result = GriptapeNodes.handle_request(download_request)
 
         if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL for file '{file_name}': {download_result.error}"
+            error_msg = f"Failed to create download URL for file '{file_name_for_storage}': {download_result.error}"
             raise TypeError(error_msg)
 
         if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name}')"
+            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name_for_storage}')"
             raise TypeError(error_msg)
 
         return download_result.url
@@ -710,11 +740,13 @@ class ArtifactPathTethering:
         )
 
         # Add file system picker trait
+        # workspace_only=False allows files outside workspace since we copy them to staticfiles
         path_parameter.add_trait(
             FileSystemPicker(
                 allow_directories=False,
                 allow_files=True,
                 file_types=list(config.supported_extensions),
+                workspace_only=False,
             )
         )
 
