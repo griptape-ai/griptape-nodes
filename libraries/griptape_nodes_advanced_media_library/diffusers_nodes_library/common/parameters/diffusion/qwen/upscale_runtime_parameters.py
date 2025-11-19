@@ -18,6 +18,7 @@ class QwenUpscalePipelineRuntimeParameters(UpscalePipelineRuntimeParameters):
         return {
             "prompt": self._node.get_parameter_value("prompt"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
+            "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),
