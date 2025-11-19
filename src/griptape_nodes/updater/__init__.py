@@ -60,7 +60,7 @@ def _sync_libraries() -> None:
     """Syncs the libraries for the engine."""
     console.print("[bold green]Syncing libraries...[/bold green]")
     try:
-        subprocess.run(
+        subprocess.run(  # noqa: S603
             [sys.executable, "--no-update", "libraries", "sync"],
             text=True,
             capture_output=True,
