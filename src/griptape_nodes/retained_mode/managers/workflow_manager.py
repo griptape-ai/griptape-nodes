@@ -1497,7 +1497,8 @@ class WorkflowManager:
             file_name = requested_file_name
             creation_date = current_workflow.metadata.creation_date
             branched_from = current_workflow.metadata.branched_from
-            relative_file_path = f"{file_name}.py"
+            current_dir = Path(current_workflow.file_path).parent
+            relative_file_path = str(current_dir / f"{file_name}.py")
             file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(relative_file_path)
 
         else:
