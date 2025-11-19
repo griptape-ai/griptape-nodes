@@ -58,7 +58,9 @@ class HuggingFaceRepoFileParameter(HuggingFaceModelParameter):
             return
 
         # Get current value - use value_being_set if provided (during after_value_set)
-        current_value = value_being_set if value_being_set is not None else self._node.get_parameter_value(self._parameter_name)
+        current_value = (
+            value_being_set if value_being_set is not None else self._node.get_parameter_value(self._parameter_name)
+        )
 
         # Filter: include non-deprecated models, and deprecated model if it's currently selected
         filtered_choices = []
