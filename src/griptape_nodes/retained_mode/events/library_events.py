@@ -770,11 +770,12 @@ class SyncLibrariesRequest(RequestPayload):
 
     Similar to `uv sync` - ensures workspace is in a consistent, up-to-date state.
     This operation:
-    1. Gets all registered libraries
-    2. Checks each library for available updates
-    3. Updates libraries that have updates available
-    4. Installs/updates dependencies for all libraries
-    5. Returns comprehensive summary of changes
+    1. Downloads missing libraries from git URLs specified in config
+    2. Gets all registered libraries (including newly downloaded)
+    3. Checks each library for available updates
+    4. Updates libraries that have updates available
+    5. Installs/updates dependencies for all libraries
+    6. Returns comprehensive summary of changes
 
     Use when: Updating workspace to latest versions, ensuring all libraries are
     up-to-date, setting up development environment, periodic maintenance.
@@ -782,14 +783,12 @@ class SyncLibrariesRequest(RequestPayload):
     Args:
         check_updates_only: If True, only report what would be updated without making changes (default: False)
         install_dependencies: If True, install dependencies after updating (default: True)
-        exclude_libraries: Optional list of library names to skip during sync
 
     Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
     """
 
     check_updates_only: bool = False
     install_dependencies: bool = True
-    exclude_libraries: list[str] | None = None
 
 
 @dataclass
@@ -798,15 +797,15 @@ class SyncLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Libraries synced successfully.
 
     Args:
+        libraries_downloaded: Number of libraries that were downloaded from git URLs
         libraries_checked: Number of libraries checked for updates
         libraries_updated: Number of libraries that were updated
-        libraries_skipped: Number of libraries that were skipped
-        update_summary: Dict mapping library names to their update info (old_version -> new_version)
+        update_summary: Dict mapping library names to their update info (old_version -> new_version, or status for downloads)
     """
 
+    libraries_downloaded: int
     libraries_checked: int
     libraries_updated: int
-    libraries_skipped: int
     update_summary: dict[str, dict[str, str]]
 
 
