@@ -166,7 +166,7 @@ class TestFindAllFilesInDirectory:
 
         result = find_all_files_in_directory(temp_dir, "*.json")
 
-        assert len(result) == 3
+        assert len(result) == 3  # noqa: PLR2004
         assert set(result) == {file1, file2, file3}
 
     def test_find_all_files_searches_subdirectories_recursively(self, temp_dir: Path) -> None:
@@ -185,7 +185,7 @@ class TestFindAllFilesInDirectory:
 
         result = find_all_files_in_directory(temp_dir, "*.json")
 
-        assert len(result) == 3
+        assert len(result) == 3  # noqa: PLR2004
         assert set(result) == {file1, file2, file3}
 
     def test_find_all_files_matches_glob_pattern(self, temp_dir: Path) -> None:
@@ -199,7 +199,7 @@ class TestFindAllFilesInDirectory:
 
         result = find_all_files_in_directory(temp_dir, "*library*.json")
 
-        assert len(result) == 2
+        assert len(result) == 2  # noqa: PLR2004
         assert set(result) == {file1, file2}
 
     def test_find_all_files_with_complex_glob_pattern(self, temp_dir: Path) -> None:
