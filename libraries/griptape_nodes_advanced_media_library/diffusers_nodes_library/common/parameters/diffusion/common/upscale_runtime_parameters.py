@@ -38,6 +38,7 @@ OUTPUT_SCALE = 4
 class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
         super().__init__(node)
+        self._refreshing_model_choices = False
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
             self._node,
             repo_files=[
@@ -45,11 +46,28 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 ("Kim2091/UltraSharp", "4x-UltraSharp.pth"),
                 ("Kim2091/UltraSharpV2", "4x-UltraSharpV2.pth"),
                 ("Kim2091/AnimeSharp", "4x-AnimeSharp.pth"),
+            ],
+            deprecated_repo_files=[
                 ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth"),
                 ("lokCX/4x-Ultrasharp", "4x-Ultrasharp.pth"),
             ],
             parameter_name="upscale_model",
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Prevent infinite recursion when refresh_parameters updates choices
+        if self._refreshing_model_choices:
+            return
+
+        if parameter.name == "upscale_model":
+            self._refreshing_model_choices = True
+            try:
+                # Pass the value being set so refresh can include it if deprecated
+                self._upscale_model_repo_parameter.refresh_parameters(value_being_set=value)
+            finally:
+                self._refreshing_model_choices = False
 
     def _add_input_parameters(self) -> None:
         self._upscale_model_repo_parameter.add_input_parameters()
