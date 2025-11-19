@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles
+import portalocker
 import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
@@ -1375,8 +1376,11 @@ class WorkflowManager:
         success: bool
         error_details: str
 
-    async def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
+    def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
+
+        Uses portalocker for exclusive file locking to prevent concurrent writes.
+        First write wins - if another process is writing, this call fails immediately.
 
         Args:
             file_path: Path where to write the file
@@ -1401,13 +1405,34 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{file_name}'. Failed when creating directory structure: {e}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
 
-        # Write the file content
+        # Write the file content with exclusive lock (non-blocking)
+        error_details = None
         try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(content)
+            with portalocker.Lock(
+                file_path,
+                mode="w",
+                encoding="utf-8",
+                timeout=0,  # Non-blocking: fail immediately if locked
+                flags=portalocker.LockFlags.EXCLUSIVE,
+            ) as fh:
+                fh.write(content)
+        except portalocker.LockException:
+            error_details = (
+                f"Attempted to save workflow '{file_name}'. Another process is currently writing to this workflow file"
+            )
+        except PermissionError as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Permission denied: {e}"
+        except IsADirectoryError:
+            error_details = f"Attempted to save workflow '{file_name}'. Path is a directory, not a file"
+        except UnicodeEncodeError as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Content encoding error: {e}"
         except OSError as e:
-            details = f"Attempted to save workflow '{file_name}'. Failed when writing file content: {e}"
-            return self.WriteWorkflowFileResult(success=False, error_details=details)
+            error_details = f"Attempted to save workflow '{file_name}'. OS error: {e}"
+        except Exception as e:
+            error_details = f"Attempted to save workflow '{file_name}'. Unexpected error: {type(e).__name__}: {e}"
+
+        if error_details:
+            return self.WriteWorkflowFileResult(success=False, error_details=error_details)
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 

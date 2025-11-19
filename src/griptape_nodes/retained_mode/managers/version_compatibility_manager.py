@@ -4,7 +4,7 @@ import importlib
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import semver
 
@@ -35,8 +35,13 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.library_registry import LibrarySchema
     from griptape_nodes.node_library.workflow_registry import WorkflowMetadata
+    from griptape_nodes.retained_mode.events.parameter_events import (
+        SetParameterValueResultFailure,
+        SetParameterValueResultSuccess,
+    )
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
     from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
@@ -83,6 +88,38 @@ class WorkflowVersionCompatibilityCheck(ABC):
         """Perform the workflow compatibility check."""
 
 
+class SetParameterVersionCompatibilityCheck(ABC):
+    """Abstract base class for runtime parameter set version compatibility checks."""
+
+    @abstractmethod
+    def applies_to_set_parameter(self, node: BaseNode, parameter_name: str, value: Any) -> bool:
+        """Return True if this check applies to the given parameter set operation.
+
+        Args:
+            node: The node instance
+            parameter_name: Name of the parameter being set
+            value: The value being set
+
+        Returns:
+            True if this check should be performed for this parameter
+        """
+
+    @abstractmethod
+    def set_parameter_value(
+        self, node: BaseNode, parameter_name: str, value: Any
+    ) -> SetParameterValueResultSuccess | SetParameterValueResultFailure:
+        """Handle setting the parameter value with version compatibility logic.
+
+        Args:
+            node: The node instance
+            parameter_name: Name of the parameter being set
+            value: The value being set
+
+        Returns:
+            SetParameterValueResultSuccess or SetParameterValueResultFailure
+        """
+
+
 class VersionCompatibilityManager:
     """Manages version compatibility checks for libraries and other components."""
 
@@ -90,89 +127,74 @@ class VersionCompatibilityManager:
         self._event_manager = event_manager
         self._compatibility_checks: list[LibraryVersionCompatibilityCheck] = []
         self._workflow_compatibility_checks: list[WorkflowVersionCompatibilityCheck] = []
+        self._set_parameter_compatibility_checks: list[SetParameterVersionCompatibilityCheck] = []
         self._discover_version_checks()
 
     def _discover_version_checks(self) -> None:
-        """Automatically discover and register library and workflow version compatibility checks."""
-        self._discover_library_version_checks()
-        self._discover_workflow_version_checks()
-
-    def _discover_library_version_checks(self) -> None:
-        """Discover and register library version compatibility checks."""
-        # Get the path to the version_compatibility/versions directory
-        import griptape_nodes.version_compatibility.versions as versions_module
-
-        versions_path = Path(versions_module.__file__).parent
-
-        # Iterate through version directories
-        for version_dir in versions_path.iterdir():
-            if version_dir.is_dir() and not version_dir.name.startswith("__"):
-                self._discover_checks_in_version_dir(version_dir)
-
-    def _discover_workflow_version_checks(self) -> None:
-        """Discover and register workflow version compatibility checks."""
+        """Automatically discover and register all version compatibility checks from the versions/ directory."""
         try:
-            import griptape_nodes.version_compatibility.workflow_versions as workflow_versions_module
+            import griptape_nodes.version_compatibility.versions as versions_module
 
-            workflow_versions_path = Path(workflow_versions_module.__file__).parent
+            if versions_module.__file__ is None:
+                logger.debug("No version compatibility checks directory found, skipping discovery")
+                return
 
-            # Iterate through version directories
-            for version_dir in workflow_versions_path.iterdir():
-                if version_dir.is_dir() and not version_dir.name.startswith("__"):
-                    self._discover_workflow_checks_in_version_dir(version_dir)
+            versions_path = Path(versions_module.__file__).parent
+
+            # Iterate through version directories (e.g., v0_39_0, v0_63_8)
+            for version_dir in versions_path.iterdir():
+                if not version_dir.is_dir() or version_dir.name.startswith("__"):
+                    continue
+
+                # Iterate through Python files in the version directory
+                for check_file in version_dir.glob("*.py"):
+                    if check_file.name.startswith("__"):
+                        continue
+
+                    # Import the module once
+                    file_module_path = (
+                        f"griptape_nodes.version_compatibility.versions.{version_dir.name}.{check_file.stem}"
+                    )
+                    try:
+                        check_module = importlib.import_module(file_module_path)
+                    except ImportError as e:
+                        logger.debug("Failed to import check module %s: %s", file_module_path, e)
+                        continue
+
+                    # Scan and register all check types in this module
+                    self._register_checks_from_module(check_module)
+
         except ImportError:
-            # workflow_versions directory doesn't exist yet, skip discovery
-            logger.debug("No workflow version compatibility checks directory found, skipping workflow check discovery")
+            logger.debug("No version compatibility checks directory found, skipping discovery")
 
-    def _discover_checks_in_version_dir(self, version_dir: Path) -> None:
-        """Discover compatibility checks in a specific version directory."""
-        # Iterate through Python files in the version directory
-        for check_file in version_dir.glob("*.py"):
-            if check_file.name.startswith("__"):
+    def _register_checks_from_module(self, check_module: Any) -> None:
+        """Register all version compatibility checks found in a module.
+
+        Args:
+            check_module: The imported module to scan for check classes
+        """
+        for attr_name in dir(check_module):
+            attr = getattr(check_module, attr_name)
+            if not isinstance(attr, type):
                 continue
 
-            # Import the module
-            module_path = f"griptape_nodes.version_compatibility.versions.{version_dir.name}.{check_file.stem}"
-            module = importlib.import_module(module_path)
-
-            # Look for classes that inherit from LibraryVersionCompatibilityCheck
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, LibraryVersionCompatibilityCheck)
-                    and attr is not LibraryVersionCompatibilityCheck
-                ):
-                    check_instance = attr()
-                    self._compatibility_checks.append(check_instance)
-                    logger.debug("Registered library version compatibility check: %s", attr_name)
-
-    def _discover_workflow_checks_in_version_dir(self, version_dir: Path) -> None:
-        """Discover workflow compatibility checks in a specific version directory."""
-        # Iterate through Python files in the version directory
-        for check_file in version_dir.glob("*.py"):
-            if check_file.name.startswith("__"):
+            # Skip abstract base classes
+            if ABC in getattr(attr, "__bases__", ()):
                 continue
 
-            # Import the module
-            module_path = f"griptape_nodes.version_compatibility.workflow_versions.{version_dir.name}.{check_file.stem}"
-            try:
-                module = importlib.import_module(module_path)
-            except ImportError as e:
-                logger.debug("Failed to import workflow compatibility check module %s: %s", module_path, e)
-                continue
-
-            # Look for classes that inherit from WorkflowVersionCompatibilityCheck
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and issubclass(attr, WorkflowVersionCompatibilityCheck)
-                    and attr is not WorkflowVersionCompatibilityCheck
-                ):
-                    check_instance = attr()
-                    self._workflow_compatibility_checks.append(check_instance)
-                    logger.debug("Registered workflow version compatibility check: %s", attr_name)
+            # Register based on which base class it inherits from
+            if issubclass(attr, LibraryVersionCompatibilityCheck):
+                check_instance = attr()
+                self._compatibility_checks.append(check_instance)
+                logger.debug("Registered library version compatibility check: %s", attr_name)
+            elif issubclass(attr, WorkflowVersionCompatibilityCheck):
+                check_instance = attr()
+                self._workflow_compatibility_checks.append(check_instance)
+                logger.debug("Registered workflow version compatibility check: %s", attr_name)
+            elif issubclass(attr, SetParameterVersionCompatibilityCheck):
+                check_instance = attr()
+                self._set_parameter_compatibility_checks.append(check_instance)
+                logger.debug("Registered set parameter version compatibility check: %s", attr_name)
 
     def _check_library_for_deprecated_nodes(
         self, library_data: LibrarySchema
@@ -332,6 +354,28 @@ class VersionCompatibilityManager:
             )
 
         return issues
+
+    def check_set_parameter_version_compatibility(
+        self, node: BaseNode, parameter_name: str, value: Any
+    ) -> SetParameterValueResultSuccess | SetParameterValueResultFailure | None:
+        """Check if a parameter set operation requires version compatibility handling.
+
+        Args:
+            node: The node instance
+            parameter_name: Name of the parameter being set
+            value: The value being set
+
+        Returns:
+            SetParameterValueResultSuccess, SetParameterValueResultFailure, or None if no check applies
+        """
+        # Iterate through registered checks and find the first one that applies
+        for check_instance in self._set_parameter_compatibility_checks:
+            if check_instance.applies_to_set_parameter(node, parameter_name, value):
+                # First matching check handles the parameter
+                return check_instance.set_parameter_value(node, parameter_name, value)
+
+        # No checks applied
+        return None
 
     def _get_current_engine_version(self) -> semver.VersionInfo:
         """Get the current engine version."""

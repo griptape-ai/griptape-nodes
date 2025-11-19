@@ -1,10 +1,7 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import (
-    Parameter,
-    ParameterMode,
-)
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
 class Note(BaseNode):
@@ -17,17 +14,16 @@ class Note(BaseNode):
         super().__init__(name, metadata)
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="note",
                 default_value=value,
-                type="str",
-                allowed_modes={ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Enter your note here...",
-                    "is_full_width": True,
-                    "className": "text-xl",
-                },
+                allow_input=False,
+                allow_property=True,
+                allow_output=False,
+                multiline=True,
+                placeholder_text="Enter your note here...",
+                markdown=True,
+                is_full_width=True,
                 tooltip="A helpful note",
             )
         )
