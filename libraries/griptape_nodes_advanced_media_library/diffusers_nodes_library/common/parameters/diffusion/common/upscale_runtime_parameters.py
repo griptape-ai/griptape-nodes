@@ -45,6 +45,8 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
                 ("Kim2091/UltraSharp", "4x-UltraSharp.pth"),
                 ("Kim2091/UltraSharpV2", "4x-UltraSharpV2.pth"),
                 ("Kim2091/AnimeSharp", "4x-AnimeSharp.pth"),
+                ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth"),
+                ("lokCX/4x-Ultrasharp", "4x-Ultrasharp.pth"),
             ],
             parameter_name="upscale_model",
         )
