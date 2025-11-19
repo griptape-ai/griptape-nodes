@@ -116,7 +116,6 @@ The following Python package dependencies were removed from the Advanced Media L
 - `beautifulsoup4`
 - `protobuf` (duplicate entries consolidated)
 - `sentencepiece`
-- `spandrel`
 - `torchaudio`
 - `ftfy`
 
