@@ -14,7 +14,6 @@ from griptape_nodes.cli.shared import (
     CONFIG_DIR,
     CONFIG_FILE,
     ENV_FILE,
-    ENV_LIBRARIES_BASE_DIR,
     GT_CLOUD_BASE_URL,
     NODES_APP_URL,
     InitConfig,
@@ -23,6 +22,7 @@ from griptape_nodes.cli.shared import (
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.git_utils import extract_repo_name_from_url
 
 config_manager = GriptapeNodes.ConfigManager()
 secrets_manager = GriptapeNodes.SecretsManager()
@@ -495,7 +495,6 @@ def _build_libraries_list(
     """Builds the list of libraries to register based on library settings."""
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
     libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
-    library_base_dir = Path(ENV_LIBRARIES_BASE_DIR)
 
     current_libraries = config_manager.get_config_value(
         libraries_key,
@@ -504,21 +503,26 @@ def _build_libraries_list(
     )
     new_libraries = current_libraries.copy()
 
-    def _get_library_identifier(library_path: str) -> str:
-        """Get the unique identifier for a library based on parent/filename."""
-        path = Path(library_path)
+    def _get_library_identifier(library_path_or_url: str) -> str:
+        """Get the unique identifier for a library from a path or git URL."""
+        # Check if it's a git URL
+        if library_path_or_url.startswith(("http://", "https://", "git://", "ssh://", "git@")):
+            return extract_repo_name_from_url(library_path_or_url)
+
+        # Local file path
+        path = Path(library_path_or_url)
         return f"{path.parent.name}/{path.name}"
 
     # Create a set of current library identifiers for fast lookup
     current_identifiers = {_get_library_identifier(lib) for lib in current_libraries}
 
-    default_library = str(library_base_dir / "griptape_nodes_library/griptape_nodes_library.json")
+    default_library = "https://github.com/griptape-ai/griptape-nodes-library-core"
     default_identifier = _get_library_identifier(default_library)
     # If somehow the user removed the default library, add it back
     if default_identifier not in current_identifiers:
         new_libraries.append(default_library)
 
-    advanced_media_library = str(library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_library.json")
+    advanced_media_library = "https://github.com/griptape-ai/griptape-nodes-library-advanced"
     advanced_identifier = _get_library_identifier(advanced_media_library)
     if register_advanced_library:
         # If the advanced media library is not registered, add it
@@ -530,7 +534,7 @@ def _build_libraries_list(
         for lib in libraries_to_remove:
             new_libraries.remove(lib)
 
-    griptape_cloud_library = str(library_base_dir / "griptape_cloud/griptape_nodes_library.json")
+    griptape_cloud_library = "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud"
     griptape_cloud_identifier = _get_library_identifier(griptape_cloud_library)
     if register_griptape_cloud_library:
         # If the griptape cloud library is not registered, add it

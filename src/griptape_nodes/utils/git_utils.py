@@ -88,6 +88,38 @@ def normalize_github_url(url_or_shorthand: str) -> str:
     return url
 
 
+def extract_repo_name_from_url(url: str) -> str:
+    """Extract the repository name from a git URL.
+
+    Args:
+        url: A git URL (HTTPS, SSH, or GitHub shorthand).
+
+    Returns:
+        The repository name without the .git suffix.
+
+    Examples:
+        "https://github.com/griptape-ai/griptape-nodes-library-advanced" -> "griptape-nodes-library-advanced"
+        "https://github.com/griptape-ai/griptape-nodes-library-advanced.git" -> "griptape-nodes-library-advanced"
+        "git@github.com:user/repo.git" -> "repo"
+        "griptape-ai/repo" -> "repo"
+    """
+    url = url.strip().rstrip("/")
+
+    # Remove .git suffix if present
+    url = url.removesuffix(".git")
+
+    # Extract the last part of the path
+    # Handle both https://domain/owner/repo and git@domain:owner/repo formats
+    if ":" in url and not url.startswith(("http://", "https://", "ssh://")):
+        # SSH format: git@github.com:owner/repo
+        repo_name = url.split(":")[-1].split("/")[-1]
+    else:
+        # HTTPS format or shorthand: https://github.com/owner/repo or owner/repo
+        repo_name = url.split("/")[-1]
+
+    return repo_name
+
+
 def is_git_repository(path: Path) -> bool:
     """Check if a directory is a git repository.
 
