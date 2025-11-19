@@ -1404,6 +1404,17 @@
       }
     },
     {
+      "class_name": "AddBoundingBoxes",
+      "file_path": "griptape_nodes_library/image/add_bounding_boxes.py",
+      "metadata": {
+        "category": "image",
+        "description": "Draw bounding boxes on images from coordinate dictionaries. Each box requires x, y, width, and height as integers.",
+        "display_name": "Add Bounding Boxes",
+        "icon": "square-dashed",
+        "group": "detection"
+      }
+    },
+    {
       "class_name": "SeedVRImageUpscale",
       "file_path": "griptape_nodes_library/image/seedvr_image_upscale.py",
       "metadata": {

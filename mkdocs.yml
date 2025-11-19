@@ -111,143 +111,144 @@ nav:
                   - Time: how_to/mcp/servers/time.md
   - FAQ: faq.md
   - Nodes Reference:
-    - Overview: nodes/overview.md
-    - Misc:
-        - Note: nodes/utils/note.md
-    - Execution:
-        - Reroute: nodes/execution/reroute.md
-    - Agents:
-        - Agent: nodes/agents/create_agent.md
-    - Audio:
-        - Load Audio: nodes/audio/load_audio.md
-        - Microphone: nodes/audio/microphone.md
-        - Transcribe Audio: nodes/audio/transcribe_audio.md
-    - Configs:
-        - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
-        - Cohere Prompt: nodes/config/cohere_prompt_driver.md
-        - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
-        - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
-        - Grok Image: nodes/config/grok_image_driver.md
-        - Grok Prompt: nodes/config/grok_prompt_driver.md
-        - Groq Prompt: nodes/config/groq_prompt_driver.md
-        - OpenAI Image: nodes/config/openai_image_driver.md
-        - OpenAI Prompt: nodes/config/openai_prompt_driver.md
-    - Dict:
-        - Dict: nodes/dict/create_dict.md
-        - Display Dict: nodes/dict/display_dict.md
-        - Key Value Pair: nodes/dict/key_value_pair.md
-        - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
-    - JSON:
-        - JSON Input: nodes/json/json_input.md
-        - JSON Extract Value: nodes/json/json_extract_value.md
-        - JSON Find: nodes/json/json_find.md
-        - JSON Replace: nodes/json/json_replace.md
-        - Display JSON: nodes/json/display_json.md
-    - Convert:
-        - To JSON: nodes/convert/to_json.md
-    - Image:
-        - Load Image: nodes/image/load_image.md
-        - Generate Image: nodes/image/create_image.md
-        - Describe Image: nodes/image/describe_image.md
-        - Display Image: nodes/image/display_image.md
-        - Display Channel: nodes/image/display_channel.md
-        - Extract Key Colors: nodes/image/extract_key_colors.md
-        - Invert Image: nodes/image/invert_image.md
-        - Flip Image: nodes/image/flip_image.md
-        - Display Mask: nodes/image/display_mask.md
-        - Paint Mask: nodes/image/paint_mask.md
-        - Invert Mask: nodes/image/invert_mask.md
-        - Apply Mask: nodes/image/apply_mask.md
-        - Adjust Image EQ: nodes/image/adjust_image_eq.md
-        - Adjust Image Levels: nodes/image/adjust_image_levels.md
-        - Bloom Effect: nodes/image/bloom_effect.md
-        - Crop Image: nodes/image/crop_image.md
-        - Image Blend Compositor: nodes/image/image_blend_compositor.md
-        - Image Bash: nodes/image/image_bash.md
-        - Rescale Image: nodes/image/rescale_image.md
-        - Compare Images: nodes/image/compare_images.md
-        - Display Image Grid: nodes/image/display_image_grid.md
-        - Extend Canvas: nodes/image/extend_canvas.md
-        - Merge Images: nodes/image/merge_images.md
-        - Save Image: nodes/image/save_image.md
-        - Webcam: nodes/image/webcam.md
-    - Lists:
-        - Create List: nodes/lists/create_list.md
-        - Add To List: nodes/lists/add_to_list.md
-        - Remove From List: nodes/lists/remove_from_list.md
-        - Get From List: nodes/lists/get_from_list.md
-        - Get List Length: nodes/lists/get_list_length.md
-        - Get List Is Empty: nodes/lists/get_list_is_empty.md
-        - Get List Contains Item: nodes/lists/get_list_contains_item.md
-        - Get Index Of Item: nodes/lists/get_index_of_item.md
-        - Display List: nodes/lists/display_list.md
-        - Replace In List: nodes/lists/replace_in_list.md
-        - Split List: nodes/lists/split_list.md
-        - Combine Lists: nodes/lists/combine_lists.md
-        - Create Float List: nodes/lists/create_float_list.md
-        - Create Int List: nodes/lists/create_int_list.md
-        - Create Bool List: nodes/lists/create_bool_list.md
-        - Create Text List: nodes/lists/create_text_list.md
-        - Select From List: nodes/lists/select_from_list.md
-    - Number:
-        - Input Nodes:
-          - Float Input: nodes/number/create_float.md
-          - Int Input: nodes/number/create_int.md
-          - Bool Input: nodes/number/create_bool.md
-        - Display Nodes:
-          - Display Float: nodes/number/display_float.md
-          - Display Int: nodes/number/display_int.md
-        - Math Nodes:
-          - Math Operations: nodes/number/math.md
-          - Askulator: nodes/number/askulator.md
-    - Rules:
-        - Ruleset: nodes/rules/create_ruleset.md
-        - Ruleset List: nodes/rules/ruleset_list.md
-    - Text:
-        - Date and Time: nodes/text/date_and_time.md
-        - Display Text: nodes/text/display_text.md
-        - Evaluate Text Result: nodes/text/evaluate_text_result.md
-        - Load Text: nodes/text/load_text.md
-        - Merge Texts: nodes/text/merge_texts.md
-        - Random Text: nodes/text/random_text.md
-        - Save Text: nodes/text/save_text.md
-        - Scrape Web: nodes/text/scrape_web.md
-        - Search Replace Text: nodes/text/search_replace_text.md
-        - Search Web: nodes/text/search_web.md
-        - Summarize Text: nodes/text/summarize_text.md
-        - Text Input: nodes/text/create_multiline_text.md
-    - Video:
-        - Load Video: nodes/video/load_video.md
-        - Display Video: nodes/video/display_video.md
-        - Save Video: nodes/video/save_video.md
-        - Resize Video: nodes/video/resize_video.md
-        - Change Speed: nodes/video/change_speed.md
-        - Flip Video: nodes/video/flip_video.md
-        - Reverse Video: nodes/video/reverse_video.md
-        - Split Video: nodes/video/split_video.md
-        - Concatenate Videos: nodes/video/concatenate_videos.md
-        - Extract Last Frame: nodes/video/extract_last_frame.md
-        - Extract Audio: nodes/video/extract_audio.md
-        - Hold Video Frames: nodes/video/hold_video_frames.md
-        - Adjust Video EQ: nodes/video/adjust_video_eq.md
-        - Add Color Curves: nodes/video/add_color_curves.md
-        - Add Film Grain: nodes/video/add_film_grain.md
-        - Add Overlay: nodes/video/add_overlay.md
-        - Add RGB Shift: nodes/video/add_rgb_shift.md
-        - Add Vignette: nodes/video/add_vignette.md
-    - Tools:
-        - Calculator: nodes/tools/calculator_tool.md
-        - Date Time: nodes/tools/date_time_tool.md
-        - File Manager: nodes/tools/file_manager_tool.md
-        - Info Retriever: nodes/tools/rag_tool.md
-        - Tool List: nodes/tools/tool_list.md
-        - Web Scraper: nodes/tools/web_scraper_tool.md
-        - Web Search: nodes/tools/web_search_tool.md
-    - Advanced Media Library:
-        - Diffusion Pipelines: nodes/advanced_media_library/diffusion_pipelines.md
-    - Workflows:
-        - Start Flow: nodes/execution/start_flow.md
-        - End Flow: nodes/execution/end_flow.md
-    - 3D:
-        - Load 3D: nodes/three_d/load_gltf.md
+      - Overview: nodes/overview.md
+      - Misc:
+          - Note: nodes/utils/note.md
+      - Execution:
+          - Reroute: nodes/execution/reroute.md
+      - Agents:
+          - Agent: nodes/agents/create_agent.md
+      - Audio:
+          - Load Audio: nodes/audio/load_audio.md
+          - Microphone: nodes/audio/microphone.md
+          - Transcribe Audio: nodes/audio/transcribe_audio.md
+      - Configs:
+          - Anthropic Prompt: nodes/config/anthropic_prompt_driver.md
+          - Cohere Prompt: nodes/config/cohere_prompt_driver.md
+          - Griptape Cloud Image: nodes/config/griptape_cloud_image_driver.md
+          - Griptape Cloud Prompt: nodes/config/griptape_cloud_prompt_driver.md
+          - Grok Image: nodes/config/grok_image_driver.md
+          - Grok Prompt: nodes/config/grok_prompt_driver.md
+          - Groq Prompt: nodes/config/groq_prompt_driver.md
+          - OpenAI Image: nodes/config/openai_image_driver.md
+          - OpenAI Prompt: nodes/config/openai_prompt_driver.md
+      - Dict:
+          - Dict: nodes/dict/create_dict.md
+          - Display Dict: nodes/dict/display_dict.md
+          - Key Value Pair: nodes/dict/key_value_pair.md
+          - Merge Key Value Pairs: nodes/dict/merge_key_value_pair.md
+      - JSON:
+          - JSON Input: nodes/json/json_input.md
+          - JSON Extract Value: nodes/json/json_extract_value.md
+          - JSON Find: nodes/json/json_find.md
+          - JSON Replace: nodes/json/json_replace.md
+          - Display JSON: nodes/json/display_json.md
+      - Convert:
+          - To JSON: nodes/convert/to_json.md
+      - Image:
+          - Load Image: nodes/image/load_image.md
+          - Generate Image: nodes/image/create_image.md
+          - Describe Image: nodes/image/describe_image.md
+          - Display Image: nodes/image/display_image.md
+          - Display Channel: nodes/image/display_channel.md
+          - Extract Key Colors: nodes/image/extract_key_colors.md
+          - Invert Image: nodes/image/invert_image.md
+          - Flip Image: nodes/image/flip_image.md
+          - Display Mask: nodes/image/display_mask.md
+          - Paint Mask: nodes/image/paint_mask.md
+          - Invert Mask: nodes/image/invert_mask.md
+          - Apply Mask: nodes/image/apply_mask.md
+          - Add Bounding Boxes: nodes/image/add_bounding_boxes.md
+          - Adjust Image EQ: nodes/image/adjust_image_eq.md
+          - Adjust Image Levels: nodes/image/adjust_image_levels.md
+          - Bloom Effect: nodes/image/bloom_effect.md
+          - Crop Image: nodes/image/crop_image.md
+          - Image Blend Compositor: nodes/image/image_blend_compositor.md
+          - Image Bash: nodes/image/image_bash.md
+          - Rescale Image: nodes/image/rescale_image.md
+          - Compare Images: nodes/image/compare_images.md
+          - Display Image Grid: nodes/image/display_image_grid.md
+          - Extend Canvas: nodes/image/extend_canvas.md
+          - Merge Images: nodes/image/merge_images.md
+          - Save Image: nodes/image/save_image.md
+          - Webcam: nodes/image/webcam.md
+      - Lists:
+          - Create List: nodes/lists/create_list.md
+          - Add To List: nodes/lists/add_to_list.md
+          - Remove From List: nodes/lists/remove_from_list.md
+          - Get From List: nodes/lists/get_from_list.md
+          - Get List Length: nodes/lists/get_list_length.md
+          - Get List Is Empty: nodes/lists/get_list_is_empty.md
+          - Get List Contains Item: nodes/lists/get_list_contains_item.md
+          - Get Index Of Item: nodes/lists/get_index_of_item.md
+          - Display List: nodes/lists/display_list.md
+          - Replace In List: nodes/lists/replace_in_list.md
+          - Split List: nodes/lists/split_list.md
+          - Combine Lists: nodes/lists/combine_lists.md
+          - Create Float List: nodes/lists/create_float_list.md
+          - Create Int List: nodes/lists/create_int_list.md
+          - Create Bool List: nodes/lists/create_bool_list.md
+          - Create Text List: nodes/lists/create_text_list.md
+          - Select From List: nodes/lists/select_from_list.md
+      - Number:
+          - Input Nodes:
+              - Float Input: nodes/number/create_float.md
+              - Int Input: nodes/number/create_int.md
+              - Bool Input: nodes/number/create_bool.md
+          - Display Nodes:
+              - Display Float: nodes/number/display_float.md
+              - Display Int: nodes/number/display_int.md
+          - Math Nodes:
+              - Math Operations: nodes/number/math.md
+              - Askulator: nodes/number/askulator.md
+      - Rules:
+          - Ruleset: nodes/rules/create_ruleset.md
+          - Ruleset List: nodes/rules/ruleset_list.md
+      - Text:
+          - Date and Time: nodes/text/date_and_time.md
+          - Display Text: nodes/text/display_text.md
+          - Evaluate Text Result: nodes/text/evaluate_text_result.md
+          - Load Text: nodes/text/load_text.md
+          - Merge Texts: nodes/text/merge_texts.md
+          - Random Text: nodes/text/random_text.md
+          - Save Text: nodes/text/save_text.md
+          - Scrape Web: nodes/text/scrape_web.md
+          - Search Replace Text: nodes/text/search_replace_text.md
+          - Search Web: nodes/text/search_web.md
+          - Summarize Text: nodes/text/summarize_text.md
+          - Text Input: nodes/text/create_multiline_text.md
+      - Video:
+          - Load Video: nodes/video/load_video.md
+          - Display Video: nodes/video/display_video.md
+          - Save Video: nodes/video/save_video.md
+          - Resize Video: nodes/video/resize_video.md
+          - Change Speed: nodes/video/change_speed.md
+          - Flip Video: nodes/video/flip_video.md
+          - Reverse Video: nodes/video/reverse_video.md
+          - Split Video: nodes/video/split_video.md
+          - Concatenate Videos: nodes/video/concatenate_videos.md
+          - Extract Last Frame: nodes/video/extract_last_frame.md
+          - Extract Audio: nodes/video/extract_audio.md
+          - Hold Video Frames: nodes/video/hold_video_frames.md
+          - Adjust Video EQ: nodes/video/adjust_video_eq.md
+          - Add Color Curves: nodes/video/add_color_curves.md
+          - Add Film Grain: nodes/video/add_film_grain.md
+          - Add Overlay: nodes/video/add_overlay.md
+          - Add RGB Shift: nodes/video/add_rgb_shift.md
+          - Add Vignette: nodes/video/add_vignette.md
+      - Tools:
+          - Calculator: nodes/tools/calculator_tool.md
+          - Date Time: nodes/tools/date_time_tool.md
+          - File Manager: nodes/tools/file_manager_tool.md
+          - Info Retriever: nodes/tools/rag_tool.md
+          - Tool List: nodes/tools/tool_list.md
+          - Web Scraper: nodes/tools/web_scraper_tool.md
+          - Web Search: nodes/tools/web_search_tool.md
+      - Advanced Media Library:
+          - Diffusion Pipelines: nodes/advanced_media_library/diffusion_pipelines.md
+      - Workflows:
+          - Start Flow: nodes/execution/start_flow.md
+          - End Flow: nodes/execution/end_flow.md
+      - 3D:
+          - Load 3D: nodes/three_d/load_gltf.md
   - Glossary: glossary.md
