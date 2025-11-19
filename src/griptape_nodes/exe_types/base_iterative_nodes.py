@@ -108,7 +108,7 @@ class BaseIterativeStartNode(BaseNode):
     _current_iteration_count: int
     _total_iterations: int
     _flow: ControlFlow | None = None
-    is_parallel: bool = False  # Sequential by default, parallel variants set to True
+    is_parallel: bool = False  # Sequential by default
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)

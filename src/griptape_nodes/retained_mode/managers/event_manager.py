@@ -57,7 +57,7 @@ class EventManager:
         # Counter for event suppression context managers
         self._suppress_events_count: int = 0
         # Event types to suppress during event suppression
-        self._events_to_suppress: list[str] = []
+        self._events_to_suppress: set[type] = set()
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -70,8 +70,8 @@ class EventManager:
         """Check if events should be suppressed from being sent to websockets."""
         if self._suppress_events_count <= 0:
             return False
-        event_type_name = type(event).__name__
-        return event_type_name in self._events_to_suppress
+        event_type = type(event)
+        return event_type in self._events_to_suppress
 
     def clear_event_suppression(self) -> None:
         self._suppress_events_count = 0
@@ -359,15 +359,15 @@ class EventSuppressionContext:
     from sending events to the GUI while still allowing the operations to complete normally.
     """
 
-    events_to_suppress: list[str]
+    events_to_suppress: set[type]
 
-    def __init__(self, manager: EventManager, events_to_suppress: list[str]):
+    def __init__(self, manager: EventManager, events_to_suppress: set[type]):
         self.manager = manager
         self.events_to_suppress = events_to_suppress
 
     def __enter__(self) -> None:
         self.manager._suppress_events_count += 1
-        self.manager._events_to_suppress.extend(self.events_to_suppress)
+        self.manager._events_to_suppress.update(self.events_to_suppress)
 
     def __exit__(
         self,
@@ -376,9 +376,7 @@ class EventSuppressionContext:
         exc_traceback: types.TracebackType | None,
     ) -> None:
         self.manager._suppress_events_count -= 1
-        for item in self.events_to_suppress:
-            if item in self.manager._events_to_suppress:
-                self.manager._events_to_suppress.remove(item)
+        self.manager._events_to_suppress.difference_update(self.events_to_suppress)
 
 
 class EventTranslationContext:

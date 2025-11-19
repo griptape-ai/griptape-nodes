@@ -28,32 +28,66 @@ from griptape_nodes.exe_types.node_types import (
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
+from griptape_nodes.retained_mode.events.base_events import ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionResultFailure,
+    CreateConnectionResultSuccess,
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
+    ControlFlowCancelledEvent,
+    ControlFlowResolvedEvent,
+    CurrentControlNodeEvent,
+    CurrentDataNodeEvent,
+    GriptapeEvent,
+    InvolvedNodesEvent,
+    NodeFinishProcessEvent,
+    NodeResolvedEvent,
+    NodeStartProcessEvent,
+    NodeUnresolvedEvent,
+    ParameterSpotlightEvent,
+    ParameterValueUpdateEvent,
+    SelectedControlOutputEvent,
     StartLocalSubflowRequest,
+    StartLocalSubflowResultFailure,
     StartLocalSubflowResultSuccess,
 )
 from griptape_nodes.retained_mode.events.flow_events import (
+    CreateFlowResultFailure,
+    CreateFlowResultSuccess,
     DeleteFlowRequest,
+    DeleteFlowResultFailure,
     DeleteFlowResultSuccess,
     DeserializeFlowFromCommandsRequest,
+    DeserializeFlowFromCommandsResultFailure,
     DeserializeFlowFromCommandsResultSuccess,
     PackagedNodeParameterMapping,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_events import (
+    DeserializeNodeFromCommandsResultFailure,
+    DeserializeNodeFromCommandsResultSuccess,
+    SetLockNodeStateResultFailure,
+    SetLockNodeStateResultSuccess,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AlterElementEvent,
+    RemoveElementEvent,
     SetParameterValueRequest,
+    SetParameterValueResultFailure,
     SetParameterValueResultSuccess,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
+    ImportWorkflowAsReferencedSubFlowResultFailure,
+    ImportWorkflowAsReferencedSubFlowResultSuccess,
     LoadWorkflowMetadata,
     LoadWorkflowMetadataResultSuccess,
+    PublishWorkflowProgressEvent,
     PublishWorkflowRegisteredEventData,
     PublishWorkflowRequest,
     SaveWorkflowFileFromSerializedFlowRequest,
@@ -71,45 +105,45 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
-LOOP_EVENTS_TO_SUPPRESS = [
-    "CreateFlowResultSuccess",
-    "CreateFlowResultFailure",
-    "ImportWorkflowAsReferencedSubFlowResultSuccess",
-    "ImportWorkflowAsReferencedSubFlowResultFailure",
-    "DeserializeNodeFromCommandsResultSuccess",
-    "DeserializeNodeFromCommandsResultFailure",
-    "CreateConnectionResultSuccess",
-    "CreateConnectionResultFailure",
-    "SetParameterValueResultSuccess",
-    "SetParameterValueResultFailure",
-    "SetLockNodeStateResultSuccess",
-    "SetLockNodeStateResultFailure",
-    "DeserializeFlowFromCommandsResultSuccess",
-    "DeserializeFlowFromCommandsResultFailure",
-]
+LOOP_EVENTS_TO_SUPPRESS = {
+    CreateFlowResultSuccess,
+    CreateFlowResultFailure,
+    ImportWorkflowAsReferencedSubFlowResultSuccess,
+    ImportWorkflowAsReferencedSubFlowResultFailure,
+    DeserializeNodeFromCommandsResultSuccess,
+    DeserializeNodeFromCommandsResultFailure,
+    CreateConnectionResultSuccess,
+    CreateConnectionResultFailure,
+    SetParameterValueResultSuccess,
+    SetParameterValueResultFailure,
+    SetLockNodeStateResultSuccess,
+    SetLockNodeStateResultFailure,
+    DeserializeFlowFromCommandsResultSuccess,
+    DeserializeFlowFromCommandsResultFailure,
+}
 
-EXECUTION_EVENTS_TO_SUPPRESS = [
-    "CurrentControlNodeEvent",
-    "CurrentDataNodeEvent",
-    "SelectedControlOutputEvent",
-    "ParameterSpotlightEvent",
-    "ControlFlowResolvedEvent",
-    "ControlFlowCancelledEvent",
-    "NodeResolvedEvent",
-    "ParameterValueUpdateEvent",
-    "NodeUnresolvedEvent",
-    "NodeStartProcessEvent",
-    "NodeFinishProcessEvent",
-    "InvolvedNodesEvent",
-    "GriptapeEvent",
-    "PublishWorkflowProgressEvent",
-    "AgentStreamEvent",
-    "AlterElementEvent",
-    "RemoveElementEvent",
-    "ProgressEvent",
-    "StartLocalSubflowResultSuccess",
-    "StartLocalSubflowResultFailure",
-]
+EXECUTION_EVENTS_TO_SUPPRESS = {
+    CurrentControlNodeEvent,
+    CurrentDataNodeEvent,
+    SelectedControlOutputEvent,
+    ParameterSpotlightEvent,
+    ControlFlowResolvedEvent,
+    ControlFlowCancelledEvent,
+    NodeResolvedEvent,
+    ParameterValueUpdateEvent,
+    NodeUnresolvedEvent,
+    NodeStartProcessEvent,
+    NodeFinishProcessEvent,
+    InvolvedNodesEvent,
+    GriptapeEvent,
+    PublishWorkflowProgressEvent,
+    AgentStreamEvent,
+    AlterElementEvent,
+    RemoveElementEvent,
+    StartLocalSubflowResultSuccess,
+    StartLocalSubflowResultFailure,
+    ProgressEvent,
+}
 
 
 @dataclass
@@ -479,7 +513,7 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def _package_loop_body(
+    async def _package_loop_body(  # noqa: C901, PLR0915
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
@@ -532,7 +566,7 @@ class NodeExecutor:
             if isinstance(node_group, NodeGroupNode):
                 total_node_group = node_group
                 break
-        if total_node_group is not None and all_nodes == total_node_group.nodes:
+        if total_node_group is not None and all_nodes == total_node_group.nodes.keys():
             execution_type = total_node_group.get_parameter_value(total_node_group.execution_environment.name)
         # Find the first node in the loop body (where start_node.exec_out connects to)
         entry_control_node_name = None
@@ -820,7 +854,7 @@ class NodeExecutor:
 
         finally:
             # Cleanup - delete the flow
-            with EventSuppressionContext(event_manager, ["DeleteFlowResultSuccess", "DeleteFlowResultFailure"]):
+            with EventSuppressionContext(event_manager, {DeleteFlowResultSuccess, DeleteFlowResultFailure}):
                 delete_request = DeleteFlowRequest(flow_name=flow_name)
                 delete_result = await GriptapeNodes.ahandle_request(delete_request)
                 if not isinstance(delete_result, DeleteFlowResultSuccess):
@@ -1653,7 +1687,7 @@ class NodeExecutor:
         finally:
             # Step 5: Cleanup - delete all iteration flows
             # Suppress events during deletion to prevent sending them to websockets
-            with EventSuppressionContext(event_manager, ["DeleteFlowResultSuccess", "DeleteFlowResultFailure"]):
+            with EventSuppressionContext(event_manager, {DeleteFlowResultSuccess, DeleteFlowResultFailure}):
                 for iteration_index, flow_name, _ in deserialized_flows:
                     delete_request = DeleteFlowRequest(flow_name=flow_name)
                     delete_result = await GriptapeNodes.ahandle_request(delete_request)

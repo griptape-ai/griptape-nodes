@@ -420,7 +420,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -460,11 +460,16 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Find data_nodes and remove them from queue
         for item in queue_items:
+            # NodeGroupNodes should not be added of their own accord here.
+            if isinstance(item.node, NodeGroupNode) and item.node.has_external_control_input():
+                flow_manager.global_flow_queue.queue.remove(item)
+                continue
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
+
                 # Only add if not already added (proxy might already be in DAG)
                 if node_to_add.name not in dag_builder.node_to_reference:
                     dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)

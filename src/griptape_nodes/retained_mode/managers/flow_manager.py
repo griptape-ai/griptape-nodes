@@ -3079,7 +3079,9 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
-        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name, result_details=details)
+        return DeserializeFlowFromCommandsResultSuccess(
+            flow_name=flow_name, result_details=details, node_name_mappings=node_name_mappings
+        )
 
     async def start_flow(
         self,
