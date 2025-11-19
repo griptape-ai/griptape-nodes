@@ -70,6 +70,9 @@ from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion_ae.run
 from diffusers_nodes_library.common.parameters.diffusion.stable_diffusion_diffedit.runtime_parameters import (
     StableDiffusionDiffEditPipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.wan.animate_runtime_parameters import (
+    WanAnimatePipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.wan.img2vid_runtime_parameters import (
     WanImageToVideoPipelineRuntimeParameters,
 )
@@ -161,6 +164,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = WanImageToVideoPipelineRuntimeParameters(self._node)
             case "WanVideoToVideoPipeline":
                 self._runtime_parameters = WanVideoToVideoPipelineRuntimeParameters(self._node)
+            case "WanAnimatePipeline":
+                self._runtime_parameters = WanAnimatePipelineRuntimeParameters(self._node)
             case "WuerstchenCombinedPipeline":
                 self._runtime_parameters = WuerstchenCombinedPipelineRuntimeParameters(self._node)
             case _:

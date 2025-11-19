@@ -6,6 +6,9 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.wan.animate_parameters import (
+    WanAnimatePipelineParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.wan.img2vid_parameters import (
     WanImageToVideoPipelineParameters,
 )
@@ -27,6 +30,7 @@ WanPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = 
     "WanImageToVideoPipeline": WanImageToVideoPipelineParameters,
     "WanVideoToVideoPipeline": WanVideoToVideoPipelineParameters,
     "WanVacePipeline": WanVacePipelineParameters,
+    "WanAnimatePipeline": WanAnimatePipelineParameters,
 }
 
 
