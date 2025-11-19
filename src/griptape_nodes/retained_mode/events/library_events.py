@@ -591,7 +591,11 @@ class CheckLibraryUpdateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 @dataclass
 @PayloadRegistry.register
 class UpdateLibraryRequest(RequestPayload):
-    """Update a library to the latest version via git pull --rebase.
+    """Update a library to the latest version using the appropriate git strategy.
+
+    Automatically detects whether the library uses branch-based or tag-based workflow:
+    - Branch-based: Uses git pull --rebase
+    - Tag-based: Uses git fetch --tags --force + git checkout (for moving tags like 'latest')
 
     Use when: Applying library updates, synchronizing with remote changes,
     updating library versions, implementing auto-update features.
@@ -630,36 +634,38 @@ class UpdateLibraryResultFailure(ResultPayloadFailure):
 @dataclass
 @PayloadRegistry.register
 class SwitchLibraryBranchRequest(RequestPayload):
-    """Switch a library to a different git branch.
+    """Switch a library to a different git branch or tag.
+
+    Supports switching to both branches and tags (e.g., 'main', 'develop', 'latest', 'v1.0.0').
 
     Use when: Switching between branches for development, testing different versions,
-    reverting to stable branches, or checking out feature branches.
+    reverting to stable branches, checking out feature branches, or switching to specific tags.
 
     Args:
-        library_name: Name of the library to switch branches
-        branch_name: Name of the branch to switch to
+        library_name: Name of the library to switch
+        ref_name: Name of the branch or tag to switch to
 
-    Results: SwitchLibraryBranchResultSuccess (with branch/version info) | SwitchLibraryBranchResultFailure (library not found, git error, branch not found)
+    Results: SwitchLibraryBranchResultSuccess (with ref/version info) | SwitchLibraryBranchResultFailure (library not found, git error, ref not found)
     """
 
     library_name: str
-    branch_name: str
+    ref_name: str
 
 
 @dataclass
 @PayloadRegistry.register
 class SwitchLibraryBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Library branch switched successfully.
+    """Library branch or tag switched successfully.
 
     Args:
-        old_branch: The previous branch name
-        new_branch: The new branch name after switch
+        old_ref: The previous branch or tag name
+        new_ref: The new branch or tag name after switch
         old_version: The previous library version
         new_version: The new library version after switch
     """
 
-    old_branch: str
-    new_branch: str
+    old_ref: str
+    new_ref: str
     old_version: str
     new_version: str
 
@@ -667,7 +673,7 @@ class SwitchLibraryBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSucces
 @dataclass
 @PayloadRegistry.register
 class SwitchLibraryBranchResultFailure(ResultPayloadFailure):
-    """Library branch switch failed. Common causes: library not found, not a git repository, branch not found, git checkout error."""
+    """Library ref switch failed. Common causes: library not found, not a git repository, ref not found, git checkout error."""
 
 
 @dataclass

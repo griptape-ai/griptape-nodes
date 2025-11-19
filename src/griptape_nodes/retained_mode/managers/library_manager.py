@@ -153,7 +153,6 @@ from griptape_nodes.utils.file_utils import find_file_in_directory
 from griptape_nodes.utils.git_utils import (
     get_current_branch,
     get_git_remote,
-    git_pull_rebase,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
@@ -2417,8 +2416,13 @@ class LibraryManager:
         )
 
     async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
-        """Update a library to the latest version via git pull --rebase."""
-        from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError
+        """Update a library to the latest version using the appropriate git strategy.
+
+        Automatically detects whether the library uses branch-based or tag-based workflow:
+        - Branch-based: Uses git pull --rebase
+        - Tag-based: Uses git fetch --tags --force + git checkout
+        """
+        from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError, update_library_git
         from griptape_nodes.utils.library_utils import is_monorepo
 
         library_name = request.library_name
@@ -2455,11 +2459,11 @@ class LibraryManager:
             details = f"Cannot update Library '{library_name}'. Repository contains multiple libraries and must be updated manually."
             return UpdateLibraryResultFailure(result_details=details)
 
-        # Perform git pull --rebase
+        # Perform git update (auto-detects branch vs tag workflow)
         try:
-            await asyncio.to_thread(git_pull_rebase, library_dir)
+            await asyncio.to_thread(update_library_git, library_dir)
         except (GitPullError, GitRepositoryError) as e:
-            details = f"Failed to perform git pull --rebase for Library '{library_name}': {e}"
+            details = f"Failed to update Library '{library_name}': {e}"
             return UpdateLibraryResultFailure(result_details=details)
 
         # Unload the library
@@ -2504,20 +2508,25 @@ class LibraryManager:
         )
 
     async def switch_library_branch_request(self, request: SwitchLibraryBranchRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
-        """Switch a library to a different git branch."""
-        from griptape_nodes.utils.git_utils import GitBranchError, GitRepositoryError, switch_branch
+        """Switch a library to a different git branch or tag."""
+        from griptape_nodes.utils.git_utils import (
+            GitBranchError,
+            GitRepositoryError,
+            get_current_ref,
+            switch_branch_or_tag,
+        )
 
         library_name = request.library_name
-        branch_name = request.branch_name
+        ref_name = request.ref_name
 
         # Check if the library exists
         try:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
-            details = f"Attempted to switch branch for Library '{library_name}'. Failed because no Library with that name was registered."
+            details = f"Attempted to switch branch/tag for Library '{library_name}'. Failed because no Library with that name was registered."
             return SwitchLibraryBranchResultFailure(result_details=details)
 
-        # Get current branch and version before switch
+        # Get current version before switch
         old_version = library.get_metadata().library_version
         if old_version is None:
             details = f"Library '{library_name}' has no version information."
@@ -2531,48 +2540,48 @@ class LibraryManager:
                 break
 
         if library_file_path is None:
-            details = f"Attempted to switch branch for Library '{library_name}'. Failed because no file path could be found for this library."
+            details = f"Attempted to switch branch/tag for Library '{library_name}'. Failed because no file path could be found for this library."
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Get the library directory (parent of the JSON file)
         library_dir = Path(library_file_path).parent.absolute()
 
-        # Get current branch before switch
+        # Get current ref (branch or tag) before switch
         try:
-            old_branch = await asyncio.to_thread(get_current_branch, library_dir)
-            if old_branch is None:
-                details = f"Library '{library_name}' is not on a branch or is not a git repository."
+            old_ref = await asyncio.to_thread(get_current_ref, library_dir)
+            if old_ref is None:
+                details = f"Library '{library_name}' is not on a branch/tag or is not a git repository."
                 return SwitchLibraryBranchResultFailure(result_details=details)
         except GitBranchError as e:
-            details = f"Failed to get current branch for Library '{library_name}': {e}"
+            details = f"Failed to get current branch/tag for Library '{library_name}': {e}"
             return SwitchLibraryBranchResultFailure(result_details=details)
 
-        # Perform git branch switch
+        # Perform git ref switch (branch or tag)
         try:
-            await asyncio.to_thread(switch_branch, library_dir, branch_name)
+            await asyncio.to_thread(switch_branch_or_tag, library_dir, ref_name)
         except (GitBranchError, GitRepositoryError) as e:
-            details = f"Failed to switch to branch '{branch_name}' for Library '{library_name}': {e}"
+            details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Unload the library
         unload_result = GriptapeNodes.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
         if not unload_result.succeeded():
-            details = f"Failed to unload Library '{library_name}' after branch switch."
+            details = f"Failed to unload Library '{library_name}' after switching ref."
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Reload the library from file
         reload_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_file_path))
         if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
-            details = f"Failed to reload Library '{library_name}' after branch switch."
+            details = f"Failed to reload Library '{library_name}' after switching ref."
             return SwitchLibraryBranchResultFailure(result_details=details)
 
-        # Get new branch and version after switch
+        # Get new ref (branch or tag) and version after switch
         try:
-            new_branch = await asyncio.to_thread(get_current_branch, library_dir)
-            if new_branch is None:
-                new_branch = "unknown"
+            new_ref = await asyncio.to_thread(get_current_ref, library_dir)
+            if new_ref is None:
+                new_ref = "unknown"
         except GitBranchError:
-            new_branch = "unknown"
+            new_ref = "unknown"
 
         try:
             updated_library = LibraryRegistry.get_library(name=library_name)
@@ -2582,10 +2591,10 @@ class LibraryManager:
         except KeyError:
             new_version = "unknown"
 
-        details = f"Successfully switched Library '{library_name}' from branch '{old_branch}' (version {old_version}) to branch '{new_branch}' (version {new_version})."
+        details = f"Successfully switched Library '{library_name}' from '{old_ref}' (version {old_version}) to '{new_ref}' (version {new_version})."
         return SwitchLibraryBranchResultSuccess(
-            old_branch=old_branch,
-            new_branch=new_branch,
+            old_ref=old_ref,
+            new_ref=new_ref,
             old_version=old_version,
             new_version=new_version,
             result_details=details,
