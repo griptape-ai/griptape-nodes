@@ -108,7 +108,7 @@ class DagBuilder:
             self.graphs[graph_name] = graph
             self.graph_to_nodes[graph_name] = set()
 
-        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
+        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:  # noqa: C901
             # Skip if already visited or already in DAG
             if current_node.name in visited:
                 return
@@ -160,8 +160,12 @@ class DagBuilder:
             self.node_to_reference[current_node.name] = dag_node
             added_nodes.append(current_node)
 
-            # Add to graph if not using parent group
-            if not self._should_use_parent_group(current_node):
+            # Add to graph if not using parent group, otherwise ensure parent group is in DAG
+            if self._should_use_parent_group(current_node):
+                parent_group = current_node.parent_group
+                if isinstance(parent_group, NodeGroupNode):
+                    self._ensure_group_node_in_dag(parent_group, graph, graph_name)
+            else:
                 graph.add_node(node_for_adding=current_node.name)
                 self.graph_to_nodes[graph_name].add(current_node.name)
 

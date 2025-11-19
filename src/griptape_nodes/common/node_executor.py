@@ -566,8 +566,12 @@ class NodeExecutor:
             if isinstance(node_group, NodeGroupNode):
                 total_node_group = node_group
                 break
-        if total_node_group is not None and all_nodes == total_node_group.nodes.keys():
-            execution_type = total_node_group.get_parameter_value(total_node_group.execution_environment.name)
+        if total_node_group is not None:
+            if all_nodes == total_node_group.nodes.keys():
+                execution_type = total_node_group.get_parameter_value(total_node_group.execution_environment.name)
+            else:
+                # Make sure the node group is included in the package request, if it isn't the whole loop.
+                all_nodes.add(total_node_group.name)
         # Find the first node in the loop body (where start_node.exec_out connects to)
         entry_control_node_name = None
         entry_control_parameter_name = None
@@ -765,7 +769,6 @@ class NodeExecutor:
                 context_manager.pop_flow()
 
         logger.info("Successfully deserialized flow for sequential execution: %s", flow_name)
-
         # Get node mappings
         start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
         start_node_name = start_node_mapping.node_name
@@ -915,7 +918,6 @@ class NodeExecutor:
             parameter_values_per_iteration=parameter_values_per_iteration,
             end_loop_node=end_node,
         )
-
         # Check if execution stopped early due to break (not failure)
         if len(successful_iterations) < total_iterations:
             # Only raise an error if there were actual failures (not just early termination)
@@ -1138,6 +1140,7 @@ class NodeExecutor:
 
         Args:
             start_node: The start loop node (ForEach or ForLoop)
+
             package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter_name_mappings
 
         Returns:
@@ -1577,7 +1580,6 @@ class NodeExecutor:
                     context_manager.pop_flow()
 
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
-
         # Step 2: Set input values on start nodes for each iteration
         for iteration_index, _, node_name_mappings in deserialized_flows:
             parameter_values = parameter_values_per_iteration[iteration_index]
