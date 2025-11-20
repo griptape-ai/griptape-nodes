@@ -164,11 +164,10 @@ class TestIsGitRepository:
 
     def test_is_git_repository_returns_true_when_git_repo(self) -> None:
         """Test that True is returned for valid git repository."""
-        with (
-            tempfile.TemporaryDirectory() as tmpdir,
-            patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
-        ):
-            mock_discover.return_value = str(Path(tmpdir) / ".git")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a .git directory to simulate a git repository
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir()
 
             result = is_git_repository(Path(tmpdir))
 

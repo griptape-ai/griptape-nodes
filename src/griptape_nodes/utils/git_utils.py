@@ -123,6 +123,11 @@ def extract_repo_name_from_url(url: str) -> str:
 def is_git_repository(path: Path) -> bool:
     """Check if a directory is a git repository.
 
+    This checks if the given path itself is a git repository, not if it's
+    contained within a parent git repository. This prevents incorrectly
+    identifying libraries as git repositories when they happen to be
+    nested inside a parent repository.
+
     Args:
         path: The directory path to check.
 
@@ -134,12 +139,9 @@ def is_git_repository(path: Path) -> bool:
     if not path.is_dir():
         return False
 
-    try:
-        pygit2.discover_repository(str(path))
-    except pygit2.GitError:
-        return False
-    else:
-        return True
+    # Check for .git directory or file (for git worktrees/submodules)
+    git_path = path / ".git"
+    return git_path.exists()
 
 
 def get_git_remote(library_path: Path) -> str | None:
