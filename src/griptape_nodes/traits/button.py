@@ -195,7 +195,7 @@ class Button(Trait):
 
         return options
 
-    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:  # noqa: PLR0911
+    def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:  # noqa: C901, PLR0911
         """Handle messages sent to this button trait.
 
         Args:
