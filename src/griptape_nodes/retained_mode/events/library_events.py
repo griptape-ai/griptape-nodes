@@ -699,6 +699,7 @@ class DownloadLibraryRequest(RequestPayload):
         git_url: The git repository URL to clone
         branch_tag_commit: Optional branch, tag, or commit to checkout (defaults to default branch)
         target_directory_name: Optional name for the target directory (defaults to repository name)
+        download_directory: Optional parent directory path for download (defaults to workspace/libraries)
         install_dependencies: If True, automatically install dependencies after downloading (default: True)
 
     Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
@@ -707,6 +708,7 @@ class DownloadLibraryRequest(RequestPayload):
     git_url: str
     branch_tag_commit: str | None = None
     target_directory_name: str | None = None
+    download_directory: str | None = None
     install_dependencies: bool = True
 
 
