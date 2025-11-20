@@ -81,10 +81,11 @@ class EventLogHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        log_event = AppEvent(
-            payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
-        )
-        griptape_nodes.EventManager().put_event(log_event)
+        if record.levelno >= logging.INFO:
+            log_event = AppEvent(
+                payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
+            )
+            griptape_nodes.EventManager().put_event(log_event)
 
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
