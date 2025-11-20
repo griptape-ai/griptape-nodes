@@ -753,3 +753,141 @@ def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | N
     except pygit2.GitError as e:
         msg = f"Git error while cloning {git_url} to {target_path}: {e}"
         raise GitCloneError(msg) from e
+
+
+def _run_git_command(args: list[str], cwd: str, error_msg: str) -> subprocess.CompletedProcess[str]:
+    """Run a git command and raise GitCloneError on failure.
+
+    Args:
+        args: Git command arguments (e.g., ["git", "init"]).
+        cwd: Working directory for the command.
+        error_msg: Error message prefix to use if command fails.
+
+    Returns:
+        subprocess.CompletedProcess: The result of the command.
+
+    Raises:
+        GitCloneError: If the command returns a non-zero exit code.
+    """
+    result = subprocess.run(  # noqa: S603
+        args,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        msg = f"{error_msg}: {result.stderr}"
+        raise GitCloneError(msg)
+
+    return result
+
+
+def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
+    """Extract library version from a griptape_nodes_library.json file.
+
+    Args:
+        json_path: Path to the library JSON file.
+        remote_url: Git remote URL (for error messages).
+
+    Returns:
+        str: The library version string.
+
+    Raises:
+        GitCloneError: If JSON is invalid or version is missing.
+    """
+    import json
+
+    try:
+        with json_path.open() as f:
+            library_data = json.load(f)
+    except json.JSONDecodeError as e:
+        msg = f"JSON decode error reading library metadata from {remote_url}: {e}"
+        raise GitCloneError(msg) from e
+
+    if "metadata" not in library_data:
+        msg = f"No metadata found in griptape_nodes_library.json from {remote_url}"
+        raise GitCloneError(msg)
+
+    if "library_version" not in library_data["metadata"]:
+        msg = f"No library_version found in metadata from {remote_url}"
+        raise GitCloneError(msg)
+
+    return library_data["metadata"]["library_version"]
+
+
+def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, Path]:
+    """Perform sparse checkout to fetch only library JSON file from a git repository.
+
+    This is optimized for checking library updates without downloading the entire repository.
+    Only fetches files matching the pattern **/griptape_nodes_library.json with depth 1.
+
+    Args:
+        remote_url: The git repository URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
+
+    Returns:
+        tuple[str, str, Path]: A tuple of (library_version, commit_sha, json_file_path).
+
+    Raises:
+        GitCloneError: If sparse checkout fails or library metadata is invalid.
+    """
+    import tempfile
+
+    from griptape_nodes.utils.file_utils import find_file_in_directory
+
+    # Convert SSH URLs to HTTPS for compatibility
+    original_url = remote_url
+    if _is_ssh_url(remote_url):
+        remote_url = _convert_ssh_to_https(remote_url)
+        logger.debug("Converted SSH URL to HTTPS: %s -> %s", original_url, remote_url)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        try:
+            # Initialize empty git repository
+            _run_git_command(["git", "init"], temp_dir, "Git init failed")
+
+            # Add remote
+            _run_git_command(["git", "remote", "add", "origin", remote_url], temp_dir, "Git remote add failed")
+
+            # Enable sparse checkout
+            _run_git_command(
+                ["git", "config", "core.sparseCheckout", "true"], temp_dir, "Git sparse checkout config failed"
+            )
+
+            # Configure sparse-checkout patterns
+            sparse_checkout_file = temp_path / ".git" / "info" / "sparse-checkout"
+            sparse_checkout_file.parent.mkdir(parents=True, exist_ok=True)
+            patterns = [
+                "griptape_nodes_library.json",
+                "*/griptape_nodes_library.json",
+                "*/*/griptape_nodes_library.json",
+            ]
+            sparse_checkout_file.write_text("\n".join(patterns))
+
+            # Fetch with depth 1 (shallow clone)
+            _run_git_command(["git", "fetch", "--depth=1", "origin", ref], temp_dir, f"Git fetch failed for {ref}")
+
+            # Checkout the ref
+            _run_git_command(["git", "checkout", "FETCH_HEAD"], temp_dir, "Git checkout failed")
+
+            # Find the library JSON file
+            library_json_path = find_file_in_directory(temp_path, "griptape[-_]nodes[-_]library.json")
+            if library_json_path is None:
+                msg = f"No library JSON file found in sparse checkout from {remote_url}"
+                raise GitCloneError(msg)
+
+            # Extract version from JSON
+            library_version = _extract_library_version_from_json(library_json_path, remote_url)
+
+            # Get commit SHA
+            rev_parse_result = _run_git_command(["git", "rev-parse", "HEAD"], temp_dir, "Git rev-parse failed")
+            commit_sha = rev_parse_result.stdout.strip()
+
+        except subprocess.SubprocessError as e:
+            msg = f"Subprocess error during sparse checkout from {remote_url}: {e}"
+            raise GitCloneError(msg) from e
+        else:
+            return (library_version, commit_sha, library_json_path)

@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pygit2
-
-from griptape_nodes.utils.file_utils import find_all_files_in_directory, find_file_in_directory
+from griptape_nodes.utils.file_utils import find_all_files_in_directory
 from griptape_nodes.utils.git_utils import (
-    GitCloneError,
-    _convert_ssh_to_https,
-    _is_ssh_url,
     get_git_repository_root,
+    sparse_checkout_library_json,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -42,56 +39,19 @@ def is_monorepo(library_path: Path) -> bool:
 
 
 def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
-    """Clone a git repository to a temporary directory and extract the library version and commit SHA.
+    """Fetch library version and commit SHA using sparse checkout for efficiency.
+
+    Uses sparse checkout to download only the library JSON file instead of the entire repository,
+    significantly reducing bandwidth and time for update checks.
 
     Args:
-        remote_url: The git remote URL to clone (HTTPS or SSH).
+        remote_url: The git remote URL (HTTPS or SSH).
 
     Returns:
-        tuple[str, str]: A tuple of (library_version, commit_sha) from the cloned repository.
+        tuple[str, str]: A tuple of (library_version, commit_sha) from the repository.
 
     Raises:
-        GitCloneError: If cloning fails or library metadata is invalid.
+        GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    # Convert SSH URLs to HTTPS for compatibility
-    original_url = remote_url
-    if _is_ssh_url(remote_url):
-        remote_url = _convert_ssh_to_https(remote_url)
-        logger.info("Converted SSH URL to HTTPS: %s -> %s", original_url, remote_url)
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
-            repo = pygit2.clone_repository(remote_url, temp_dir)
-            if repo is None:
-                msg = f"Failed to clone repository from {remote_url}"
-                raise GitCloneError(msg)
-
-        except pygit2.GitError as e:
-            msg = f"Git error while cloning {remote_url}: {e}"
-            raise GitCloneError(msg) from e
-
-        # Recursively search for griptape_nodes_library.json file
-        library_json_path = find_file_in_directory(Path(temp_dir), "griptape[-_]nodes[-_]library.json")
-        if library_json_path is None:
-            msg = f"No library JSON file found in cloned repository from {remote_url}"
-            raise GitCloneError(msg)
-
-        try:
-            with library_json_path.open() as f:
-                library_data = json.load(f)
-        except json.JSONDecodeError as e:
-            msg = f"JSON decode error reading library metadata from {remote_url}: {e}"
-            raise GitCloneError(msg) from e
-
-        if "metadata" not in library_data:
-            msg = f"No metadata found in griptape_nodes_library.json from {remote_url}"
-            raise GitCloneError(msg)
-
-        if "library_version" not in library_data["metadata"]:
-            msg = f"No library_version found in metadata from {remote_url}"
-            raise GitCloneError(msg)
-
-        library_version = library_data["metadata"]["library_version"]
-        commit_sha = str(repo.head.target)
-
-        return (library_version, commit_sha)
+    library_version, commit_sha, _ = sparse_checkout_library_json(remote_url)
+    return (library_version, commit_sha)
