@@ -72,7 +72,7 @@ class SaveAudio(SuccessFailureNode):
         self.output_path.add_trait(
             FileSystemPicker(
                 allow_files=True,
-                allow_directories=True,
+                allow_directories=False,
                 multiple=False,
                 file_extensions=list(SUPPORTED_AUDIO_EXTENSIONS),
                 allow_create=True,
