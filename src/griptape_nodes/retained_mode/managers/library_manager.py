@@ -831,6 +831,22 @@ class LibraryManager:
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
 
+        # Add library venv to sys.path if it exists and library has dependencies
+        if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
+            venv_path = self._get_library_venv_path(library_data.name, file_path)
+            if venv_path.exists():
+                # Add venv site-packages to sys.path so node imports can find dependencies
+                site_packages = str(
+                    Path(
+                        sysconfig.get_path(
+                            "purelib",
+                            vars={"base": str(venv_path), "platbase": str(venv_path)},
+                        )
+                    )
+                )
+                sys.path.insert(0, site_packages)
+                logger.debug("Added library '%s' venv to sys.path: %s", library_data.name, site_packages)
+
         # Load the advanced library module if specified
         advanced_library_instance = None
         if library_data.advanced_library_path:
@@ -1079,17 +1095,6 @@ class LibraryManager:
             library_venv_python_path = library_venv_path / "Scripts" / "python.exe"
         else:
             library_venv_python_path = library_venv_path / "bin" / "python"
-
-        # Need to insert into the path so that the library picks up on the venv
-        site_packages = str(
-            Path(
-                sysconfig.get_path(
-                    "purelib",
-                    vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
-                )
-            )
-        )
-        sys.path.insert(0, site_packages)
 
         return library_venv_python_path
 
