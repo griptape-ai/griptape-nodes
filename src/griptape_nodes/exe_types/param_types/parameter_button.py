@@ -21,21 +21,15 @@ class ParameterButton(Parameter):
     as direct properties for easy runtime modification.
 
     Example:
-        # Works just like Button trait - label is the primary interface
+        # Label is the display text, value is separate stored data
         param = ParameterButton(
             name="button_param",
-            label="Click me",  # Primary way to set button text (just like Button trait)
+            label="Click me",  # Display text on the button
+            default_value="some stored data",  # Stored value (can be any data)
             variant="secondary",
             icon="check",
             icon_class="text-green-500",
             full_width=True
-        )
-
-        # Or set value/default_value to set the label
-        param2 = ParameterButton(
-            name="button2",
-            default_value="Click me",  # This sets the label
-            variant="secondary"
         )
 
         # With callback function (just like Button trait)
@@ -46,6 +40,7 @@ class ParameterButton(Parameter):
         param3 = ParameterButton(
             name="callback_button",
             label="Submit",
+            default_value="submit_action",
             on_click=handle_click
         )
 
@@ -57,7 +52,9 @@ class ParameterButton(Parameter):
         )
 
         # Change properties at runtime (just like Button trait)
-        param.label = "New Label"
+        # Label and value are independent
+        param.label = "New Label"  # Changes display text only
+        param.default_value = "new_data"  # Changes stored value only
         param.variant = "destructive"
     """
 
@@ -152,26 +149,15 @@ class ParameterButton(Parameter):
         else:
             ui_options = ui_options.copy()
 
-        # If default_value is provided, use it to set the label (value sets label)
-        # Otherwise, use the label as the default_value
-        if default_value is not None:
-            # Value sets label - make them match
-            final_label = str(default_value) if default_value else label
-            param_default_value = default_value
-        else:
-            # No value provided, label is primary - use label as value
-            final_label = label
-            param_default_value = label if label else ""
-
         # If href is provided but no on_click callback, create a simple callback that opens the link
         final_on_click = on_click
         if href is not None and on_click is None:
             final_on_click = ParameterButton._create_href_callback(href)
 
         # Create Button trait with all the button-specific options
-        # Use final_label (which may have been updated by default_value)
+        # Label and value are separate - label is display text, value is stored data
         button_trait = Button(
-            label=final_label,
+            label=label,
             variant=variant,
             size=size,
             state=state,
@@ -201,22 +187,6 @@ class ParameterButton(Parameter):
         else:
             final_traits = set(traits) | {button_trait}  # type: ignore[assignment]
 
-        # If default_value is provided, use it to set the label (value sets label)
-        # Otherwise, use the label as the default_value
-        if default_value is not None:
-            # Value sets label - make them match
-            final_label = str(default_value) if default_value else label
-            param_default_value = default_value
-        else:
-            # No value provided, label is primary - use label as value
-            final_label = label
-            param_default_value = label if label else ""
-
-        # Prepare converters list - we'll add the sync converter after init
-        sync_converters: list[Callable[[Any], Any]] = []
-        if converters:
-            sync_converters.extend(converters)
-
         # Call parent with explicit parameters
         super().__init__(
             name=name,
@@ -224,13 +194,13 @@ class ParameterButton(Parameter):
             type="button",  # Button parameter type
             input_types=["str", "any"],
             output_type="str",
-            default_value=param_default_value,
+            default_value=default_value,
             tooltip_as_input=tooltip_as_input,
             tooltip_as_property=tooltip_as_property,
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=final_traits,
-            converters=sync_converters,
+            converters=converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,
@@ -249,22 +219,6 @@ class ParameterButton(Parameter):
 
         # Store button trait reference for property access
         self._button_trait = button_trait
-
-        # Add converter to sync value -> label (making them interchangeable)
-        # This ensures when value is set, label is updated automatically
-        # Insert at the beginning so it runs first
-        self._converters.insert(0, self._sync_value_to_label)
-
-    def _sync_value_to_label(self, value: Any) -> Any:
-        """Converter that syncs parameter value to button label (making them interchangeable)."""
-        if value is not None:
-            # Convert value to string and update label
-            label_str = str(value)
-            # Update button trait label
-            self._get_button_trait().label = label_str
-            # Update UI options
-            self.update_ui_options_key("button_label", label_str)
-        return value
 
     @staticmethod
     def _create_href_callback(href: str) -> Button.OnClickCallback:
@@ -303,16 +257,11 @@ class ParameterButton(Parameter):
 
     @label.setter
     def label(self, value: str) -> None:
-        """Set the button label (primary interface, like Button trait)."""
-        # Update button trait (primary source of truth)
+        """Set the button label (display text only - separate from parameter value)."""
+        # Update button trait (primary source of truth for display)
         self._get_button_trait().label = value
         # Update UI options
         self.update_ui_options_key("button_label", value)
-        # Update parameter value to keep them in sync (label -> value)
-        # Set default_value directly to avoid triggering converters (which would create a loop)
-        self.default_value = value
-        # Also update default_value to keep them in sync
-        self.default_value = value
 
     @property
     def variant(self) -> ButtonVariant:
