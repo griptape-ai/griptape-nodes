@@ -13,6 +13,7 @@ logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_MERGE_STRING = "\\n\\n"
 
+
 class MergeTexts(DataNode):
     def __init__(
         self,
@@ -74,12 +75,15 @@ class MergeTexts(DataNode):
         skip_before_value_set: bool = False,
     ) -> None:
         # Check if this is the merge_string parameter during initial setup
-        if param_name == "merge_string" and initial_setup:
-            if self.metadata.get("empty_merge_string_migrated") is not True:
-                if value is None or value == "":
-                    logger.info(f"{self.name}: Migrating empty merge_string to default value")
-                    value = DEFAULT_MERGE_STRING
-                    self.metadata["empty_merge_string_migrated"] = True
+        if (
+            param_name == "merge_string"
+            and initial_setup
+            and self.metadata.get("empty_merge_string_migrated") is not True
+            and (value is None or value == "")
+        ):
+            logger.info("%s: Migrating empty merge_string to default value", self.name)
+            value = DEFAULT_MERGE_STRING
+            self.metadata["empty_merge_string_migrated"] = True
 
         # Call the parent implementation
         super().set_parameter_value(
