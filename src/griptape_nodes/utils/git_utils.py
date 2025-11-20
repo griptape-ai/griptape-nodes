@@ -829,7 +829,8 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
     """Perform sparse checkout to fetch only library JSON file from a git repository.
 
     This is optimized for checking library updates without downloading the entire repository.
-    Only fetches files matching the pattern **/griptape_nodes_library.json with depth 1.
+    Only fetches files matching the patterns **/griptape_nodes_library.json or
+    **/griptape-nodes-library.json with depth 1.
 
     Args:
         remote_url: The git repository URL (HTTPS or SSH).
@@ -873,6 +874,9 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
                 "griptape_nodes_library.json",
                 "*/griptape_nodes_library.json",
                 "*/*/griptape_nodes_library.json",
+                "griptape-nodes-library.json",
+                "*/griptape-nodes-library.json",
+                "*/*/griptape-nodes-library.json",
             ]
             sparse_checkout_file.write_text("\n".join(patterns))
 

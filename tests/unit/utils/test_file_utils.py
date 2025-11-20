@@ -108,6 +108,24 @@ class TestFindFileInDirectory:
         assert result.exists()
         assert result.suffix == ".json"
 
+    def test_find_file_matches_character_class_pattern_underscore(self, temp_dir: Path) -> None:
+        """Test that character class pattern matches underscore version."""
+        expected_file = temp_dir / "griptape_nodes_library.json"
+        expected_file.write_text("{}")
+
+        result = find_file_in_directory(temp_dir, "griptape[-_]nodes[-_]library.json")
+
+        assert result == expected_file
+
+    def test_find_file_matches_character_class_pattern_hyphen(self, temp_dir: Path) -> None:
+        """Test that character class pattern matches hyphen version."""
+        expected_file = temp_dir / "griptape-nodes-library.json"
+        expected_file.write_text("{}")
+
+        result = find_file_in_directory(temp_dir, "griptape[-_]nodes[-_]library.json")
+
+        assert result == expected_file
+
 
 class TestFindAllFilesInDirectory:
     """Test find_all_files_in_directory function."""
@@ -211,9 +229,8 @@ class TestFindAllFilesInDirectory:
         file2.write_text("{}")
         file3.write_text("{}")
 
-        # This pattern won't match all due to fnmatch limitations
-        # but should match literal patterns
-        result = find_all_files_in_directory(temp_dir, "griptape_nodes_library.json")
+        # Pattern with character class matches both underscore and hyphen versions
+        result = find_all_files_in_directory(temp_dir, "griptape[-_]nodes[-_]library.json")
 
-        assert len(result) == 1
-        assert result[0] == file1
+        assert len(result) == 2  # noqa: PLR2004
+        assert set(result) == {file1, file2}
