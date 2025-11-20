@@ -306,12 +306,7 @@ class SaveImage(SuccessFailureNode):
         """Save image directly to filesystem at the specified absolute path."""
         # Auto-determine extension with correct format if we have format hint
         if format_hint:
-            # Map common format names to extensions
-            format_to_ext = {
-                "jpeg": ".jpg",
-                "jpg": ".jpg",
-            }
-            new_extension = format_to_ext.get(format_hint.lower(), f".{format_hint.lower()}")
+            new_extension = f".{format_hint.lstrip('.')}"
 
             if output_path.suffix.lower() != new_extension.lower():
                 output_path = output_path.with_suffix(new_extension)
@@ -359,12 +354,7 @@ class SaveImage(SuccessFailureNode):
         # Auto-determine filename with correct extension if we have format hint
         if format_hint:
             output_path = Path(output_file)
-            # Map common format names to extensions
-            format_to_ext = {
-                "jpeg": ".jpg",
-                "jpg": ".jpg",
-            }
-            new_extension = format_to_ext.get(format_hint.lower(), f".{format_hint.lower()}")
+            new_extension = f".{format_hint.lstrip('.')}"
 
             if output_path.suffix.lower() != new_extension.lower():
                 output_file = str(output_path.with_suffix(new_extension))
