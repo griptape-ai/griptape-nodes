@@ -56,26 +56,25 @@ class ForEachStartNode(BaseIterativeStartNode):
             group.add_child(self.current_item)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name == "run_in_parallel":
+        if parameter == self.run_in_parallel:
             self.is_parallel = value
 
             # Hide or show break/skip controls based on parallel mode
             if self.end_node:
-                skip_param = self.end_node.get_parameter_by_name("skip_iteration")
-                break_param = self.end_node.get_parameter_by_name("break_loop")
-
+                skip_param = self.end_node.skip_control
+                break_param = self.end_node.break_control
                 if value:
                     # Hide controls when running in parallel (not supported)
                     if skip_param:
-                        skip_param.allowed_modes = set()
+                        skip_param.ui_options["hide"] = True
                     if break_param:
-                        break_param.allowed_modes = set()
+                        break_param.ui_options["hide"] = True
                 else:
                     # Show controls when running sequentially
                     if skip_param:
-                        skip_param.allowed_modes = {ParameterMode.INPUT}
+                        skip_param.ui_options["hide"] = False
                     if break_param:
-                        break_param.allowed_modes = {ParameterMode.INPUT}
+                        break_param.ui_options["hide"] = False
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""

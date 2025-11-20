@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
@@ -110,6 +111,12 @@ class ControlFlowContext:
                 else:
                     next_output = current_node.get_next_control_output()
                 if next_output is not None:
+                    if isinstance(current_node, BaseIterativeStartNode):
+                        if current_node.end_node is None:
+                            msg = "Iterative start node has no end node"
+                            raise ValueError(msg)
+                        next_nodes.append(NextNodeInfo(node=current_node.end_node, entry_parameter=None))
+                        continue
                     node_connection = (
                         GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
                     )
