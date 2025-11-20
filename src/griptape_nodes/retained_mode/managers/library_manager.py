@@ -102,9 +102,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ReloadAllLibrariesRequest,
     ReloadAllLibrariesResultFailure,
     ReloadAllLibrariesResultSuccess,
-    SwitchLibraryBranchRequest,
-    SwitchLibraryBranchResultFailure,
-    SwitchLibraryBranchResultSuccess,
+    SwitchLibraryRefRequest,
+    SwitchLibraryRefResultFailure,
+    SwitchLibraryRefResultSuccess,
     SyncLibrariesRequest,
     SyncLibrariesResultFailure,
     SyncLibrariesResultSuccess,
@@ -278,7 +278,7 @@ class LibraryManager:
         event_manager.assign_manager_to_request_type(LoadLibrariesRequest, self.load_libraries_request)
         event_manager.assign_manager_to_request_type(CheckLibraryUpdateRequest, self.check_library_update_request)
         event_manager.assign_manager_to_request_type(UpdateLibraryRequest, self.update_library_request)
-        event_manager.assign_manager_to_request_type(SwitchLibraryBranchRequest, self.switch_library_branch_request)
+        event_manager.assign_manager_to_request_type(SwitchLibraryRefRequest, self.switch_library_ref_request)
         event_manager.assign_manager_to_request_type(DownloadLibraryRequest, self.download_library_request)
         event_manager.assign_manager_to_request_type(
             InstallLibraryDependenciesRequest, self.install_library_dependencies_request
@@ -2529,7 +2529,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def switch_library_branch_request(self, request: SwitchLibraryBranchRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    async def switch_library_ref_request(self, request: SwitchLibraryRefRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Switch a library to a different git branch or tag."""
         from griptape_nodes.utils.git_utils import (
             GitRefError,
@@ -2546,13 +2546,13 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=library_name)
         except KeyError:
             details = f"Attempted to switch branch/tag for Library '{library_name}'. Failed because no Library with that name was registered."
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Get current version before switch
         old_version = library.get_metadata().library_version
         if old_version is None:
             details = f"Library '{library_name}' has no version information."
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Find the library file path
         library_file_path = None
@@ -2563,7 +2563,7 @@ class LibraryManager:
 
         if library_file_path is None:
             details = f"Attempted to switch branch/tag for Library '{library_name}'. Failed because no file path could be found for this library."
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Get the library directory (parent of the JSON file)
         library_dir = Path(library_file_path).parent.absolute()
@@ -2573,29 +2573,42 @@ class LibraryManager:
             old_ref = await asyncio.to_thread(get_current_ref, library_dir)
             if old_ref is None:
                 details = f"Library '{library_name}' is not on a branch/tag or is not a git repository."
-                return SwitchLibraryBranchResultFailure(result_details=details)
+                return SwitchLibraryRefResultFailure(result_details=details)
         except GitRefError as e:
             details = f"Failed to get current branch/tag for Library '{library_name}': {e}"
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Perform git ref switch (branch or tag)
         try:
             await asyncio.to_thread(switch_branch_or_tag, library_dir, ref_name)
         except (GitRefError, GitRepositoryError) as e:
             details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Unload the library
         unload_result = GriptapeNodes.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
         if not unload_result.succeeded():
             details = f"Failed to unload Library '{library_name}' after switching ref."
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
 
         # Reload the library from file
         reload_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_file_path))
         if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
             details = f"Failed to reload Library '{library_name}' after switching ref."
-            return SwitchLibraryBranchResultFailure(result_details=details)
+            return SwitchLibraryRefResultFailure(result_details=details)
+
+        # Install dependencies if requested
+        if request.install_dependencies:
+            logger.info("Installing dependencies for Library '%s' after ref switch", library_name)
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_file_path=library_file_path)
+            )
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' ref was switched successfully but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
 
         # Get new ref (branch or tag) and version after switch
         try:
@@ -2614,7 +2627,7 @@ class LibraryManager:
             new_version = "unknown"
 
         details = f"Successfully switched Library '{library_name}' from '{old_ref}' (version {old_version}) to '{new_ref}' (version {new_version})."
-        return SwitchLibraryBranchResultSuccess(
+        return SwitchLibraryRefResultSuccess(
             old_ref=old_ref,
             new_ref=new_ref,
             old_version=old_version,

@@ -642,7 +642,7 @@ class UpdateLibraryResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
-class SwitchLibraryBranchRequest(RequestPayload):
+class SwitchLibraryRefRequest(RequestPayload):
     """Switch a library to a different git branch or tag.
 
     Supports switching to both branches and tags (e.g., 'main', 'develop', 'latest', 'v1.0.0').
@@ -653,17 +653,19 @@ class SwitchLibraryBranchRequest(RequestPayload):
     Args:
         library_name: Name of the library to switch
         ref_name: Name of the branch or tag to switch to
+        install_dependencies: If True, automatically install dependencies after switching (default: True)
 
-    Results: SwitchLibraryBranchResultSuccess (with ref/version info) | SwitchLibraryBranchResultFailure (library not found, git error, ref not found)
+    Results: SwitchLibraryRefResultSuccess (with ref/version info) | SwitchLibraryRefResultFailure (library not found, git error, ref not found)
     """
 
     library_name: str
     ref_name: str
+    install_dependencies: bool = True
 
 
 @dataclass
 @PayloadRegistry.register
-class SwitchLibraryBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+class SwitchLibraryRefResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Library branch or tag switched successfully.
 
     Args:
@@ -681,7 +683,7 @@ class SwitchLibraryBranchResultSuccess(WorkflowAlteredMixin, ResultPayloadSucces
 
 @dataclass
 @PayloadRegistry.register
-class SwitchLibraryBranchResultFailure(ResultPayloadFailure):
+class SwitchLibraryRefResultFailure(ResultPayloadFailure):
     """Library ref switch failed. Common causes: library not found, not a git repository, ref not found, git checkout error."""
 
 
