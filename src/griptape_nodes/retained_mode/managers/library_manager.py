@@ -830,11 +830,29 @@ class LibraryManager:
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
 
-        # Add library venv to sys.path if it exists and library has dependencies
+        # Install dependencies and add library venv to sys.path if library has dependencies
         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
             venv_path = self._get_library_venv_path(library_data.name, file_path)
+
+            # If venv doesn't exist, install dependencies
+            if not venv_path.exists():
+                install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
+                install_result = await self.install_library_dependencies_request(install_request)
+
+                if isinstance(install_result, InstallLibraryDependenciesResultFailure):
+                    details = f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
+                    logger.error(details)
+                    return RegisterLibraryFromFileResultFailure(result_details=details)
+
+                if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
+                    logger.info(
+                        "Installed %d dependencies for library '%s'",
+                        install_result.dependencies_installed,
+                        library_data.name,
+                    )
+
+            # Add venv site-packages to sys.path so node imports can find dependencies
             if venv_path.exists():
-                # Add venv site-packages to sys.path so node imports can find dependencies
                 site_packages = str(
                     Path(
                         sysconfig.get_path(
