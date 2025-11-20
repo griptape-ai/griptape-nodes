@@ -728,19 +728,19 @@ class InstallLibraryDependenciesRequest(RequestPayload):
     setting up a library's environment, updating dependencies after changes.
 
     This operation:
-    1. Validates the library exists
-    2. Gets library metadata for dependencies
+    1. Loads library metadata from the file
+    2. Gets library dependencies from metadata
     3. Initializes the library's virtual environment
     4. Installs pip dependencies specified in the library metadata
     5. Always installs dependencies without version checks
 
     Args:
-        library_name: Name of the library to install dependencies for
+        library_file_path: Path to the library JSON file
 
     Results: InstallLibraryDependenciesResultSuccess | InstallLibraryDependenciesResultFailure
     """
 
-    library_name: str
+    library_file_path: str
 
 
 @dataclass

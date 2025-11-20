@@ -2473,7 +2473,7 @@ class LibraryManager:
         if request.install_dependencies:
             logger.info("Installing dependencies for updated library '%s'", library_name)
             install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_name=library_name)
+                InstallLibraryDependenciesRequest(library_file_path=library_file_path)
             )
             if not install_deps_result.succeeded():
                 logger.warning(
@@ -2643,7 +2643,20 @@ class LibraryManager:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
             return DownloadLibraryResultFailure(result_details=details)
 
-        # Register the library
+        # Install dependencies BEFORE registration if requested
+        if request.install_dependencies:
+            logger.info("Installing dependencies for downloaded library '%s'", library_name)
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
+            )
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' was downloaded but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
+
+        # Register the library (venv now exists if dependencies were installed)
         logger.info("Registering downloaded library '%s' from %s", library_name, library_json_path)
         register_result = await GriptapeNodes.ahandle_request(
             RegisterLibraryFromFileRequest(file_path=str(library_json_path))
@@ -2651,19 +2664,6 @@ class LibraryManager:
         if not isinstance(register_result, RegisterLibraryFromFileResultSuccess):
             details = f"Downloaded library '{library_name}' but failed to register it: {register_result.result_details}"
             return DownloadLibraryResultFailure(result_details=details)
-
-        # Install dependencies if requested
-        if request.install_dependencies:
-            logger.info("Installing dependencies for downloaded library '%s'", library_name)
-            install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_name=library_name)
-            )
-            if not install_deps_result.succeeded():
-                logger.warning(
-                    "Library '%s' was downloaded and registered successfully but dependency installation failed: %s",
-                    library_name,
-                    install_deps_result.result_details,
-                )
 
         details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
         return DownloadLibraryResultSuccess(
@@ -2674,17 +2674,20 @@ class LibraryManager:
 
     async def install_library_dependencies_request(self, request: InstallLibraryDependenciesRequest) -> ResultPayload:  # noqa: PLR0911
         """Install dependencies for a library."""
-        library_name = request.library_name
+        library_file_path = request.library_file_path
 
-        # Validate library exists
-        try:
-            library = LibraryRegistry.get_library(name=library_name)
-        except KeyError:
-            details = f"Library '{library_name}' not found in registry"
+        # Load library metadata from file
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_file_path)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            details = f"Failed to load library metadata from {library_file_path}: {metadata_result.result_details}"
             return InstallLibraryDependenciesResultFailure(result_details=details)
 
-        # Get library metadata
-        library_metadata = library.get_metadata()
+        library_data = metadata_result.library_schema
+        library_name = library_data.name
+        library_metadata = library_data.metadata
+
         if not library_metadata.dependencies or not library_metadata.dependencies.pip_dependencies:
             details = f"Library '{library_name}' has no dependencies to install"
             logger.info(details)
@@ -2694,17 +2697,6 @@ class LibraryManager:
 
         pip_dependencies = library_metadata.dependencies.pip_dependencies
         pip_install_flags = library_metadata.dependencies.pip_install_flags or []
-
-        # Find the library file path
-        library_file_path = None
-        for file_path, library_info in self._library_file_path_to_info.items():
-            if library_info.library_name == library_name:
-                library_file_path = file_path
-                break
-
-        if library_file_path is None:
-            details = f"Library '{library_name}' has no file path"
-            return InstallLibraryDependenciesResultFailure(result_details=details)
 
         # Get venv path and initialize it
         venv_path = self._get_library_venv_path(library_name, library_file_path)
