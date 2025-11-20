@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
 import os
@@ -8,6 +9,7 @@ import time
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 from urllib.parse import urljoin
 
@@ -18,6 +20,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterList, Parame
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import get_image_dimensions_from_artifact
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -26,10 +29,13 @@ __all__ = ["SeedreamImageGeneration"]
 # Define constant for prompt truncation length
 PROMPT_TRUNCATE_LENGTH = 100
 
-# Model name constants
-SEEDREAM_4_0 = "seedream-4.0"
-SEEDREAM_3_0_T2I = "seedream-3.0-t2i"
-SEEDEDIT_3_0_I2I = "seededit-3.0-i2i"
+
+class Model(StrEnum):
+    """Seedream model identifiers."""
+
+    SEEDREAM_4_0 = "seedream-4.0"
+    SEEDREAM_3_0_T2I = "seedream-3.0-t2i"
+    SEEDEDIT_3_0_I2I = "seededit-3.0-i2i"
 
 
 @dataclass
@@ -49,6 +55,7 @@ class ModelConfig:
 
     api_id: str
     size_validation: SizeValidation
+    size_options: list[str]
     max_images: int | None  # None means images not supported, int means max count
     min_images: int | None  # None or 0 means optional, int > 0 means required minimum
     prompt_max_tokens: int
@@ -56,8 +63,8 @@ class ModelConfig:
 
 
 # Model configurations
-MODEL_CONFIG: dict[str, ModelConfig] = {
-    SEEDREAM_4_0: ModelConfig(
+MODEL_CONFIG: dict[Model, ModelConfig] = {
+    Model.SEEDREAM_4_0: ModelConfig(
         api_id="seedream-4-0-250828",
         size_validation=SizeValidation(
             min_dimension=1024,
@@ -66,12 +73,35 @@ MODEL_CONFIG: dict[str, ModelConfig] = {
             aspect_ratio_max=3.0,
             allows_shorthand=True,
         ),
+        size_options=[
+            "1K",
+            "2K",
+            "4K",
+            "1024x1024",
+            "2048x2048",
+            "4096x4096",
+            "1280x720",
+            "1920x1080",
+            "2560x1440",
+            "720x1280",
+            "1080x1920",
+            "1440x2560",
+            "1152x864",
+            "1536x1152",
+            "2048x1536",
+            "864x1152",
+            "1152x1536",
+            "1536x2048",
+            "1512x648",
+            "2560x1080",
+            "3440x1440",
+        ],
         max_images=10,  # Supports up to 10 reference images
         min_images=None,  # Images are optional for v4
         prompt_max_tokens=512,
         seed_range=(-1, 2147483647),
     ),
-    SEEDREAM_3_0_T2I: ModelConfig(
+    Model.SEEDREAM_3_0_T2I: ModelConfig(
         api_id="seedream-3-0-t2i-250415",
         size_validation=SizeValidation(
             min_dimension=512,
@@ -80,12 +110,23 @@ MODEL_CONFIG: dict[str, ModelConfig] = {
             aspect_ratio_max=3.0,
             allows_shorthand=False,
         ),
+        size_options=[
+            "1024x1024",
+            "2048x2048",
+            "1152x864",
+            "864x1152",
+            "1280x720",
+            "720x1280",
+            "1248x832",
+            "832x1248",
+            "1512x648",
+        ],
         max_images=None,  # Does not support image inputs
         min_images=None,  # No images required (text-to-image only)
         prompt_max_tokens=300,
         seed_range=(-1, 2147483647),
     ),
-    SEEDEDIT_3_0_I2I: ModelConfig(
+    Model.SEEDEDIT_3_0_I2I: ModelConfig(
         api_id="seededit-3-0-i2i-250628",
         size_validation=SizeValidation(
             min_dimension=512,
@@ -94,52 +135,12 @@ MODEL_CONFIG: dict[str, ModelConfig] = {
             aspect_ratio_max=3.0,
             allows_shorthand=False,
         ),
+        size_options=["adaptive"],
         max_images=1,  # Requires exactly 1 input image
         min_images=1,  # Image is required for i2i
         prompt_max_tokens=300,
         seed_range=(-1, 2147483647),
     ),
-}
-
-# Size options for different models
-SIZE_OPTIONS = {
-    SEEDREAM_4_0: [
-        "1K",
-        "2K",
-        "4K",
-        "1024x1024",
-        "2048x2048",
-        "4096x4096",
-        "1280x720",
-        "1920x1080",
-        "2560x1440",
-        "720x1280",
-        "1080x1920",
-        "1440x2560",
-        "1152x864",
-        "1536x1152",
-        "2048x1536",
-        "864x1152",
-        "1152x1536",
-        "1536x2048",
-        "1512x648",
-        "2560x1080",
-        "3440x1440",
-    ],
-    SEEDREAM_3_0_T2I: [
-        "1024x1024",
-        "2048x2048",
-        "1152x864",
-        "864x1152",
-        "1280x720",
-        "720x1280",
-        "1248x832",
-        "832x1248",
-        "1512x648",
-    ],
-    SEEDEDIT_3_0_I2I: [
-        "adaptive",
-    ],
 }
 
 
@@ -188,10 +189,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value=SEEDREAM_4_0,
+                default_value=Model.SEEDREAM_4_0,
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[SEEDREAM_4_0, SEEDREAM_3_0_T2I, SEEDEDIT_3_0_I2I])},
+                traits={Options(choices=[Model.SEEDREAM_4_0, Model.SEEDREAM_3_0_T2I, Model.SEEDEDIT_3_0_I2I])},
             )
         )
 
@@ -252,7 +253,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 default_value="1K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=SIZE_OPTIONS[SEEDREAM_4_0])},
+                traits={Options(choices=MODEL_CONFIG[Model.SEEDREAM_4_0].size_options)},
             )
         )
 
@@ -338,72 +339,85 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model") or SEEDREAM_4_0
-        if default_model == SEEDREAM_4_0:
-            # Hide single image input, show images list, hide guidance scale
-            self.hide_parameter_by_name("image")
-            self.show_parameter_by_name("images")
-            self.hide_parameter_by_name("guidance_scale")
-        elif default_model == SEEDREAM_3_0_T2I:
-            # Hide image inputs (not supported), show guidance scale
-            self.hide_parameter_by_name("image")
-            self.hide_parameter_by_name("images")
-            self.show_parameter_by_name("guidance_scale")
-        elif default_model == SEEDEDIT_3_0_I2I:
-            # Show single image input (required), hide images list, show guidance scale
-            self.show_parameter_by_name("image")
-            self.hide_parameter_by_name("images")
-            self.show_parameter_by_name("guidance_scale")
+        default_model = self.get_parameter_value("model")
+        if not default_model:
+            msg = f"{self.name} - Model parameter is not set"
+            raise ValueError(msg)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901, PLR0912
-        """Update size options and parameter visibility based on model selection."""
-        if parameter.name == "model" and value in SIZE_OPTIONS:
-            new_choices = SIZE_OPTIONS[value]
-            current_size = self.get_parameter_value("size")
-
-            # Set appropriate parameters for each model
-            if value == SEEDREAM_4_0:
+        match default_model:
+            case Model.SEEDREAM_4_0:
                 # Hide single image input, show images list, hide guidance scale
                 self.hide_parameter_by_name("image")
                 self.show_parameter_by_name("images")
                 self.hide_parameter_by_name("guidance_scale")
-                # Update size choices and preserve current size if valid, otherwise default to 1K for v4
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    default_size = "1K" if "1K" in new_choices else new_choices[0]
-                    self._update_option_choices("size", new_choices, default_size)
-
-            elif value == SEEDREAM_3_0_T2I:
+            case Model.SEEDREAM_3_0_T2I:
                 # Hide image inputs (not supported), show guidance scale
                 self.hide_parameter_by_name("image")
                 self.hide_parameter_by_name("images")
                 self.show_parameter_by_name("guidance_scale")
-                # Set default guidance scale
-                self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    self._update_option_choices("size", new_choices, "2048x2048")
-
-            elif value == SEEDEDIT_3_0_I2I:
+            case Model.SEEDEDIT_3_0_I2I:
                 # Show single image input (required), hide images list, show guidance scale
                 self.show_parameter_by_name("image")
                 self.hide_parameter_by_name("images")
                 self.show_parameter_by_name("guidance_scale")
-                # Update tooltip for primary image parameter
-                image_param = self.get_parameter_by_name("image")
-                if image_param:
-                    image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
-                    image_param.ui_options["display_name"] = "Input Image"
-                # Set default guidance scale
-                self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    self._update_option_choices("size", new_choices, "adaptive")
+            case _:
+                msg = f"Unknown model: {default_model}"
+                raise ValueError(msg)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901, PLR0912
+        """Update size options and parameter visibility based on model selection."""
+        if parameter.name == "model" and value in MODEL_CONFIG:
+            new_choices = MODEL_CONFIG[value].size_options
+            current_size = self.get_parameter_value("size")
+
+            # Set appropriate parameters for each model
+            match value:
+                case Model.SEEDREAM_4_0:
+                    # Hide single image input, show images list, hide guidance scale
+                    self.hide_parameter_by_name("image")
+                    self.show_parameter_by_name("images")
+                    self.hide_parameter_by_name("guidance_scale")
+                    # Update size choices and preserve current size if valid, otherwise default to 1K for v4
+                    if current_size in new_choices:
+                        self._update_option_choices("size", new_choices, current_size)
+                    else:
+                        default_size = "1K" if "1K" in new_choices else new_choices[0]
+                        self._update_option_choices("size", new_choices, default_size)
+
+                case Model.SEEDREAM_3_0_T2I:
+                    # Hide image inputs (not supported), show guidance scale
+                    self.hide_parameter_by_name("image")
+                    self.hide_parameter_by_name("images")
+                    self.show_parameter_by_name("guidance_scale")
+                    # Set default guidance scale
+                    self.set_parameter_value("guidance_scale", 2.5)
+                    # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
+                    if current_size in new_choices:
+                        self._update_option_choices("size", new_choices, current_size)
+                    else:
+                        self._update_option_choices("size", new_choices, "2048x2048")
+
+                case Model.SEEDEDIT_3_0_I2I:
+                    # Show single image input (required), hide images list, show guidance scale
+                    self.show_parameter_by_name("image")
+                    self.hide_parameter_by_name("images")
+                    self.show_parameter_by_name("guidance_scale")
+                    # Update tooltip for primary image parameter
+                    image_param = self.get_parameter_by_name("image")
+                    if image_param:
+                        image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
+                        image_param.ui_options["display_name"] = "Input Image"
+                    # Set default guidance scale
+                    self.set_parameter_value("guidance_scale", 2.5)
+                    # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
+                    if current_size in new_choices:
+                        self._update_option_choices("size", new_choices, current_size)
+                    else:
+                        self._update_option_choices("size", new_choices, "adaptive")
+
+                case _:
+                    msg = f"Unknown model: {value}"
+                    raise ValueError(msg)
 
         # Update validation message when relevant parameters change
         if parameter.name in ["model", "image", "images", "size", "prompt", "seed"]:
@@ -460,59 +474,66 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return "\n\n".join(errors)
 
-    def _validate_image_dimensions(self, config: ModelConfig) -> list[str]:  # noqa: C901
+    def _validate_image_dimensions(self, config: ModelConfig) -> list[str]:  # noqa: C901, PLR0912
         """Validate image dimensions and aspect ratios."""
         errors = []
         model = self.get_parameter_value("model")
 
         # Get images based on model
         images_to_check = []
-        if model == SEEDREAM_4_0:
-            images = self.get_parameter_list_value("images") or []
-            images_to_check = [(i + 1, img) for i, img in enumerate(images)]
-        elif model == SEEDEDIT_3_0_I2I:
-            image = self.get_parameter_value("image")
-            if image:
-                images_to_check = [(None, image)]
+        match model:
+            case Model.SEEDREAM_4_0:
+                images = self.get_parameter_list_value("images") or []
+                images_to_check = [(i + 1, img) for i, img in enumerate(images)]
+            case Model.SEEDEDIT_3_0_I2I:
+                image = self.get_parameter_value("image")
+                if image:
+                    images_to_check = [(None, image)]
+            case _:
+                msg = f"Unknown model: {model}"
+                raise ValueError(msg)
 
         if not images_to_check:
             return errors
 
-        from griptape_nodes_library.utils.image_utils import get_image_dimensions_from_artifact
-
         for index, img in images_to_check:
+            image_label = f"Image {index}" if index is not None else "Input image"
+
             try:
                 width, height = get_image_dimensions_from_artifact(img)
-
-                image_label = f"Image {index}" if index is not None else "Input image"
-                dimension_errors = []
-
-                # Check dimensions
-                if width < config.size_validation.min_dimension or height < config.size_validation.min_dimension:
-                    dimension_errors.append(
-                        f"  • Dimensions {width}x{height} below minimum {config.size_validation.min_dimension}x{config.size_validation.min_dimension}"
-                    )
-                if width > config.size_validation.max_dimension or height > config.size_validation.max_dimension:
-                    dimension_errors.append(
-                        f"  • Dimensions {width}x{height} exceed maximum {config.size_validation.max_dimension}x{config.size_validation.max_dimension}"
-                    )
-
-                # Check aspect ratio
-                aspect_ratio = width / height if height > 0 else 0
-                if (
-                    aspect_ratio < config.size_validation.aspect_ratio_min
-                    or aspect_ratio > config.size_validation.aspect_ratio_max
-                ):
-                    dimension_errors.append(
-                        f"  • Aspect ratio {aspect_ratio:.2f}:1 outside allowed range {config.size_validation.aspect_ratio_min:.2f}-{config.size_validation.aspect_ratio_max:.2f}"
-                    )
-
-                if dimension_errors:
-                    errors.append(f"{image_label}:\n" + "\n".join(dimension_errors))
-
-            except Exception as e:
-                self._log(f"Failed to validate image dimensions: {e}")
+            except (ValueError, TypeError) as e:
+                errors.append(f"{image_label}:\n  • Failed to get image dimensions: {e}")
+                self._log(f"{self.name} - {image_label}: Failed to get dimensions - {e}")
                 continue
+            except OSError as e:
+                errors.append(f"{image_label}:\n  • Failed to read image file: {e}")
+                self._log(f"{self.name} - {image_label}: Failed to read image - {e}")
+                continue
+
+            dimension_errors = []
+
+            # Check dimensions
+            if width < config.size_validation.min_dimension or height < config.size_validation.min_dimension:
+                dimension_errors.append(
+                    f"  • Dimensions {width}x{height} below minimum {config.size_validation.min_dimension}x{config.size_validation.min_dimension}"
+                )
+            if width > config.size_validation.max_dimension or height > config.size_validation.max_dimension:
+                dimension_errors.append(
+                    f"  • Dimensions {width}x{height} exceed maximum {config.size_validation.max_dimension}x{config.size_validation.max_dimension}"
+                )
+
+            # Check aspect ratio
+            aspect_ratio = width / height if height > 0 else 0
+            if (
+                aspect_ratio < config.size_validation.aspect_ratio_min
+                or aspect_ratio > config.size_validation.aspect_ratio_max
+            ):
+                dimension_errors.append(
+                    f"  • Aspect ratio {aspect_ratio:.2f}:1 outside allowed range {config.size_validation.aspect_ratio_min:.2f}-{config.size_validation.aspect_ratio_max:.2f}"
+                )
+
+            if dimension_errors:
+                errors.append(f"{image_label}:\n" + "\n".join(dimension_errors))
 
         if errors:
             return [f"{self.name} - Image validation errors:\n\n" + "\n\n".join(errors)]
@@ -523,33 +544,38 @@ class SeedreamImageGeneration(SuccessFailureNode):
         errors = []
         model = self.get_parameter_value("model")
 
-        if model == SEEDREAM_4_0:
-            images = self.get_parameter_list_value("images") or []
-            image_count = len(images)
+        match model:
+            case Model.SEEDREAM_4_0:
+                images = self.get_parameter_list_value("images") or []
+                image_count = len(images)
 
-            # Check minimum required
-            if config.min_images is not None and image_count < config.min_images:
-                errors.append(
-                    f"{self.name} - Insufficient images: {image_count} provided but minimum is {config.min_images}"
-                )
+                # Check minimum required
+                if config.min_images is not None and image_count < config.min_images:
+                    errors.append(
+                        f"{self.name} - Insufficient images: {image_count} provided but minimum is {config.min_images}"
+                    )
 
-            # Check maximum allowed
-            if config.max_images is not None and image_count > config.max_images:
-                errors.append(
-                    f"{self.name} - Too many images: {image_count} provided but maximum is {config.max_images}"
-                )
+                # Check maximum allowed
+                if config.max_images is not None and image_count > config.max_images:
+                    errors.append(
+                        f"{self.name} - Too many images: {image_count} provided but maximum is {config.max_images}"
+                    )
 
-        elif model == SEEDEDIT_3_0_I2I:
-            image = self.get_parameter_value("image")
-            has_image = image is not None
+            case Model.SEEDEDIT_3_0_I2I:
+                image = self.get_parameter_value("image")
+                has_image = image is not None
 
-            # Check minimum required
-            if config.min_images is not None and config.min_images > 0 and not has_image:
-                errors.append(f"{self.name} - Missing required image input for {model} model")
+                # Check minimum required
+                if config.min_images is not None and config.min_images > 0 and not has_image:
+                    errors.append(f"{self.name} - Missing required image input for {model} model")
 
-            # Check maximum allowed (should be exactly 1 for i2i)
-            if has_image and config.max_images is not None and config.max_images < 1:
-                errors.append(f"{self.name} - {model} does not support image inputs")
+                # Check maximum allowed (should be exactly 1 for i2i)
+                if has_image and config.max_images is not None and config.max_images < 1:
+                    errors.append(f"{self.name} - {model} does not support image inputs")
+
+            case _:
+                msg = f"Unknown model: {model}"
+                raise ValueError(msg)
 
         return errors
 
@@ -609,7 +635,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def _validate_prompt_length(self, config: ModelConfig) -> list[str]:
         """Validate prompt length against token limit."""
         errors = []
-        prompt = self.get_parameter_value("prompt") or ""
+        prompt = self.get_parameter_value("prompt")
         if not prompt:
             return errors
 
@@ -681,19 +707,45 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._handle_failure_exception(e)
 
     def _get_parameters(self) -> dict[str, Any]:
+        model = self.get_parameter_value("model")
+        if not model:
+            msg = f"{self.name} - Model parameter is required"
+            raise ValueError(msg)
+
+        prompt = self.get_parameter_value("prompt")
+        if not prompt:
+            msg = f"{self.name} - Prompt parameter is required"
+            raise ValueError(msg)
+
+        size = self.get_parameter_value("size")
+        if not size:
+            msg = f"{self.name} - Size parameter is required"
+            raise ValueError(msg)
+
+        seed = self.get_parameter_value("seed")
+        if seed is None:
+            msg = f"{self.name} - Seed parameter is required"
+            raise ValueError(msg)
+
+        guidance_scale = self.get_parameter_value("guidance_scale")
+        if guidance_scale is None:
+            msg = f"{self.name} - Guidance scale parameter is required"
+            raise ValueError(msg)
+
         params = {
-            "model": self.get_parameter_value("model") or SEEDREAM_4_0,
-            "prompt": self.get_parameter_value("prompt") or "",
+            "model": model,
+            "prompt": prompt,
             "image": self.get_parameter_value("image"),
-            "size": self.get_parameter_value("size") or "1K",
-            "seed": self.get_parameter_value("seed") or -1,
-            "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
+            "size": size,
+            "seed": seed,
+            "guidance_scale": guidance_scale,
             "watermark": False,
         }
 
         # Get image list for seedream-4.0
-        if params["model"] == SEEDREAM_4_0:
-            params["images"] = self.get_parameter_list_value("images") or []
+        if params["model"] == Model.SEEDREAM_4_0:
+            images = self.get_parameter_list_value("images")
+            params["images"] = images if images is not None else []
 
         return params
 
@@ -717,25 +769,43 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         try:
             response = requests.post(proxy_url, json=payload, headers=headers, timeout=None)  # noqa: S113
+        except requests.exceptions.ConnectionError as e:
+            self._log(f"{self.name} - Connection error: {e}")
+            msg = f"{self.name} - Failed to connect to Griptape model proxy: {e}"
+            raise RuntimeError(msg) from e
+        except requests.exceptions.Timeout as e:
+            self._log(f"{self.name} - Request timeout: {e}")
+            msg = f"{self.name} - Request to Griptape model proxy timed out: {e}"
+            raise RuntimeError(msg) from e
+        except requests.exceptions.RequestException as e:
+            self._log(f"{self.name} - Request error: {e}")
+            msg = f"{self.name} - Failed to submit request to Griptape model proxy: {e}"
+            raise RuntimeError(msg) from e
+
+        try:
             response.raise_for_status()
-            response_json = response.json()
-            self._log("Request submitted successfully")
         except requests.exceptions.HTTPError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
+            self._log(f"{self.name} - HTTP error: {e.response.status_code} - {e.response.text}")
             # Try to parse error response body
             try:
                 error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
+            except (ValueError, requests.exceptions.JSONDecodeError):
+                msg = f"{self.name} - API error {e.response.status_code}: {e.response.text}"
+                raise RuntimeError(msg) from e
+
+            error_details = self._extract_error_details(error_json)
+            msg = f"{self.name} - {error_details}"
             raise RuntimeError(msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
+
+        try:
+            response_json = response.json()
+        except (ValueError, requests.exceptions.JSONDecodeError) as e:
+            self._log(f"{self.name} - Failed to parse response JSON: {e}")
+            msg = f"{self.name} - Invalid JSON response from API: {e}"
             raise RuntimeError(msg) from e
-        else:
-            return response_json
+
+        self._log("Request submitted successfully")
+        return response_json
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         model = params["model"]
@@ -754,28 +824,33 @@ class SeedreamImageGeneration(SuccessFailureNode):
             payload["seed"] = params["seed"]
 
         # Model-specific parameters
-        if model == SEEDREAM_4_0:
-            # Add multiple images if provided for v4
-            images = params.get("images", [])
-            if images:
-                image_array = []
-                for img in images:
-                    image_data = self._process_input_image(img)
-                    if image_data:
-                        image_array.append(image_data)
-                if image_array:
-                    payload["image"] = image_array
+        match model:
+            case Model.SEEDREAM_4_0:
+                # Add multiple images if provided for v4
+                images = params.get("images", [])
+                if images:
+                    image_array = []
+                    for img in images:
+                        image_data = self._process_input_image(img)
+                        if image_data:
+                            image_array.append(image_data)
+                    if image_array:
+                        payload["image"] = image_array
 
-        elif model == SEEDREAM_3_0_T2I:
-            # Add guidance scale for v3 t2i
-            payload["guidance_scale"] = params["guidance_scale"]
+            case Model.SEEDREAM_3_0_T2I:
+                # Add guidance scale for v3 t2i
+                payload["guidance_scale"] = params["guidance_scale"]
 
-        elif model == SEEDEDIT_3_0_I2I:
-            # Add guidance scale and required image for seededit
-            payload["guidance_scale"] = params["guidance_scale"]
-            image_data = self._process_input_image(params["image"])
-            if image_data:
-                payload["image"] = image_data
+            case Model.SEEDEDIT_3_0_I2I:
+                # Add guidance scale and required image for seededit
+                payload["guidance_scale"] = params["guidance_scale"]
+                image_data = self._process_input_image(params["image"])
+                if image_data:
+                    payload["image"] = image_data
+
+            case _:
+                msg = f"Unknown model: {model}"
+                raise ValueError(msg)
 
         return payload
 
@@ -796,20 +871,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if isinstance(image_input, str):
             return image_input
 
-        try:
-            # ImageUrlArtifact: .value holds URL string
-            if hasattr(image_input, "value"):
-                value = getattr(image_input, "value", None)
-                if isinstance(value, str):
-                    return value
+        # ImageUrlArtifact: .value holds URL string
+        if hasattr(image_input, "value"):
+            value = getattr(image_input, "value", None)
+            if isinstance(value, str):
+                return value
 
-            # ImageArtifact: .base64 holds raw or data-URI
-            if hasattr(image_input, "base64"):
-                b64 = getattr(image_input, "base64", None)
-                if isinstance(b64, str) and b64:
-                    return b64
-        except Exception as e:
-            self._log(f"Failed to extract image value: {e}")
+        # ImageArtifact: .base64 holds raw or data-URI
+        if hasattr(image_input, "base64"):
+            b64 = getattr(image_input, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64
 
         return None
 
@@ -828,16 +900,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
     def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
+        image_bytes = self._download_bytes_from_url(url)
+        if not image_bytes:
+            self._log(f"{self.name} - Failed to download image from URL: {url}")
+            return None
 
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            self._log(f"Failed to download image from URL {url}: {e}")
-        return None
+        b64_string = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:image/png;base64,{b64_string}"
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -902,35 +971,45 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
 
     def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
-        try:
-            self._log("Downloading image from URL")
-            image_bytes = self._download_bytes_from_url(image_url)
-            if image_bytes:
-                filename = (
-                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
-                )
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
+        self._log("Downloading image from URL")
+        image_bytes = self._download_bytes_from_url(image_url)
 
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved image to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
-                )
-        except Exception as e:
-            self._log(f"Failed to save image from URL: {e}")
+        if not image_bytes:
+            self._log(f"{self.name} - Could not download image bytes from provider URL")
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+            )
+            return
+
+        filename = f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
+
+        try:
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+        except (OSError, PermissionError) as e:
+            self._log(f"{self.name} - Failed to save image to static storage: {e}")
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
             self._set_status_results(
                 was_successful=True,
                 result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
             )
+            return
+        except (ValueError, TypeError) as e:
+            self._log(f"{self.name} - Invalid parameters for static file save: {e}")
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Image generated successfully. Using provider URL (failed to save: {e}).",
+            )
+            return
+
+        self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+        self._log(f"Saved image to static storage as {filename}")
+        self._set_status_results(
+            was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+        )
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
@@ -964,7 +1043,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if isinstance(provider_response, str):
             try:
                 return _json.loads(provider_response)
-            except Exception:
+            except (ValueError, _json.JSONDecodeError):
                 return None
         if isinstance(provider_response, dict):
             return provider_response
@@ -1015,7 +1094,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         try:
             resp = requests.get(url, timeout=120)
             resp.raise_for_status()
-        except Exception:
+        except (requests.exceptions.RequestException, OSError):
             return None
         else:
             return resp.content
