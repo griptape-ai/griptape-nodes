@@ -38,6 +38,21 @@ class Model(StrEnum):
     SEEDEDIT_3_0_I2I = "seededit-3.0-i2i"
 
 
+class ValidationSeverity(StrEnum):
+    """Severity levels for validation messages."""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+@dataclass
+class ValidationMessage:
+    """A validation message with severity level."""
+
+    severity: ValidationSeverity
+    message: str
+
+
 @dataclass
 class SizeValidation:
     """Image size validation constraints for a model."""
@@ -189,10 +204,14 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value=Model.SEEDREAM_4_0,
+                default_value=Model.SEEDREAM_4_0.value,
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[Model.SEEDREAM_4_0, Model.SEEDREAM_3_0_T2I, Model.SEEDEDIT_3_0_I2I])},
+                traits={
+                    Options(
+                        choices=[Model.SEEDREAM_4_0.value, Model.SEEDREAM_3_0_T2I.value, Model.SEEDEDIT_3_0_I2I.value]
+                    )
+                },
             )
         )
 
@@ -334,6 +353,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
         )
         self.hide_message_by_name("validation_errors")
 
+        # Add validation warning message (initially hidden)
+        self.add_node_element(
+            ParameterMessage(
+                name="validation_warnings",
+                variant="warning",
+                value="",
+                title="Validation Warnings",
+            )
+        )
+        self.hide_message_by_name("validation_warnings")
+
         # Initialize parameter visibility based on default model (seedream-4.0)
         self._initialize_parameter_visibility()
 
@@ -364,14 +394,28 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 msg = f"Unknown model: {default_model}"
                 raise ValueError(msg)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901, PLR0912
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: C901, PLR0912, PLR0915
         """Update size options and parameter visibility based on model selection."""
-        if parameter.name == "model" and value in MODEL_CONFIG:
-            new_choices = MODEL_CONFIG[value].size_options
+        if parameter.name == "model":
+            # Convert string value to Model enum if needed
+            if isinstance(value, str):
+                try:
+                    model_enum = Model(value)
+                except ValueError:
+                    msg = f"Unknown model: {value}"
+                    raise ValueError(msg) from None
+            else:
+                model_enum = value
+
+            if model_enum not in MODEL_CONFIG:
+                msg = f"Model {model_enum} is not configured in MODEL_CONFIG"
+                raise ValueError(msg)
+
+            new_choices = MODEL_CONFIG[model_enum].size_options
             current_size = self.get_parameter_value("size")
 
             # Set appropriate parameters for each model
-            match value:
+            match model_enum:
                 case Model.SEEDREAM_4_0:
                     # Hide single image input, show images list, hide guidance scale
                     self.hide_parameter_by_name("image")
@@ -416,19 +460,30 @@ class SeedreamImageGeneration(SuccessFailureNode):
                         self._update_option_choices("size", new_choices, "adaptive")
 
                 case _:
-                    msg = f"Unknown model: {value}"
+                    msg = f"Unknown model: {model_enum}"
                     raise ValueError(msg)
 
-        # Update validation message when relevant parameters change
+        # Update validation messages when relevant parameters change
         if parameter.name in ["model", "image", "images", "size", "prompt", "seed"]:
-            error_message = self._collect_validation_errors()
+            error_message, warning_message = self._collect_validation_errors()
+
+            # Handle error message
             if error_message:
-                validation_msg = self.get_message_by_name_or_element_id("validation_errors")
-                if validation_msg:
-                    validation_msg.value = error_message
+                validation_errors = self.get_message_by_name_or_element_id("validation_errors")
+                if validation_errors:
+                    validation_errors.value = error_message
                 self.show_message_by_name("validation_errors")
             else:
                 self.hide_message_by_name("validation_errors")
+
+            # Handle warning message
+            if warning_message:
+                validation_warnings = self.get_message_by_name_or_element_id("validation_warnings")
+                if validation_warnings:
+                    validation_warnings.value = warning_message
+                self.show_message_by_name("validation_warnings")
+            else:
+                self.hide_message_by_name("validation_warnings")
 
         return super().after_value_set(parameter, value)
 
@@ -436,45 +491,37 @@ class SeedreamImageGeneration(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
-    def _collect_validation_errors(self) -> str:
-        """Collect all validation errors and return formatted error message."""
+    def _collect_validation_errors(self) -> tuple[str, str]:
+        """Collect all validation errors and warnings.
+
+        Returns:
+            Tuple of (error_message, warning_message) where each is a formatted string.
+            Empty strings indicate no issues of that severity.
+        """
         model = self.get_parameter_value("model")
         if model not in MODEL_CONFIG:
-            return ""
+            return ("", "")
 
         config = MODEL_CONFIG[model]
-        errors = []
+        all_validations: list[ValidationMessage] = []
 
-        # Validate images
-        image_errors = self._validate_image_dimensions(config)
-        if image_errors:
-            errors.extend(image_errors)
+        # Collect all validation messages
+        all_validations.extend(self._validate_image_dimensions(config))
+        all_validations.extend(self._validate_image_count(config))
+        all_validations.extend(self._validate_size_parameter(config))
+        all_validations.extend(self._validate_prompt_length(config))
+        all_validations.extend(self._validate_seed(config))
 
-        image_count_errors = self._validate_image_count(config)
-        if image_count_errors:
-            errors.extend(image_count_errors)
+        # Separate by severity
+        errors = [v.message for v in all_validations if v.severity == ValidationSeverity.ERROR]
+        warnings = [v.message for v in all_validations if v.severity == ValidationSeverity.WARNING]
 
-        # Validate size parameter
-        size_errors = self._validate_size_parameter(config)
-        if size_errors:
-            errors.extend(size_errors)
+        error_message = "\n\n".join(errors) if errors else ""
+        warning_message = "\n\n".join(warnings) if warnings else ""
 
-        # Validate prompt
-        prompt_errors = self._validate_prompt_length(config)
-        if prompt_errors:
-            errors.extend(prompt_errors)
+        return (error_message, warning_message)
 
-        # Validate seed
-        seed_errors = self._validate_seed(config)
-        if seed_errors:
-            errors.extend(seed_errors)
-
-        if not errors:
-            return ""
-
-        return "\n\n".join(errors)
-
-    def _validate_image_dimensions(self, config: ModelConfig) -> list[str]:  # noqa: C901, PLR0912
+    def _validate_image_dimensions(self, config: ModelConfig) -> list[ValidationMessage]:  # noqa: C901, PLR0912
         """Validate image dimensions and aspect ratios."""
         errors = []
         model = self.get_parameter_value("model")
@@ -485,6 +532,9 @@ class SeedreamImageGeneration(SuccessFailureNode):
             case Model.SEEDREAM_4_0:
                 images = self.get_parameter_list_value("images") or []
                 images_to_check = [(i + 1, img) for i, img in enumerate(images)]
+            case Model.SEEDREAM_3_0_T2I:
+                # Text-to-image model does not support image inputs
+                images_to_check = []
             case Model.SEEDEDIT_3_0_I2I:
                 image = self.get_parameter_value("image")
                 if image:
@@ -536,12 +586,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 errors.append(f"{image_label}:\n" + "\n".join(dimension_errors))
 
         if errors:
-            return [f"{self.name} - Image validation errors:\n\n" + "\n\n".join(errors)]
+            message = f"{self.name} - Image validation errors:\n\n" + "\n\n".join(errors)
+            return [ValidationMessage(severity=ValidationSeverity.ERROR, message=message)]
         return []
 
-    def _validate_image_count(self, config: ModelConfig) -> list[str]:
+    def _validate_image_count(self, config: ModelConfig) -> list[ValidationMessage]:
         """Validate image count requirements."""
-        errors = []
+        results = []
         model = self.get_parameter_value("model")
 
         match model:
@@ -551,15 +602,21 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
                 # Check minimum required
                 if config.min_images is not None and image_count < config.min_images:
-                    errors.append(
+                    message = (
                         f"{self.name} - Insufficient images: {image_count} provided but minimum is {config.min_images}"
                     )
+                    results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
                 # Check maximum allowed
                 if config.max_images is not None and image_count > config.max_images:
-                    errors.append(
+                    message = (
                         f"{self.name} - Too many images: {image_count} provided but maximum is {config.max_images}"
                     )
+                    results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
+
+            case Model.SEEDREAM_3_0_T2I:
+                # Text-to-image model does not support image inputs, no validation needed
+                pass
 
             case Model.SEEDEDIT_3_0_I2I:
                 image = self.get_parameter_value("image")
@@ -567,58 +624,56 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
                 # Check minimum required
                 if config.min_images is not None and config.min_images > 0 and not has_image:
-                    errors.append(f"{self.name} - Missing required image input for {model} model")
+                    message = f"{self.name} - Missing required image input for {model} model"
+                    results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
                 # Check maximum allowed (should be exactly 1 for i2i)
                 if has_image and config.max_images is not None and config.max_images < 1:
-                    errors.append(f"{self.name} - {model} does not support image inputs")
+                    message = f"{self.name} - {model} does not support image inputs"
+                    results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
             case _:
                 msg = f"Unknown model: {model}"
                 raise ValueError(msg)
 
-        return errors
+        return results
 
-    def _validate_size_parameter(self, config: ModelConfig) -> list[str]:
+    def _validate_size_parameter(self, config: ModelConfig) -> list[ValidationMessage]:
         """Validate size parameter format and values."""
-        errors = []
+        results = []
         size = self.get_parameter_value("size")
         if not size:
-            return errors
+            return results
 
         # Special case for adaptive
         if size == "adaptive":
-            return errors
+            return results
 
         # Check shorthand
         if size in ["1K", "2K", "4K"]:
             if not config.size_validation.allows_shorthand:
-                errors.append(
-                    f"{self.name} - Size parameter: Model does not support shorthand sizes like '{size}'. Use WIDTHxHEIGHT format (e.g., '2048x2048')"
-                )
-            return errors
+                message = f"{self.name} - Size parameter: Model does not support shorthand sizes like '{size}'. Use WIDTHxHEIGHT format (e.g., '2048x2048')"
+                results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
+            return results
 
         # Parse WIDTHxHEIGHT format
         match = re.match(r"^(\d+)x(\d+)$", size)
         if not match:
-            errors.append(
-                f"{self.name} - Size parameter: Invalid format '{size}'. Expected WIDTHxHEIGHT (e.g., '1024x1024') or shorthand ('1K', '2K', '4K')"
-            )
-            return errors
+            message = f"{self.name} - Size parameter: Invalid format '{size}'. Expected WIDTHxHEIGHT (e.g., '1024x1024') or shorthand ('1K', '2K', '4K')"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
+            return results
 
         width = int(match.group(1))
         height = int(match.group(2))
 
         # Check dimensions
         if width < config.size_validation.min_dimension or height < config.size_validation.min_dimension:
-            errors.append(
-                f"{self.name} - Size parameter: Dimensions {width}x{height} below minimum {config.size_validation.min_dimension}x{config.size_validation.min_dimension}"
-            )
+            message = f"{self.name} - Size parameter: Dimensions {width}x{height} below minimum {config.size_validation.min_dimension}x{config.size_validation.min_dimension}"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
         if width > config.size_validation.max_dimension or height > config.size_validation.max_dimension:
-            errors.append(
-                f"{self.name} - Size parameter: Dimensions {width}x{height} exceed maximum {config.size_validation.max_dimension}x{config.size_validation.max_dimension}"
-            )
+            message = f"{self.name} - Size parameter: Dimensions {width}x{height} exceed maximum {config.size_validation.max_dimension}x{config.size_validation.max_dimension}"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
         # Check aspect ratio
         aspect_ratio = width / height if height > 0 else 0
@@ -626,45 +681,53 @@ class SeedreamImageGeneration(SuccessFailureNode):
             aspect_ratio < config.size_validation.aspect_ratio_min
             or aspect_ratio > config.size_validation.aspect_ratio_max
         ):
-            errors.append(
-                f"{self.name} - Size parameter: Aspect ratio {aspect_ratio:.2f}:1 outside allowed range {config.size_validation.aspect_ratio_min:.2f}-{config.size_validation.aspect_ratio_max:.2f}"
-            )
+            message = f"{self.name} - Size parameter: Aspect ratio {aspect_ratio:.2f}:1 outside allowed range {config.size_validation.aspect_ratio_min:.2f}-{config.size_validation.aspect_ratio_max:.2f}"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
-        return errors
+        return results
 
-    def _validate_prompt_length(self, config: ModelConfig) -> list[str]:
+    def _validate_prompt_length(self, config: ModelConfig) -> list[ValidationMessage]:
         """Validate prompt length against token limit."""
-        errors = []
+        results = []
         prompt = self.get_parameter_value("prompt")
         if not prompt:
-            return errors
+            return results
 
         # Rough approximation: 1 token ≈ 4 characters
         estimated_tokens = len(prompt) // 4
 
+        # Error: exceeds maximum
         if estimated_tokens > config.prompt_max_tokens:
-            errors.append(
-                f"{self.name} - Prompt: Estimated {estimated_tokens} tokens exceeds maximum {config.prompt_max_tokens} tokens (prompt length: {len(prompt)} characters)"
-            )
+            message = f"{self.name} - Prompt: Estimated {estimated_tokens} tokens exceeds maximum {config.prompt_max_tokens} tokens (prompt length: {len(prompt)} characters)"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
+        # Warning: approaching limit (80-100%)
+        elif estimated_tokens >= int(config.prompt_max_tokens * 0.8):
+            percentage = int((estimated_tokens / config.prompt_max_tokens) * 100)
+            message = f"{self.name} - Prompt: Estimated {estimated_tokens} tokens is approaching the maximum {config.prompt_max_tokens} tokens ({percentage}% of limit, prompt length: {len(prompt)} characters)"
+            results.append(ValidationMessage(severity=ValidationSeverity.WARNING, message=message))
 
-        return errors
+        return results
 
-    def _validate_seed(self, config: ModelConfig) -> list[str]:
+    def _validate_seed(self, config: ModelConfig) -> list[ValidationMessage]:
         """Validate seed value range."""
-        errors = []
+        results = []
         seed = self.get_parameter_value("seed")
         if seed is None:
-            return errors
+            return results
 
         min_seed, max_seed = config.seed_range
         if seed < min_seed or seed > max_seed:
-            errors.append(f"{self.name} - Seed: Value {seed} outside allowed range {min_seed} to {max_seed}")
+            message = f"{self.name} - Seed: Value {seed} outside allowed range {min_seed} to {max_seed}"
+            results.append(ValidationMessage(severity=ValidationSeverity.ERROR, message=message))
 
-        return errors
+        return results
 
     def validate_before_node_run(self) -> list[Exception] | None:
-        """Validate parameters before running the node."""
-        error_message = self._collect_validation_errors()
+        """Validate parameters before running the node.
+
+        Only blocks execution on errors, not warnings.
+        """
+        error_message, _warning_message = self._collect_validation_errors()
         if error_message:
             return [ValueError(error_message)]
         return None
