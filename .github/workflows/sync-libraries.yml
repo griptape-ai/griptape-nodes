@@ -60,7 +60,7 @@ jobs:
           cd ..
 
           # Copy library contents to target root
-          cp -r source/${{ matrix.library.source_path }}/* target/
+          cp -r source/${{ matrix.library.source_path }}/. target/
 
           # Remove .venv if it exists
           rm -rf target/.venv
