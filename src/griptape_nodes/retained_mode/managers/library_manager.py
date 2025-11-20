@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -148,10 +149,21 @@ from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.file_utils import find_file_in_directory
 from griptape_nodes.utils.git_utils import (
+    GitCloneError,
+    GitPullError,
+    GitRefError,
+    GitRemoteError,
+    GitRepositoryError,
+    clone_repository,
     extract_repo_name_from_url,
     get_current_ref,
     get_git_remote,
+    get_local_commit_sha,
+    is_git_url,
+    switch_branch_or_tag,
+    update_library_git,
 )
+from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -2308,18 +2320,6 @@ class LibraryManager:
 
     async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Check if a library has updates available via git."""
-        from semver import Version
-
-        from griptape_nodes.utils.git_utils import (
-            GitCloneError,
-            GitRefError,
-            GitRemoteError,
-            get_current_ref,
-            get_git_remote,
-            get_local_commit_sha,
-        )
-        from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
-
         library_name = request.library_name
 
         # Check if the library exists
@@ -2546,9 +2546,6 @@ class LibraryManager:
         - Branch-based: Uses git pull --rebase
         - Tag-based: Uses git fetch --tags --force + git checkout
         """
-        from griptape_nodes.utils.git_utils import GitPullError, GitRepositoryError, update_library_git
-        from griptape_nodes.utils.library_utils import is_monorepo
-
         library_name = request.library_name
 
         # Validate library and prepare for git operation
@@ -2595,13 +2592,6 @@ class LibraryManager:
 
     async def switch_library_ref_request(self, request: SwitchLibraryRefRequest) -> ResultPayload:
         """Switch a library to a different git branch or tag."""
-        from griptape_nodes.utils.git_utils import (
-            GitRefError,
-            GitRepositoryError,
-            get_current_ref,
-            switch_branch_or_tag,
-        )
-
         library_name = request.library_name
         ref_name = request.ref_name
 
@@ -2664,10 +2654,6 @@ class LibraryManager:
 
     async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911
         """Download a library from a git repository."""
-        import json
-
-        from griptape_nodes.utils.git_utils import GitCloneError, clone_repository
-
         git_url = request.git_url
         branch_tag_commit = request.branch_tag_commit
         target_directory_name = request.target_directory_name
@@ -2823,8 +2809,6 @@ class LibraryManager:
 
     async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
         """Sync all libraries to latest versions and ensure dependencies are installed."""
-        from griptape_nodes.utils.git_utils import extract_repo_name_from_url, is_git_url
-
         install_dependencies = request.install_dependencies
 
         # Phase 1: Download missing libraries from config
