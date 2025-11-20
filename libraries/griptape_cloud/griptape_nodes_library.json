@@ -14,7 +14,7 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing Griptape Cloud APIs and services.",
-    "library_version": "0.60.2",
+    "library_version": "0.61.3",
     "engine_version": "0.60.2",
     "tags": [
       "Griptape",

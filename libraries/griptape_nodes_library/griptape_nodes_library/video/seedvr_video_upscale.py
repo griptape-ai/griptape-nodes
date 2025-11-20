@@ -13,6 +13,9 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -64,16 +67,19 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         )
 
         # Video URL
-        self.add_parameter(
-            Parameter(
+        self._public_video_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
                 name="video_url",
-                input_types=["str", "VideoUrlArtifact"],
+                input_types=["VideoUrlArtifact"],
                 type="VideoUrlArtifact",
                 default_value="",
                 tooltip="Video URL",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
+            ),
+            disclaimer_message="The SeedVR service utilizes this URL to access the video for upscaling.",
         )
+        self._public_video_url_parameter.add_input_parameters()
 
         # Upscale mode selection
         self.add_parameter(
@@ -245,7 +251,6 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         self._clear_execution_status()
 
         # Get parameters and validate API key
-        params = self._get_parameters()
 
         try:
             api_key = self._validate_api_key()
@@ -254,6 +259,8 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
+
+        params = self._get_parameters()
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -277,10 +284,13 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         # Poll for result
         self._poll_for_result(generation_id, headers)
 
+        # Cleanup
+        self._public_video_url_parameter.delete_uploaded_artifact()
+
     def _get_parameters(self) -> dict[str, Any]:
         parameters = {
             "model_id": self.get_parameter_value("model_id"),
-            "video_url": self.get_parameter_value("video_url"),
+            "video_url": self._public_video_url_parameter.get_public_url_for_parameter(),
             "upscale_mode": self.get_parameter_value("upscale_mode"),
             "noise_scale": self.get_parameter_value("noise_scale"),
             "target_resolution": self.get_parameter_value("target_resolution"),

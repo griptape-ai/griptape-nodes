@@ -7,9 +7,12 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
+    apply_mask_transformations,
     dict_to_image_url_artifact,
     extract_channel_from_image,
     save_pil_image_with_named_filename,
@@ -52,6 +55,9 @@ class ApplyMask(DataNode):
         )
         channel_param.add_trait(Options(choices=["red", "green", "blue", "alpha"]))
         self.add_parameter(channel_param)
+        self.add_parameter(ParameterBool(name="invert_mask", default_value=False))
+        self.add_parameter(ParameterFloat(name="grow_shrink", default_value=0, slider=True, min_val=-100, max_val=100))
+        self.add_parameter(ParameterFloat(name="blur_mask", default_value=0, slider=True, min_val=0, max_val=100))
 
         self.add_parameter(
             Parameter(
@@ -90,10 +96,25 @@ class ApplyMask(DataNode):
         self._apply_mask_to_input(input_image, input_mask, channel)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
         if parameter.name in ["input_image", "input_mask"] and value is not None:
             self._handle_parameter_change()
+        elif parameter.name in ["channel", "invert_mask", "grow_shrink", "blur_mask"]:
+            # When transform parameters change, re-apply the mask
+            input_image = self.get_parameter_value("input_image")
+            input_mask = self.get_parameter_value("input_mask")
+            channel = self.get_parameter_value("channel")
 
-        return super().after_value_set(parameter, value)
+            if input_image is None or input_mask is None:
+                return
+
+            if isinstance(input_image, dict):
+                input_image = dict_to_image_url_artifact(input_image)
+            if isinstance(input_mask, dict):
+                input_mask = dict_to_image_url_artifact(input_mask)
+
+            self._apply_mask_to_input(input_image, input_mask, channel)
 
     def _handle_parameter_change(self) -> None:
         # Get both current values
@@ -135,9 +156,20 @@ class ApplyMask(DataNode):
         # Resize alpha to match input image size
         alpha = alpha.resize(input_pil.size, Image.Resampling.NEAREST)
 
+        # Apply mask transformations
+        grow_shrink = self.get_parameter_value("grow_shrink")
+        invert_mask = self.get_parameter_value("invert_mask")
+        blur_mask = self.get_parameter_value("blur_mask")
+        alpha = apply_mask_transformations(
+            alpha,
+            grow_shrink=grow_shrink,
+            invert=invert_mask,
+            blur_radius=blur_mask,
+            context_name=self.name,
+        )
+
         # Apply alpha channel to input image
         input_pil.putalpha(alpha)
-        output_pil = input_pil
 
         # Save output image and create URL artifact with proper filename
         filename = generate_filename(
@@ -145,6 +177,6 @@ class ApplyMask(DataNode):
             suffix="_apply_mask",
             extension="png",
         )
-        output_artifact = save_pil_image_with_named_filename(output_pil, filename, "PNG")
+        output_artifact = save_pil_image_with_named_filename(input_pil, filename, "PNG")
         self.set_parameter_value("output", output_artifact)
         self.publish_update_to_parameter("output", output_artifact)

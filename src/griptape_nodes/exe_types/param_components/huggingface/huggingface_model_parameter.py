@@ -41,6 +41,8 @@ class HuggingFaceModelParameter(ABC):
             return
 
         choices = self.get_choices()
+        if not choices:
+            return
 
         current_value = self._node.get_parameter_value(self._parameter_name)
         if current_value in choices:

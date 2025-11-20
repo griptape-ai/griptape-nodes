@@ -13,7 +13,12 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
-from griptape_nodes_library.utils.video_utils import detect_video_format, to_video_artifact, validate_url
+from griptape_nodes_library.utils.video_utils import (
+    detect_video_format,
+    dict_to_video_url_artifact,
+    to_video_artifact,
+    validate_url,
+)
 
 
 class BaseVideoProcessor(SuccessFailureNode, ABC):
@@ -45,7 +50,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         self.add_parameter(
             Parameter(
                 name="video",
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
+                input_types=["VideoUrlArtifact", "VideoArtifact"],
                 type="VideoUrlArtifact",
                 tooltip="The video to process",
                 ui_options={
@@ -53,6 +58,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
                     "expander": True,
                     "display_name": "Video or Path to Video",
                 },
+                converters=[self._convert_video_input],
             )
         )
 
@@ -244,6 +250,12 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
             # If any other error, assume no audio
             return False
 
+    def _convert_video_input(self, value: Any) -> Any:
+        """Convert video input (dict or VideoUrlArtifact) to VideoUrlArtifact."""
+        if isinstance(value, dict):
+            return dict_to_video_url_artifact(value)
+        return value
+
     def _validate_video_input(self) -> list[Exception] | None:
         """Common video input validation."""
         exceptions = []
@@ -254,7 +266,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
             msg = f"{self.name}: Video parameter is required"
             exceptions.append(ValueError(msg))
 
-        # Make sure it's a video artifact
+        # Make sure it's a video artifact (converter should have handled dict conversion)
         if not isinstance(video, VideoUrlArtifact):
             msg = f"{self.name}: Video parameter must be a VideoUrlArtifact"
             exceptions.append(ValueError(msg))

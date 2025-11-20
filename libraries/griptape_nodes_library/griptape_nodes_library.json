@@ -27,16 +27,22 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.50.0",
-    "engine_version": "0.50.0",
-    "tags": ["Griptape", "AI"],
+    "library_version": "0.51.1",
+    "engine_version": "0.63.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1",
-        "json-schema-to-pydantic>=0.4.6"
+        "json-schema-to-pydantic>=0.4.6",
+        "numpy>=1.26.0",
+        "scikit-learn>=1.3.0",
+        "pillow>=11.2.1"
       ]
     }
   },
@@ -548,21 +554,6 @@
       }
     },
     {
-      "class_name": "ElevenMusicGeneration",
-      "file_path": "griptape_nodes_library/audio/eleven_music_generation.py",
-      "metadata": {
-        "category": "audio",
-        "description": "Generate music using Eleven Labs Music Generation API",
-        "display_name": "Eleven Music Generation",
-        "icon": "music",
-        "group": "create",
-        "deprecation": {
-          "deprecation_message": "Please use the Eleven Labs Music Generation node instead.",
-          "removal_version": "0.64.0"
-        }
-      }
-    },
-    {
       "class_name": "ElevenLabsTextToSpeechGeneration",
       "file_path": "griptape_nodes_library/audio/eleven_labs_text_to_speech.py",
       "metadata": {
@@ -691,6 +682,39 @@
         "description": "Generate a video using the Seedance model via Griptape Cloud Forwarders.",
         "display_name": "Seedance Video Generation",
         "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "OmnihumanSubjectRecognition",
+      "file_path": "griptape_nodes_library/video/omnihuman_subject_recognition.py",
+      "metadata": {
+        "category": "video",
+        "description": "Identify whether an image contains human, human-like, anthropomorphic, or similar subjects using OmniHuman 1.5",
+        "display_name": "OmniHuman Subject Recognition",
+        "icon": "User",
+        "group": "describe"
+      }
+    },
+    {
+      "class_name": "OmnihumanSubjectDetection",
+      "file_path": "griptape_nodes_library/video/omnihuman_subject_detection.py",
+      "metadata": {
+        "category": "video",
+        "description": "Detect and locate subjects in an image, returning masks and bounding boxes using OmniHuman 1.5",
+        "display_name": "OmniHuman Subject Detection",
+        "icon": "ScanFace",
+        "group": "describe"
+      }
+    },
+    {
+      "class_name": "OmnihumanVideoGeneration",
+      "file_path": "griptape_nodes_library/video/omnihuman_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate talking head videos from image and audio using OmniHuman 1.5",
+        "display_name": "OmniHuman Video Generation",
+        "icon": "UserCircle",
         "group": "create"
       }
     },
@@ -1381,6 +1405,17 @@
       }
     },
     {
+      "class_name": "AddBoundingBoxes",
+      "file_path": "griptape_nodes_library/image/add_bounding_boxes.py",
+      "metadata": {
+        "category": "image",
+        "description": "Draw bounding boxes on images from coordinate dictionaries. Each box requires x, y, width, and height as integers.",
+        "display_name": "Add Bounding Boxes",
+        "icon": "square-dashed",
+        "group": "detection"
+      }
+    },
+    {
       "class_name": "SeedVRImageUpscale",
       "file_path": "griptape_nodes_library/image/seedvr_image_upscale.py",
       "metadata": {
@@ -1517,6 +1552,17 @@
         "display_name": "Extend Canvas",
         "icon": "frame",
         "group": "edit"
+      }
+    },
+    {
+      "class_name": "ExtractKeyColors",
+      "file_path": "griptape_nodes_library/image/extract_key_colors.py",
+      "metadata": {
+        "category": "image",
+        "description": "Extract key colors from an image",
+        "display_name": "Extract Key Colors",
+        "icon": "palette",
+        "group": "tasks"
       }
     },
     {

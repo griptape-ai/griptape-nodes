@@ -12,6 +12,9 @@ import requests
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import extract_image_url
@@ -68,19 +71,22 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
+        self._public_image_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
                 name="image_url",
-                input_types=["str", "ImageUrlArtifact"],
-                type="str",
-                tooltip="URL of the image to analyze for subject recognition. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
+                input_types=["ImageUrlArtifact"],
+                type="ImageUrlArtifact",
+                tooltip="URL of the image to analyze for subject recognition.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "placeholder_text": "https://example.com/image.jpg",
                     "display_name": "Image URL",
                 },
-            )
+            ),
+            disclaimer_message="The OmniHuman service utilizes this URL to access the image for subject recognition.",
         )
+        self._public_image_url_parameter.add_input_parameters()
 
         # OUTPUTS
         self.add_parameter(
@@ -136,12 +142,15 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         # Submit recognition request
         try:
-            generation_id = self._submit_recognition_request(model_id, image_url, api_key)
+            public_image_url = self._public_image_url_parameter.get_public_url_for_parameter()
+            generation_id = self._submit_recognition_request(model_id, public_image_url, api_key)
             self.parameter_output_values["generation_id"] = generation_id
             self._poll_for_result(generation_id, api_key)
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
+        finally:
+            self._public_image_url_parameter.delete_uploaded_artifact()
 
     def _validate_api_key(self) -> str:
         """Validate that the API key is available."""

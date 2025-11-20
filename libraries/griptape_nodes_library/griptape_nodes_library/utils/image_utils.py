@@ -10,9 +10,10 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 
 import httpx
+import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -20,10 +21,23 @@ from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
 
+# OpenCV is faster for morphological operations, so we use it if it's available.
+# If it's not available, we use PIL's MinFilter/MaxFilter.
+try:
+    import cv2  # type: ignore[reportMissingImports]
+
+    OPENCV_AVAILABLE = True
+except ImportError:
+    OPENCV_AVAILABLE = False
+    cv2 = None  # type: ignore[assignment]
+
 # Constants for placeholder images
 DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
+
+# Supported image file extensions
+SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 
 # Common PIL-supported image formats
 SUPPORTED_PIL_FORMATS = {
@@ -716,3 +730,111 @@ def get_image_dimensions_from_artifact(
             return (pil_image.width, pil_image.height)
 
     return (0, 0)
+
+
+def apply_grow_shrink_to_mask(alpha: Image.Image, grow_shrink: float, context_name: str = "mask") -> Image.Image:
+    """Apply grow/shrink morphological operation to mask using the fastest available method.
+
+    Args:
+        alpha: PIL Image (grayscale) representing the alpha channel/mask
+        grow_shrink: Positive values shrink (erode), negative values grow (dilate)
+        context_name: Name for debug logging (e.g., "mask", "Paint Mask")
+
+    Returns:
+        Transformed PIL Image
+    """
+    iterations = int(abs(grow_shrink))
+    if iterations == 0:
+        return alpha
+
+    # Prefer OpenCV (fastest), then PIL iterations as fallback
+    if OPENCV_AVAILABLE and cv2 is not None:
+        msg = f"{context_name}: Using OpenCV for grow/shrink operation (iterations={iterations})"
+        logger.debug(msg)
+        # Use OpenCV for fastest morphological operations
+        # Use a 3x3 kernel (same as PIL) and let OpenCV handle iterations
+        alpha_array = np.array(alpha, dtype=np.uint8)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        if grow_shrink > 0:
+            alpha_array = cv2.erode(alpha_array, kernel, iterations=iterations)
+        else:
+            alpha_array = cv2.dilate(alpha_array, kernel, iterations=iterations)
+        return Image.fromarray(alpha_array, mode="L")
+
+    msg = f"{context_name}: Using PIL iterations for grow/shrink operation (iterations={iterations})"
+    logger.debug(msg)
+    # Fallback: PIL's MinFilter/MaxFilter only support size=3, so we must use iterations.
+    # Each iteration processes the entire image, so large values (e.g., 100) can be slow.
+    if grow_shrink > 0:
+        for _ in range(iterations):
+            alpha = alpha.filter(ImageFilter.MinFilter(size=3))
+    else:
+        for _ in range(iterations):
+            alpha = alpha.filter(ImageFilter.MaxFilter(size=3))
+    return alpha
+
+
+def apply_blur_to_mask(alpha: Image.Image, blur_radius: float, context_name: str = "mask") -> Image.Image:
+    """Apply blur to mask using the fastest available method.
+
+    Args:
+        alpha: PIL Image (grayscale) representing the alpha channel/mask
+        blur_radius: Blur radius (0 = no blur)
+        context_name: Name for debug logging (e.g., "mask", "Paint Mask")
+
+    Returns:
+        Blurred PIL Image
+    """
+    if blur_radius == 0:
+        return alpha
+
+    # Prefer OpenCV (faster), then PIL as fallback
+    if OPENCV_AVAILABLE and cv2 is not None:
+        msg = f"{context_name}: Using OpenCV for blur operation (radius={blur_radius})"
+        logger.debug(msg)
+        alpha_array = np.array(alpha, dtype=np.uint8)
+        # OpenCV GaussianBlur requires kernel size to be odd
+        kernel_size = int(blur_radius * 2 + 1)
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        alpha_array = cv2.GaussianBlur(alpha_array, (kernel_size, kernel_size), blur_radius)
+        return Image.fromarray(alpha_array, mode="L")
+
+    msg = f"{context_name}: Using PIL for blur operation (radius={blur_radius})"
+    logger.debug(msg)
+    return alpha.filter(ImageFilter.GaussianBlur(blur_radius))
+
+
+def apply_mask_transformations(
+    alpha: Image.Image,
+    *,
+    grow_shrink: float = 0,
+    invert: bool = False,
+    blur_radius: float = 0,
+    context_name: str = "mask",
+) -> Image.Image:
+    """Apply all mask transformations in the correct order.
+
+    Args:
+        alpha: PIL Image (grayscale) representing the alpha channel/mask
+        grow_shrink: Positive values shrink (erode), negative values grow (dilate)
+        invert: Whether to invert the mask
+        blur_radius: Blur radius (0 = no blur)
+        context_name: Name for debug logging (e.g., "mask", "Paint Mask")
+
+    Returns:
+        Transformed PIL Image
+
+    Order of operations: grow/shrink first (modify mask shape), then invert, then blur.
+    """
+    # Order: grow/shrink first (modify mask shape), then invert, then blur
+    if grow_shrink != 0:
+        alpha = apply_grow_shrink_to_mask(alpha, grow_shrink, context_name)
+
+    if invert:
+        alpha = Image.eval(alpha, lambda x: 255 - x)
+
+    if blur_radius != 0:
+        alpha = apply_blur_to_mask(alpha, blur_radius, context_name)
+
+    return alpha

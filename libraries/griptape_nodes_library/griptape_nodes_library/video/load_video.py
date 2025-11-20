@@ -1,4 +1,4 @@
-from typing import Any, ClassVar
+from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -9,13 +9,10 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactTetheringConfig,
     default_extract_url_from_artifact_value,
 )
-from griptape_nodes_library.utils.video_utils import dict_to_video_url_artifact
+from griptape_nodes_library.utils.video_utils import SUPPORTED_VIDEO_EXTENSIONS, dict_to_video_url_artifact
 
 
 class LoadVideo(DataNode):
-    # Supported video file extensions
-    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
-
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -25,7 +22,7 @@ class LoadVideo(DataNode):
             extract_url_func=lambda value: default_extract_url_from_artifact_value(
                 artifact_value=value, artifact_classes=VideoUrlArtifact
             ),
-            supported_extensions=self.SUPPORTED_EXTENSIONS,
+            supported_extensions=SUPPORTED_VIDEO_EXTENSIONS,
             default_extension="mp4",
             url_content_type_prefix="video/",
         )
