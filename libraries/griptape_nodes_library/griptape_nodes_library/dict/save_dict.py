@@ -8,6 +8,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.button import Button
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.file_utils import SUPPORTED_TEXT_EXTENSIONS
 
 
 class SaveDictionary(ControlNode):
@@ -28,17 +30,25 @@ class SaveDictionary(ControlNode):
         )
 
         # Add filename prefix parameter
-        self.add_parameter(
-            Parameter(
-                name="output_path",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                default_value="griptape_output.txt",
-                tooltip="The output filename",
-                traits={Button(label="save")},
+        self.output_path = Parameter(
+            name="output_path",
+            input_types=["str"],
+            type="str",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value="griptape_output.txt",
+            tooltip="The output filename",
+            traits={Button(label="save")},
+        )
+        self.output_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                multiple=False,
+                file_extensions=list(SUPPORTED_TEXT_EXTENSIONS),
+                allow_create=True,
             )
         )
+        self.add_parameter(self.output_path)
 
     def process(self) -> None:
         """Process the node by saving text to a file."""
