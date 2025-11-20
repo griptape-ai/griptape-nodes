@@ -121,27 +121,36 @@ def extract_repo_name_from_url(url: str) -> str:
 
 
 def is_git_repository(path: Path) -> bool:
-    """Check if a directory is a git repository.
+    """Check if a directory or its parent is a git repository.
 
-    This checks if the given path itself is a git repository, not if it's
-    contained within a parent git repository. This prevents incorrectly
-    identifying libraries as git repositories when they happen to be
-    nested inside a parent repository.
+    This checks both the given path and its parent directory for a .git folder.
+    This handles cases where library JSON files are in subdirectories of a git
+    repository (e.g., monorepo structures).
 
     Args:
         path: The directory path to check.
 
     Returns:
-        bool: True if the directory is a git repository, False otherwise.
+        bool: True if the directory or its parent is a git repository, False otherwise.
     """
     if not path.exists():
         return False
     if not path.is_dir():
         return False
 
-    # Check for .git directory or file (for git worktrees/submodules)
+    # Check for .git directory or file in the given path (for git worktrees/submodules)
     git_path = path / ".git"
-    return git_path.exists()
+    if git_path.exists():
+        return True
+
+    # Check parent directory for .git
+    parent_path = path.parent
+    if parent_path != path and parent_path.exists():
+        parent_git_path = parent_path / ".git"
+        if parent_git_path.exists():
+            return True
+
+    return False
 
 
 def get_git_remote(library_path: Path) -> str | None:

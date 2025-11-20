@@ -173,6 +173,21 @@ class TestIsGitRepository:
 
             assert result is True
 
+    def test_is_git_repository_returns_true_when_parent_is_git_repo(self) -> None:
+        """Test that True is returned when parent directory is a git repository."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a .git directory in the parent to simulate a git repository
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir()
+
+            # Create a subdirectory (like a library folder in a monorepo)
+            subdir = Path(tmpdir) / "library-name"
+            subdir.mkdir()
+
+            result = is_git_repository(subdir)
+
+            assert result is True
+
 
 class TestGetGitRemote:
     """Test get_git_remote function."""
