@@ -345,7 +345,7 @@ class TestGetCurrentBranch:
             with pytest.raises(GitRefError) as exc_info:
                 get_current_ref(temp_dir)
 
-            assert "Error getting current branch" in str(exc_info.value)
+            assert "Error getting current git reference" in str(exc_info.value)
 
 
 class TestGetGitRepositoryRoot:
