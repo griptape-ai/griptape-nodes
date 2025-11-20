@@ -36,14 +36,14 @@ def is_monorepo(library_path: Path) -> bool:
     return len(library_json_files) > 1
 
 
-def clone_and_get_library_version(remote_url: str) -> str:
-    """Clone a git repository to a temporary directory and extract the library version.
+def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
+    """Clone a git repository to a temporary directory and extract the library version and commit SHA.
 
     Args:
         remote_url: The git remote URL to clone (HTTPS or SSH).
 
     Returns:
-        str: The library version from griptape_nodes_library.json.
+        tuple[str, str]: A tuple of (library_version, commit_sha) from the cloned repository.
 
     Raises:
         GitCloneError: If cloning fails or library metadata is invalid.
@@ -88,4 +88,7 @@ def clone_and_get_library_version(remote_url: str) -> str:
             msg = f"No library_version found in metadata from {remote_url}"
             raise GitCloneError(msg)
 
-        return library_data["metadata"]["library_version"]
+        library_version = library_data["metadata"]["library_version"]
+        commit_sha = str(repo.head.target)
+
+        return (library_version, commit_sha)

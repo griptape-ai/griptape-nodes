@@ -567,12 +567,19 @@ class CheckLibraryUpdateRequest(RequestPayload):
 class CheckLibraryUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Library update check completed successfully.
 
+    Updates are detected based on either version changes or commit differences:
+    - If remote version > local version: update available (semantic versioning)
+    - If remote version < local version: no update (prevent regression)
+    - If versions equal: compare commits; if different, update available
+
     Args:
         has_update: True if an update is available, False otherwise
         current_version: The current library version
         latest_version: The latest library version from remote
         git_remote: The git remote URL
         git_ref: The current git reference (branch, tag, or commit)
+        local_commit: The local HEAD commit SHA (None if not a git repository)
+        remote_commit: The remote HEAD commit SHA (None if not available)
     """
 
     has_update: bool
@@ -580,6 +587,8 @@ class CheckLibraryUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
     latest_version: str | None
     git_remote: str | None
     git_ref: str | None
+    local_commit: str | None
+    remote_commit: str | None
 
 
 @dataclass
