@@ -95,7 +95,14 @@ class MCPServerConfig(BaseModel):
 
 
 class AppInitializationComplete(BaseModel):
-    libraries_to_register: list[str] = Field(default_factory=list)
+    libraries_to_download: list[str] = Field(
+        default_factory=list,
+        description="Git URLs to download into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo').",
+    )
+    libraries_to_register: list[str] = Field(
+        default_factory=list,
+        description="Paths to library JSON files or directories to scan. Can contain individual griptape_nodes_library.json file paths or directory paths (scanned recursively).",
+    )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] = Field(
         default_factory=lambda: ["HF_TOKEN", "GT_CLOUD_API_KEY"],

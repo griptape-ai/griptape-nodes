@@ -109,6 +109,7 @@ class AppGetSessionResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 class AppInitializationComplete(AppPayload):
     """Application initialization completed successfully. All subsystems ready."""
 
+    libraries_to_download: list[str] = field(default_factory=list)
     libraries_to_register: list[str] = field(default_factory=list)
     workflows_to_register: list[str] = field(default_factory=list)
     models_to_download: list[str] = field(default_factory=list)
