@@ -522,13 +522,6 @@ def _build_libraries_list(
     # Create a set of current download identifiers for fast lookup
     current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
 
-    # Always ensure libraries_directory is in libraries_to_register (use full path)
-    libraries_dir = config_manager.get_config_value("libraries_directory")
-    if libraries_dir:
-        full_libraries_path = str(config_manager.workspace_path / libraries_dir)
-        if full_libraries_path not in new_register:
-            new_register.append(full_libraries_path)
-
     # Default library
     default_library = "https://github.com/griptape-ai/griptape-nodes-library-core"
     default_identifier = extract_repo_name_from_url(default_library)
