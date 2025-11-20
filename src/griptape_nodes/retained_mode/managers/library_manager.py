@@ -151,7 +151,6 @@ from griptape_nodes.utils.git_utils import (
     extract_repo_name_from_url,
     get_current_branch,
     get_git_remote,
-    is_git_url,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
@@ -1673,14 +1672,13 @@ class LibraryManager:
         """Download missing libraries from git URLs specified in config.
 
         Similar to model_manager's automatic download pattern, this method:
-        1. Reads libraries_to_register from config
-        2. Filters for git URLs (skips local paths)
-        3. Checks which libraries are missing locally
-        4. Downloads missing libraries concurrently
-        5. Logs summary of successful/failed downloads
+        1. Reads libraries_to_download from config
+        2. Checks which libraries are missing locally
+        3. Downloads missing libraries concurrently
+        4. Logs summary of successful/failed downloads
         """
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_download"
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
 
         # Get libraries directory
@@ -1691,12 +1689,9 @@ class LibraryManager:
 
         libraries_path = config_mgr.workspace_path / libraries_dir_setting
 
-        # Filter for git URLs and check which ones are missing
+        # Check which git URLs are missing locally
         git_urls_to_download = []
         for entry in config_libraries:
-            if not is_git_url(entry):
-                continue
-
             target_directory_name = extract_repo_name_from_url(entry)
             target_path = libraries_path / target_directory_name
 
@@ -2582,7 +2577,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911
         """Download a library from a git repository."""
         import json
 
@@ -2643,7 +2638,7 @@ class LibraryManager:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
             return DownloadLibraryResultFailure(result_details=details)
 
-        # Install dependencies BEFORE registration if requested
+        # Install dependencies if requested
         if request.install_dependencies:
             install_deps_result = await GriptapeNodes.ahandle_request(
                 InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
@@ -2654,15 +2649,6 @@ class LibraryManager:
                     library_name,
                     install_deps_result.result_details,
                 )
-
-        # Register the library (venv now exists if dependencies were installed)
-        logger.info("Registering downloaded library '%s' from %s", library_name, library_json_path)
-        register_result = await GriptapeNodes.ahandle_request(
-            RegisterLibraryFromFileRequest(file_path=str(library_json_path))
-        )
-        if not isinstance(register_result, RegisterLibraryFromFileResultSuccess):
-            details = f"Downloaded library '{library_name}' but failed to register it: {register_result.result_details}"
-            return DownloadLibraryResultFailure(result_details=details)
 
         details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
         return DownloadLibraryResultSuccess(
