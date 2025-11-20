@@ -170,6 +170,26 @@ class IfElse(BaseNode):
         self._connected_inputs: set[str] = set()  # Track which inputs have connections
         self._output_connected: bool = False  # Track if output has connections
 
+        # Compatible type groups - types that should be treated as interchangeable
+        self._type_groups = {
+            "ImageArtifact": ["ImageArtifact", "ImageUrlArtifact"],
+            "ImageUrlArtifact": ["ImageArtifact", "ImageUrlArtifact"],
+            "AudioArtifact": ["AudioArtifact", "AudioUrlArtifact"],
+            "AudioUrlArtifact": ["AudioArtifact", "AudioUrlArtifact"],
+            "VideoArtifact": ["VideoArtifact", "VideoUrlArtifact"],
+            "VideoUrlArtifact": ["VideoArtifact", "VideoUrlArtifact"],
+        }
+
+    def _get_compatible_types(self, type_name: str) -> list[str]:
+        """Get all types compatible with the given type (including itself).
+
+        For artifact types that have URL variants (Image, Audio, Video), both forms
+        are considered compatible. For other types, only the type itself is returned.
+        """
+        if type_name in self._type_groups:
+            return self._type_groups[type_name]
+        return [type_name]
+
     def _update_parameter_types(self) -> None:
         """Update all parameter types based on current state (locked type vs possibility space).
 
@@ -179,11 +199,14 @@ class IfElse(BaseNode):
         - Scenarios 2,3,7: Possibility space → inputs flexible, output "ALL"
         """
         if self._locked_type:
-            # We're locked to a specific type - everything uses that type
-            self.output_if_true.input_types = [self._locked_type]
+            # We're locked to a specific type - use all compatible types
+            # For artifact types with URL variants, this allows both forms
+            compatible_types = self._get_compatible_types(self._locked_type)
+
+            self.output_if_true.input_types = compatible_types
             self.output_if_true.type = self._locked_type
 
-            self.output_if_false.input_types = [self._locked_type]
+            self.output_if_false.input_types = compatible_types
             self.output_if_false.type = self._locked_type
 
             self.output.output_type = self._locked_type
@@ -216,8 +239,9 @@ class IfElse(BaseNode):
     def _can_accept_input_type(self, input_type: str) -> bool:
         """Check if we can accept a new input connection of the given type."""
         if self._locked_type:
-            # If locked, only accept the same type
-            return input_type == self._locked_type
+            # If locked, accept the locked type or any compatible type
+            compatible_types = self._get_compatible_types(self._locked_type)
+            return input_type in compatible_types
         if self._possibility_space:
             # If we have a possibility space, input must be in it
             return input_type in self._possibility_space
