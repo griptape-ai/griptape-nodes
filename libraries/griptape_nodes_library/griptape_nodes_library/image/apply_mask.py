@@ -58,7 +58,11 @@ class ApplyMask(DataNode):
         self.add_parameter(ParameterBool(name="invert_mask", default_value=False))
         self.add_parameter(ParameterFloat(name="grow_shrink", default_value=0, slider=True, min_val=-100, max_val=100))
         self.add_parameter(ParameterFloat(name="blur_mask", default_value=0, slider=True, min_val=0, max_val=100))
-        self.add_parameter(ParameterBool(name="apply_mask_blur_to_edges", default_value=False, tooltip="apply blur_mask to image edges"))
+        self.add_parameter(
+            ParameterBool(
+                name="apply_mask_blur_to_edges", default_value=False, tooltip="apply blur_mask to image edges"
+            )
+        )
 
         self.add_parameter(
             Parameter(
