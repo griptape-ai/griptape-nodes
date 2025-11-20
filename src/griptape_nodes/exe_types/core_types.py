@@ -946,7 +946,7 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
         ui_options["orientation"] = orientation
 
         self._ui_options = ui_options
-        self._orientation = orientation
+        self._orientation: Literal["horizontal", "vertical"] = orientation
 
     @property
     def ui_options(self) -> dict:
