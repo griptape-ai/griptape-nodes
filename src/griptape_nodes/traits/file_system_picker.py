@@ -16,7 +16,7 @@ class FileSystemPicker(Trait):
     include_patterns: list[str] = field(default_factory=list)
     max_file_size: int | None = None
     min_file_size: int | None = None
-    workspace_only: bool = True
+    workspace_only: bool = False
     initial_path: str | None = None
     allow_create: bool = False
     allow_rename: bool = False
@@ -34,7 +34,7 @@ class FileSystemPicker(Trait):
         include_patterns: list[str] | None = None,
         max_file_size: int | None = None,
         min_file_size: int | None = None,
-        workspace_only: bool = True,
+        workspace_only: bool = False,
         initial_path: str | None = None,
         allow_create: bool = False,
         allow_rename: bool = False,
