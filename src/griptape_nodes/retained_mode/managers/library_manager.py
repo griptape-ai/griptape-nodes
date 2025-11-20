@@ -2306,7 +2306,7 @@ class LibraryManager:
 
         return list(discovered_libraries)
 
-    async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Check if a library has updates available via git."""
         from semver import Version
 
@@ -2316,6 +2316,7 @@ class LibraryManager:
             GitRemoteError,
             get_current_ref,
             get_git_remote,
+            get_local_commit_sha,
         )
         from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
 
@@ -2358,6 +2359,8 @@ class LibraryManager:
                 latest_version=current_version,
                 git_remote=git_remote,
                 git_ref=git_ref,
+                local_commit=None,
+                remote_commit=None,
                 result_details=details,
             )
 
@@ -2384,29 +2387,53 @@ class LibraryManager:
             details = f"Library '{library_name}' has no version information."
             return CheckLibraryUpdateResultFailure(result_details=details)
 
-        # Clone remote and get latest version
+        # Get local commit SHA
+        local_commit = await asyncio.to_thread(get_local_commit_sha, library_dir)
+
+        # Clone remote and get latest version and commit SHA
         try:
-            latest_version = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            latest_version, remote_commit = await asyncio.to_thread(clone_and_get_library_version, git_remote)
         except GitCloneError as e:
             details = f"Failed to retrieve latest version from git remote for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
 
-        # Compare versions using semantic versioning
+        # Determine if update is available using version comparison and commit comparison
         try:
             current_ver = Version.parse(current_version)
             latest_ver = Version.parse(latest_version)
-            has_update = latest_ver > current_ver
+
+            # Update detection logic:
+            # 1. If remote version > local version -> update available (semantic versioning)
+            if latest_ver > current_ver:
+                has_update = True
+                update_reason = "version increased"
+            # 2. If remote version < local version -> no update (prevent regression)
+            elif latest_ver < current_ver:
+                has_update = False
+                update_reason = "version decreased (regression blocked)"
+            # 3. If versions equal -> check commits
+            elif local_commit is not None and remote_commit is not None and local_commit != remote_commit:
+                has_update = True
+                update_reason = "commits differ (same version)"
+            else:
+                has_update = False
+                update_reason = "versions and commits match"
+
         except ValueError as e:
             details = f"Failed to parse version strings for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
 
-        details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update}"
+        details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update} ({update_reason})"
+        logger.info(details)
+
         return CheckLibraryUpdateResultSuccess(
             has_update=has_update,
             current_version=current_version,
             latest_version=latest_version,
             git_remote=git_remote,
             git_ref=git_ref,
+            local_commit=local_commit,
+            remote_commit=remote_commit,
             result_details=details,
         )
 

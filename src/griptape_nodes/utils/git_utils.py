@@ -274,6 +274,38 @@ def is_on_tag(library_path: Path) -> bool:
     return get_current_tag(library_path) is not None
 
 
+def get_local_commit_sha(library_path: Path) -> str | None:
+    """Get the current HEAD commit SHA for a library directory.
+
+    Args:
+        library_path: The path to the library directory.
+
+    Returns:
+        str | None: The full commit SHA if found, None if not a git repository or error occurs.
+
+    Raises:
+        GitError: If an error occurs while getting the commit SHA.
+    """
+    if not is_git_repository(library_path):
+        return None
+
+    try:
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            return None
+
+        repo = pygit2.Repository(repo_path)
+
+        if repo.head_is_unborn:
+            return None
+
+        return str(repo.head.target)
+
+    except pygit2.GitError as e:
+        msg = f"Error getting commit SHA for {library_path}: {e}"
+        raise GitError(msg) from e
+
+
 def get_git_repository_root(library_path: Path) -> Path | None:
     """Get the root directory of the git repository containing the given path.
 
