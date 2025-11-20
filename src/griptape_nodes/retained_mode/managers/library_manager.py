@@ -2645,7 +2645,6 @@ class LibraryManager:
 
         # Install dependencies BEFORE registration if requested
         if request.install_dependencies:
-            logger.info("Installing dependencies for downloaded library '%s'", library_name)
             install_deps_result = await GriptapeNodes.ahandle_request(
                 InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
             )
