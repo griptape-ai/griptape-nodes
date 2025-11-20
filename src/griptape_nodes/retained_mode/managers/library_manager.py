@@ -2509,8 +2509,24 @@ class LibraryManager:
             details = f"Failed to unload Library '{library_name}' after git operation."
             return failure_result_class(result_details=details)
 
+        # Search for the library JSON file using flexible pattern to handle filename variations
+        # (after git operations, the filename might change between griptape-nodes-library.json and griptape_nodes_library.json)
+        library_dir = Path(library_file_path).parent
+        actual_library_file = find_file_in_directory(library_dir, "griptape[-_]nodes[-_]library.json")
+
+        if actual_library_file is None:
+            details = (
+                f"Failed to find library JSON file in {library_dir} after git operation for Library '{library_name}'."
+            )
+            return failure_result_class(result_details=details)
+
+        # Use the found file path for reloading
+        actual_library_file_path = str(actual_library_file)
+
         # Reload the library from file
-        reload_result = await GriptapeNodes.ahandle_request(RegisterLibraryFromFileRequest(file_path=library_file_path))
+        reload_result = await GriptapeNodes.ahandle_request(
+            RegisterLibraryFromFileRequest(file_path=actual_library_file_path)
+        )
         if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
             details = f"Failed to reload Library '{library_name}' after git operation."
             return failure_result_class(result_details=details)
@@ -2528,7 +2544,7 @@ class LibraryManager:
         if install_dependencies:
             logger.info("Installing dependencies for library '%s'", library_name)
             install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_file_path=library_file_path)
+                InstallLibraryDependenciesRequest(library_file_path=actual_library_file_path)
             )
             if not install_deps_result.succeeded():
                 logger.warning(
