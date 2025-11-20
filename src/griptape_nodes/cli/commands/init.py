@@ -493,7 +493,7 @@ def _prompt_for_griptape_cloud_library(*, default_prompt_for_griptape_cloud_libr
     return Confirm.ask("Register Griptape Cloud Library?", default=default_prompt_for_griptape_cloud_library)
 
 
-def _build_libraries_list(  # noqa: C901
+def _build_libraries_list(
     *, register_advanced_library: bool | None = False, register_griptape_cloud_library: bool | None = False
 ) -> tuple[list[str], list[str]]:
     """Builds the lists of libraries to download and register based on library settings.
@@ -519,12 +519,8 @@ def _build_libraries_list(  # noqa: C901
     new_downloads = current_downloads.copy()
     new_register = current_register.copy()
 
-    def _get_library_identifier(library_url: str) -> str:
-        """Get the unique identifier for a library from a git URL."""
-        return extract_repo_name_from_url(library_url)
-
     # Create a set of current download identifiers for fast lookup
-    current_download_identifiers = {_get_library_identifier(lib) for lib in current_downloads}
+    current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
 
     # Always ensure libraries_directory is in libraries_to_register (use full path)
     libraries_dir = config_manager.get_config_value("libraries_directory")
@@ -535,30 +531,30 @@ def _build_libraries_list(  # noqa: C901
 
     # Default library
     default_library = "https://github.com/griptape-ai/griptape-nodes-library-core"
-    default_identifier = _get_library_identifier(default_library)
+    default_identifier = extract_repo_name_from_url(default_library)
     if default_identifier not in current_download_identifiers:
         new_downloads.append(default_library)
 
     # Advanced media library
     advanced_media_library = "https://github.com/griptape-ai/griptape-nodes-library-advanced"
-    advanced_identifier = _get_library_identifier(advanced_media_library)
+    advanced_identifier = extract_repo_name_from_url(advanced_media_library)
     if register_advanced_library:
         if advanced_identifier not in current_download_identifiers:
             new_downloads.append(advanced_media_library)
     else:
-        libraries_to_remove = [lib for lib in new_downloads if _get_library_identifier(lib) == advanced_identifier]
+        libraries_to_remove = [lib for lib in new_downloads if extract_repo_name_from_url(lib) == advanced_identifier]
         for lib in libraries_to_remove:
             new_downloads.remove(lib)
 
     # Griptape Cloud library
     griptape_cloud_library = "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud"
-    griptape_cloud_identifier = _get_library_identifier(griptape_cloud_library)
+    griptape_cloud_identifier = extract_repo_name_from_url(griptape_cloud_library)
     if register_griptape_cloud_library:
         if griptape_cloud_identifier not in current_download_identifiers:
             new_downloads.append(griptape_cloud_library)
     else:
         libraries_to_remove = [
-            lib for lib in new_downloads if _get_library_identifier(lib) == griptape_cloud_identifier
+            lib for lib in new_downloads if extract_repo_name_from_url(lib) == griptape_cloud_identifier
         ]
         for lib in libraries_to_remove:
             new_downloads.remove(lib)
