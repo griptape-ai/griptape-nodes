@@ -2668,7 +2668,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
         """Download a library from a git repository."""
         git_url = request.git_url
         branch_tag_commit = request.branch_tag_commit
@@ -2736,6 +2736,30 @@ class LibraryManager:
                     library_name,
                     install_deps_result.result_details,
                 )
+
+        # Automatically register the downloaded library
+        register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
+        register_result = await GriptapeNodes.ahandle_request(register_request)
+        if not register_result.succeeded():
+            logger.warning(
+                "Library '%s' was downloaded but registration failed: %s",
+                library_name,
+                register_result.result_details,
+            )
+        else:
+            logger.info("Library '%s' registered successfully", library_name)
+
+        # Add library JSON file path to config so it's registered on future startups
+        libraries_to_register = config_mgr.get_config_value(
+            "app_events.on_app_initialization_complete.libraries_to_register", default=[]
+        )
+        library_json_str = str(library_json_path)
+        if library_json_str not in libraries_to_register:
+            libraries_to_register.append(library_json_str)
+            config_mgr.set_config_value(
+                "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
+            )
+            logger.info("Added library '%s' to config for auto-registration on startup", library_name)
 
         details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
         return DownloadLibraryResultSuccess(
