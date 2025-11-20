@@ -119,9 +119,7 @@ class MergeTexts(DataNode):
                 input_texts.append(text)
 
         # Get the separator string and replace \n with actual newlines
-        separator = self.get_parameter_value("merge_string")
-        logger.warning(f"Separator before defaulting: {separator}")
-        separator = separator or ""
+        separator = self.get_parameter_value("merge_string") or ""
         formatted_separator = separator.replace("\\n", "\n")
 
         # Join all the inputs with the formatted_separator
