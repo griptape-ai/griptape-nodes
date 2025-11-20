@@ -2680,11 +2680,10 @@ class LibraryManager:
             library_name=library_name, dependencies_installed=len(pip_dependencies), result_details=details
         )
 
-    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
         """Sync all libraries to latest versions and ensure dependencies are installed."""
         from griptape_nodes.utils.git_utils import extract_repo_name_from_url, is_git_url
 
-        check_updates_only = request.check_updates_only
         install_dependencies = request.install_dependencies
 
         # Phase 1: Download missing libraries from config
@@ -2799,28 +2798,7 @@ class LibraryManager:
             old_version = check_result.current_version or "unknown"
             new_version = check_result.latest_version or "unknown"
             logger.info("Library '%s' has update available: %s -> %s", library_name, old_version, new_version)
-
-            if check_updates_only:
-                update_summary[library_name] = {
-                    "old_version": old_version,
-                    "new_version": new_version,
-                    "status": "available",
-                }
-            else:
-                libraries_to_update.append((library_name, old_version, new_version))
-
-        # If only checking for updates, return early
-        if check_updates_only:
-            updates_available = len([s for s in update_summary.values() if s.get("status") == "available"])
-            details = f"Downloaded {libraries_downloaded} libraries. Checked {libraries_checked} libraries. {updates_available} update(s) available."
-            logger.info(details)
-            return SyncLibrariesResultSuccess(
-                libraries_downloaded=libraries_downloaded,
-                libraries_checked=libraries_checked,
-                libraries_updated=0,
-                update_summary=update_summary,
-                result_details=details,
-            )
+            libraries_to_update.append((library_name, old_version, new_version))
 
         # Update libraries concurrently using task group
         async def update_library(

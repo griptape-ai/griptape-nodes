@@ -38,7 +38,7 @@ async def _sync_libraries() -> None:
     console.print("[bold cyan]Syncing libraries...[/bold cyan]")
 
     # Create sync request with default parameters
-    request = SyncLibrariesRequest(check_updates_only=False, install_dependencies=True)
+    request = SyncLibrariesRequest(install_dependencies=True)
 
     # Execute the sync
     result = await GriptapeNodes.ahandle_request(request)
