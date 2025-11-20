@@ -149,7 +149,7 @@ from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.file_utils import find_file_in_directory
 from griptape_nodes.utils.git_utils import (
     extract_repo_name_from_url,
-    get_current_branch,
+    get_current_ref,
     get_git_remote,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin
@@ -564,17 +564,17 @@ class LibraryManager:
                 result_details=details,
             )
 
-        # Get git remote and branch if this library is in a git repository
+        # Get git remote and ref if this library is in a git repository
         library_dir = json_path.parent.absolute()
         git_remote = get_git_remote(library_dir)
-        git_branch = get_current_branch(library_dir)
+        git_ref = get_current_ref(library_dir)
 
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
             library_schema=library_data,
             file_path=file_path,
             git_remote=git_remote,
-            git_branch=git_branch,
+            git_ref=git_ref,
             result_details=details,
         )
 
@@ -721,16 +721,16 @@ class LibraryManager:
             nodes=node_definitions,
         )
 
-        # Get git remote and branch if the sandbox directory is in a git repository
+        # Get git remote and ref if the sandbox directory is in a git repository
         git_remote = get_git_remote(sandbox_library_dir)
-        git_branch = get_current_branch(sandbox_library_dir)
+        git_ref = get_current_ref(sandbox_library_dir)
 
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
         return LoadLibraryMetadataFromFileResultSuccess(
             library_schema=library_schema,
             file_path=str(sandbox_library_dir),
             git_remote=git_remote,
-            git_branch=git_branch,
+            git_ref=git_ref,
             result_details=details,
         )
 
@@ -2311,10 +2311,10 @@ class LibraryManager:
         from semver import Version
 
         from griptape_nodes.utils.git_utils import (
-            GitBranchError,
             GitCloneError,
+            GitRefError,
             GitRemoteError,
-            get_current_branch,
+            get_current_ref,
             get_git_remote,
         )
         from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
@@ -2350,18 +2350,18 @@ class LibraryManager:
             logger.info(details)
             # Get git info for the response
             git_remote = await asyncio.to_thread(get_git_remote, library_dir)
-            git_branch = await asyncio.to_thread(get_current_branch, library_dir)
+            git_ref = await asyncio.to_thread(get_current_ref, library_dir)
             current_version = library.get_metadata().library_version
             return CheckLibraryUpdateResultSuccess(
                 has_update=False,
                 current_version=current_version,
                 latest_version=current_version,
                 git_remote=git_remote,
-                git_branch=git_branch,
+                git_ref=git_ref,
                 result_details=details,
             )
 
-        # Check if the library directory is a git repository and get remote URL and branch
+        # Check if the library directory is a git repository and get remote URL and ref
         try:
             git_remote = await asyncio.to_thread(get_git_remote, library_dir)
             if git_remote is None:
@@ -2373,9 +2373,9 @@ class LibraryManager:
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         try:
-            git_branch = await asyncio.to_thread(get_current_branch, library_dir)
-        except GitBranchError as e:
-            details = f"Failed to get current branch for Library '{library_name}': {e}"
+            git_ref = await asyncio.to_thread(get_current_ref, library_dir)
+        except GitRefError as e:
+            details = f"Failed to get current git reference for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         # Get current library version
@@ -2406,7 +2406,7 @@ class LibraryManager:
             current_version=current_version,
             latest_version=latest_version,
             git_remote=git_remote,
-            git_branch=git_branch,
+            git_ref=git_ref,
             result_details=details,
         )
 
@@ -2505,7 +2505,7 @@ class LibraryManager:
     async def switch_library_branch_request(self, request: SwitchLibraryBranchRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         """Switch a library to a different git branch or tag."""
         from griptape_nodes.utils.git_utils import (
-            GitBranchError,
+            GitRefError,
             GitRepositoryError,
             get_current_ref,
             switch_branch_or_tag,
@@ -2547,14 +2547,14 @@ class LibraryManager:
             if old_ref is None:
                 details = f"Library '{library_name}' is not on a branch/tag or is not a git repository."
                 return SwitchLibraryBranchResultFailure(result_details=details)
-        except GitBranchError as e:
+        except GitRefError as e:
             details = f"Failed to get current branch/tag for Library '{library_name}': {e}"
             return SwitchLibraryBranchResultFailure(result_details=details)
 
         # Perform git ref switch (branch or tag)
         try:
             await asyncio.to_thread(switch_branch_or_tag, library_dir, ref_name)
-        except (GitBranchError, GitRepositoryError) as e:
+        except (GitRefError, GitRepositoryError) as e:
             details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
             return SwitchLibraryBranchResultFailure(result_details=details)
 
@@ -2575,7 +2575,7 @@ class LibraryManager:
             new_ref = await asyncio.to_thread(get_current_ref, library_dir)
             if new_ref is None:
                 new_ref = "unknown"
-        except GitBranchError:
+        except GitRefError:
             new_ref = "unknown"
 
         try:

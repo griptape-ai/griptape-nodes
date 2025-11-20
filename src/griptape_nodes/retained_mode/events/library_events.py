@@ -182,13 +182,13 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
                        about the library including nodes, categories, and settings.
         file_path: The file path from which the library metadata was loaded.
         git_remote: The git remote URL if the library is in a git repository, None otherwise.
-        git_branch: The current git branch name if the library is in a git repository, None otherwise.
+        git_ref: The current git reference (branch, tag, or commit) if the library is in a git repository, None otherwise.
     """
 
     library_schema: LibrarySchema
     file_path: str
     git_remote: str | None
-    git_branch: str | None
+    git_ref: str | None
 
 
 @dataclass
@@ -572,14 +572,14 @@ class CheckLibraryUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
         current_version: The current library version
         latest_version: The latest library version from remote
         git_remote: The git remote URL
-        git_branch: The current git branch name
+        git_ref: The current git reference (branch, tag, or commit)
     """
 
     has_update: bool
     current_version: str | None
     latest_version: str | None
     git_remote: str | None
-    git_branch: str | None
+    git_ref: str | None
 
 
 @dataclass

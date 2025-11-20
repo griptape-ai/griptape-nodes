@@ -11,15 +11,15 @@ import pygit2
 import pytest
 
 from griptape_nodes.utils.git_utils import (
-    GitBranchError,
     GitCloneError,
     GitPullError,
+    GitRefError,
     GitRemoteError,
     GitRepositoryError,
     _convert_ssh_to_https,
     _is_ssh_url,
     clone_repository,
-    get_current_branch,
+    get_current_ref,
     get_git_remote,
     get_git_repository_root,
     git_pull_rebase,
@@ -262,7 +262,7 @@ class TestGetGitRemote:
 
 
 class TestGetCurrentBranch:
-    """Test get_current_branch function."""
+    """Test get_current_ref function."""
 
     @pytest.fixture
     def temp_dir(self) -> Generator[Path, None, None]:
@@ -270,16 +270,16 @@ class TestGetCurrentBranch:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_get_current_branch_returns_none_when_not_git_repository(self, temp_dir: Path) -> None:
+    def test_get_current_ref_returns_none_when_not_git_repository(self, temp_dir: Path) -> None:
         """Test that None is returned when path is not a git repository."""
         with patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git:
             mock_is_git.return_value = False
 
-            result = get_current_branch(temp_dir)
+            result = get_current_ref(temp_dir)
 
             assert result is None
 
-    def test_get_current_branch_returns_none_when_repository_not_discovered(self, temp_dir: Path) -> None:
+    def test_get_current_ref_returns_none_when_repository_not_discovered(self, temp_dir: Path) -> None:
         """Test that None is returned when repository cannot be discovered."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -288,11 +288,11 @@ class TestGetCurrentBranch:
             mock_is_git.return_value = True
             mock_discover.return_value = None
 
-            result = get_current_branch(temp_dir)
+            result = get_current_ref(temp_dir)
 
             assert result is None
 
-    def test_get_current_branch_returns_none_when_head_detached(self, temp_dir: Path) -> None:
+    def test_get_current_ref_returns_none_when_head_detached(self, temp_dir: Path) -> None:
         """Test that None is returned when HEAD is detached."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -306,11 +306,11 @@ class TestGetCurrentBranch:
             mock_repo.head_is_detached = True
             mock_repo_class.return_value = mock_repo
 
-            result = get_current_branch(temp_dir)
+            result = get_current_ref(temp_dir)
 
             assert result is None
 
-    def test_get_current_branch_returns_branch_name_when_on_branch(self, temp_dir: Path) -> None:
+    def test_get_current_ref_returns_branch_name_when_on_branch(self, temp_dir: Path) -> None:
         """Test that branch name is returned when on a branch."""
         expected_branch = "main"
 
@@ -329,12 +329,12 @@ class TestGetCurrentBranch:
             mock_repo.head = mock_head
             mock_repo_class.return_value = mock_repo
 
-            result = get_current_branch(temp_dir)
+            result = get_current_ref(temp_dir)
 
             assert result == expected_branch
 
-    def test_get_current_branch_raises_error_on_git_error(self, temp_dir: Path) -> None:
-        """Test that GitBranchError is raised on pygit2.GitError."""
+    def test_get_current_ref_raises_error_on_git_error(self, temp_dir: Path) -> None:
+        """Test that GitRefError is raised on pygit2.GitError."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
@@ -342,8 +342,8 @@ class TestGetCurrentBranch:
             mock_is_git.return_value = True
             mock_discover.side_effect = pygit2.GitError("error")
 
-            with pytest.raises(GitBranchError) as exc_info:
-                get_current_branch(temp_dir)
+            with pytest.raises(GitRefError) as exc_info:
+                get_current_ref(temp_dir)
 
             assert "Error getting current branch" in str(exc_info.value)
 
@@ -642,7 +642,7 @@ class TestSwitchBranch:
             assert "not a git repository" in str(exc_info.value)
 
     def test_switch_branch_raises_error_when_no_origin_remote(self, temp_dir: Path) -> None:
-        """Test that GitBranchError is raised when no origin remote exists."""
+        """Test that GitRefError is raised when no origin remote exists."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
@@ -655,7 +655,7 @@ class TestSwitchBranch:
             mock_repo.remotes = {}
             mock_repo_class.return_value = mock_repo
 
-            with pytest.raises(GitBranchError) as exc_info:
+            with pytest.raises(GitRefError) as exc_info:
                 switch_branch(temp_dir, "main")
 
             assert "No origin remote" in str(exc_info.value)
@@ -723,7 +723,7 @@ class TestSwitchBranch:
             mock_repo.checkout.assert_called_once_with(mock_new_branch)
 
     def test_switch_branch_raises_error_when_branch_not_found(self, temp_dir: Path) -> None:
-        """Test that GitBranchError is raised when branch doesn't exist locally or remotely."""
+        """Test that GitRefError is raised when branch doesn't exist locally or remotely."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
@@ -741,7 +741,7 @@ class TestSwitchBranch:
             mock_repo.branches = mock_branches
             mock_repo_class.return_value = mock_repo
 
-            with pytest.raises(GitBranchError) as exc_info:
+            with pytest.raises(GitRefError) as exc_info:
                 switch_branch(temp_dir, "nonexistent")
 
             assert "not found" in str(exc_info.value)
