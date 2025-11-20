@@ -123,7 +123,7 @@ class ArtifactPathValidator(Trait):
             if not value or not str(value).strip():
                 return  # Empty values are allowed
 
-            path_str = ArtifactPathTethering._strip_surrounding_quotes(str(value).strip())
+            path_str = ArtifactPathTethering._sanitize_path_string(str(value).strip())
 
             # Check if it's a URL
             if path_str.startswith(("http://", "https://")):
@@ -358,7 +358,7 @@ class ArtifactPathTethering:
 
     def _handle_string_input_to_artifact(self, path_value: str) -> None:
         """Handle string input to artifact parameter by processing it as a path."""
-        path_value = self._strip_surrounding_quotes(path_value.strip()) if path_value else ""
+        path_value = self._sanitize_path_string(path_value.strip()) if path_value else ""
 
         if path_value:
             try:
@@ -445,7 +445,7 @@ class ArtifactPathTethering:
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
-        path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+        path_value = self._sanitize_path_string(str(value).strip()) if value else ""
 
         if path_value:
             # Process the path (URL or file)
@@ -511,13 +511,44 @@ class ArtifactPathTethering:
         return value
 
     @staticmethod
-    def _strip_surrounding_quotes(path_str: str) -> str:
-        """Strip surrounding quotes only if they match (from 'Copy as Pathname')."""
+    def _sanitize_path_string(path_str: str) -> str:
+        r"""Strip surrounding quotes and shell escape characters from paths.
+
+        Handles macOS Finder's 'Copy as Pathname' format which escapes
+        spaces, apostrophes, and other special characters with backslashes.
+        Only removes backslashes before shell-special characters to avoid
+        breaking Windows paths like C:\Users\file.txt.
+
+        Args:
+            path_str: The path string to sanitize
+
+        Returns:
+            Sanitized path string
+        """
+        # First, strip surrounding quotes
         if len(path_str) >= 2 and (  # noqa: PLR2004
             (path_str.startswith("'") and path_str.endswith("'"))
             or (path_str.startswith('"') and path_str.endswith('"'))
         ):
-            return path_str[1:-1]
+            path_str = path_str[1:-1]
+
+        # Handle Windows extended-length paths (\\?\...) specially
+        # These are used for paths longer than 260 characters on Windows
+        # We need to sanitize the path part but preserve the prefix
+        extended_length_prefix = ""
+        if path_str.startswith("\\\\?\\"):
+            extended_length_prefix = "\\\\?\\"
+            path_str = path_str[4:]  # Remove prefix temporarily
+
+        # Remove shell escape characters (backslashes before special chars only)
+        # Matches: space ' " ( ) { } [ ] & | ; < > $ ` ! * ? /
+        # Does NOT match: \U \t \f etc in Windows paths like C:\Users
+        path_str = re.sub(r"\\([ '\"(){}[\]&|;<>$`!*?/])", r"\1", path_str)
+
+        # Restore extended-length prefix if it was present
+        if extended_length_prefix:
+            path_str = extended_length_prefix + path_str
+
         return path_str
 
     def _is_url(self, path: str) -> bool:
@@ -571,9 +602,17 @@ class ArtifactPathTethering:
         return upload_result
 
     def _read_file_data(self, path: Path, file_path: str) -> tuple[bytes, int]:
-        """Read file data with specific exception handling."""
+        """Read file data with specific exception handling.
+
+        Uses OSManager.normalize_path_for_platform() to ensure Windows long path
+        support (paths >260 characters).
+        """
+        # Normalize path for platform (handles Windows long paths with \\?\ prefix)
+        normalized_path_str = GriptapeNodes.OSManager().normalize_path_for_platform(path)
+        normalized_path = Path(normalized_path_str)
+
         try:
-            file_data = path.read_bytes()
+            file_data = normalized_path.read_bytes()
         except FileNotFoundError:
             error_msg = f"File not found: '{file_path}'"
             raise ValueError(error_msg) from None
