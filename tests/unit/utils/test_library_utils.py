@@ -259,7 +259,7 @@ class TestCloneAndGetLibraryVersion:
                 assert "No library_version found" in str(exc_info.value)
 
     def test_clone_and_get_library_version_returns_version_when_successful(self) -> None:
-        """Test that library version is returned when all conditions are met."""
+        """Test that library version and commit SHA are returned when all conditions are met."""
         with (
             patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
@@ -268,6 +268,7 @@ class TestCloneAndGetLibraryVersion:
         ):
             mock_is_ssh.return_value = False
             mock_repo = Mock()
+            mock_repo.head.target = "abc123def456"
             mock_clone.return_value = mock_repo
             mock_mkdtemp.return_value = "/tmp/test_temp_dir"  # noqa: S108
 
@@ -278,7 +279,7 @@ class TestCloneAndGetLibraryVersion:
             with patch.object(Path, "open", mock_file):
                 result = clone_and_get_library_version("https://github.com/user/repo.git")
 
-                assert result == "2.5.1"
+                assert result == ("2.5.1", "abc123def456")
 
     def test_clone_and_get_library_version_searches_recursively_for_library_json(self) -> None:
         """Test that library JSON file is searched recursively."""
