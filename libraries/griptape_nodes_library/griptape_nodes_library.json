@@ -41,7 +41,8 @@
         "jmespath>=1.0.1",
         "json-schema-to-pydantic>=0.4.6",
         "numpy>=1.26.0",
-        "scikit-learn>=1.3.0"
+        "scikit-learn>=1.3.0",
+        "pillow>=11.2.1"
       ]
     }
   },
