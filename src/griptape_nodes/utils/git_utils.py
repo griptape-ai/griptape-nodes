@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pygit2
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("griptape_nodes")
 
 
 class GitError(Exception):
@@ -190,25 +190,33 @@ def get_current_ref(library_path: Path) -> str | None:
         GitRefError: If an error occurs while getting the current git reference.
     """
     if not is_git_repository(library_path):
+        logger.debug("Path %s is not a git repository", library_path)
         return None
 
     try:
         repo_path = pygit2.discover_repository(str(library_path))
         if repo_path is None:
+            logger.debug("Could not discover git repository at %s", library_path)
             return None
 
         repo = pygit2.Repository(repo_path)
 
         # Check if HEAD is detached
         if repo.head_is_detached:
-            logger.debug("Repository at %s has detached HEAD", library_path)
+            # HEAD is detached - check if it's pointing to a tag
+            tag_name = get_current_tag(library_path)
+            if tag_name:
+                logger.debug("Repository at %s has detached HEAD on tag %s", library_path, tag_name)
+                return tag_name
+
+            logger.debug("Repository at %s has detached HEAD (not on a tag)", library_path)
             return None
 
     except pygit2.GitError as e:
         msg = f"Error getting current git reference for {library_path}: {e}"
         raise GitRefError(msg) from e
     else:
-        # Get the current git reference name
+        # Get the current git reference name (branch)
         return repo.head.shorthand
 
 
@@ -520,11 +528,11 @@ def update_library_git(library_path: Path) -> None:
                 msg = f"Repository at {library_path} is in detached HEAD state but not on a known tag. Cannot auto-update."
                 raise GitPullError(msg)
 
-            logger.info("Detected tag-based workflow for %s (tag: %s)", library_path, tag_name)
+            logger.debug("Detected tag-based workflow for %s (tag: %s)", library_path, tag_name)
             update_to_moving_tag(library_path, tag_name)
         else:
             # On a branch - use standard pull --rebase
-            logger.info("Detected branch-based workflow for %s", library_path)
+            logger.debug("Detected branch-based workflow for %s", library_path)
             git_pull_rebase(library_path)
 
     except pygit2.GitError as e:
@@ -574,7 +582,7 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
         if local_branch is not None:
             # Branch exists locally, just check it out
             repo.checkout(local_branch)
-            logger.info("Checked out existing local branch %s at %s", branch_name, library_path)
+            logger.debug("Checked out existing local branch %s at %s", branch_name, library_path)
             return
 
         # Branch doesn't exist locally, try to find it on remote
@@ -596,7 +604,7 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
         # Checkout the new branch
         repo.checkout(new_branch)
-        logger.info(
+        logger.debug(
             "Created and checked out tracking branch %s from %s at %s", branch_name, remote_branch_name, library_path
         )
 
@@ -650,7 +658,7 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
             msg = f"Git checkout {ref_name} failed at {library_path}: {checkout_result.stderr}"
             raise GitRefError(msg)
 
-        logger.info("Checked out %s at %s", ref_name, library_path)
+        logger.debug("Checked out %s at %s", ref_name, library_path)
 
     except subprocess.SubprocessError as e:
         msg = f"Subprocess error during ref switch at {library_path}: {e}"
@@ -713,7 +721,7 @@ def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | N
     original_url = git_url
     if _is_ssh_url(git_url):
         git_url = _convert_ssh_to_https(git_url)
-        logger.info("Converted SSH URL to HTTPS: %s -> %s", original_url, git_url)
+        logger.debug("Converted SSH URL to HTTPS: %s -> %s", original_url, git_url)
 
     try:
         # Clone the repository
@@ -728,14 +736,14 @@ def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | N
             try:
                 branch = repo.branches[branch_tag_commit]
                 repo.checkout(branch)
-                logger.info("Checked out branch %s", branch_tag_commit)
+                logger.debug("Checked out branch %s", branch_tag_commit)
             except (pygit2.GitError, KeyError, IndexError):
                 # Try to resolve as a tag or commit
                 try:
                     commit_obj = repo.revparse_single(branch_tag_commit)
                     repo.checkout_tree(commit_obj)
                     repo.set_head(commit_obj.id)
-                    logger.info("Checked out %s", branch_tag_commit)
+                    logger.debug("Checked out %s", branch_tag_commit)
                 except pygit2.GitError as e:
                     msg = f"Failed to checkout {branch_tag_commit}: {e}"
                     raise GitCloneError(msg) from e
