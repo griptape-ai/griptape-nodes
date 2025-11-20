@@ -212,8 +212,12 @@ class Button(Trait):
                         # Pre-fill button details with current state and pass to callback
                         button_details = self.get_button_details()
                         # Include original message's data if present (for payloadData support)
-                        if message is not None and message.data is not None:
-                            button_details.data = message.data
+                        if message is not None:
+                            # Handle both NodeMessagePayload objects and dict messages
+                            if isinstance(message, NodeMessagePayload) and message.data is not None:
+                                button_details.data = message.data
+                            elif isinstance(message, dict) and "data" in message:
+                                button_details.data = message["data"]
                         result = self.on_click_callback(self, button_details)
 
                         # If callback returns None, provide optimistic success result
