@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
 
 DEFAULT_FILENAME = "griptape_nodes.png"
@@ -50,16 +51,24 @@ class SaveImage(SuccessFailureNode):
         )
 
         # Add output path parameter
-        self.add_parameter(
-            Parameter(
-                name="output_path",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                default_value=DEFAULT_FILENAME,
-                tooltip="The output filename with extension (.png, .jpg, etc.)",
+        self.output_path = Parameter(
+            name="output_path",
+            input_types=["str"],
+            type="str",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            default_value=DEFAULT_FILENAME,
+            tooltip="The output filename with extension (.png, .jpg, etc.)",
+        )
+        self.output_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=True,
+                multiple=False,
+                file_extensions=[".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"],
+                allow_create=True,
             )
         )
+        self.add_parameter(self.output_path)
 
         # Save options parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Save Options") as save_options_group:
