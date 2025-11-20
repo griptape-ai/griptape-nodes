@@ -148,8 +148,10 @@ from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.file_utils import find_file_in_directory
 from griptape_nodes.utils.git_utils import (
+    extract_repo_name_from_url,
     get_current_branch,
     get_git_remote,
+    is_git_url,
 )
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
@@ -1662,8 +1664,80 @@ class LibraryManager:
         finally:
             self._libraries_loading_complete.set()
 
+    async def _download_missing_libraries_from_config(self) -> None:
+        """Download missing libraries from git URLs specified in config.
+
+        Similar to model_manager's automatic download pattern, this method:
+        1. Reads libraries_to_register from config
+        2. Filters for git URLs (skips local paths)
+        3. Checks which libraries are missing locally
+        4. Downloads missing libraries concurrently
+        5. Logs summary of successful/failed downloads
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+
+        # Get libraries directory
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if not libraries_dir_setting:
+            logger.debug("Cannot download libraries: libraries_directory setting is not configured")
+            return
+
+        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+
+        # Filter for git URLs and check which ones are missing
+        git_urls_to_download = []
+        for entry in config_libraries:
+            if not is_git_url(entry):
+                continue
+
+            target_directory_name = extract_repo_name_from_url(entry)
+            target_path = libraries_path / target_directory_name
+
+            if not target_path.exists():
+                git_urls_to_download.append(entry)
+
+        # Early exit if nothing to download
+        if not git_urls_to_download:
+            logger.debug("No missing libraries to download from git URLs")
+            return
+
+        logger.info("Starting download of %d missing libraries", len(git_urls_to_download))
+
+        # Create concurrent download tasks
+        download_tasks = []
+        for git_url in git_urls_to_download:
+            task = asyncio.create_task(
+                GriptapeNodes.ahandle_request(
+                    DownloadLibraryRequest(
+                        git_url=git_url,
+                        branch_tag_commit=None,
+                        target_directory_name=None,
+                        install_dependencies=True,
+                    )
+                )
+            )
+            download_tasks.append(task)
+
+        # Wait for all downloads to complete concurrently
+        results = await asyncio.gather(*download_tasks, return_exceptions=True)
+
+        # Count successes and failures
+        successful = sum(1 for result in results if isinstance(result, DownloadLibraryResultSuccess))
+        failed = len(results) - successful
+
+        logger.info(
+            "Completed automatic library downloads: %d successful, %d failed",
+            successful,
+            failed,
+        )
+
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. See if there are library JSONs to load!
+        # App just got init'd. First download any missing libraries from git URLs.
+        await self._download_missing_libraries_from_config()
+
+        # Now load all libraries from config (including newly downloaded ones)
         await self.load_all_libraries_from_config()
 
         # Register all secrets now that libraries are loaded and settings are merged
