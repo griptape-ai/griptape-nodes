@@ -1,8 +1,10 @@
 from enum import StrEnum, auto
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -114,16 +116,13 @@ class SaveImage(SuccessFailureNode):
         # Try to get format from PIL Image
         if hasattr(image_artifact, "value"):
             try:
-                from PIL import Image
-                from io import BytesIO
-
                 # If it's bytes, load as PIL image
                 if isinstance(image_artifact.value, bytes):
                     pil_image = Image.open(BytesIO(image_artifact.value))
                     if pil_image.format:
                         return pil_image.format.lower()
             except Exception:
-                pass
+                logger.debug("Failed to extract format from PIL Image", exc_info=True)
 
         # Check artifact metadata
         if hasattr(image_artifact, "meta") and image_artifact.meta:
