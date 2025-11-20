@@ -123,10 +123,8 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AfterLibraryCallbackProblem,
     BeforeLibraryCallbackProblem,
     CreateConfigCategoryProblem,
-    DependencyInstallationFailedProblem,
     DuplicateLibraryProblem,
     EngineVersionErrorProblem,
-    InsufficientDiskSpaceProblem,
     InvalidVersionStringProblem,
     LibraryJsonDecodeProblem,
     LibraryLoadExceptionProblem,
@@ -139,7 +137,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     NodeModuleImportProblem,
     SandboxDirectoryMissingProblem,
     UpdateConfigCategoryProblem,
-    VenvCreationFailedProblem,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
@@ -876,100 +873,6 @@ class LibraryManager:
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure(result_details=details)
-
-        # Install node library dependencies
-        try:
-            if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
-                pip_install_flags = library_data.metadata.dependencies.pip_install_flags
-                if pip_install_flags is None:
-                    pip_install_flags = []
-                pip_dependencies = library_data.metadata.dependencies.pip_dependencies
-
-                # Determine venv path for dependency installation
-                venv_path = self._get_library_venv_path(library_data.name, file_path)
-
-                # Check if venv already exists before initialization
-                venv_already_exists = venv_path.exists()
-
-                # Only install dependencies if conditions are met
-                try:
-                    library_venv_python_path = await self._init_library_venv(venv_path)
-                except RuntimeError as e:
-                    self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                        library_path=file_path,
-                        library_name=library_data.name,
-                        library_version=library_version,
-                        status=LibraryStatus.UNUSABLE,
-                        problems=[VenvCreationFailedProblem(error_message=str(e))],
-                    )
-                    details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
-                    logger.error(details)
-                    return RegisterLibraryFromFileResultFailure(result_details=details)
-
-                if venv_already_exists:
-                    logger.debug(
-                        "Skipping dependency installation for library '%s' - venv already exists at %s",
-                        library_data.name,
-                        venv_path,
-                    )
-                elif self._can_write_to_venv_location(library_venv_python_path):
-                    # Check disk space before installing dependencies
-                    config_manager = GriptapeNodes.ConfigManager()
-                    min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
-                    if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
-                        error_msg = OSManager.format_disk_space_error(Path(venv_path))
-                        details = f"Attempted to load Library JSON from '{json_path}'. Failed when installing dependencies due to insufficient disk space (requires {min_space_gb} GB): {error_msg}"
-                        logger.error(details)
-                        self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                            library_path=file_path,
-                            library_name=library_data.name,
-                            library_version=library_version,
-                            status=LibraryStatus.UNUSABLE,
-                            problems=[InsufficientDiskSpaceProblem(min_space_gb=min_space_gb, error_message=error_msg)],
-                        )
-                        return RegisterLibraryFromFileResultFailure(result_details=details)
-
-                    # Grab the python executable from the virtual environment so that we can pip install there
-                    logger.info(
-                        "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
-                    )
-                    is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
-                    await subprocess_run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "uv",
-                            "pip",
-                            "install",
-                            *pip_dependencies,
-                            *pip_install_flags,
-                            "--python",
-                            str(library_venv_python_path),
-                        ],
-                        check=True,
-                        capture_output=not is_debug,
-                        text=True,
-                    )
-                else:
-                    logger.debug(
-                        "Skipping dependency installation for library '%s' - venv location at %s is not writable",
-                        library_data.name,
-                        venv_path,
-                    )
-        except subprocess.CalledProcessError as e:
-            # Failed to create the library
-            error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
-
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryStatus.UNUSABLE,
-                problems=[DependencyInstallationFailedProblem(error_details=error_details)],
-            )
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
             logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
