@@ -10,7 +10,12 @@ from pathlib import Path
 import pygit2
 
 from griptape_nodes.utils.file_utils import find_all_files_in_directory, find_file_in_directory
-from griptape_nodes.utils.git_utils import GitCloneError, get_git_repository_root
+from griptape_nodes.utils.git_utils import (
+    GitCloneError,
+    _convert_ssh_to_https,
+    _is_ssh_url,
+    get_git_repository_root,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +53,6 @@ def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
     Raises:
         GitCloneError: If cloning fails or library metadata is invalid.
     """
-    from griptape_nodes.utils.git_utils import _convert_ssh_to_https, _is_ssh_url
-
     # Convert SSH URLs to HTTPS for compatibility
     original_url = remote_url
     if _is_ssh_url(remote_url):
