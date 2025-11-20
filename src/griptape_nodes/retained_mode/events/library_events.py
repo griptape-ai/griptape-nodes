@@ -781,13 +781,11 @@ class SyncLibrariesRequest(RequestPayload):
     up-to-date, setting up development environment, periodic maintenance.
 
     Args:
-        check_updates_only: If True, only report what would be updated without making changes (default: False)
         install_dependencies: If True, install dependencies after updating (default: True)
 
     Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
     """
 
-    check_updates_only: bool = False
     install_dependencies: bool = True
 
 
