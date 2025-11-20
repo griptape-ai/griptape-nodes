@@ -42,8 +42,6 @@ class ImageBlendCompositor(BaseImageProcessor):
     DEFAULT_OPACITY = 1.0
 
     # Position constants
-    MIN_POSITION = -1000
-    MAX_POSITION = 1000
     DEFAULT_POSITION = 0
 
     def _setup_custom_parameters(self) -> None:
@@ -91,7 +89,7 @@ class ImageBlendCompositor(BaseImageProcessor):
                 name="blend_position_x",
                 type="int",
                 default_value=self.DEFAULT_POSITION,
-                tooltip=f"X-coordinate position of the blend image ({self.MIN_POSITION}-{self.MAX_POSITION}, 0 = center, negative = left, positive = right)",
+                tooltip="X-coordinate position of the blend image (0 = center, negative = left, positive = right)",
             )
             self.add_parameter(blend_position_x_param)
 
@@ -100,7 +98,7 @@ class ImageBlendCompositor(BaseImageProcessor):
                 name="blend_position_y",
                 type="int",
                 default_value=self.DEFAULT_POSITION,
-                tooltip=f"Y-coordinate position of the blend image ({self.MIN_POSITION}-{self.MAX_POSITION}, 0 = center, negative = up, positive = down)",
+                tooltip="Y-coordinate position of the blend image (0 = center, negative = up, positive = down)",
             )
             self.add_parameter(blend_position_y_param)
 
@@ -264,7 +262,7 @@ class ImageBlendCompositor(BaseImageProcessor):
             blended_image = self._apply_blend_mode(image_pil, blend_pil, blend_mode, opacity)
 
         # Apply the blended image with proper alpha handling
-        result = self._apply_blended_image(result, blended_image, image_pil, (x, y), preserve_alpha=preserve_alpha)
+        result = self._apply_blended_image(result, blended_image, (x, y), preserve_alpha=preserve_alpha)
 
         return result
 
@@ -272,17 +270,17 @@ class ImageBlendCompositor(BaseImageProcessor):
         self,
         result: Image.Image,
         blended_image: Image.Image,
-        original_image: Image.Image,
         position: tuple[int, int],
         *,
         preserve_alpha: bool,
     ) -> Image.Image:
         """Apply the blended image to the result with proper alpha handling."""
         if preserve_alpha:
-            # Preserve alpha from the original base image
-            original_alpha = original_image.getchannel("A")
-            result.paste(blended_image, position)
-            result.putalpha(original_alpha)
+            # Use the blended image's alpha channel as a mask for proper transparency
+            if blended_image.mode == "RGBA":
+                result.paste(blended_image, position, blended_image)
+            else:
+                result.paste(blended_image, position)
         else:
             # Paste without alpha (ignore transparency)
             result.paste(blended_image, position)
@@ -381,21 +379,6 @@ class ImageBlendCompositor(BaseImageProcessor):
         opacity = self.get_parameter_value("opacity")
         if opacity is not None and (opacity < self.MIN_OPACITY or opacity > self.MAX_OPACITY):
             msg = f"{self.name} - Opacity must be between {self.MIN_OPACITY} and {self.MAX_OPACITY}, got {opacity}"
-            exceptions.append(ValueError(msg))
-
-        # Validate position
-        blend_position_x = self.get_parameter_value("blend_position_x")
-        if blend_position_x is not None and (
-            blend_position_x < self.MIN_POSITION or blend_position_x > self.MAX_POSITION
-        ):
-            msg = f"{self.name} - Blend position X must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_x}"
-            exceptions.append(ValueError(msg))
-
-        blend_position_y = self.get_parameter_value("blend_position_y")
-        if blend_position_y is not None and (
-            blend_position_y < self.MIN_POSITION or blend_position_y > self.MAX_POSITION
-        ):
-            msg = f"{self.name} - Blend position Y must be between {self.MIN_POSITION} and {self.MAX_POSITION}, got {blend_position_y}"
             exceptions.append(ValueError(msg))
 
         return exceptions if exceptions else None

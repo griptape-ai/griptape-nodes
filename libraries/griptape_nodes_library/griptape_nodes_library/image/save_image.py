@@ -1,8 +1,10 @@
 from enum import StrEnum, auto
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -11,7 +13,12 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.image_utils import (
+    SUPPORTED_IMAGE_EXTENSIONS,
+    dict_to_image_url_artifact,
+    load_image_from_url_artifact,
+)
 
 DEFAULT_FILENAME = "griptape_nodes.png"
 PREVIEW_LENGTH = 50
@@ -50,16 +57,24 @@ class SaveImage(SuccessFailureNode):
         )
 
         # Add output path parameter
-        self.add_parameter(
-            Parameter(
-                name="output_path",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                default_value=DEFAULT_FILENAME,
-                tooltip="The output filename with extension (.png, .jpg, etc.)",
+        self.output_path = Parameter(
+            name="output_path",
+            input_types=["str"],
+            type="str",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            default_value=DEFAULT_FILENAME,
+            tooltip="The output filename with extension (.png, .jpg, etc.)",
+        )
+        self.output_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                multiple=False,
+                file_extensions=list(SUPPORTED_IMAGE_EXTENSIONS),
+                allow_create=True,
             )
         )
+        self.add_parameter(self.output_path)
 
         # Save options parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Save Options") as save_options_group:
@@ -88,6 +103,39 @@ class SaveImage(SuccessFailureNode):
             result_details_tooltip="Details about the image save operation result",
             result_details_placeholder="Details on the save attempt will be presented here.",
         )
+
+    def _extract_format_from_artifact(self, image_artifact: Any) -> str | None:
+        """Extract format from image artifact.
+
+        Args:
+            image_artifact: ImageArtifact or similar object
+
+        Returns:
+            Format string (e.g., 'png', 'jpeg') or None if not detected
+        """
+        # Try to get format from PIL Image
+        if hasattr(image_artifact, "value"):
+            try:
+                # If it's bytes, load as PIL image
+                if isinstance(image_artifact.value, bytes):
+                    pil_image = Image.open(BytesIO(image_artifact.value))
+                    if pil_image.format:
+                        return pil_image.format.lower()
+            except Exception:
+                logger.debug("Failed to extract format from PIL Image", exc_info=True)
+
+        # Check artifact metadata
+        if hasattr(image_artifact, "meta") and image_artifact.meta:
+            meta = image_artifact.meta
+            if isinstance(meta, dict):
+                # Check for format in meta
+                if "format" in meta and isinstance(meta["format"], str):
+                    return meta["format"].lower()
+                # Check for content_type (e.g., "image/png" -> "png")
+                if "content_type" in meta and isinstance(meta["content_type"], str) and "/" in meta["content_type"]:
+                    return meta["content_type"].split("/")[1].lower()
+
+        return None
 
     def process(self) -> None:
         # Reset execution state and result details at the start of each run
@@ -133,6 +181,9 @@ class SaveImage(SuccessFailureNode):
             self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
             return
 
+        # Extract format from artifact
+        detected_format = self._extract_format_from_artifact(image_artifact)
+
         # Get save options
         allow_creating_folders = self.get_parameter_value(self.allow_creating_folders.name)
         overwrite_existing = self.get_parameter_value(self.overwrite_existing.name)
@@ -147,11 +198,15 @@ class SaveImage(SuccessFailureNode):
                     output_path=output_path,
                     allow_creating_folders=allow_creating_folders,
                     overwrite_existing=overwrite_existing,
+                    format_hint=detected_format,
                 )
             else:
                 # Relative path: use static file manager
                 saved_path = self._save_to_static_storage(
-                    image_artifact=image_artifact, output_file=output_file, overwrite_existing=overwrite_existing
+                    image_artifact=image_artifact,
+                    output_file=output_file,
+                    overwrite_existing=overwrite_existing,
+                    format_hint=detected_format,
                 )
         except Exception as e:
             error_details = f"Failed to save image: {e!s}"
@@ -239,9 +294,24 @@ class SaveImage(SuccessFailureNode):
                 self._set_status_results(was_successful=True, result_details=f"{status}: {result_details}")
 
     def _save_to_filesystem(
-        self, image_artifact: Any, output_path: Path, *, allow_creating_folders: bool, overwrite_existing: bool
+        self,
+        image_artifact: Any,
+        output_path: Path,
+        *,
+        allow_creating_folders: bool,
+        overwrite_existing: bool,
+        format_hint: str | None = None,
     ) -> str:
         """Save image directly to filesystem at the specified absolute path."""
+        # Auto-determine extension with correct format if we have format hint
+        if format_hint:
+            new_extension = f".{format_hint.lstrip('.')}"
+
+            if output_path.suffix.lower() != new_extension.lower():
+                output_path = output_path.with_suffix(new_extension)
+                # Update output values to reflect the new extension
+                self.parameter_output_values["output_path"] = str(output_path)
+
         # Check if file exists and overwrite is disabled
         if output_path.exists() and not overwrite_existing:
             error_details = f"File already exists and overwrite_existing is disabled: {output_path}"
@@ -276,8 +346,20 @@ class SaveImage(SuccessFailureNode):
 
         return str(output_path)
 
-    def _save_to_static_storage(self, image_artifact: Any, output_file: str, *, overwrite_existing: bool) -> str:
+    def _save_to_static_storage(
+        self, image_artifact: Any, output_file: str, *, overwrite_existing: bool, format_hint: str | None = None
+    ) -> str:
         """Save image using the static file manager."""
+        # Auto-determine filename with correct extension if we have format hint
+        if format_hint:
+            output_path = Path(output_file)
+            new_extension = f".{format_hint.lstrip('.')}"
+
+            if output_path.suffix.lower() != new_extension.lower():
+                output_file = str(output_path.with_suffix(new_extension))
+                # Update output values to reflect the new extension
+                self.parameter_output_values["output_path"] = output_file
+
         # Check if file exists in static storage and overwrite is disabled
         if not overwrite_existing:
             from griptape_nodes.retained_mode.events.static_file_events import (

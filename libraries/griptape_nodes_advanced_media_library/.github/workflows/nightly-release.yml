@@ -1,0 +1,41 @@
+name: Create Nightly Release
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 2:00 AM UTC daily
+  workflow_dispatch:      # allows manual triggering
+permissions:
+  contents: write
+jobs:
+  release:
+    name: Create nightly release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Delete existing nightly release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete the release if it exists (ignore errors if it doesn't exist)
+          gh release delete nightly --yes || true
+        continue-on-error: true
+
+      - name: Update nightly tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Force-update the nightly tag to current HEAD
+          git tag nightly -f
+          git push origin nightly -f --tags
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          generate_release_notes: true
+          make_latest: false
+          prerelease: true

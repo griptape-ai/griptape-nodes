@@ -36,6 +36,9 @@ DEFAULT_PLACEHOLDER_WIDTH = 400
 DEFAULT_PLACEHOLDER_HEIGHT = 300
 DEFAULT_TIMEOUT = 30
 
+# Supported image file extensions
+SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
 # Common PIL-supported image formats
 SUPPORTED_PIL_FORMATS = {
     "PNG",

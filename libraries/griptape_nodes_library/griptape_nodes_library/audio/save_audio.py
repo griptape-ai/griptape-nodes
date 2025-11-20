@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.audio_utils import (
     SUPPORTED_AUDIO_EXTENSIONS,
     download_audio_to_temp_file,
@@ -60,16 +61,24 @@ class SaveAudio(SuccessFailureNode):
         )
 
         # Add output path parameter
-        self.add_parameter(
-            Parameter(
-                name="output_path",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                default_value=DEFAULT_FILENAME,
-                tooltip="The output filename. The file extension will be auto-determined from audio format.",
+        self.output_path = Parameter(
+            name="output_path",
+            input_types=["str"],
+            type="str",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            default_value=DEFAULT_FILENAME,
+            tooltip="The output filename. The file extension will be auto-determined from audio format.",
+        )
+        self.output_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                multiple=False,
+                file_extensions=list(SUPPORTED_AUDIO_EXTENSIONS),
+                allow_create=True,
             )
         )
+        self.add_parameter(self.output_path)
 
         # Save options parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Save Options") as save_options_group:
