@@ -2668,21 +2668,28 @@ class LibraryManager:
             result_details=details,
         )
 
-    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Download a library from a git repository."""
         git_url = request.git_url
         branch_tag_commit = request.branch_tag_commit
         target_directory_name = request.target_directory_name
+        download_directory = request.download_directory
 
-        # Get libraries_directory from config
+        # Determine the parent directory for the download
         config_mgr = GriptapeNodes.ConfigManager()
-        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
-        if not libraries_dir_setting:
-            details = "Cannot download library: libraries_directory setting is not configured."
-            return DownloadLibraryResultFailure(result_details=details)
 
-        # Construct the libraries directory path
-        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+        if download_directory is not None:
+            # Use custom download directory if provided
+            libraries_path = Path(download_directory)
+        else:
+            # Use default from config
+            libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+            if not libraries_dir_setting:
+                details = "Cannot download library: libraries_directory setting is not configured."
+                return DownloadLibraryResultFailure(result_details=details)
+            libraries_path = config_mgr.workspace_path / libraries_dir_setting
+
+        # Ensure parent directory exists
         libraries_path.mkdir(parents=True, exist_ok=True)
 
         # Determine target directory name

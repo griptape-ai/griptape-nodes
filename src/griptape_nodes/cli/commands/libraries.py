@@ -69,16 +69,18 @@ def download(
     git_url: str = typer.Argument(..., help="Git repository URL to download"),
     branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit to checkout"),
     target_dir: str | None = typer.Option(None, "--target-dir", help="Target directory name"),
+    download_dir: str | None = typer.Option(None, "--download-dir", help="Parent directory for library download"),
     no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
 ) -> None:
     """Download a library from a git repository."""
-    asyncio.run(_download_library(git_url, branch, target_dir, install_dependencies=not no_deps))
+    asyncio.run(_download_library(git_url, branch, target_dir, download_dir, install_dependencies=not no_deps))
 
 
 async def _download_library(
     git_url: str,
     branch_tag_commit: str | None,
     target_directory_name: str | None,
+    download_directory: str | None,
     *,
     install_dependencies: bool,
 ) -> None:
@@ -93,6 +95,7 @@ async def _download_library(
         git_url=git_url,
         branch_tag_commit=branch_tag_commit,
         target_directory_name=target_directory_name,
+        download_directory=download_directory,
         install_dependencies=install_dependencies,
     )
 
