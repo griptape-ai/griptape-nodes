@@ -24,8 +24,8 @@ class GitRemoteError(GitError):
     """Raised when git remote operations fail."""
 
 
-class GitBranchError(GitError):
-    """Raised when git branch operations fail."""
+class GitRefError(GitError):
+    """Raised when git ref operations fail."""
 
 
 class GitCloneError(GitError):
@@ -177,17 +177,17 @@ def get_git_remote(library_path: Path) -> str | None:
         raise GitRemoteError(msg) from e
 
 
-def get_current_branch(library_path: Path) -> str | None:
-    """Get the current branch name for a library directory.
+def get_current_ref(library_path: Path) -> str | None:
+    """Get the current git reference (branch, tag, or commit) for a library directory.
 
     Args:
         library_path: The path to the library directory.
 
     Returns:
-        str | None: The current branch name if found, None if not a git repository or detached HEAD.
+        str | None: The current git reference if found, None if not a git repository or detached HEAD.
 
     Raises:
-        GitBranchError: If an error occurs while getting the current branch.
+        GitRefError: If an error occurs while getting the current git reference.
     """
     if not is_git_repository(library_path):
         return None
@@ -205,10 +205,10 @@ def get_current_branch(library_path: Path) -> str | None:
             return None
 
     except pygit2.GitError as e:
-        msg = f"Error getting current branch for {library_path}: {e}"
-        raise GitBranchError(msg) from e
+        msg = f"Error getting current git reference for {library_path}: {e}"
+        raise GitRefError(msg) from e
     else:
-        # Get the current branch name
+        # Get the current git reference name
         return repo.head.shorthand
 
 
@@ -272,28 +272,6 @@ def is_on_tag(library_path: Path) -> bool:
         bool: True if HEAD is on a tag, False otherwise.
     """
     return get_current_tag(library_path) is not None
-
-
-def get_current_ref(library_path: Path) -> str | None:
-    """Get the current git reference (branch or tag name).
-
-    Args:
-        library_path: The path to the library directory.
-
-    Returns:
-        str | None: The current branch or tag name if found, None if not a git repository.
-    """
-    # Try to get branch first
-    branch = get_current_branch(library_path)
-    if branch is not None:
-        return branch
-
-    # If not on a branch, try to get tag
-    tag = get_current_tag(library_path)
-    if tag is not None:
-        return tag
-
-    return None
 
 
 def get_git_repository_root(library_path: Path) -> Path | None:
@@ -534,7 +512,7 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
     Raises:
         GitRepositoryError: If the path is not a valid git repository.
-        GitBranchError: If the branch switch operation fails.
+        GitRefError: If the branch switch operation fails.
     """
     if not is_git_repository(library_path):
         msg = f"Cannot switch branch: {library_path} is not a git repository"
@@ -553,7 +531,7 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
             remote = repo.remotes["origin"]
         except (KeyError, IndexError) as e:
             msg = f"No origin remote found for repository at {library_path}"
-            raise GitBranchError(msg) from e
+            raise GitRefError(msg) from e
 
         # Fetch from remote first
         remote.fetch()
@@ -573,13 +551,13 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
         if remote_branch is None:
             msg = f"Branch {branch_name} not found locally or on remote at {library_path}"
-            raise GitBranchError(msg)
+            raise GitRefError(msg)
 
         # Create local tracking branch from remote
         commit = repo.get(remote_branch.target)
         if commit is None:
             msg = f"Failed to get commit for remote branch {remote_branch_name} at {library_path}"
-            raise GitBranchError(msg)
+            raise GitRefError(msg)
 
         new_branch = repo.branches.local.create(branch_name, commit)  # type: ignore[arg-type]
         new_branch.upstream = remote_branch
@@ -592,7 +570,7 @@ def switch_branch(library_path: Path, branch_name: str) -> None:
 
     except pygit2.GitError as e:
         msg = f"Git error during branch switch at {library_path}: {e}"
-        raise GitBranchError(msg) from e
+        raise GitRefError(msg) from e
 
 
 def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
@@ -607,7 +585,7 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
 
     Raises:
         GitRepositoryError: If the path is not a valid git repository.
-        GitBranchError: If the switch operation fails.
+        GitRefError: If the switch operation fails.
     """
     if not is_git_repository(library_path):
         msg = f"Cannot switch ref: {library_path} is not a git repository"
@@ -625,7 +603,7 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
 
         if fetch_result.returncode != 0:
             msg = f"Git fetch failed at {library_path}: {fetch_result.stderr}"
-            raise GitBranchError(msg)
+            raise GitRefError(msg)
 
         # Try to checkout the ref (works for both branches and tags)
         checkout_result = subprocess.run(  # noqa: S603
@@ -638,13 +616,13 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
 
         if checkout_result.returncode != 0:
             msg = f"Git checkout {ref_name} failed at {library_path}: {checkout_result.stderr}"
-            raise GitBranchError(msg)
+            raise GitRefError(msg)
 
         logger.info("Checked out %s at %s", ref_name, library_path)
 
     except subprocess.SubprocessError as e:
         msg = f"Subprocess error during ref switch at {library_path}: {e}"
-        raise GitBranchError(msg) from e
+        raise GitRefError(msg) from e
 
 
 def _is_ssh_url(url: str) -> bool:
