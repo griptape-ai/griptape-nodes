@@ -97,8 +97,8 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_converts_ssh_to_https(self) -> None:
         """Test that SSH URLs are converted to HTTPS before cloning."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
-            patch("griptape_nodes.utils.git_utils._convert_ssh_to_https") as mock_convert,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._convert_ssh_to_https") as mock_convert,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -121,7 +121,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_clones_repository_to_temp_dir(self) -> None:
         """Test that repository is cloned to a temporary directory."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -147,7 +147,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_when_clone_fails(self) -> None:
         """Test that GitCloneError is raised when cloning fails."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
         ):
             mock_is_ssh.return_value = False
@@ -161,7 +161,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_when_clone_returns_none(self) -> None:
         """Test that GitCloneError is raised when clone returns None."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
         ):
             mock_is_ssh.return_value = False
@@ -175,7 +175,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_when_no_library_json_found(self) -> None:
         """Test that GitCloneError is raised when no library JSON file is found."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
         ):
@@ -192,7 +192,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_on_invalid_json(self) -> None:
         """Test that GitCloneError is raised when JSON is invalid."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -215,7 +215,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_when_no_metadata(self) -> None:
         """Test that GitCloneError is raised when no metadata in JSON."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -238,7 +238,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_raises_error_when_no_library_version(self) -> None:
         """Test that GitCloneError is raised when no library_version in metadata."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -261,7 +261,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_returns_version_when_successful(self) -> None:
         """Test that library version and commit SHA are returned when all conditions are met."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
@@ -284,7 +284,7 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_searches_recursively_for_library_json(self) -> None:
         """Test that library JSON file is searched recursively."""
         with (
-            patch("griptape_nodes.utils.git_utils._is_ssh_url") as mock_is_ssh,
+            patch("griptape_nodes.utils.library_utils._is_ssh_url") as mock_is_ssh,
             patch("griptape_nodes.utils.library_utils.pygit2.clone_repository") as mock_clone,
             patch("griptape_nodes.utils.library_utils.find_file_in_directory") as mock_find,
             patch("tempfile.mkdtemp") as mock_mkdtemp,
