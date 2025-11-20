@@ -12,7 +12,11 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_image_from_url_artifact
+from griptape_nodes_library.utils.image_utils import (
+    SUPPORTED_IMAGE_EXTENSIONS,
+    dict_to_image_url_artifact,
+    load_image_from_url_artifact,
+)
 
 DEFAULT_FILENAME = "griptape_nodes.png"
 PREVIEW_LENGTH = 50
@@ -64,7 +68,7 @@ class SaveImage(SuccessFailureNode):
                 allow_files=True,
                 allow_directories=True,
                 multiple=False,
-                file_extensions=[".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"],
+                file_extensions=list(SUPPORTED_IMAGE_EXTENSIONS),
                 allow_create=True,
             )
         )

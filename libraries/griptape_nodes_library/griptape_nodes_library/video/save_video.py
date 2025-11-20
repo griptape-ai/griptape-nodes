@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import (
+    SUPPORTED_VIDEO_EXTENSIONS,
     download_video_to_temp_file,
     extract_url_from_video_object,
     is_downloadable_video_url,
@@ -73,7 +74,7 @@ class SaveVideo(SuccessFailureNode):
                 allow_files=True,
                 allow_directories=True,
                 multiple=False,
-                file_extensions=[".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm", ".m4v"],
+                file_extensions=list(SUPPORTED_VIDEO_EXTENSIONS),
                 allow_create=True,
             )
         )
