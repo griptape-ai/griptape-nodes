@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -6,10 +7,12 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterList,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 
 class DisplayList(ControlNode):
@@ -103,14 +106,34 @@ class DisplayList(ControlNode):
         if delete_excess_parameters:
             self.delete_excess_parameters(list_values)
         for i, item in enumerate(list_values):
+            # Determine the type for this specific item
+            item_specific_type = self._determine_item_type(item)
+
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
+                # Update the output type for this parameter
+                old_output_type = current_parameter.output_type
+                if item_specific_type == ParameterTypeBuiltin.ANY.value:
+                    new_output_type = ParameterTypeBuiltin.ALL.value
+                else:
+                    new_output_type = item_specific_type
+                current_parameter.output_type = new_output_type
+
+                # If type changed, validate and remove incompatible connections
+                if old_output_type != new_output_type:
+                    self._validate_and_remove_incompatible_connections(current_parameter.name, new_output_type)
+
                 self.set_parameter_value(current_parameter.name, item)
                 # Using to ensure updates are being propagated
                 self.publish_update_to_parameter(current_parameter.name, item)
                 self.parameter_output_values[current_parameter.name] = item
                 continue
             new_child = self.items_list.add_child_parameter()
+            # Set the output type for the new child parameter
+            if item_specific_type == ParameterTypeBuiltin.ANY.value:
+                new_child.output_type = ParameterTypeBuiltin.ALL.value
+            else:
+                new_child.output_type = item_specific_type
             # Set the parameter value
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
@@ -179,6 +202,70 @@ class DisplayList(ControlNode):
         elif isinstance(item, (ImageUrlArtifact, ImageArtifact)):
             result = "ImageUrlArtifact"
         return result
+
+    def _validate_and_remove_incompatible_connections(self, parameter_name: str, new_output_type: str) -> None:
+        """Validate and remove incompatible outgoing connections when output type changes.
+
+        Args:
+            parameter_name: The name of the parameter whose type changed
+            new_output_type: The new output type that was set
+        """
+        node_logger = logging.getLogger("griptape_nodes")
+
+        # Get outgoing connections from the specific parameter
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing_for_node = connections.outgoing_index.get(self.name, {})
+        connection_ids = outgoing_for_node.get(parameter_name, [])
+
+        if not connection_ids:
+            return
+
+        # Validate type compatibility and remove incompatible connections
+        for connection_id in connection_ids:
+            if connection_id not in connections.connections:
+                continue
+
+            connection = connections.connections[connection_id]
+            target_param = connection.target_parameter
+            target_node = connection.target_node
+
+            # Check if target parameter accepts the new output type
+            is_compatible = any(
+                ParameterType.are_types_compatible(new_output_type, input_type)
+                for input_type in target_param.input_types
+            )
+
+            if not is_compatible:
+                node_logger.info(
+                    "Removing incompatible connection: %s '%s' %s (%s) to '%s.%s' (accepts: %s)",
+                    self.__class__.__name__,
+                    self.name,
+                    parameter_name,
+                    new_output_type,
+                    target_node.name,
+                    target_param.name,
+                    target_param.input_types,
+                )
+
+                # Remove the incompatible connection
+                delete_result = GriptapeNodes.handle_request(
+                    DeleteConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name=parameter_name,
+                        target_node_name=target_node.name,
+                        target_parameter_name=target_param.name,
+                    )
+                )
+
+                if not delete_result.succeeded():
+                    node_logger.error(
+                        "Failed to delete incompatible connection from %s.%s to %s.%s: %s",
+                        self.name,
+                        parameter_name,
+                        target_node.name,
+                        target_param.name,
+                        delete_result.result_details,
+                    )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update display list when a value is assigned to the items parameter."""
