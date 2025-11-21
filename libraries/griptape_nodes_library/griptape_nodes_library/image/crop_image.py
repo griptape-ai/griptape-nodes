@@ -5,9 +5,17 @@ from typing import Any
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    NodeMessagePayload,
+    NodeMessageResult,
+    Parameter,
+    ParameterGroup,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -25,8 +33,11 @@ MAX_ZOOM = 500.0
 MIN_ZOOM_FACTOR = 0.1
 MAX_ZOOM_FACTOR = 10.0  # Maximum zoom factor to prevent memory issues
 MAX_IMAGE_DIMENSION = 32767  # Maximum safe dimension to prevent overflow
-MAX_WIDTH = 4000
-MAX_HEIGHT = 4000
+# Initial slider max values - should support 8K (8192x4320) and higher resolutions
+# These are updated dynamically when an image is loaded, but need to be high enough
+# to support common high-res formats before image loading
+MAX_WIDTH = MAX_IMAGE_DIMENSION
+MAX_HEIGHT = MAX_IMAGE_DIMENSION
 ROTATION_MIN = -180.0
 ROTATION_MAX = 180.0
 
@@ -59,6 +70,7 @@ class CropImage(ControlNode):
 
         self.MAX_WIDTH = MAX_WIDTH
         self.MAX_HEIGHT = MAX_HEIGHT
+        self._processing = False  # Lock to prevent live cropping during process()
 
         self.add_parameter(
             Parameter(
@@ -70,7 +82,15 @@ class CropImage(ControlNode):
                 ui_options={"crop_image": True},
             )
         )
-
+        self.add_parameter(
+            ParameterButton(
+                name="crop_button",
+                label="Open Crop Editor",
+                variant="secondary",
+                icon="crop",
+                on_click=self._open_crop_modal,
+            )
+        )
         with ParameterGroup(name="crop_coordinates", ui_options={"collapsed": False}) as crop_coordinates:
             Parameter(
                 name="left",
@@ -155,6 +175,26 @@ class CropImage(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Cropped output image",
             )
+        )
+
+    def _open_crop_modal(self, _button: Button, _details: ButtonDetailsMessagePayload) -> NodeMessageResult:
+        """Open the crop modal in the frontend."""
+        # Create the open_modal payload structure
+        open_modal_data = {
+            "modal_type": "crop",
+            "node_name": self.name,
+            "parameter_name": "input_image",
+        }
+
+        # Create payload with open_modal structure
+        payload = NodeMessagePayload(data={"open_modal": open_modal_data})
+
+        # Return NodeMessageResult with the payload
+        return NodeMessageResult(
+            success=True,
+            details="Opening crop modal",
+            response=payload,
+            altered_workflow_state=False,
         )
 
     def _crop(self) -> None:
@@ -401,7 +441,12 @@ class CropImage(ControlNode):
         return img
 
     def process(self) -> None:
-        self._crop()
+        # Set processing lock to prevent live cropping during actual processing
+        self._processing = True
+        try:
+            self._crop()
+        finally:
+            self._processing = False
 
     def _parse_color(self, color_str: str) -> tuple[int, int, int, int]:
         """Parse color string to RGBA tuple."""
@@ -435,8 +480,8 @@ class CropImage(ControlNode):
                 if height_param:
                     height_param.update_ui_options({"slider": {"max_val": img.height, "min_val": 0}})
 
-        # Do live cropping for crop parameters
-        if parameter.name in [
+        # Do live cropping for crop parameters (only when not processing)
+        if not self._processing and parameter.name in [
             "left",
             "top",
             "width",
