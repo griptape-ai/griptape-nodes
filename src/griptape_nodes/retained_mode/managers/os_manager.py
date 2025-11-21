@@ -2,6 +2,7 @@ import base64
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -271,6 +272,79 @@ class OSManager:
         logger.debug(msg)
         return True, relative
 
+    @staticmethod
+    def strip_surrounding_quotes(path_str: str) -> str:
+        """Strip surrounding quotes only if they match (from 'Copy as Pathname').
+
+        Args:
+            path_str: The path string to process
+
+        Returns:
+            Path string with surrounding quotes removed if present
+        """
+        if len(path_str) >= 2 and (  # noqa: PLR2004
+            (path_str.startswith("'") and path_str.endswith("'"))
+            or (path_str.startswith('"') and path_str.endswith('"'))
+        ):
+            return path_str[1:-1]
+        return path_str
+
+    def sanitize_path_string(self, path_str: str) -> str:
+        r"""Strip surrounding quotes and shell escape characters from paths.
+
+        Handles macOS Finder's 'Copy as Pathname' format which escapes
+        spaces, apostrophes, and other special characters with backslashes.
+        Only removes backslashes before shell-special characters to avoid
+        breaking Windows paths like C:\Users\file.txt.
+
+        Examples:
+            macOS Finder paths (the reason this exists!):
+                "/Downloads/Dragon\'s\ Curse/screenshot.jpg"
+                -> "/Downloads/Dragon's Curse/screenshot.jpg"
+
+                "/Test\ Images/Level\ 1\ -\ Knight\'s\ Quest/file.png"
+                -> "/Test Images/Level 1 - Knight's Quest/file.png"
+
+            Quoted paths:
+                '"/path/with spaces/file.txt"'
+                -> "/path/with spaces/file.txt"
+
+            Windows paths (preserved correctly):
+                "C:\Users\Desktop\file.txt"
+                -> "C:\Users\Desktop\file.txt"
+
+            Windows extended-length paths:
+                r"\\?\C:\Very\ Long\ Path\file.txt"
+                -> r"\\?\C:\Very Long Path\file.txt"
+
+        Args:
+            path_str: The path string to sanitize
+
+        Returns:
+            Sanitized path string
+        """
+        # First, strip surrounding quotes
+        path_str = OSManager.strip_surrounding_quotes(path_str)
+
+        # Handle Windows extended-length paths (\\?\...) specially
+        # These are used for paths longer than 260 characters on Windows
+        # We need to sanitize the path part but preserve the prefix
+        extended_length_prefix = ""
+        if path_str.startswith("\\\\?\\"):
+            extended_length_prefix = "\\\\?\\"
+            path_str = path_str[4:]  # Remove prefix temporarily
+
+        # Remove shell escape characters (backslashes before special chars only)
+        # Matches: space ' " ( ) { } [ ] & | ; < > $ ` ! * ? /
+        # Does NOT match: \U \t \f etc in Windows paths like C:\Users
+        path_str = re.sub(r"\\([ '\"(){}[\]&|;<>$`!*?/])", r"\1", path_str)
+
+        # Restore extended-length prefix if it was present
+        if extended_length_prefix:
+            path_str = extended_length_prefix + path_str
+
+        return path_str
+
     def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
@@ -321,6 +395,9 @@ class OSManager:
             msg = "No valid file path provided"
             logger.error(msg)
             raise ValueError(msg)
+
+        # Sanitize path to handle shell escapes and quotes (e.g., from macOS Finder "Copy as Pathname")
+        file_path_str = self.sanitize_path_string(file_path_str)
 
         file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
 
@@ -675,7 +752,11 @@ class OSManager:
         if not is_binary_file:
             content, encoding = self._read_text_file(file_path, request.encoding)
         else:
-            content, encoding = self._read_binary_file(file_path, mime_type)
+            content, encoding = self._read_binary_file(
+                file_path,
+                mime_type,
+                should_transform_to_thumbnail=request.should_transform_image_content_to_thumbnail,
+            )
 
         return FileContentResult(
             content=content,
@@ -698,17 +779,19 @@ class OSManager:
                 with file_path.open("rb") as f:
                     return f.read(), None
 
-    def _read_binary_file(self, file_path: Path, mime_type: str) -> tuple[bytes | str, None]:
-        """Read file as binary, with special handling for images."""
+    def _read_binary_file(
+        self, file_path: Path, mime_type: str, *, should_transform_to_thumbnail: bool
+    ) -> tuple[bytes | str, None]:
+        """Read file as binary, with optional thumbnail generation for images."""
         with file_path.open("rb") as f:
             content = f.read()
 
-        if mime_type.startswith("image/"):
-            content = self._handle_image_content(content, file_path, mime_type)
+        if mime_type.startswith("image/") and should_transform_to_thumbnail:
+            content = self._generate_thumbnail_from_image_content(content, file_path, mime_type)
 
         return content, None
 
-    def _handle_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
+    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
         """Handle image content by creating previews or returning static URLs."""
         # Store original bytes for preview creation
         original_image_bytes = content
