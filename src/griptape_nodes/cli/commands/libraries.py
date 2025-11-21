@@ -65,24 +65,30 @@ async def _sync_libraries() -> None:
 
 
 @app.command()
-def download(
+def download(  # noqa: PLR0913
     git_url: str = typer.Argument(..., help="Git repository URL to download"),
     branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit to checkout"),
     target_dir: str | None = typer.Option(None, "--target-dir", help="Target directory name"),
     download_dir: str | None = typer.Option(None, "--download-dir", help="Parent directory for library download"),
     no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing library directory if it exists"),  # noqa: FBT001
 ) -> None:
     """Download a library from a git repository."""
-    asyncio.run(_download_library(git_url, branch, target_dir, download_dir, install_dependencies=not no_deps))
+    asyncio.run(
+        _download_library(
+            git_url, branch, target_dir, download_dir, install_dependencies=not no_deps, overwrite_existing=overwrite
+        )
+    )
 
 
-async def _download_library(
+async def _download_library(  # noqa: PLR0913
     git_url: str,
     branch_tag_commit: str | None,
     target_directory_name: str | None,
     download_directory: str | None,
     *,
     install_dependencies: bool,
+    overwrite_existing: bool,
 ) -> None:
     """Download a library from a git repository."""
     # Normalize GitHub shorthand to full URL
@@ -97,6 +103,7 @@ async def _download_library(
         target_directory_name=target_directory_name,
         download_directory=download_directory,
         install_dependencies=install_dependencies,
+        overwrite_existing=overwrite_existing,
     )
 
     # Execute the download
