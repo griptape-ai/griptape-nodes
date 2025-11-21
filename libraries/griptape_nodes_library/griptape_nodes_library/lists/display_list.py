@@ -128,6 +128,12 @@ class DisplayList(ControlNode):
             new_output_type = item_specific_type
         parameter.output_type = new_output_type
 
+        # Set UI options based on type
+        if item_specific_type == "ImageUrlArtifact":
+            parameter.ui_options = {"display": "image"}
+        elif item_specific_type == "dict":
+            parameter.ui_options = {"multiline": True}
+
         # Validate and remove incompatible connections
         self._validate_and_remove_incompatible_connections(parameter.name, new_output_type)
 
@@ -150,6 +156,12 @@ class DisplayList(ControlNode):
         else:
             new_output_type = item_specific_type
         new_child.output_type = new_output_type
+
+        # Set UI options based on type
+        if item_specific_type == "ImageUrlArtifact":
+            new_child.ui_options = {"display": "image"}
+        elif item_specific_type == "dict":
+            new_child.ui_options = {"multiline": True}
 
         # Validate and remove incompatible connections for new parameters too
         self._validate_and_remove_incompatible_connections(new_child.name, new_output_type)
