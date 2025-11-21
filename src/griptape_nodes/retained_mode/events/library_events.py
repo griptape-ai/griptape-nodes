@@ -824,3 +824,50 @@ class SyncLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SyncLibrariesResultFailure(ResultPayloadFailure):
     """Library sync failed. Common causes: git errors, network errors, dependency installation failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoRequest(RequestPayload):
+    """Inspect a library's metadata from a git repository without downloading the full repository.
+
+    Performs a sparse checkout to fetch only the library JSON file, which is efficient for
+    previewing library information, checking compatibility, or validating git URLs before
+    full download.
+
+    Use when: Previewing library details, displaying library information in UI,
+    validating library compatibility, checking library versions remotely.
+
+    Args:
+        git_url: Git repository URL (supports GitHub shorthand like "user/repo")
+        ref: Branch, tag, or commit to inspect (defaults to "HEAD")
+
+    Results: InspectLibraryRepoResultSuccess (with library metadata) | InspectLibraryRepoResultFailure (invalid URL, network error, no library JSON found)
+    """
+
+    git_url: str
+    ref: str = "HEAD"
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library repository inspection completed successfully.
+
+    Args:
+        library_schema: Complete library schema with all metadata (name, version, nodes, categories, dependencies, settings, etc.)
+        commit_sha: Git commit SHA that was inspected
+        git_url: Git URL that was inspected (normalized)
+        ref: Git reference that was inspected
+    """
+
+    library_schema: LibrarySchema
+    commit_sha: str
+    git_url: str
+    ref: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library repository inspection failed. Common causes: invalid git URL, network error, no library JSON found, invalid JSON format."""
