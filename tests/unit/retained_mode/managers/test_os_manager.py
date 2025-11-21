@@ -162,8 +162,15 @@ class TestWriteFileRequest:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
-        # Attempting to write to a directory path should fail with IS_DIRECTORY
-        assert result.failure_reason == FileIOFailureReason.IS_DIRECTORY
+        # Attempting to write to a directory path should fail
+        # Windows raises PermissionError, Unix/macOS raises IsADirectoryError
+        if platform.system() == "Windows":
+            assert result.failure_reason in (
+                FileIOFailureReason.IS_DIRECTORY,
+                FileIOFailureReason.PERMISSION_DENIED,
+            )
+        else:
+            assert result.failure_reason == FileIOFailureReason.IS_DIRECTORY
 
     def test_write_file_permission_denied(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test permission denied error."""
