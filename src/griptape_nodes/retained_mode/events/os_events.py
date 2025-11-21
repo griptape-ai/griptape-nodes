@@ -37,6 +37,7 @@ class FileIOFailureReason(StrEnum):
     # Permission/access errors
     PERMISSION_DENIED = "permission_denied"  # No read/write permission
     FILE_NOT_FOUND = "file_not_found"  # File doesn't exist (read operations)
+    FILE_LOCKED = "file_locked"  # File is locked by another process
 
     # Resource errors
     DISK_FULL = "disk_full"  # Insufficient disk space
