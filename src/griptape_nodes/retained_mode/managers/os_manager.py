@@ -139,16 +139,27 @@ class FilenameParts(NamedTuple):
     extension: str
 
 
-class PathValidationError(NamedTuple):
-    """Path validation failure details.
+class FilePathValidationError(Exception):
+    """Raised when file path validation fails before write operation.
 
-    Attributes:
-        reason: Classification of why validation failed
-        message: Human-readable error message
+    This exception is raised by validation methods when a file path
+    is unsuitable for writing due to policy violations, missing parent
+    directories, or invalid path types.
     """
 
-    reason: FileIOFailureReason
-    message: str
+    def __init__(
+        self,
+        message: str,
+        reason: FileIOFailureReason,
+    ) -> None:
+        """Initialize FilePathValidationError.
+
+        Args:
+            message: Human-readable error message
+            reason: Classification of why validation failed
+        """
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -326,13 +337,13 @@ class OSManager:
                 error_details=str(e),
             )
 
-    def _validate_file_path_for_write(  # noqa: PLR0911
+    def _validate_file_path_for_write(
         self,
         file_path: Path,
         *,
         check_not_exists: bool,
         create_parents: bool,
-    ) -> None | PathValidationError:
+    ) -> None:
         """Validate file path is suitable for writing.
 
         Checks:
@@ -345,61 +356,62 @@ class OSManager:
             check_not_exists: If True, fail if file already exists (FAIL policy)
             create_parents: If True, parent creation allowed (policy check only)
 
-        Returns:
-            None: Validation passed
-            PathValidationError: Details about validation failure
+        Raises:
+            FilePathValidationError: If validation fails, contains reason and message
 
         Examples:
             # FAIL policy: check file doesn't exist
-            error = self._validate_file_path_for_write(path, check_not_exists=True, create_parents=True)
+            try:
+                self._validate_file_path_for_write(path, check_not_exists=True, create_parents=True)
+            except FilePathValidationError as e:
+                # Handle validation failure: e.reason, str(e)
+                pass
 
             # OVERWRITE policy: existence OK
-            error = self._validate_file_path_for_write(path, check_not_exists=False, create_parents=False)
+            self._validate_file_path_for_write(path, check_not_exists=False, create_parents=False)
         """
         normalized_path = self.normalize_path_for_platform(file_path)
 
         # Check if path is a directory
         try:
             if Path(normalized_path).is_dir():
-                return PathValidationError(
-                    reason=FileIOFailureReason.IS_DIRECTORY,
+                raise FilePathValidationError(
                     message=f"Path is a directory, not a file: {file_path}",
+                    reason=FileIOFailureReason.IS_DIRECTORY,
                 )
         except OSError as e:
-            return PathValidationError(
-                reason=FileIOFailureReason.IO_ERROR,
+            raise FilePathValidationError(
                 message=f"Error checking if path is directory {file_path}: {e}",
-            )
+                reason=FileIOFailureReason.IO_ERROR,
+            ) from e
 
         # Check if file exists (FAIL policy only)
         if check_not_exists:
             try:
-                if os.path.exists(normalized_path):  # noqa: PTH110
-                    return PathValidationError(
-                        reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+                if Path(normalized_path).exists():
+                    raise FilePathValidationError(
                         message=f"File exists and existing_file_policy is FAIL: {file_path}",
+                        reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
                     )
             except OSError as e:
-                return PathValidationError(
-                    reason=FileIOFailureReason.IO_ERROR,
+                raise FilePathValidationError(
                     message=f"Error checking if file exists {file_path}: {e}",
-                )
+                    reason=FileIOFailureReason.IO_ERROR,
+                ) from e
 
         # Check parent directory exists or can be created
         parent_normalized = self.normalize_path_for_platform(file_path.parent)
         try:
-            if not os.path.exists(parent_normalized) and not create_parents:  # noqa: PTH110
-                return PathValidationError(
-                    reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS,
+            if not Path(parent_normalized).exists() and not create_parents:
+                raise FilePathValidationError(
                     message=f"Parent directory does not exist and create_parents is False: {file_path.parent}",
+                    reason=FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS,
                 )
         except OSError as e:
-            return PathValidationError(
-                reason=FileIOFailureReason.IO_ERROR,
+            raise FilePathValidationError(
                 message=f"Error checking parent directory {file_path.parent}: {e}",
-            )
-
-        return None
+                reason=FileIOFailureReason.IO_ERROR,
+            ) from e
 
     def _validate_workspace_path(self, path: Path) -> tuple[bool, Path]:
         """Check if a path is within workspace and return relative path if it is.
@@ -1743,8 +1755,8 @@ class OSManager:
         if create_parents:
             parent_normalized = self.normalize_path_for_platform(file_path.parent)
             try:
-                if not os.path.exists(parent_normalized):  # noqa: PTH110
-                    os.makedirs(parent_normalized, exist_ok=True)  # noqa: PTH103
+                if not Path(parent_normalized).exists():
+                    Path(parent_normalized).mkdir(parents=True, exist_ok=True)
             except PermissionError:
                 return FileIOFailureReason.PERMISSION_DENIED
             except OSError:
@@ -1934,7 +1946,7 @@ class OSManager:
         shutil.copy2(src_normalized, dest_normalized)
 
         # Return size of copied file
-        return os.path.getsize(src_normalized)  # noqa: PTH202
+        return Path(src_normalized).stat().st_size
 
     @staticmethod
     def get_disk_space_info(path: Path) -> DiskSpaceInfo:
