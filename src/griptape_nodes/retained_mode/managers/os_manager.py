@@ -1356,55 +1356,67 @@ class OSManager:
         # Initialize success tracking variables
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
+        used_indexed_fallback = False
 
+        # COMMON SETUP: Resolve path for all policies
+        # Resolve MacroPath → str
+        if isinstance(request.file_path, MacroPath):
+            resolution_result = self._resolve_macro_path_to_string(request.file_path)
+            if isinstance(resolution_result, MacroResolutionFailure):
+                path_display = f"{request.file_path.parsed_macro}"
+                msg = f"Attempted to write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
+                return WriteFileResultFailure(
+                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                    missing_variables=resolution_result.missing_variables,
+                    result_details=msg,
+                )
+            resolved_path_str = resolution_result
+            path_display = f"{request.file_path.parsed_macro}"
+        else:
+            resolved_path_str = request.file_path
+            path_display = request.file_path
+
+        # Convert str → Path
+        try:
+            file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to write to file '{path_display}'. Failed due to invalid path: {e}"
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+        except Exception as e:
+            msg = f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
+            return WriteFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR,
+                result_details=msg,
+            )
+
+        # Ensure parent directory is ready
+        parent_failure_reason = self._ensure_parent_directory_ready(
+            file_path,
+            create_parents=request.create_parents,
+        )
+        if parent_failure_reason is not None:
+            match parent_failure_reason:
+                case FileIOFailureReason.PERMISSION_DENIED:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied creating parent directory {file_path.parent}"
+                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to parent directory does not exist: {file_path.parent}"
+                case _:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to error creating parent directory {file_path.parent}"
+            return WriteFileResultFailure(
+                failure_reason=parent_failure_reason,
+                result_details=msg,
+            )
+
+        # Normalize path
+        normalized_path = self.normalize_path_for_platform(file_path)
+
+        # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:
             case ExistingFilePolicy.FAIL | ExistingFilePolicy.OVERWRITE:
-                # Resolve MacroPath if needed
-                if isinstance(request.file_path, MacroPath):
-                    resolution_result = self._resolve_macro_path_to_string(request.file_path)
-                    if isinstance(resolution_result, MacroResolutionFailure):
-                        path_display = f"{request.file_path.parsed_macro}"
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
-                        logger.error(msg)
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
-                            missing_variables=resolution_result.missing_variables,
-                            result_details=msg,
-                        )
-                    resolved_path_str = resolution_result
-                else:
-                    resolved_path_str = request.file_path
-
-                # Convert to Path object
-                try:
-                    file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
-                except (ValueError, RuntimeError) as e:
-                    msg = f"Attempted to write to file '{resolved_path_str}'. Failed due to invalid path: {e}"
-                    logger.error(msg)
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.INVALID_PATH,
-                        result_details=msg,
-                    )
-
-                # Ensure parent directory is ready
-                parent_failure_reason = self._ensure_parent_directory_ready(
-                    file_path,
-                    create_parents=request.create_parents,
-                )
-                if parent_failure_reason is not None:
-                    if parent_failure_reason == FileIOFailureReason.PERMISSION_DENIED:
-                        msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied creating parent directory {file_path.parent}"
-                    elif parent_failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                        msg = f"Attempted to write to file '{file_path}'. Failed due to parent directory does not exist: {file_path.parent}"
-                    else:
-                        msg = f"Attempted to write to file '{file_path}'. Failed due to error creating parent directory {file_path.parent}"
-                    logger.error(msg)
-                    return WriteFileResultFailure(
-                        failure_reason=parent_failure_reason,
-                        result_details=msg,
-                    )
-
-                normalized_path = self.normalize_path_for_platform(file_path)
+                # Path already validated and ready to use
 
                 # Determine write mode based on policy
                 if request.existing_file_policy == ExistingFilePolicy.FAIL:
@@ -1422,16 +1434,20 @@ class OSManager:
                     )
                 except FileExistsError:
                     msg = f"Attempted to write to file '{file_path}'. Failed due to file already exists (policy: fail if exists)"
-                    logger.error(msg)
                     return WriteFileResultFailure(
                         failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
                         result_details=msg,
                     )
                 except portalocker.LockException:
                     msg = f"Attempted to write to file '{file_path}'. Failed due to file locked by another process"
-                    logger.error(msg)
                     return WriteFileResultFailure(
                         failure_reason=FileIOFailureReason.FILE_LOCKED,
+                        result_details=msg,
+                    )
+                except Exception as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR,
                         result_details=msg,
                     )
 
@@ -1440,106 +1456,68 @@ class OSManager:
                 final_bytes_written = bytes_written
 
             case ExistingFilePolicy.CREATE_NEW:
-                # Handle string paths specially: try base path first, then indexed
-                if isinstance(request.file_path, str):
-                    # Build candidate list: base path + indexed paths
-                    try:
-                        base_path = self._resolve_file_path(request.file_path, workspace_only=False)
-                    except (ValueError, RuntimeError) as e:
-                        msg = f"Attempted to write to file '{request.file_path}'. Failed due to invalid path: {e}"
-                        logger.error(msg)
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
-                            result_details=msg,
-                        )
+                # Path already validated and ready to use (handled at method top)
 
-                    # Start with base path, then add indexed paths
-                    candidates = [str(base_path)]
-
-                    # Convert to indexed MacroPath for scanning
-                    macro_path = self._convert_str_path_to_macro_with_index(request.file_path)
+                # TRY-FIRST: Attempt to write to the requested path
+                try:
+                    bytes_written = self._write_with_portalocker(
+                        normalized_path,
+                        request.content,
+                        request.encoding,
+                        mode="x",
+                    )
+                    # Success on first try!
+                    final_file_path = file_path
+                    final_bytes_written = bytes_written
+                except (FileExistsError, portalocker.LockException):
+                    # FILE EXISTS OR IS LOCKED. ATTEMPT TO FIND THE NEXT AVAILABLE.
+                    # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
+                    # we'll take their file name and turn it into a macro that appends _<index> to it.
+                    # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
+                    macro_path = (
+                        self._convert_str_path_to_macro_with_index(request.file_path)
+                        if isinstance(request.file_path, str)
+                        else request.file_path
+                    )
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
-
-                    # Identify index variable
-                    try:
-                        index_info = self._identify_index_variable(parsed_macro, variables)
-                    except ValueError as e:
-                        msg = f"Attempted to write to file '{request.file_path}'. Failed due to {e}"
-                        logger.error(msg)
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
-                            result_details=msg,
-                        )
-
-                    if index_info is None:
-                        msg = f"Attempted to write to file '{request.file_path}'. Failed due to no index variable found in path template"
-                        logger.error(msg)
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
-                            result_details=msg,
-                        )
-
-                    # Scan for starting index (starts at 1 for required index)
-                    starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
-
-                    # Add indexed candidates
-                    secrets_manager = GriptapeNodes.SecretsManager()
-                    start_idx = starting_index if starting_index is not None else 1
-                    for idx in range(start_idx, start_idx + 1000):
-                        try:
-                            index_vars = {**variables, index_info.info.name: idx}
-                            indexed_filename = parsed_macro.resolve(index_vars, secrets_manager)
-                            candidates.append(indexed_filename)
-                        except MacroResolutionError as e:
-                            msg = f"Attempted to write to file '{request.file_path}'. Failed due to unable to resolve path template with index {idx}: {e}"
-                            logger.error(msg)
-                            return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
-                                result_details=msg,
-                            )
-                else:
-                    # MacroPath provided directly
-                    macro_path = request.file_path
-                    parsed_macro = macro_path.parsed_macro
-                    variables = macro_path.variables
-                    path_display = f"{parsed_macro}"
 
                     # Identify index variable
                     try:
                         index_info = self._identify_index_variable(parsed_macro, variables)
                     except ValueError as e:
                         msg = f"Attempted to write to file '{path_display}'. Failed due to {e}"
-                        logger.error(msg)
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.INVALID_PATH,
+                            result_details=msg,
+                        )
+                    except Exception as e:
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
+                        return WriteFileResultFailure(
+                            failure_reason=FileIOFailureReason.IO_ERROR,
                             result_details=msg,
                         )
 
                     if index_info is None:
                         msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
-                        logger.error(msg)
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.INVALID_PATH,
                             result_details=msg,
                         )
 
+                    # We have a macro with one and only one index variable on it. The heuristic here is:
+                    # 1. Find the FIRST available file name with our index
+                    # 2. Build a list of candidates that fit the index. The user could have specified
+                    #    using the index value as a DIRECTORY, so it's not always output_1, output_2, etc.
+                    # 3. We build this candidate list instead of doing a for loop so we don't have to keep
+                    #    hitting the file system until we're actually ready to roll. This reduces collision overhead.
+
                     # Scan for starting index
                     starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
 
-                    # Build list of candidate paths to try
+                    # Build indexed candidates
                     secrets_manager = GriptapeNodes.SecretsManager()
                     candidates = []
-
-                    if starting_index is None:
-                        # Try base filename first (optional index)
-                        try:
-                            base_filename = parsed_macro.resolve(variables, secrets_manager)
-                            candidates.append(base_filename)
-                        except MacroResolutionError:
-                            pass
-
-                    # Add indexed candidates
                     start_idx = starting_index if starting_index is not None else 1
                     for idx in range(start_idx, start_idx + 1000):
                         try:
@@ -1548,70 +1526,89 @@ class OSManager:
                             candidates.append(indexed_filename)
                         except MacroResolutionError as e:
                             msg = f"Attempted to write to file '{path_display}'. Failed due to unable to resolve path template with index {idx}: {e}"
-                            logger.error(msg)
                             return WriteFileResultFailure(
                                 failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
                                 result_details=msg,
                             )
+                        except Exception as e:
+                            msg = f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                result_details=msg,
+                            )
 
-                # Try each candidate with atomic lock (mode='x')
-                original_path = (
-                    request.file_path if isinstance(request.file_path, str) else f"{request.file_path.parsed_macro}"
-                )
-                for candidate_str in candidates:
-                    try:
-                        candidate_path = self._resolve_file_path(candidate_str, workspace_only=False)
-                    except (ValueError, RuntimeError) as e:
-                        msg = f"Attempted to write to file '{candidate_str}'. Failed due to invalid path: {e}"
-                        logger.error(msg)
+                    # Try each indexed candidate
+                    for candidate_str in candidates:
+                        try:
+                            candidate_path = self._resolve_file_path(candidate_str, workspace_only=False)
+                        except (ValueError, RuntimeError) as e:
+                            msg = f"Attempted to write to file '{candidate_str}'. Failed due to invalid path: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.INVALID_PATH,
+                                result_details=msg,
+                            )
+                        except Exception as e:
+                            msg = f"Attempted to write to file '{candidate_str}'. Failed due to unexpected error: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                result_details=msg,
+                            )
+
+                        # Ensure parent directory for this candidate
+                        parent_failure_reason = self._ensure_parent_directory_ready(
+                            candidate_path,
+                            create_parents=request.create_parents,
+                        )
+                        if parent_failure_reason is not None:
+                            match parent_failure_reason:
+                                case FileIOFailureReason.PERMISSION_DENIED:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to parent directory does not exist: {candidate_path.parent}"
+                                case _:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+                            return WriteFileResultFailure(
+                                failure_reason=parent_failure_reason,
+                                result_details=msg,
+                            )
+
+                        normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
+
+                        # Try to write this indexed candidate
+                        try:
+                            bytes_written = self._write_with_portalocker(
+                                normalized_candidate_path,
+                                request.content,
+                                request.encoding,
+                                mode="x",
+                            )
+                            # Success with indexed path!
+                            final_file_path = candidate_path
+                            final_bytes_written = bytes_written
+                            used_indexed_fallback = True
+                            break
+                        except FileExistsError:
+                            # File already exists; skip to next candidate.
+                            continue
+                        except portalocker.LockException:
+                            # Somebody else is writing to this file; skip to next candidate.
+                            continue
+                        except Exception as e:
+                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to unexpected error: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                result_details=msg,
+                            )
+
+                    # Check if we exhausted all indexed candidates
+                    if final_file_path is None:
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to could not find available filename after trying {len(candidates)} candidates"
                         return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
+                            failure_reason=FileIOFailureReason.IO_ERROR,
                             result_details=msg,
                         )
-
-                    # Ensure parent directory is ready
-                    parent_failure_reason = self._ensure_parent_directory_ready(
-                        candidate_path,
-                        create_parents=request.create_parents,
-                    )
-                    if parent_failure_reason is not None:
-                        if parent_failure_reason == FileIOFailureReason.PERMISSION_DENIED:
-                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                        elif parent_failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to parent directory does not exist: {candidate_path.parent}"
-                        else:
-                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                        logger.error(msg)
-                        return WriteFileResultFailure(
-                            failure_reason=parent_failure_reason,
-                            result_details=msg,
-                        )
-
-                    normalized_path = self.normalize_path_for_platform(candidate_path)
-
-                    # Try to atomically create and lock the file
-                    try:
-                        bytes_written = self._write_with_portalocker(
-                            normalized_path,
-                            request.content,
-                            request.encoding,
-                            mode="x",
-                        )
-                        # Success - set variables for return at end
-                        final_file_path = candidate_path
-                        final_bytes_written = bytes_written
-                        break
-                    except FileExistsError:
-                        # File already exists - try next candidate
-                        continue
-                    except portalocker.LockException:
-                        # File is locked - try next candidate
-                        continue
-
-                # Check if we succeeded or exhausted all candidates
-                if final_file_path is None:
-                    msg = f"Attempted to write to file '{original_path}'. Failed due to could not find available filename after trying {len(candidates)} candidates"
-                    logger.error(msg)
+                except Exception as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
                     return WriteFileResultFailure(
                         failure_reason=FileIOFailureReason.IO_ERROR,
                         result_details=msg,
@@ -1621,10 +1618,17 @@ class OSManager:
         if final_file_path is None or final_bytes_written is None:
             msg = "Internal error: success path reached but file path or bytes not set"
             raise RuntimeError(msg)
+
+        if used_indexed_fallback:
+            msg = f"File written to indexed path: {final_file_path} (original path '{path_display}' already existed)"
+            result_details = ResultDetails(message=msg, level=logging.WARNING)
+        else:
+            result_details = f"File written successfully: {final_file_path}"
+
         return WriteFileResultSuccess(
             final_file_path=str(final_file_path),
             bytes_written=final_bytes_written,
-            result_details=f"File written successfully: {final_file_path}",
+            result_details=result_details,
         )
 
     def _ensure_parent_directory_ready(
