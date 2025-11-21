@@ -101,6 +101,20 @@ class FileContentResult(NamedTuple):
     file_size: int
 
 
+class FileWriteAttemptResult(NamedTuple):
+    """Result of attempting to write a file.
+
+    Possible outcomes:
+    - Success: bytes_written is set, failure_reason and error_message are None
+    - Continue: all fields are None (file exists/locked but caller wants to continue)
+    - Failure: failure_reason and error_message are set, bytes_written is None
+    """
+
+    bytes_written: int | None
+    failure_reason: FileIOFailureReason | None
+    error_message: str | None
+
+
 @dataclass
 class CopyTreeValidationResult:
     """Result from validating copy tree paths."""
@@ -1511,76 +1525,51 @@ class OSManager:
                 else:
                     mode = "a" if request.append else "w"  # Append or overwrite
 
-                # Perform the write operation
-                try:
-                    bytes_written = self._write_with_portalocker(
-                        normalized_path,
-                        request.content,
-                        request.encoding,
-                        mode=mode,
-                    )
-                except FileExistsError:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to file already exists (policy: fail if exists)"
+                # Perform the write operation using helper
+                result = self._attempt_file_write(
+                    normalized_path=Path(normalized_path),
+                    content=request.content,
+                    encoding=request.encoding,
+                    mode=mode,
+                    file_path_display=file_path,
+                    fail_if_file_exists=True,  # FAIL policy always fails on file exists
+                    fail_if_file_locked=True,
+                )
+                if result.failure_reason is not None:
+                    # error_message is guaranteed to be set when failure_reason is set
                     return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
-                        result_details=msg,
-                    )
-                except portalocker.LockException:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to file locked by another process"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.FILE_LOCKED,
-                        result_details=msg,
-                    )
-                except PermissionError as e:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.PERMISSION_DENIED,
-                        result_details=msg,
-                    )
-                except IsADirectoryError as e:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to path is a directory: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.IS_DIRECTORY,
-                        result_details=msg,
-                    )
-                except Exception as e:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.IO_ERROR,
-                        result_details=msg,
+                        failure_reason=result.failure_reason,
+                        result_details=result.error_message,  # type: ignore[arg-type]
                     )
 
                 # Success - set variables for return at end
                 final_file_path = file_path
-                final_bytes_written = bytes_written
+                final_bytes_written = result.bytes_written
 
             case ExistingFilePolicy.CREATE_NEW:
                 # Path already validated and ready to use (handled at method top)
 
                 # TRY-FIRST: Attempt to write to the requested path
-                try:
-                    bytes_written = self._write_with_portalocker(
-                        normalized_path,
-                        request.content,
-                        request.encoding,
-                        mode="x",
+                result = self._attempt_file_write(
+                    normalized_path=Path(normalized_path),
+                    content=request.content,
+                    encoding=request.encoding,
+                    mode="x",
+                    file_path_display=file_path,
+                    fail_if_file_exists=False,  # Fall back to indexed
+                    fail_if_file_locked=False,  # Fall back to indexed
+                )
+                if result.failure_reason is not None:
+                    # error_message is guaranteed to be set when failure_reason is set
+                    return WriteFileResultFailure(
+                        failure_reason=result.failure_reason,
+                        result_details=result.error_message,  # type: ignore[arg-type]
                     )
+                if result.bytes_written is not None:
                     # Success on first try!
                     final_file_path = file_path
-                    final_bytes_written = bytes_written
-                except PermissionError as e:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.PERMISSION_DENIED,
-                        result_details=msg,
-                    )
-                except IsADirectoryError as e:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to path is a directory: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.IS_DIRECTORY,
-                        result_details=msg,
-                    )
-                except (FileExistsError, portalocker.LockException):
+                    final_bytes_written = result.bytes_written
+                else:
                     # FILE EXISTS OR IS LOCKED. ATTEMPT TO FIND THE NEXT AVAILABLE.
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
                     # we'll take their file name and turn it into a macro that appends _<index> to it.
@@ -1687,45 +1676,29 @@ class OSManager:
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
-                        # Try to write this indexed candidate
-                        try:
-                            bytes_written = self._write_with_portalocker(
-                                normalized_candidate_path,
-                                request.content,
-                                request.encoding,
-                                mode="x",
+                        # Try to write this indexed candidate using helper
+                        result = self._attempt_file_write(
+                            normalized_path=Path(normalized_candidate_path),
+                            content=request.content,
+                            encoding=request.encoding,
+                            mode="x",
+                            file_path_display=candidate_path,
+                            fail_if_file_exists=False,  # Try next candidate
+                            fail_if_file_locked=False,  # Try next candidate
+                        )
+                        if result.failure_reason is not None:
+                            # error_message is guaranteed to be set when failure_reason is set
+                            return WriteFileResultFailure(
+                                failure_reason=result.failure_reason,
+                                result_details=result.error_message,  # type: ignore[arg-type]
                             )
+                        if result.bytes_written is not None:
                             # Success with indexed path!
                             final_file_path = candidate_path
-                            final_bytes_written = bytes_written
+                            final_bytes_written = result.bytes_written
                             used_indexed_fallback = True
                             break
-                        except FileExistsError:
-                            # File already exists; skip to next candidate.
-                            continue
-                        except portalocker.LockException:
-                            # Somebody else is writing to this file; skip to next candidate.
-                            continue
-                        except PermissionError as e:
-                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied: {e}"
-                            return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.PERMISSION_DENIED,
-                                result_details=msg,
-                            )
-                        except IsADirectoryError as e:
-                            msg = (
-                                f"Attempted to write to file '{candidate_path}'. Failed due to path is a directory: {e}"
-                            )
-                            return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.IS_DIRECTORY,
-                                result_details=msg,
-                            )
-                        except Exception as e:
-                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to unexpected error: {e}"
-                            return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.IO_ERROR,
-                                result_details=msg,
-                            )
+                        # else: continue to next candidate
 
                     # Check if we exhausted all indexed candidates
                     if final_file_path is None:
@@ -1734,13 +1707,6 @@ class OSManager:
                             failure_reason=FileIOFailureReason.IO_ERROR,
                             result_details=msg,
                         )
-                except Exception as e:
-                    # Blanket handler for initial write failure (not a collision, an actual I/O failure).
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
-                    return WriteFileResultFailure(
-                        failure_reason=FileIOFailureReason.IO_ERROR,
-                        result_details=msg,
-                    )
 
         # SUCCESS PATH: All three policies converge here
         if final_file_path is None or final_bytes_written is None:
@@ -1787,6 +1753,97 @@ class OSManager:
             return FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
 
         return None
+
+    def _attempt_file_write(  # noqa: PLR0911, PLR0913
+        self,
+        normalized_path: Path,
+        content: str | bytes,
+        encoding: str,
+        mode: str,
+        file_path_display: str | Path,
+        *,
+        fail_if_file_exists: bool,
+        fail_if_file_locked: bool,
+    ) -> FileWriteAttemptResult:
+        """Attempt to write a file with unified exception handling.
+
+        Args:
+            normalized_path: The normalized path to write to
+            content: Content to write (str or bytes)
+            encoding: Encoding for text content
+            mode: Write mode ("x", "w", "a")
+            file_path_display: Path to use in error messages
+            fail_if_file_exists: If True, return failure when file exists; if False, return continue signal
+            fail_if_file_locked: If True, return failure when file is locked; if False, return continue signal
+
+        Returns:
+            FileWriteAttemptResult with one of:
+            - Success: bytes_written is set, failure_reason and error_message are None
+            - Continue: all fields are None (file exists/locked but caller wants to continue)
+            - Failure: failure_reason and error_message are set, bytes_written is None
+        """
+        try:
+            bytes_written = self._write_with_portalocker(
+                str(normalized_path),
+                content,
+                encoding,
+                mode=mode,
+            )
+            # Success!
+            return FileWriteAttemptResult(
+                bytes_written=bytes_written,
+                failure_reason=None,
+                error_message=None,
+            )
+        except FileExistsError:
+            if fail_if_file_exists:
+                msg = f"Attempted to write to file '{file_path_display}'. Failed due to file already exists (policy: fail if exists)"
+                return FileWriteAttemptResult(
+                    bytes_written=None,
+                    failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+                    error_message=msg,
+                )
+            # Continue signal - caller should try next candidate or fallback
+            return FileWriteAttemptResult(
+                bytes_written=None,
+                failure_reason=None,
+                error_message=None,
+            )
+        except portalocker.LockException:
+            if fail_if_file_locked:
+                msg = f"Attempted to write to file '{file_path_display}'. Failed due to file locked by another process"
+                return FileWriteAttemptResult(
+                    bytes_written=None,
+                    failure_reason=FileIOFailureReason.FILE_LOCKED,
+                    error_message=msg,
+                )
+            # Continue signal - caller should try next candidate or fallback
+            return FileWriteAttemptResult(
+                bytes_written=None,
+                failure_reason=None,
+                error_message=None,
+            )
+        except PermissionError as e:
+            msg = f"Attempted to write to file '{file_path_display}'. Failed due to permission denied: {e}"
+            return FileWriteAttemptResult(
+                bytes_written=None,
+                failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                error_message=msg,
+            )
+        except IsADirectoryError as e:
+            msg = f"Attempted to write to file '{file_path_display}'. Failed due to path is a directory: {e}"
+            return FileWriteAttemptResult(
+                bytes_written=None,
+                failure_reason=FileIOFailureReason.IS_DIRECTORY,
+                error_message=msg,
+            )
+        except Exception as e:
+            msg = f"Attempted to write to file '{file_path_display}'. Failed due to unexpected error: {e}"
+            return FileWriteAttemptResult(
+                bytes_written=None,
+                failure_reason=FileIOFailureReason.IO_ERROR,
+                error_message=msg,
+            )
 
     def _write_with_portalocker(  # noqa: C901
         self, normalized_path: str, content: str | bytes, encoding: str, *, mode: str
