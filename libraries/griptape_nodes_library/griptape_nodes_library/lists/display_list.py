@@ -194,6 +194,8 @@ class DisplayList(ControlNode):
         if item_type == "dict":
             ui_options["multiline"] = True
             ui_options["placeholder_text"] = "The dictionary content will be displayed here."
+        elif item_type == "ImageUrlArtifact":
+            ui_options["display"] = "image"
 
         # We have to change all three because parameters are created with all three initialized.
         self.items_list.type = item_type
