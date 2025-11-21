@@ -3055,22 +3055,9 @@ class LibraryManager:
 
         # Perform sparse checkout to get library JSON
         try:
-            library_version, commit_sha, json_file_path = sparse_checkout_library_json(normalized_url, ref)
+            library_version, commit_sha, library_data_raw = sparse_checkout_library_json(normalized_url, ref)
         except GitCloneError as e:
             details = f"Failed to inspect library from {normalized_url}: {e}"
-            logger.error(details)
-            return InspectLibraryRepoResultFailure(result_details=details)
-
-        # Parse the library JSON file
-        try:
-            with json_file_path.open() as f:
-                library_data_raw = json.load(f)
-        except json.JSONDecodeError as e:
-            details = f"Invalid JSON in library file from {normalized_url}: {e}"
-            logger.error(details)
-            return InspectLibraryRepoResultFailure(result_details=details)
-        except OSError as e:
-            details = f"Failed to read library file from {normalized_url}: {e}"
             logger.error(details)
             return InspectLibraryRepoResultFailure(result_details=details)
 

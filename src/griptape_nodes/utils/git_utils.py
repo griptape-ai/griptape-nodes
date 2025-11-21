@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import subprocess
@@ -825,7 +826,7 @@ def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
     return library_data["metadata"]["library_version"]
 
 
-def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, Path]:
+def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, dict]:
     """Perform sparse checkout to fetch only library JSON file from a git repository.
 
     This is optimized for checking library updates without downloading the entire repository.
@@ -837,7 +838,7 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
         ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
 
     Returns:
-        tuple[str, str, Path]: A tuple of (library_version, commit_sha, json_file_path).
+        tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
 
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
@@ -899,8 +900,16 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
             rev_parse_result = _run_git_command(["git", "rev-parse", "HEAD"], temp_dir, "Git rev-parse failed")
             commit_sha = rev_parse_result.stdout.strip()
 
+            # Read the JSON data before temp directory is deleted
+            try:
+                with library_json_path.open() as f:
+                    library_data = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                msg = f"Failed to read library file from {remote_url}: {e}"
+                raise GitCloneError(msg) from e
+
         except subprocess.SubprocessError as e:
             msg = f"Subprocess error during sparse checkout from {remote_url}: {e}"
             raise GitCloneError(msg) from e
         else:
-            return (library_version, commit_sha, library_json_path)
+            return (library_version, commit_sha, library_data)
