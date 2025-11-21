@@ -121,12 +121,15 @@ class DisplayList(ControlNode):
             item: The item value to set
             item_specific_type: The detected type of the item
         """
-        # Update the output type for this parameter
+        # Update all type fields for this parameter
         if item_specific_type == ParameterTypeBuiltin.ANY.value:
             new_output_type = ParameterTypeBuiltin.ALL.value
         else:
             new_output_type = item_specific_type
+
+        parameter.type = item_specific_type
         parameter.output_type = new_output_type
+        parameter.input_types = [item_specific_type]
 
         # Set UI options based on type
         if item_specific_type == "ImageUrlArtifact":
@@ -150,12 +153,15 @@ class DisplayList(ControlNode):
             item_specific_type: The detected type of the item
         """
         new_child = self.items_list.add_child_parameter()
-        # Set the output type for the new child parameter
+        # Set all type fields for the new child parameter
         if item_specific_type == ParameterTypeBuiltin.ANY.value:
             new_output_type = ParameterTypeBuiltin.ALL.value
         else:
             new_output_type = item_specific_type
+
+        new_child.type = item_specific_type
         new_child.output_type = new_output_type
+        new_child.input_types = [item_specific_type]
 
         # Set UI options based on type
         if item_specific_type == "ImageUrlArtifact":
