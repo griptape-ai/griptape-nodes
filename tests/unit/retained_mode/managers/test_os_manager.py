@@ -150,16 +150,19 @@ class TestWriteFileRequest:
         assert isinstance(result, WriteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS
 
-    def test_write_file_invalid_path(self, griptape_nodes: GriptapeNodes) -> None:
-        """Test invalid path handling - empty path resolves to directory."""
+    def test_write_file_invalid_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test invalid path handling - attempting to write to a directory."""
         os_manager = griptape_nodes.OSManager()
-        # Empty string resolves to current directory, which is a directory not a file
-        request = WriteFileRequest(file_path="", content="Content")
+        # Create a directory and try to write to it as if it were a file
+        dir_path = temp_dir / "test_directory"
+        dir_path.mkdir()
+
+        request = WriteFileRequest(file_path=str(dir_path), content="Content")
 
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultFailure)
-        # Empty path resolves to directory, so we get IS_DIRECTORY error
+        # Attempting to write to a directory path should fail with IS_DIRECTORY
         assert result.failure_reason == FileIOFailureReason.IS_DIRECTORY
 
     def test_write_file_permission_denied(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
