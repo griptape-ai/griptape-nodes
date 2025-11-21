@@ -5,9 +5,17 @@ from typing import Any
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import (
+    NodeMessagePayload,
+    NodeMessageResult,
+    Parameter,
+    ParameterGroup,
+    ParameterMode,
+)
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -74,7 +82,15 @@ class CropImage(ControlNode):
                 ui_options={"crop_image": True},
             )
         )
-
+        self.add_parameter(
+            ParameterButton(
+                name="crop_button",
+                label="Open Crop Editor",
+                variant="secondary",
+                icon="crop",
+                on_click=self._open_crop_modal,
+            )
+        )
         with ParameterGroup(name="crop_coordinates", ui_options={"collapsed": False}) as crop_coordinates:
             Parameter(
                 name="left",
@@ -159,6 +175,26 @@ class CropImage(ControlNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Cropped output image",
             )
+        )
+
+    def _open_crop_modal(self, _button: Button, _details: ButtonDetailsMessagePayload) -> NodeMessageResult:
+        """Open the crop modal in the frontend."""
+        # Create the open_modal payload structure
+        open_modal_data = {
+            "modal_type": "crop",
+            "node_name": self.name,
+            "parameter_name": "input_image",
+        }
+
+        # Create payload with open_modal structure
+        payload = NodeMessagePayload(data={"open_modal": open_modal_data})
+
+        # Return NodeMessageResult with the payload
+        return NodeMessageResult(
+            success=True,
+            details="Opening crop modal",
+            response=payload,
+            altered_workflow_state=False,
         )
 
     def _crop(self) -> None:
