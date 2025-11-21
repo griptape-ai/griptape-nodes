@@ -1353,6 +1353,10 @@ class OSManager:
 
     def on_write_file_request(self, request: WriteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Handle a request to write content to a file with exclusive locking."""
+        # Initialize success tracking variables
+        final_file_path: Path | None = None
+        final_bytes_written: int | None = None
+
         match request.existing_file_policy:
             case ExistingFilePolicy.FAIL | ExistingFilePolicy.OVERWRITE:
                 # Resolve MacroPath if needed
@@ -1431,12 +1435,9 @@ class OSManager:
                         result_details=msg,
                     )
 
-                # SUCCESS
-                return WriteFileResultSuccess(
-                    final_file_path=str(file_path),
-                    bytes_written=bytes_written,
-                    result_details=f"File written successfully: {file_path}",
-                )
+                # Success - set variables for return at end
+                final_file_path = file_path
+                final_bytes_written = bytes_written
 
             case ExistingFilePolicy.CREATE_NEW:
                 # Handle string paths specially: try base path first, then indexed
@@ -1596,12 +1597,10 @@ class OSManager:
                             request.encoding,
                             mode="x",
                         )
-                        # Success! Return the result
-                        return WriteFileResultSuccess(
-                            final_file_path=str(candidate_path),
-                            bytes_written=bytes_written,
-                            result_details=f"File written successfully: {candidate_path}",
-                        )
+                        # Success - set variables for return at end
+                        final_file_path = candidate_path
+                        final_bytes_written = bytes_written
+                        break
                     except FileExistsError:
                         # File already exists - try next candidate
                         continue
@@ -1609,13 +1608,24 @@ class OSManager:
                         # File is locked - try next candidate
                         continue
 
-                # Exhausted all candidates
-                msg = f"Attempted to write to file '{original_path}'. Failed due to could not find available filename after trying {len(candidates)} candidates"
-                logger.error(msg)
-                return WriteFileResultFailure(
-                    failure_reason=FileIOFailureReason.IO_ERROR,
-                    result_details=msg,
-                )
+                # Check if we succeeded or exhausted all candidates
+                if final_file_path is None:
+                    msg = f"Attempted to write to file '{original_path}'. Failed due to could not find available filename after trying {len(candidates)} candidates"
+                    logger.error(msg)
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.IO_ERROR,
+                        result_details=msg,
+                    )
+
+        # SUCCESS PATH: All three policies converge here
+        if final_file_path is None or final_bytes_written is None:
+            msg = "Internal error: success path reached but file path or bytes not set"
+            raise RuntimeError(msg)
+        return WriteFileResultSuccess(
+            final_file_path=str(final_file_path),
+            bytes_written=final_bytes_written,
+            result_details=f"File written successfully: {final_file_path}",
+        )
 
     def _ensure_parent_directory_ready(
         self,
