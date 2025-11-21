@@ -1405,7 +1405,7 @@ class OSManager:
                 case FileIOFailureReason.PERMISSION_DENIED:
                     msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied creating parent directory {file_path.parent}"
                 case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                    msg = f"Attempted to write to file '{file_path}'. Failed due to parent directory does not exist: {file_path.parent}"
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {file_path.parent}"
                 case _:
                     msg = f"Attempted to write to file '{file_path}'. Failed due to error creating parent directory {file_path.parent}"
             return WriteFileResultFailure(
@@ -1569,7 +1569,7 @@ class OSManager:
                                 case FileIOFailureReason.PERMISSION_DENIED:
                                     msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
                                 case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to parent directory does not exist: {candidate_path.parent}"
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
                                 case _:
                                     msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
                             return WriteFileResultFailure(
