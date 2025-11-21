@@ -782,7 +782,7 @@ class TestCreateNewFilePolicy:
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
     def test_create_new_first_file(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
-        """Test CREATE_NEW policy creates first file with suffix _1."""
+        """Test CREATE_NEW policy creates file with requested name if available."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         request = WriteFileRequest(
@@ -794,8 +794,8 @@ class TestCreateNewFilePolicy:
         result = os_manager.on_write_file_request(request)
 
         assert isinstance(result, WriteFileResultSuccess)
-        # First file should be test_1.txt
-        expected_path = temp_dir / "test_1.txt"
+        # First file should use requested name (test.txt) since it's available
+        expected_path = temp_dir / "test.txt"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
         assert expected_path.read_text() == "First file"
 
@@ -804,7 +804,7 @@ class TestCreateNewFilePolicy:
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "output.txt"
 
-        # Create first file
+        # Create first file (gets output.txt since it's available)
         request1 = WriteFileRequest(
             file_path=str(file_path),
             content="File 1",
@@ -812,9 +812,9 @@ class TestCreateNewFilePolicy:
         )
         result1 = os_manager.on_write_file_request(request1)
         assert isinstance(result1, WriteFileResultSuccess)
-        assert (temp_dir / "output_1.txt").exists()
+        assert (temp_dir / "output.txt").exists()
 
-        # Create second file
+        # Create second file (gets output_1.txt since output.txt now exists)
         request2 = WriteFileRequest(
             file_path=str(file_path),
             content="File 2",
@@ -822,9 +822,9 @@ class TestCreateNewFilePolicy:
         )
         result2 = os_manager.on_write_file_request(request2)
         assert isinstance(result2, WriteFileResultSuccess)
-        assert (temp_dir / "output_2.txt").exists()
+        assert (temp_dir / "output_1.txt").exists()
 
-        # Create third file
+        # Create third file (gets output_2.txt)
         request3 = WriteFileRequest(
             file_path=str(file_path),
             content="File 3",
@@ -832,18 +832,19 @@ class TestCreateNewFilePolicy:
         )
         result3 = os_manager.on_write_file_request(request3)
         assert isinstance(result3, WriteFileResultSuccess)
-        assert (temp_dir / "output_3.txt").exists()
+        assert (temp_dir / "output_2.txt").exists()
 
     def test_create_new_fills_gaps(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test CREATE_NEW policy fills gaps in sequence."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "render.png"
 
-        # Create files with gaps manually
+        # Create render.png and files with gaps manually
+        (temp_dir / "render.png").write_text("Original")
         (temp_dir / "render_1.png").write_text("File 1")
         (temp_dir / "render_5.png").write_text("File 5")
 
-        # CREATE_NEW should use _2
+        # CREATE_NEW should fill gap at _2
         request = WriteFileRequest(
             file_path=str(file_path),
             content="File 2",

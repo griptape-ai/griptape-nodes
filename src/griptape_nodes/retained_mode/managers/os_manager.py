@@ -1459,8 +1459,9 @@ class OSManager:
             resolved_path_str = resolution_result
             path_display = f"{request.file_path.parsed_macro}"
         else:
-            resolved_path_str = request.file_path
-            path_display = request.file_path
+            # Sanitize string path (removes shell escapes, quotes, etc.)
+            resolved_path_str = self.sanitize_path_string(request.file_path)
+            path_display = resolved_path_str
 
         # Convert str → Path
         try:
@@ -1530,6 +1531,18 @@ class OSManager:
                         failure_reason=FileIOFailureReason.FILE_LOCKED,
                         result_details=msg,
                     )
+                except PermissionError as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied: {e}"
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                        result_details=msg,
+                    )
+                except IsADirectoryError as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to path is a directory: {e}"
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.IS_DIRECTORY,
+                        result_details=msg,
+                    )
                 except Exception as e:
                     msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
                     return WriteFileResultFailure(
@@ -1555,6 +1568,18 @@ class OSManager:
                     # Success on first try!
                     final_file_path = file_path
                     final_bytes_written = bytes_written
+                except PermissionError as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to permission denied: {e}"
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                        result_details=msg,
+                    )
+                except IsADirectoryError as e:
+                    msg = f"Attempted to write to file '{file_path}'. Failed due to path is a directory: {e}"
+                    return WriteFileResultFailure(
+                        failure_reason=FileIOFailureReason.IS_DIRECTORY,
+                        result_details=msg,
+                    )
                 except (FileExistsError, portalocker.LockException):
                     # FILE EXISTS OR IS LOCKED. ATTEMPT TO FIND THE NEXT AVAILABLE.
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
@@ -1681,6 +1706,20 @@ class OSManager:
                         except portalocker.LockException:
                             # Somebody else is writing to this file; skip to next candidate.
                             continue
+                        except PermissionError as e:
+                            msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+                                result_details=msg,
+                            )
+                        except IsADirectoryError as e:
+                            msg = (
+                                f"Attempted to write to file '{candidate_path}'. Failed due to path is a directory: {e}"
+                            )
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IS_DIRECTORY,
+                                result_details=msg,
+                            )
                         except Exception as e:
                             msg = f"Attempted to write to file '{candidate_path}'. Failed due to unexpected error: {e}"
                             return WriteFileResultFailure(
