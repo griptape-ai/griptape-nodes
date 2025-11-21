@@ -1,0 +1,155 @@
+import os
+from pathlib import Path
+from typing import Any, ClassVar
+from urllib.parse import urlparse
+from uuid import uuid4
+
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+from griptape.artifacts.image_url_artifact import ImageUrlArtifact
+from griptape.artifacts.url_artifact import UrlArtifact
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+
+from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequest, GetConfigValueResultSuccess
+from griptape_nodes.retained_mode.events.secrets_events import GetSecretValueRequest, GetSecretValueResultSuccess
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+
+
+class PublicArtifactUrlParameter:
+    """A reusable component for managing artifact URLs and ensuring public internet accessibility.
+
+    This component utilizes Griptape Cloud to provide public URLs for artifact parameters if needed.
+    """
+
+    API_KEY_NAME = "GT_CLOUD_API_KEY"
+    BUCKET_ID_NAME = "GT_CLOUD_BUCKET_ID"
+    supported_artifact_types: ClassVar[list[type]] = [ImageUrlArtifact, VideoUrlArtifact, AudioUrlArtifact]
+    supported_artifact_type_names: ClassVar[list[str]] = [cls.__name__ for cls in supported_artifact_types]
+    gtc_file_path: Path | None = None
+
+    def __init__(
+        self, node: BaseNode, artifact_url_parameter: Parameter, disclaimer_message: str | None = None
+    ) -> None:
+        self._node = node
+        self._parameter = artifact_url_parameter
+        self._disclaimer_message = disclaimer_message
+
+        if artifact_url_parameter.type.lower() not in [name.lower() for name in self.supported_artifact_type_names]:
+            msg = (
+                f"Unsupported artifact type '{artifact_url_parameter.type}' for "
+                f"artifact URL parameter '{artifact_url_parameter.name}'. "
+                f"Supported types: {', '.join(self.supported_artifact_type_names)}"
+            )
+            raise ValueError(msg)
+
+        api_key = str(self._get_secret_value(self.API_KEY_NAME))
+        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        self._storage_driver = GriptapeCloudStorageDriver(
+            workspace_directory=GriptapeNodes.ConfigManager().workspace_path,
+            bucket_id=self._get_bucket_id(base, api_key),
+            api_key=api_key,
+            base_url=base,
+        )
+
+    @classmethod
+    def _get_bucket_id(cls, base_url: str, api_key: str) -> str:
+        bucket_id: str | None = cls._get_secret_value(cls.BUCKET_ID_NAME, should_error_on_not_found=False)
+
+        if bucket_id is not None:
+            return bucket_id
+
+        buckets = GriptapeCloudStorageDriver.list_buckets(
+            base_url=base_url,
+            api_key=api_key,
+        )
+        if len(buckets) == 0:
+            msg = "No Griptape Cloud storage buckets found!"
+            raise RuntimeError(msg)
+
+        return buckets[0]["bucket_id"]
+
+    @classmethod
+    def _get_config_value(cls, key: str, default: Any | None = None) -> Any | None:
+        request = GetConfigValueRequest(category_and_key=key)
+        result_event = GriptapeNodes.handle_request(request)
+
+        if isinstance(result_event, GetConfigValueResultSuccess):
+            return result_event.value
+
+        return default
+
+    @classmethod
+    def _get_secret_value(
+        cls, key: str, default: Any | None = None, *, should_error_on_not_found: bool = False
+    ) -> Any | None:
+        request = GetSecretValueRequest(key=key, should_error_on_not_found=should_error_on_not_found)
+        result_event = GriptapeNodes.handle_request(request)
+
+        if isinstance(result_event, GetSecretValueResultSuccess):
+            return result_event.value
+
+        return default
+
+    def add_input_parameters(self) -> None:
+        self._node.add_node_element(
+            ParameterMessage(
+                name=f"artifact_url_parameter_message_{self._parameter.name}",
+                title="Media Upload",
+                variant="warning",
+                value=self.get_help_message(),
+                traits={
+                    Button(
+                        full_width=True,
+                        on_click=self._onparameter_message_button_click,
+                    )
+                },
+                button_text="Hide this message",
+            )
+        )
+        self._node.add_parameter(self._parameter)
+
+    def _onparameter_message_button_click(
+        self,
+        button: Button,  # noqa: ARG002
+        button_payload: ButtonDetailsMessagePayload,  # noqa: ARG002
+    ) -> NodeMessageResult | None:
+        self._node.hide_message_by_name(f"artifact_url_parameter_message_{self._parameter.name}")
+
+    def get_help_message(self) -> str:
+        return (
+            f"The {self._node.name} node requires a public URL for the parameter: {self._parameter.name}.\n\n"
+            f"{self._disclaimer_message or ''}\n"
+            "Executing this node will generate a short lived, public URL for the media artifact, which will be cleaned up after execution.\n"
+        )
+
+    def get_public_url_for_parameter(self) -> str:
+        parameter_value = self._node.get_parameter_value(self._parameter.name)
+        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
+
+        # check if the URL is already public
+        if url.startswith(("http://", "https://")) and "localhost" not in url:
+            return url
+
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        static_files_dir = str(self._get_config_value("static_files_directory", default="staticfiles"))
+        static_files_path = workspace_path / static_files_dir
+
+        parsed_url = urlparse(url)
+        filename = Path(parsed_url.path).name
+        with (static_files_path / filename).open("rb") as f:
+            file_contents = f.read()
+
+        self.gtc_file_path = Path(static_files_dir) / "artifact_url_storage" / uuid4().hex / filename
+
+        # upload to Griptape Cloud and get a public URL
+        public_url = self._storage_driver.upload_file(path=self.gtc_file_path, file_content=file_contents)
+
+        return public_url
+
+    def delete_uploaded_artifact(self) -> None:
+        if not self.gtc_file_path:
+            return
+        self._storage_driver.delete_file(self.gtc_file_path)

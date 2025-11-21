@@ -7,6 +7,7 @@ import transformers  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.scheduler_parameters import SchedulerParameters
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 
@@ -34,18 +35,25 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             list_all_models=list_all_models,
         )
 
+        self._scheduler_parameters = SchedulerParameters(
+            node, scheduler_types=[diffusers.FlowMatchEulerDiscreteScheduler]
+        )
+
     def add_input_parameters(self) -> None:
         self._model_repo_parameter.add_input_parameters()
         self._text_encoder_repo_parameter.add_input_parameters()
+        self._scheduler_parameters.add_input_parameters()
 
     def remove_input_parameters(self) -> None:
         self._model_repo_parameter.remove_input_parameters()
         self._text_encoder_repo_parameter.remove_input_parameters()
+        self._scheduler_parameters.remove_input_parameters()
 
     def get_config_kwargs(self) -> dict:
         return {
             "model": self._node.get_parameter_value("model"),
             "text_encoder": self._node.get_parameter_value("text_encoder"),
+            **self._scheduler_parameters.get_config_kwargs(),
         }
 
     @property
@@ -61,6 +69,10 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
         text_encoder_errors = self._text_encoder_repo_parameter.validate_before_node_run()
         if text_encoder_errors:
             errors.extend(text_encoder_errors)
+
+        scheduler_errors = self._scheduler_parameters.validate_before_node_run()
+        if scheduler_errors:
+            errors.extend(scheduler_errors)
 
         return errors or None
 
@@ -79,6 +91,7 @@ class QwenImg2ImgPipelineParameters(DiffusionPipelineTypePipelineParameters):
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             text_encoder=text_encoder,
+            scheduler=self._scheduler_parameters.get_scheduler(),
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )

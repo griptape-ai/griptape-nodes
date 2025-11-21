@@ -2,6 +2,19 @@
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+# Supported text file extensions (based on LoadText node)
+SUPPORTED_TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".csv",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".env",
+    ".py",
+}
+
 
 def generate_filename(
     node_name: str,

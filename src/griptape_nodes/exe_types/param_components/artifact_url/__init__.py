@@ -1,0 +1,1 @@
+"""Reusable artifact URL parameters."""

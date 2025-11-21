@@ -9,7 +9,9 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import (
+    SUPPORTED_VIDEO_EXTENSIONS,
     download_video_to_temp_file,
     extract_url_from_video_object,
     is_downloadable_video_url,
@@ -59,16 +61,24 @@ class SaveVideo(SuccessFailureNode):
         )
 
         # Add output path parameter
-        self.add_parameter(
-            Parameter(
-                name="output_path",
-                input_types=["str"],
-                type="str",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                default_value=DEFAULT_FILENAME,
-                tooltip="The output filename. The file extension will be auto-determined from video format.",
+        self.output_path = Parameter(
+            name="output_path",
+            input_types=["str"],
+            type="str",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+            default_value=DEFAULT_FILENAME,
+            tooltip="The output filename. The file extension will be auto-determined from video format.",
+        )
+        self.output_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=True,
+                multiple=False,
+                file_extensions=list(SUPPORTED_VIDEO_EXTENSIONS),
+                allow_create=True,
             )
         )
+        self.add_parameter(self.output_path)
 
         # Save options parameters in a collapsible ParameterGroup
         with ParameterGroup(name="Save Options") as save_options_group:

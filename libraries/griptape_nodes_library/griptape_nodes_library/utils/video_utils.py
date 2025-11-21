@@ -13,6 +13,9 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
 
+# Supported video file extensions
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+
 RATE_TOLERANCE = 0.1
 NOMINAL_30FPS = 30
 NOMINAL_60FPS = 60

@@ -120,11 +120,13 @@ class ConfigureAgentRequest(RequestPayload):
 
     Args:
         prompt_driver: Dictionary of prompt driver configuration options
+        image_generation_driver: Dictionary of image generation driver configuration options
 
     Results: ConfigureAgentResultSuccess | ConfigureAgentResultFailure (configuration error)
     """
 
     prompt_driver: dict = field(default_factory=dict)
+    image_generation_driver: dict = field(default_factory=dict)
 
 
 @dataclass
