@@ -4159,7 +4159,7 @@ class WorkflowManager:
         failed = []
 
         # First pass: collect all workflow files to determine total count
-        all_workflow_files: list[Path] = []
+        all_workflow_files: set[Path] = set()
 
         def collect_workflow_files(path: Path) -> None:
             """Collect workflow files from a path."""
@@ -4175,7 +4175,7 @@ class WorkflowManager:
                             workflow_file, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
                         )
                         if len(metadata_blocks) == 1:
-                            all_workflow_files.append(workflow_file)
+                            all_workflow_files.add(workflow_file)
                     except Exception as e:
                         # Skip files that can't be read or parsed
                         logger.debug("Skipping workflow file %s due to error: %s", workflow_file, e)
@@ -4186,7 +4186,7 @@ class WorkflowManager:
                         path, block_name=WorkflowManager.WORKFLOW_METADATA_HEADER
                     )
                     if len(metadata_blocks) == 1:
-                        all_workflow_files.append(path)
+                        all_workflow_files.add(path)
                 except Exception as e:
                     logger.debug("Skipping workflow file %s due to error: %s", path, e)
 
