@@ -19,6 +19,7 @@ from griptape_nodes.utils.git_utils import (
     _convert_ssh_to_https,
     _is_ssh_url,
     clone_repository,
+    extract_repo_name_from_url,
     get_current_ref,
     get_git_remote,
     get_git_repository_root,
@@ -26,11 +27,124 @@ from griptape_nodes.utils.git_utils import (
     is_git_repository,
     is_git_url,
     normalize_github_url,
+    parse_git_url_with_ref,
     switch_branch,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+
+
+class TestParseGitUrlWithRef:
+    """Test parse_git_url_with_ref function."""
+
+    def test_parse_git_url_with_ref_returns_url_and_ref_for_https_url(self) -> None:
+        """Test that HTTPS URL with @ref is parsed correctly."""
+        url, ref = parse_git_url_with_ref("https://github.com/user/repo@stable")
+
+        assert url == "https://github.com/user/repo"
+        assert ref == "stable"
+
+    def test_parse_git_url_with_ref_returns_url_and_ref_for_shorthand(self) -> None:
+        """Test that GitHub shorthand with @ref is parsed correctly."""
+        url, ref = parse_git_url_with_ref("user/repo@main")
+
+        assert url == "user/repo"
+        assert ref == "main"
+
+    def test_parse_git_url_with_ref_returns_url_and_none_for_url_without_ref(self) -> None:
+        """Test that URL without @ref returns None for ref."""
+        url, ref = parse_git_url_with_ref("https://github.com/user/repo")
+
+        assert url == "https://github.com/user/repo"
+        assert ref is None
+
+    def test_parse_git_url_with_ref_returns_url_and_none_for_shorthand_without_ref(self) -> None:
+        """Test that shorthand without @ref returns None for ref."""
+        url, ref = parse_git_url_with_ref("user/repo")
+
+        assert url == "user/repo"
+        assert ref is None
+
+    def test_parse_git_url_with_ref_handles_ssh_url_with_ref(self) -> None:
+        """Test that SSH URL with @ref is parsed correctly."""
+        url, ref = parse_git_url_with_ref("git@github.com:user/repo@stable")
+
+        assert url == "git@github.com:user/repo"
+        assert ref == "stable"
+
+    def test_parse_git_url_with_ref_handles_ssh_url_without_ref(self) -> None:
+        """Test that SSH URL without @ref returns None for ref."""
+        url, ref = parse_git_url_with_ref("git@github.com:user/repo.git")
+
+        assert url == "git@github.com:user/repo.git"
+        assert ref is None
+
+    def test_parse_git_url_with_ref_handles_url_with_git_suffix_and_ref(self) -> None:
+        """Test that URL with .git suffix and @ref is parsed correctly."""
+        url, ref = parse_git_url_with_ref("https://github.com/user/repo.git@v1.0.0")
+
+        assert url == "https://github.com/user/repo.git"
+        assert ref == "v1.0.0"
+
+    def test_parse_git_url_with_ref_strips_whitespace(self) -> None:
+        """Test that whitespace is stripped before parsing."""
+        url, ref = parse_git_url_with_ref("  user/repo@stable  ")
+
+        assert url == "user/repo"
+        assert ref == "stable"
+
+
+class TestExtractRepoNameFromUrl:
+    """Test extract_repo_name_from_url function."""
+
+    def test_extract_repo_name_from_https_url(self) -> None:
+        """Test that repo name is extracted from HTTPS URL."""
+        result = extract_repo_name_from_url("https://github.com/user/my-repo")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_https_url_with_git_suffix(self) -> None:
+        """Test that repo name is extracted from HTTPS URL with .git suffix."""
+        result = extract_repo_name_from_url("https://github.com/user/my-repo.git")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_https_url_with_ref(self) -> None:
+        """Test that repo name is extracted from HTTPS URL with @ref."""
+        result = extract_repo_name_from_url("https://github.com/user/my-repo@stable")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_https_url_with_git_suffix_and_ref(self) -> None:
+        """Test that repo name is extracted from HTTPS URL with .git and @ref."""
+        result = extract_repo_name_from_url("https://github.com/user/my-repo.git@stable")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_shorthand(self) -> None:
+        """Test that repo name is extracted from GitHub shorthand."""
+        result = extract_repo_name_from_url("user/my-repo")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_shorthand_with_ref(self) -> None:
+        """Test that repo name is extracted from GitHub shorthand with @ref."""
+        result = extract_repo_name_from_url("user/my-repo@main")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_ssh_url(self) -> None:
+        """Test that repo name is extracted from SSH URL."""
+        result = extract_repo_name_from_url("git@github.com:user/my-repo.git")
+
+        assert result == "my-repo"
+
+    def test_extract_repo_name_from_ssh_url_with_ref(self) -> None:
+        """Test that repo name is extracted from SSH URL with @ref."""
+        result = extract_repo_name_from_url("git@github.com:user/my-repo@stable")
+
+        assert result == "my-repo"
 
 
 class TestIsGitUrl:
@@ -130,6 +244,30 @@ class TestNormalizeGithubUrl:
         result = normalize_github_url("  user/repo  ")
 
         assert result == "https://github.com/user/repo.git"
+
+    def test_normalize_github_shorthand_with_ref(self) -> None:
+        """Test that GitHub shorthand with @ref is converted correctly."""
+        result = normalize_github_url("user/repo@stable")
+
+        assert result == "https://github.com/user/repo.git@stable"
+
+    def test_normalize_github_https_url_with_ref(self) -> None:
+        """Test that HTTPS URL with @ref gets .git suffix before @ref."""
+        result = normalize_github_url("https://github.com/user/repo@main")
+
+        assert result == "https://github.com/user/repo.git@main"
+
+    def test_normalize_github_https_url_with_git_suffix_and_ref(self) -> None:
+        """Test that HTTPS URL with .git and @ref preserves both."""
+        result = normalize_github_url("https://github.com/user/repo.git@v1.0.0")
+
+        assert result == "https://github.com/user/repo.git@v1.0.0"
+
+    def test_normalize_preserves_ssh_github_url_with_ref(self) -> None:
+        """Test that SSH GitHub URLs with @ref are preserved."""
+        result = normalize_github_url("git@github.com:user/repo.git@stable")
+
+        assert result == "git@github.com:user/repo.git@stable"
 
 
 class TestIsGitRepository:
