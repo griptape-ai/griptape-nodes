@@ -14,7 +14,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_types import BaseNode, EndLoopNode, StartLoopNode
+from griptape_nodes.exe_types.node_types import BaseNode
 
 
 def _outgoing_connection_exists(source_node: str, source_param: str) -> bool:
@@ -96,16 +96,19 @@ class NodeParameterPair(NamedTuple):
     parameter: Parameter
 
 
-class BaseIterativeStartNode(StartLoopNode):
+class BaseIterativeStartNode(BaseNode):
     """Base class for all iterative start nodes (ForEach, ForLoop, etc.).
 
     This class consolidates all shared signal logic, connection management,
     state tracking, and validation logic used by iterative loop start nodes.
     """
 
+    end_node: "BaseIterativeEndNode | None" = None
+    exec_out: ControlParameterOutput
     _current_iteration_count: int
     _total_iterations: int
     _flow: ControlFlow | None = None
+    is_parallel: bool = False  # Sequential by default
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -254,6 +257,20 @@ class BaseIterativeStartNode(StartLoopNode):
         For ForEach: increment index by 1
         For ForLoop: increment current value by step, increment index by 1
         """
+
+    def get_all_iteration_values(self) -> list[int]:
+        """Calculate and return all iteration values for this loop.
+
+        For ForEach nodes, this returns indices 0, 1, 2, ...
+        For ForLoop nodes, this returns actual loop values (start, start+step, start+2*step, ...).
+
+        This is used by parallel execution to set correct parameter values for each iteration.
+
+        Returns:
+            List of integer values for each iteration
+        """
+        # Default implementation for ForEach: return 0-based indices
+        return list(range(self._get_total_iterations()))
 
     def process(self) -> None:
         if self._flow is None:
@@ -498,7 +515,7 @@ class BaseIterativeStartNode(StartLoopNode):
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
-        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
+        if source_parameter == self.loop and isinstance(target_node, BaseIterativeEndNode):
             self.end_node = target_node
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
 
@@ -508,17 +525,19 @@ class BaseIterativeStartNode(StartLoopNode):
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
-        if source_parameter == self.loop and isinstance(target_node, EndLoopNode):
+        if source_parameter == self.loop and isinstance(target_node, BaseIterativeEndNode):
             self.end_node = None
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
 
-class BaseIterativeEndNode(EndLoopNode):
+class BaseIterativeEndNode(BaseNode):
     """Base class for all iterative end nodes (ForEach, ForLoop, etc.).
 
     This class consolidates all shared signal logic, connection management,
     conditional evaluation, and result accumulation logic used by iterative loop end nodes.
     """
+
+    start_node: "BaseIterativeStartNode | None" = None
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -823,7 +842,7 @@ class BaseIterativeEndNode(EndLoopNode):
         # Track incoming connections for validation
         self._connected_parameters.add(target_parameter.name)
 
-        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
+        if target_parameter is self.from_start and isinstance(source_node, BaseIterativeStartNode):
             self.start_node = source_node
             # Auto-create all hidden signal connections when main tethering connection is made
             self._create_hidden_signal_connections(source_node)
@@ -838,7 +857,7 @@ class BaseIterativeEndNode(EndLoopNode):
         # Remove from tracking when connection is removed
         self._connected_parameters.discard(target_parameter.name)
 
-        if target_parameter is self.from_start and isinstance(source_node, StartLoopNode):
+        if target_parameter is self.from_start and isinstance(source_node, BaseIterativeStartNode):
             self.start_node = None
             # Clean up hidden signal connections when main tethering connection is removed
             self._remove_hidden_signal_connections(source_node)

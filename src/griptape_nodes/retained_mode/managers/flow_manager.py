@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
 
 from griptape_nodes.common.node_executor import NodeExecutor
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Connections
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -22,7 +23,6 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeGroupNode,
     NodeResolutionState,
-    StartLoopNode,
     StartNode,
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
@@ -75,6 +75,9 @@ from griptape_nodes.retained_mode.events.execution_events import (
     StartFlowRequest,
     StartFlowResultFailure,
     StartFlowResultSuccess,
+    StartLocalSubflowRequest,
+    StartLocalSubflowResultFailure,
+    StartLocalSubflowResultSuccess,
     UnresolveFlowRequest,
     UnresolveFlowResultFailure,
     UnresolveFlowResultSuccess,
@@ -125,6 +128,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     DeleteNodeRequest,
     DeleteNodeResultFailure,
     DeserializeNodeFromCommandsRequest,
+    DeserializeNodeFromCommandsResultSuccess,
     SerializedNodeCommands,
     SerializedParameterValueTracker,
     SerializeNodeToCommandsRequest,
@@ -199,6 +203,8 @@ class PackagingStartNodeResult(NamedTuple):
     start_to_package_connections: list[SerializedFlowCommands.IndirectConnectionSerialization]
     input_shape_data: WorkflowShapeNodes
     start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
+    start_node_name: str
 
 
 class PackagingEndNodeResult(NamedTuple):
@@ -215,6 +221,7 @@ class MultiNodeEndNodeResult(NamedTuple):
     packaging_result: PackagingEndNodeResult
     parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
     alter_parameter_commands: list[AlterParameterDetailsRequest]
+    end_node_name: str
 
 
 class FlowManager:
@@ -265,7 +272,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(
             PackageNodesAsSerializedFlowRequest, self.on_package_nodes_as_serialized_flow_request
         )
-
+        event_manager.assign_manager_to_request_type(StartLocalSubflowRequest, self.on_start_local_subflow_request)
         self._name_to_parent_name = {}
         self._flow_to_referenced_workflow_name = {}
         self._connections = Connections()
@@ -550,7 +557,15 @@ class FlowManager:
             details = f"Attempted to delete Flow '{flow_name}', but no Flow with that name could be found."
             result = DeleteFlowResultFailure(result_details=details)
             return result
-        if self.check_for_existing_running_flow():
+
+        # Only cancel if the flow being deleted is the one tracked by the global control flow machine.
+        # Isolated subflows (e.g., ForEach loop iterations) have their own separate ControlFlowMachine
+        # and should not trigger cancellation of the global machine.
+        if (
+            self.check_for_existing_running_flow()
+            and self._global_control_flow_machine is not None
+            and self._global_control_flow_machine.context.flow_name == flow.name
+        ):
             result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow.name))
             if not result.succeeded():
                 details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
@@ -612,9 +627,14 @@ class FlowManager:
             if flow in self._flow_to_referenced_workflow_name:
                 del self._flow_to_referenced_workflow_name[flow]
 
-            # Clean up ControlFlowMachine and DAG orchestrator for this flow
-            self._global_control_flow_machine = None
-            self._global_dag_builder.clear()
+            # Clean up ControlFlowMachine and DAG orchestrator only if this is the global flow.
+            # Isolated subflows have their own machines and should not clear the global state.
+            if (
+                self._global_control_flow_machine is not None
+                and self._global_control_flow_machine.context.flow_name == flow.name
+            ):
+                self._global_control_flow_machine = None
+                self._global_dag_builder.clear()
 
         details = f"Successfully deleted Flow '{flow_name}'."
         result = DeleteFlowResultSuccess(result_details=details)
@@ -1298,7 +1318,20 @@ class FlowManager:
             return end_node_result
 
         end_node_packaging_result = end_node_result.packaging_result
-        parameter_name_mappings = end_node_result.parameter_name_mappings
+
+        # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
+        from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
+
+        parameter_name_mappings = [
+            PackagedNodeParameterMapping(
+                node_name=start_node_result.start_node_name,
+                parameter_mappings=start_node_result.parameter_name_mappings,
+            ),
+            PackagedNodeParameterMapping(
+                node_name=end_node_result.end_node_name,
+                parameter_mappings=end_node_result.parameter_name_mappings,
+            ),
+        ]
 
         # Step 10: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
@@ -1432,7 +1465,7 @@ class FlowManager:
 
         return None
 
-    def _serialize_package_nodes_for_local_execution(  # noqa: PLR0913
+    def _serialize_package_nodes_for_local_execution(  # noqa: PLR0913, C901
         self,
         nodes_to_package: list[BaseNode],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -1495,6 +1528,21 @@ class FlowManager:
                 set_parameter_value_commands[serialize_result.serialized_node_commands.node_uuid] = (
                     serialize_result.set_parameter_value_commands
                 )
+
+        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # This allows workflow generation to directly look up variable names from UUIDs
+
+        for node_group_command in serialized_node_group_commands:
+            create_cmd = node_group_command.create_node_command
+
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                node_uuids = []
+                for child_node_name in create_cmd.node_names_to_add:
+                    if child_node_name in node_name_to_uuid:
+                        uuid = node_name_to_uuid[child_node_name]
+                        node_uuids.append(uuid)
+                # Replace the list with UUIDs (as strings since that's what the field expects)
+                create_cmd.node_names_to_add = node_uuids
 
         # Build internal connections between package nodes
         package_node_names_set = {n.name for n in nodes_to_package}
@@ -1801,6 +1849,7 @@ class FlowManager:
             packaging_result=end_node_result,
             parameter_name_mappings=parameter_name_mappings,
             alter_parameter_commands=[],
+            end_node_name=end_node_name,
         )
 
     def _create_end_node_control_connections(  # noqa: PLR0913
@@ -1947,10 +1996,15 @@ class FlowManager:
             output_shape_data[end_node_name][sanitized_param_name] = param_shape_info
 
         # Create parameter command for end node
+        # Use flexible input types for data parameters to prevent type mismatch errors
+        # Control parameters must keep their exact types (cannot use "any")
+        is_control_param = parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value
+
         add_param_request = AddParameterToNodeRequest(
             node_name=end_node_name,
             parameter_name=sanitized_param_name,
-            type=parameter.output_type,
+            input_types=parameter.input_types if is_control_param else ["any"],  # Control: exact types; Data: any
+            output_type=parameter.output_type,  # Preserve original output type
             default_value=None,
             tooltip=tooltip,
             initial_setup=True,
@@ -1981,6 +2035,8 @@ class FlowManager:
         # Generate UUID and name for start node
         start_node_uuid = SerializedNodeCommands.NodeUUID(str(uuid4()))
         start_node_name = "Start_Package_MultiNode"
+        # Parameter name mappings are essential to know which inputs are necessary on the start node given.
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter] = {}
 
         # Build start node CreateNodeRequest
         start_create_node_command = CreateNodeRequest(
@@ -2021,6 +2077,7 @@ class FlowManager:
                 node_name_to_uuid=node_name_to_uuid,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                parameter_name_mappings=parameter_name_mappings,
             )
             if isinstance(result, PackageNodesAsSerializedFlowResultFailure):
                 return result
@@ -2063,6 +2120,8 @@ class FlowManager:
             start_to_package_connections=start_to_package_connections,
             input_shape_data=input_shape_data,
             start_node_parameter_value_commands=start_node_parameter_value_commands,
+            parameter_name_mappings=parameter_name_mappings,
+            start_node_name=start_node_name,
         )
 
     def _create_start_node_parameters_and_connections_for_incoming_data(  # noqa: PLR0913
@@ -2076,6 +2135,7 @@ class FlowManager:
         node_name_to_uuid: dict[str, SerializedNodeCommands.NodeUUID],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
+        parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter],
     ) -> StartNodeIncomingDataResult | PackageNodesAsSerializedFlowResultFailure:
         """Create parameters and connections for incoming data connections to a specific target node."""
         start_node_parameter_commands = []
@@ -2091,6 +2151,10 @@ class FlowManager:
                 prefix=output_parameter_prefix,
                 node_name=target_node_name,
                 parameter_name=target_parameter_name,
+            )
+
+            parameter_name_mappings[param_name] = OriginalNodeParameter(
+                node_name=target_node_name, parameter_name=target_parameter_name
             )
 
             # Get the source node to determine parameter type (from the external connection)
@@ -2427,6 +2491,36 @@ class FlowManager:
         details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowFromNodeResultSuccess(result_details=details)
+
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
+        flow_name = request.flow_name
+        if not flow_name:
+            details = "Must provide flow name to start a flow."
+
+            return StartFlowResultFailure(validation_exceptions=[], result_details=details)
+        # get the flow by ID
+        try:
+            flow = self.get_flow_by_name(flow_name)
+        except KeyError as err:
+            details = f"Cannot start flow. Error: {err}"
+            return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
+        # Check to see if the flow is already running.
+        if not self.check_for_existing_running_flow():
+            msg = "There must be a flow going to start a Subflow"
+            return StartLocalSubflowResultFailure(result_details=msg)
+
+        subflow_machine = ControlFlowMachine(
+            flow.name,
+            pickle_control_flow_result=request.pickle_control_flow_result,
+            use_isolated_dag_builder=True,
+        )
+
+        # Get the start node object from the node name string
+        start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
+
+        await subflow_machine.start_flow(start_node)
+
+        return StartLocalSubflowResultSuccess(result_details=f"Successfully executed local subflow '{flow_name}'")
 
     def on_get_flow_state_request(self, event: GetFlowStateRequest) -> ResultPayload:
         flow_name = event.flow_name
@@ -2844,6 +2938,22 @@ class FlowManager:
         # This ensures child nodes exist before their parent NodeGroups are created during deserialization
         serialized_node_commands.extend(serialized_node_group_commands)
 
+        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # This allows workflow generation to directly look up variable names from UUIDs
+
+        for node_group_command in serialized_node_group_commands:
+            create_cmd = node_group_command.create_node_command
+
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                # Convert node names to UUIDs
+                node_uuids = []
+                for child_node_name in create_cmd.node_names_to_add:
+                    if child_node_name in node_name_to_uuid:
+                        uuid = node_name_to_uuid[child_node_name]
+                        node_uuids.append(uuid)
+                # Replace the list with UUIDs (as strings since that's what the field expects)
+                create_cmd.node_names_to_add = node_uuids
+
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
@@ -2910,16 +3020,52 @@ class FlowManager:
 
         # Create the nodes.
         # Preserve the node UUIDs because we will need to tie these back together with the Connections later.
+        # Also build a mapping from original node names to deserialized node names.
         node_uuid_to_deserialized_node_result = {}
+        node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
-            deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
+            # Get the node name from the CreateNodeGroupRequest command if necessary
+            create_cmd = serialized_node.create_node_command
+            original_node_name = (
+                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
+            )
+
+            # For NodeGroupNodes, remap node_names_to_add from UUIDs to actual node names
+            # Create a copy to avoid mutating the original serialized data
+            serialized_node_for_deserialization = serialized_node
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                # Use list comprehension to remap UUIDs to deserialized node names
+                remapped_names = [
+                    node_uuid_to_deserialized_node_result[node_uuid].node_name
+                    for node_uuid in create_cmd.node_names_to_add
+                    if node_uuid in node_uuid_to_deserialized_node_result
+                ]
+                # Create a copy of the command with remapped names instead of mutating original
+                create_cmd_copy = CreateNodeGroupRequest(
+                    node_group_name=create_cmd.node_group_name,
+                    node_names_to_add=remapped_names,
+                    metadata=create_cmd.metadata,
+                )
+                # Create a copy of serialized_node with the new command
+                serialized_node_for_deserialization = SerializedNodeCommands(
+                    node_uuid=serialized_node.node_uuid,
+                    create_node_command=create_cmd_copy,
+                    element_modification_commands=serialized_node.element_modification_commands,
+                    node_dependencies=serialized_node.node_dependencies,
+                    lock_node_command=serialized_node.lock_node_command,
+                )
+
+            deserialize_node_request = DeserializeNodeFromCommandsRequest(
+                serialized_node_commands=serialized_node_for_deserialization
+            )
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
-            if deserialized_node_result.failed():
+            if not isinstance(deserialized_node_result, DeserializeNodeFromCommandsResultSuccess):
                 details = (
                     f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                 )
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
+            node_name_mappings[original_node_name] = deserialized_node_result.node_name
 
         # Now apply the connections.
         # We didn't know the exact name that would be used for the nodes, but we knew the node's creation UUID.
@@ -2992,7 +3138,9 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         details = f"Successfully deserialized Flow '{flow_name}'."
-        return DeserializeFlowFromCommandsResultSuccess(flow_name=flow_name, result_details=details)
+        return DeserializeFlowFromCommandsResultSuccess(
+            flow_name=flow_name, result_details=details, node_name_mappings=node_name_mappings
+        )
 
     async def start_flow(
         self,
@@ -3358,12 +3506,12 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
-                        # If the node is a StartLoopNode, it may have an incoming hidden connection from it's EndLoopNode for iteration.
-                        if isinstance(node, StartLoopNode):
+                        # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
+                        if isinstance(node, BaseIterativeStartNode):
                             connection_id = cn_mgr.incoming_index[node.name][param_name][0]
                             connection = cn_mgr.connections[connection_id]
                             connected_node = connection.get_source_node()
-                            # Check if the source node is the end loop node associated with this StartLoopNode.
+                            # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
                             # If it is, then this could still be the first node in the control flow.
                             if connected_node == node.end_node:
                                 continue

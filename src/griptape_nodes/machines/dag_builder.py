@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import LOCAL_EXECUTION, NodeGroupNode, NodeResolutionState
 
@@ -107,7 +108,7 @@ class DagBuilder:
             self.graphs[graph_name] = graph
             self.graph_to_nodes[graph_name] = set()
 
-        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
+        def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:  # noqa: C901
             # Skip if already visited or already in DAG
             if current_node.name in visited:
                 return
@@ -159,8 +160,12 @@ class DagBuilder:
             self.node_to_reference[current_node.name] = dag_node
             added_nodes.append(current_node)
 
-            # Add to graph if not using parent group
-            if not self._should_use_parent_group(current_node):
+            # Add to graph if not using parent group, otherwise ensure parent group is in DAG
+            if self._should_use_parent_group(current_node):
+                parent_group = current_node.parent_group
+                if isinstance(parent_group, NodeGroupNode):
+                    self._ensure_group_node_in_dag(parent_group, graph, graph_name)
+            else:
                 graph.add_node(node_for_adding=current_node.name)
                 self.graph_to_nodes[graph_name].add(current_node.name)
 
@@ -239,9 +244,118 @@ class DagBuilder:
             # Find the parameter to check if it's a control type
             param = node.get_parameter_by_name(param_name)
             if param and ParameterTypeBuiltin.CONTROL_TYPE.value in param.input_types:
-                control_connection_count += len(connection_ids)
+                # Skip connections from end node or itself if this is a BaseIterativeStartNode
+                if isinstance(node, BaseIterativeStartNode):
+                    for connection_id in connection_ids:
+                        if connection_id in connections.connections:
+                            connection = connections.connections[connection_id]
+                            source_node = connection.source_node
+                            # Skip if connection is from end node or itself
+                            if source_node in (node.end_node, node):
+                                continue
+                            control_connection_count += 1
+                else:
+                    control_connection_count += len(connection_ids)
 
         return control_connection_count
+
+    @staticmethod
+    def collect_nodes_in_forward_control_path(
+        start_node: BaseNode, end_node: BaseNode, connections: Connections
+    ) -> set[str]:
+        """Collect all nodes in the forward control path from start_node to end_node.
+
+        Args:
+            start_node: The node to start traversal from
+            end_node: The node to stop traversal at (inclusive)
+            connections: The connections manager
+
+        Returns:
+            Set of node names in the control path from start to end (inclusive)
+        """
+        nodes_in_path: set[str] = set()
+        to_visit = [start_node]
+        visited = set()
+
+        while to_visit:
+            current_node = to_visit.pop(0)
+
+            if current_node.name in visited:
+                continue
+            visited.add(current_node.name)
+
+            # Add to our collection
+            nodes_in_path.add(current_node.name)
+
+            # Stop if we've reached the end node
+            if current_node == end_node:
+                continue
+
+            # Find all outgoing control connections
+            if current_node.name in connections.outgoing_index:
+                for param_name, connection_ids in connections.outgoing_index[current_node.name].items():
+                    param = current_node.get_parameter_by_name(param_name)
+                    if param and param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                        for connection_id in connection_ids:
+                            if connection_id in connections.connections:
+                                connection = connections.connections[connection_id]
+                                next_node = connection.target_node
+                                if next_node.name not in visited:
+                                    to_visit.append(next_node)
+
+        return nodes_in_path
+
+    @staticmethod
+    def collect_data_dependencies_for_node(
+        node: BaseNode, connections: Connections, nodes_to_exclude: set[str], visited: set[str]
+    ) -> set[str]:
+        """Collect data dependencies for a node recursively.
+
+        Args:
+            node: The node to collect dependencies for
+            connections: The connections manager
+            nodes_to_exclude: Set of nodes to exclude (e.g., nodes already in control flow)
+            visited: Set of already visited dependency nodes (modified in place)
+
+        Returns:
+            Set of dependency node names
+        """
+        if node.name in visited:
+            return set()
+
+        visited.add(node.name)
+        dependencies: set[str] = set()
+
+        # Check for ignore_dependencies attribute (like output_selector)
+        ignore_data_dependencies = hasattr(node, "ignore_dependencies")
+        if ignore_data_dependencies:
+            return dependencies
+
+        # Process each parameter looking for data dependencies
+        for param in node.parameters:
+            # Skip control parameters
+            if param.type == ParameterTypeBuiltin.CONTROL_TYPE:
+                continue
+
+            # Get upstream data connection
+            upstream_connection = connections.get_connected_node(node, param)
+            if upstream_connection:
+                upstream_node, _ = upstream_connection
+
+                # Skip if already resolved
+                if upstream_node.state == NodeResolutionState.RESOLVED:
+                    continue
+
+                # Only add if it's not in the exclusion set
+                if upstream_node.name not in nodes_to_exclude:
+                    dependencies.add(upstream_node.name)
+                    # Recursively collect dependencies of this dependency
+                    sub_deps = DagBuilder.collect_data_dependencies_for_node(
+                        upstream_node, connections, nodes_to_exclude, visited
+                    )
+                    dependencies.update(sub_deps)
+
+        return dependencies
 
     def _is_node_in_forward_path(
         self, start_node: BaseNode, target_node: BaseNode, connections: Connections, visited: set[str] | None = None

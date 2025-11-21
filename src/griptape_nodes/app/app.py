@@ -313,6 +313,10 @@ async def _process_app_event(event: AppEvent) -> None:
 
 async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(event):
+        return
+
     # Emit the result back to the GUI
     result_event = event.wrapped_event
 
@@ -341,11 +345,19 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
 
 async def _process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(event):
+        return
+
     await _send_message("execution_event", event.wrapped_event.json())
 
 
 async def _process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(gt_event):
+        return
+
     node_name = gt_event.node_name
     if node_name:
         value = gt_event.value

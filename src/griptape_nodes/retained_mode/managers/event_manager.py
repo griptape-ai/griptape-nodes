@@ -13,14 +13,17 @@ from typing_extensions import TypedDict, TypeVar
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.base_events import (
     AppPayload,
+    BaseEvent,
     EventResultFailure,
     EventResultSuccess,
+    ProgressEvent,
     RequestPayload,
     ResultPayload,
 )
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
+    import types
     from collections.abc import Awaitable, Callable
 
 
@@ -51,6 +54,8 @@ class EventManager:
         self._loop_thread_id: int | None = None
         # Keep a reference to the event loop for thread-safe operations
         self._event_loop: asyncio.AbstractEventLoop | None = None
+        # Per-event reference counting for event suppression
+        self._event_suppression_counts: dict[type, int] = {}
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -58,6 +63,15 @@ class EventManager:
             msg = "Event queue has not been initialized. Please call 'initialize_queue' with an asyncio.Queue instance before accessing the event queue."
             raise ValueError(msg)
         return self._event_queue
+
+    def should_suppress_event(self, event: BaseEvent | ProgressEvent) -> bool:
+        """Check if events should be suppressed from being sent to websockets."""
+        event_type = type(event)
+        return self._event_suppression_counts.get(event_type, 0) > 0
+
+    def clear_event_suppression(self) -> None:
+        """Clear all event suppression counts."""
+        self._event_suppression_counts.clear()
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.
@@ -332,3 +346,126 @@ class EventManager:
             # Only flush if there are actually tracked parameters
             if node._tracked_parameters:
                 node.emit_parameter_changes()
+
+
+class EventSuppressionContext:
+    """Context manager to suppress events from being sent to websockets.
+
+    Use this to prevent internal operations (like deserialization/deletion of iteration flows)
+    from sending events to the GUI while still allowing the operations to complete normally.
+
+    Uses per-event reference counting to track nested suppression contexts.
+    Each event type maintains its own reference count, and is only unsuppressed
+    when its count reaches zero.
+    """
+
+    events_to_suppress: set[type]
+
+    def __init__(self, manager: EventManager, events_to_suppress: set[type]):
+        self.manager = manager
+        self.events_to_suppress = events_to_suppress
+
+    def __enter__(self) -> None:
+        for event_type in self.events_to_suppress:
+            current_count = self.manager._event_suppression_counts.get(event_type, 0)
+            self.manager._event_suppression_counts[event_type] = current_count + 1
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
+        for event_type in self.events_to_suppress:
+            current_count = self.manager._event_suppression_counts.get(event_type, 0)
+            if current_count <= 1:
+                self.manager._event_suppression_counts.pop(event_type, None)
+            else:
+                self.manager._event_suppression_counts[event_type] = current_count - 1
+
+
+class EventTranslationContext:
+    """Context manager to translate node names in events from packaged to original names.
+
+    Use this to make loop execution events reference the original nodes that the user placed,
+    rather than the packaged node copies. This allows the UI to highlight the correct nodes
+    during loop execution.
+    """
+
+    def __init__(self, manager: EventManager, node_name_mapping: dict[str, str]):
+        """Initialize the event translation context.
+
+        Args:
+            manager: The EventManager to intercept events from
+            node_name_mapping: Dict mapping packaged node names to original node names
+        """
+        self.manager = manager
+        self.node_name_mapping = node_name_mapping
+        self.original_put_event: Any = None
+
+    def __enter__(self) -> None:
+        """Enter the context and start translating events."""
+        self.original_put_event = self.manager.put_event
+        self.manager.put_event = self._translate_and_put  # type: ignore[method-assign]
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: types.TracebackType | None,
+    ) -> None:
+        """Exit the context and restore original event sending."""
+        self.manager.put_event = self.original_put_event  # type: ignore[method-assign]
+
+    def _translate_and_put(self, event: Any) -> None:
+        """Translate node names in events and put them in the queue.
+
+        Args:
+            event: The event to potentially translate and send
+        """
+        # Check if event has node_name attribute and needs translation
+        if hasattr(event, "node_name"):
+            node_name = event.node_name
+            if node_name in self.node_name_mapping:
+                # Create a copy of the event with the translated node name
+                translated_event = self._copy_event_with_translated_name(event)
+                self.original_put_event(translated_event)
+                return
+
+        # No translation needed, send as-is
+        self.original_put_event(event)
+
+    def _copy_event_with_translated_name(self, event: Any) -> Any:
+        """Create a copy of an event with the node name translated to the original name.
+
+        Args:
+            event: The event to copy and translate
+
+        Returns:
+            A new event instance with the translated node name
+        """
+        # Get the original node name from the mapping
+        node_name = event.node_name
+        original_node_name = self.node_name_mapping[node_name]
+
+        # Get the event class
+        event_class = type(event)
+
+        # Create a dict of all event attributes
+        if hasattr(event, "model_dump"):
+            event_dict = event.model_dump()
+        elif hasattr(event, "__dict__"):
+            event_dict = event.__dict__.copy()
+        else:
+            # Can't copy this event, return as-is
+            return event
+
+        # Replace the node name with the original name
+        event_dict["node_name"] = original_node_name
+
+        # Create a new event instance with the translated name
+        try:
+            return event_class(**event_dict)
+        except Exception:
+            # If we can't create a new instance, return the original
+            return event

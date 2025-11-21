@@ -1,12 +1,12 @@
 from typing import Any
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.traits.clamp import Clamp
-from griptape_nodes_library.execution.base_iterative_nodes import BaseIterativeStartNode
 
 
 class ForLoopStartNode(BaseIterativeStartNode):
@@ -62,11 +62,44 @@ class ForLoopStartNode(BaseIterativeStartNode):
         self.add_parameter(self.end_inclusive)
         self.add_parameter(self.step_value)
 
+        # Add parallel execution control parameter
+        self.run_in_parallel = Parameter(
+            name="run_in_parallel",
+            tooltip="Execute all iterations concurrently (parallel) or one at a time (sequential)",
+            type=ParameterTypeBuiltin.BOOL.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=False,
+            ui_options={"display_name": "Run in Parallel"},
+        )
+        self.add_parameter(self.run_in_parallel)
+
         # Move the parameter group to the end
         self.move_element_to_position("For Loop", position="last")
 
         # Move the status message to the very bottom
         self.move_element_to_position("status_message", position="last")
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "run_in_parallel":
+            self.is_parallel = value
+
+            # Hide or show break/skip controls based on parallel mode
+            if self.end_node:
+                skip_param = self.end_node.get_parameter_by_name("skip_iteration")
+                break_param = self.end_node.get_parameter_by_name("break_loop")
+
+                if value:
+                    # Hide controls when running in parallel (not supported)
+                    if skip_param:
+                        skip_param.allowed_modes = set()
+                    if break_param:
+                        break_param.allowed_modes = set()
+                else:
+                    # Show controls when running sequentially
+                    if skip_param:
+                        skip_param.allowed_modes = {ParameterMode.INPUT}
+                    if break_param:
+                        break_param.allowed_modes = {ParameterMode.INPUT}
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
@@ -150,6 +183,39 @@ class ForLoopStartNode(BaseIterativeStartNode):
     def get_current_index(self) -> int:
         """Return the current loop value (start, start+step, start+2*step, ...)."""
         return self._current_index
+
+    def get_all_iteration_values(self) -> list[int]:
+        """Calculate and return all iteration values for this loop.
+
+        Returns a list of actual loop values (not 0-based indices).
+        For example, a loop from 5 to 10 with step 2 returns [5, 7, 9].
+
+        Returns:
+            List of integer values for each iteration
+        """
+        start = self.get_parameter_value("start")
+        end = self.get_parameter_value("end")
+        step = self.get_parameter_value("step")
+        total_iterations = self._get_total_iterations()
+
+        if total_iterations == 0:
+            return []
+
+        # Determine direction based on start and end
+        ascending = start <= end
+
+        # Calculate all iteration values
+        # Step is always positive, but we subtract when descending
+        values = []
+        current_value = start
+        for _ in range(total_iterations):
+            values.append(current_value)
+            if ascending:
+                current_value += step
+            else:
+                current_value -= step
+
+        return values
 
     def _advance_to_next_iteration(self) -> None:
         """Advance to the next iteration by step amount in the appropriate direction."""

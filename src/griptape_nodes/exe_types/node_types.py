@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import warnings
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
@@ -1628,22 +1628,10 @@ class EndNode(BaseNode):
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
-class StartLoopNode(BaseNode):
-    end_node: EndLoopNode | None = None
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
-
-    @abstractmethod
-    def is_loop_finished(self) -> bool:
-        """Return True if the loop has finished executing.
-
-        This method must be implemented by subclasses to define when
-        the loop should terminate.
-        """
-
-
-class EndLoopNode(BaseNode):
-    start_node: StartLoopNode | None = None
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+# StartLoopNode and EndLoopNode have been moved to base_iterative_nodes.py
+# They are now BaseIterativeStartNode and BaseIterativeEndNode
+# Import them here if needed for backwards compatibility in this file
+# (they are imported elsewhere directly from base_iterative_nodes)
 
 
 class ErrorProxyNode(BaseNode):
@@ -1924,6 +1912,28 @@ class NodeGroupNode(BaseNode):
             if isinstance(node, NodeGroupNode):
                 all_nodes.update(node.nodes)
         return all_nodes
+
+    def get_next_control_output(self) -> tuple[BaseNode, Parameter] | None:
+        control_connection = self._find_external_control_output_connection()
+        if control_connection is None:
+            return None
+        return control_connection.source_node, control_connection.source_parameter
+
+    def _find_external_control_output_connection(self) -> Connection | None:
+        """Find control flow connection from external outgoing connections.
+
+        Searches through external outgoing connections to find the control flow connection.
+        A control connection is identified by having a source parameter with CONTROL_TYPE output.
+
+        Returns:
+            Connection object if found, None otherwise
+        """
+        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+
+        for conn in self.stored_connections.external_connections.outgoing_connections:
+            if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                return conn
+        return None
 
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode

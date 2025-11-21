@@ -5,9 +5,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
 from griptape_nodes.exe_types.node_types import (
-    CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     BaseNode,
     NodeGroupNode,
@@ -28,6 +27,7 @@ from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
 
 
@@ -60,12 +60,21 @@ class ControlFlowContext:
         *,
         execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
         pickle_control_flow_result: bool = False,
+        use_isolated_dag_builder: bool = False,
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
             # Get the global DagBuilder from FlowManager
+            from griptape_nodes.machines.dag_builder import DagBuilder
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+            # Create isolated DagBuilder for independent subflows
+            if use_isolated_dag_builder:
+                dag_builder = DagBuilder()
+                logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
+            else:
+                dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+
             self.resolution_machine = ParallelResolutionMachine(
                 flow_name, max_nodes_in_parallel, dag_builder=dag_builder
             )
@@ -74,7 +83,7 @@ class ControlFlowContext:
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
 
-    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
+    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:  # noqa: C901, PLR0912
         """Get all next nodes from the current nodes.
 
         Returns:
@@ -90,17 +99,26 @@ class ControlFlowContext:
                 if node_connection is not None:
                     node, entry_parameter = node_connection
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
-            else:
-                # Get next control output for this node
-
-                if (
-                    isinstance(current_node, NodeGroupNode)
-                    and current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION
-                ):
-                    next_output = self.get_next_control_output_for_non_local_execution(current_node)
-                else:
-                    next_output = current_node.get_next_control_output()
+            # Get next control output for this node
+            elif isinstance(current_node, NodeGroupNode):
+                next_output = current_node.get_next_control_output()
                 if next_output is not None:
+                    next_node, next_output = next_output
+                    node_connection = (
+                        GriptapeNodes.FlowManager().get_connections().get_connected_node(next_node, next_output)
+                    )
+                    if node_connection is not None:
+                        node, entry_parameter = node_connection
+                        next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
+            else:
+                next_output = current_node.get_next_control_output()
+                if next_output is not None:
+                    if isinstance(current_node, BaseIterativeStartNode):
+                        if current_node.end_node is None:
+                            msg = "Iterative start node has no end node"
+                            raise ValueError(msg)
+                        next_nodes.append(NextNodeInfo(node=current_node.end_node, entry_parameter=None))
+                        continue
                     node_connection = (
                         GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
                     )
@@ -117,20 +135,6 @@ class ControlFlowContext:
                 next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
 
         return next_nodes
-
-    # Mirrored in @parallel_resolution.py. if you update one, update the other.
-    def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
-        for param_name, value in node.parameter_output_values.items():
-            parameter = node.get_parameter_by_name(param_name)
-            if (
-                parameter is not None
-                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
-                and value == CONTROL_INPUT_PARAMETER
-            ):
-                # This is the parameter
-                logger.debug("Control Flow: Found control output parameter '%s' for non-local execution", param_name)
-                return parameter
-        return None
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.current_nodes is not None:
@@ -317,7 +321,13 @@ class CompleteState(State):
 
 # MACHINE TIME!!!
 class ControlFlowMachine(FSM[ControlFlowContext]):
-    def __init__(self, flow_name: str, *, pickle_control_flow_result: bool = False) -> None:
+    def __init__(
+        self,
+        flow_name: str,
+        *,
+        pickle_control_flow_result: bool = False,
+        use_isolated_dag_builder: bool = False,
+    ) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
@@ -327,6 +337,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             max_nodes_in_parallel,
             execution_type=execution_type,
             pickle_control_flow_result=pickle_control_flow_result,
+            use_isolated_dag_builder=use_isolated_dag_builder,
         )
         super().__init__(context)
 
@@ -404,34 +415,56 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
         their dependencies into the DAG resolution machine.
+
+        For isolated subflows, this skips the global queue entirely and just
+        processes the start node, as subflows are self-contained.
         """
         if not isinstance(self._context.resolution_machine, ParallelResolutionMachine):
             return []
-        # Get the global flow queue
-        flow_manager = GriptapeNodes.FlowManager()
-        dag_builder = flow_manager.global_dag_builder
+
+        # Use the DagBuilder from the resolution machine context (may be isolated or global)
+        dag_builder = self._context.resolution_machine.context.dag_builder
         if dag_builder is None:
             msg = "DAG builder is not initialized."
             raise ValueError(msg)
 
         # Build with the first node (it should already be the proxy if it's part of a group)
         dag_builder.add_node_with_dependencies(start_node, start_node.name)
+
+        # Check if we're using an isolated DagBuilder (for subflows)
+        flow_manager = GriptapeNodes.FlowManager()
+        is_isolated = dag_builder is not flow_manager.global_dag_builder
+
+        if is_isolated:
+            # For isolated subflows, we don't process the global queue
+            # Just return the start node - the subflow is self-contained
+            logger.debug(
+                "Using isolated DagBuilder for flow '%s' - skipping global queue processing", self._context.flow_name
+            )
+            return [start_node]
+
+        # For main flows using the global DagBuilder, process the global queue
         queue_items = list(flow_manager.global_flow_queue.queue)
         start_nodes = [start_node]
         from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
 
         # Find data_nodes and remove them from queue
         for item in queue_items:
+            # NodeGroupNodes should not be added of their own accord here.
+            if isinstance(item.node, NodeGroupNode) and item.node.has_external_control_input():
+                flow_manager.global_flow_queue.queue.remove(item)
+                continue
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
+
                 # Only add if not already added (proxy might already be in DAG)
                 if node_to_add.name not in dag_builder.node_to_reference:
                     dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
