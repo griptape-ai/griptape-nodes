@@ -112,16 +112,14 @@ class DisplayList(ControlNode):
             if i < len(self.items_list):
                 current_parameter = self.items_list[i]
                 # Update the output type for this parameter
-                old_output_type = current_parameter.output_type
                 if item_specific_type == ParameterTypeBuiltin.ANY.value:
                     new_output_type = ParameterTypeBuiltin.ALL.value
                 else:
                     new_output_type = item_specific_type
                 current_parameter.output_type = new_output_type
 
-                # If type changed, validate and remove incompatible connections
-                if old_output_type != new_output_type:
-                    self._validate_and_remove_incompatible_connections(current_parameter.name, new_output_type)
+                # Validate and remove incompatible connections
+                self._validate_and_remove_incompatible_connections(current_parameter.name, new_output_type)
 
                 self.set_parameter_value(current_parameter.name, item)
                 # Using to ensure updates are being propagated
@@ -131,9 +129,14 @@ class DisplayList(ControlNode):
             new_child = self.items_list.add_child_parameter()
             # Set the output type for the new child parameter
             if item_specific_type == ParameterTypeBuiltin.ANY.value:
-                new_child.output_type = ParameterTypeBuiltin.ALL.value
+                new_output_type = ParameterTypeBuiltin.ALL.value
             else:
-                new_child.output_type = item_specific_type
+                new_output_type = item_specific_type
+            new_child.output_type = new_output_type
+
+            # Validate and remove incompatible connections for new parameters too
+            self._validate_and_remove_incompatible_connections(new_child.name, new_output_type)
+
             # Set the parameter value
             self.set_parameter_value(new_child.name, item)
             # Ensure the new child parameter is tracked for flush events
