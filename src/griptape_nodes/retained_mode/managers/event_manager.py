@@ -54,10 +54,8 @@ class EventManager:
         self._loop_thread_id: int | None = None
         # Keep a reference to the event loop for thread-safe operations
         self._event_loop: asyncio.AbstractEventLoop | None = None
-        # Counter for event suppression context managers
-        self._suppress_events_count: int = 0
-        # Event types to suppress during event suppression
-        self._events_to_suppress: set[type] = set()
+        # Per-event reference counting for event suppression
+        self._event_suppression_counts: dict[type, int] = {}
 
     @property
     def event_queue(self) -> asyncio.Queue:
@@ -68,14 +66,12 @@ class EventManager:
 
     def should_suppress_event(self, event: BaseEvent | ProgressEvent) -> bool:
         """Check if events should be suppressed from being sent to websockets."""
-        if self._suppress_events_count <= 0:
-            return False
         event_type = type(event)
-        return event_type in self._events_to_suppress
+        return self._event_suppression_counts.get(event_type, 0) > 0
 
     def clear_event_suppression(self) -> None:
-        self._suppress_events_count = 0
-        self._events_to_suppress.clear()
+        """Clear all event suppression counts."""
+        self._event_suppression_counts.clear()
 
     def initialize_queue(self, queue: asyncio.Queue | None = None) -> None:
         """Set the event queue for this manager.
@@ -357,6 +353,10 @@ class EventSuppressionContext:
 
     Use this to prevent internal operations (like deserialization/deletion of iteration flows)
     from sending events to the GUI while still allowing the operations to complete normally.
+
+    Uses per-event reference counting to track nested suppression contexts.
+    Each event type maintains its own reference count, and is only unsuppressed
+    when its count reaches zero.
     """
 
     events_to_suppress: set[type]
@@ -366,8 +366,9 @@ class EventSuppressionContext:
         self.events_to_suppress = events_to_suppress
 
     def __enter__(self) -> None:
-        self.manager._suppress_events_count += 1
-        self.manager._events_to_suppress.update(self.events_to_suppress)
+        for event_type in self.events_to_suppress:
+            current_count = self.manager._event_suppression_counts.get(event_type, 0)
+            self.manager._event_suppression_counts[event_type] = current_count + 1
 
     def __exit__(
         self,
@@ -375,8 +376,12 @@ class EventSuppressionContext:
         exc_value: BaseException | None,
         exc_traceback: types.TracebackType | None,
     ) -> None:
-        self.manager._suppress_events_count -= 1
-        self.manager._events_to_suppress.difference_update(self.events_to_suppress)
+        for event_type in self.events_to_suppress:
+            current_count = self.manager._event_suppression_counts.get(event_type, 0)
+            if current_count <= 1:
+                self.manager._event_suppression_counts.pop(event_type, None)
+            else:
+                self.manager._event_suppression_counts[event_type] = current_count - 1
 
 
 class EventTranslationContext:
