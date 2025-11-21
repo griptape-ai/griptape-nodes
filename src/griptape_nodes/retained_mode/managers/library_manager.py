@@ -15,6 +15,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
+import aioshutil
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -2705,10 +2706,22 @@ class LibraryManager:
         # Construct full target path
         target_path = libraries_path / target_directory_name
 
-        # Check if target directory already exists (clone_library also checks, but we check here first for a clearer error message)
+        # Check if target directory already exists
         if target_path.exists():
-            details = f"Cannot download library: target directory already exists at {target_path}"
-            return DownloadLibraryResultFailure(result_details=details)
+            if not request.overwrite_existing:
+                details = f"Cannot download library: target directory already exists at {target_path}"
+                return DownloadLibraryResultFailure(result_details=details)
+
+            # Delete existing directory before cloning
+            try:
+                await aioshutil.rmtree(target_path, onexc=OSManager.remove_readonly)
+                logger.info("Deleted existing directory at %s for overwrite", target_path)
+            except PermissionError as e:
+                details = f"Cannot delete existing directory at {target_path}: permission denied - {e}"
+                return DownloadLibraryResultFailure(result_details=details)
+            except OSError as e:
+                details = f"Cannot delete existing directory at {target_path}: I/O error - {e}"
+                return DownloadLibraryResultFailure(result_details=details)
 
         # Clone the repository
         try:
