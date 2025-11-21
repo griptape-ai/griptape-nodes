@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+    from griptape_nodes.retained_mode.managers.draw_manager import DrawManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -78,6 +79,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _config_manager: ConfigManager
     _secrets_manager: SecretsManager
     _object_manager: ObjectManager
+    _draw_manager: DrawManager
     _node_manager: NodeManager
     _flow_manager: FlowManager
     _context_manager: ContextManager
@@ -105,6 +107,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         )
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+        from griptape_nodes.retained_mode.managers.draw_manager import DrawManager
         from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
@@ -144,6 +147,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
+            self._draw_manager = DrawManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
@@ -257,6 +261,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ObjectManager(cls) -> ObjectManager:
         return GriptapeNodes.get_instance()._object_manager
+
+    @classmethod
+    def DrawManager(cls) -> DrawManager:
+        return GriptapeNodes.get_instance()._draw_manager
 
     @classmethod
     def FlowManager(cls) -> FlowManager:
