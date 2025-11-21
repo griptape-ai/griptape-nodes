@@ -72,6 +72,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
+    InspectLibraryRepoRequest,
+    InspectLibraryRepoResultFailure,
+    InspectLibraryRepoResultSuccess,
     InstallLibraryDependenciesRequest,
     InstallLibraryDependenciesResultFailure,
     InstallLibraryDependenciesResultSuccess,
@@ -296,6 +299,7 @@ class LibraryManager:
             InstallLibraryDependenciesRequest, self.install_library_dependencies_request
         )
         event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
+        event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -3022,5 +3026,56 @@ class LibraryManager:
             libraries_checked=libraries_checked,
             libraries_updated=libraries_updated,
             update_summary=update_summary,
+            result_details=details,
+        )
+
+    async def inspect_library_repo_request(self, request: InspectLibraryRepoRequest) -> ResultPayload:
+        """Inspect a library's metadata from a git repository without downloading the full repository."""
+        git_url = request.git_url
+        ref = request.ref
+
+        # Normalize GitHub shorthand to full URL
+        from griptape_nodes.utils.git_utils import normalize_github_url, sparse_checkout_library_json
+
+        normalized_url = normalize_github_url(git_url)
+        logger.info("Inspecting library metadata from '%s' (ref: %s)", normalized_url, ref)
+
+        # Perform sparse checkout to get library JSON
+        try:
+            library_version, commit_sha, json_file_path = sparse_checkout_library_json(normalized_url, ref)
+        except GitCloneError as e:
+            details = f"Failed to inspect library from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+
+        # Parse the library JSON file
+        try:
+            with json_file_path.open() as f:
+                library_data_raw = json.load(f)
+        except json.JSONDecodeError as e:
+            details = f"Invalid JSON in library file from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+        except OSError as e:
+            details = f"Failed to read library file from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+
+        # Validate and create LibrarySchema
+        try:
+            library_schema = LibrarySchema(**library_data_raw)
+        except Exception as e:
+            details = f"Invalid library schema from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+
+        # Return success with full library metadata
+        details = f"Successfully inspected library '{library_schema.name}' (version {library_version}) from {normalized_url} at commit {commit_sha[:7]}"
+        logger.info(details)
+        return InspectLibraryRepoResultSuccess(
+            library_schema=library_schema,
+            commit_sha=commit_sha,
+            git_url=normalized_url,
+            ref=ref,
             result_details=details,
         )
