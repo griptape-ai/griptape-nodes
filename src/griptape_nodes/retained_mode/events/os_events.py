@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -8,6 +11,9 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.events.project_events import MacroPath
 
 
 class ExistingFilePolicy(StrEnum):
@@ -31,6 +37,7 @@ class FileIOFailureReason(StrEnum):
     # Permission/access errors
     PERMISSION_DENIED = "permission_denied"  # No read/write permission
     FILE_NOT_FOUND = "file_not_found"  # File doesn't exist (read operations)
+    FILE_LOCKED = "file_locked"  # File is locked by another process
 
     # Resource errors
     DISK_FULL = "disk_full"  # Insufficient disk space
@@ -38,6 +45,7 @@ class FileIOFailureReason(StrEnum):
     # Path errors
     INVALID_PATH = "invalid_path"  # Malformed or invalid path
     IS_DIRECTORY = "is_directory"  # Path is a directory, not a file
+    MISSING_MACRO_VARIABLES = "missing_macro_variables"  # MacroPath has unresolved required variables
 
     # Content errors
     ENCODING_ERROR = "encoding_error"  # Text encoding/decoding failed
@@ -315,6 +323,76 @@ class RenameFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class GetNextUnusedFilenameRequest(RequestPayload):
+    """Find the next available filename with auto-incrementing index (preview only - no file creation).
+
+    Use when: Finding available filenames without file collision before actual write operations.
+
+    This request scans the filesystem and returns the next available filename.
+    This is a preview operation that DOES NOT create any files or acquire any locks.
+
+    Args:
+        file_path: Path to the file (str for direct path, MacroPath for macro resolution)
+
+    Results: GetNextUnusedFilenameResultSuccess | GetNextUnusedFilenameResultFailure
+
+    Examples:
+        # Simple string path - cleanest for most use cases
+        file_path = "/outputs/render.png"
+        # Returns: "/outputs/render.png" if available
+        #          "/outputs/render_1.png" if render.png exists
+        #          "/outputs/render_2.png" if render_1.png exists, etc.
+
+        # MacroPath with required {_index} and padding
+        file_path = MacroPath(
+            parsed_macro=ParsedMacro("{outputs}/frame_{_index:05}.png"),
+            variables={"outputs": "/abs/path"}
+        )
+        # Returns: "/abs/path/frame_00001.png", "/abs/path/frame_00002.png", etc.
+        # Note: Always includes index, cannot return "frame.png"
+
+        # MacroPath with optional {_index} - limited by separator position
+        file_path = MacroPath(
+            parsed_macro=ParsedMacro("{outputs}/frame{_index?:_}.png"),
+            variables={"outputs": "/abs/path"}
+        )
+        # Returns: "/abs/path/frame.png" if {_index} omitted
+        #          "/abs/path/frame1_.png" if {_index}=1 (separator goes after value)
+        # Note: Cannot achieve "frame.png" → "frame_1.png" with optional variable
+    """
+
+    file_path: str | MacroPath
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextUnusedFilenameResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Next unused filename found (preview only - no file created).
+
+    Attributes:
+        available_filename: Absolute path to the available filename
+        index_used: The index number that was used (e.g., 1, 2, 3...), or None if base filename is available
+    """
+
+    available_filename: str
+    index_used: int | None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetNextUnusedFilenameResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to find available filename.
+
+    Attributes:
+        failure_reason: Classification of why the operation failed
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
 class WriteFileRequest(RequestPayload):
     """Write content to a file.
 
@@ -324,14 +402,14 @@ class WriteFileRequest(RequestPayload):
     creating configuration files, writing binary data.
 
     Args:
-        file_path: Path to the file to write
+        file_path: Path to the file to write (str for direct path, MacroPath for macro resolution)
         content: Content to write (str for text files, bytes for binary files)
         encoding: Text encoding for str content (default: 'utf-8', ignored for bytes)
         append: If True, append to existing file; if False, use existing_file_policy (default: False)
         existing_file_policy: How to handle existing files when append=False:
             - "overwrite": Replace file content (default)
             - "fail": Return failure if file exists
-            - "create_new": Create new file with modified name (NOT YET IMPLEMENTED)
+            - "create_new": Create new file with auto-incrementing index (e.g., file_1.txt, file_2.txt)
         create_parents: If True, create parent directories if missing (default: True)
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
@@ -339,7 +417,7 @@ class WriteFileRequest(RequestPayload):
     Note: existing_file_policy is ignored when append=True (append always allows existing files)
     """
 
-    file_path: str
+    file_path: str | MacroPath
     content: str | bytes
     encoding: str = "utf-8"  # Ignored for bytes
     append: bool = False
@@ -369,10 +447,12 @@ class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
     Attributes:
         failure_reason: Classification of why the write failed
+        missing_variables: Set of missing variable names (for MISSING_MACRO_VARIABLES failures)
         result_details: Human-readable error message (inherited from ResultPayloadFailure)
     """
 
     failure_reason: FileIOFailureReason
+    missing_variables: set[str] | None = None
 
 
 @dataclass
