@@ -164,6 +164,7 @@ from griptape_nodes.utils.git_utils import (
     get_git_remote,
     get_local_commit_sha,
     is_git_url,
+    parse_git_url_with_ref,
     switch_branch_or_tag,
     update_library_git,
 )
@@ -1681,6 +1682,8 @@ class LibraryManager:
         2. Checks which libraries are missing locally
         3. Downloads missing libraries concurrently
         4. Logs summary of successful/failed downloads
+
+        Supports URL format with @ref suffix (e.g., "https://github.com/user/repo@stable").
         """
         config_mgr = GriptapeNodes.ConfigManager()
         user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_download"
@@ -1712,12 +1715,15 @@ class LibraryManager:
 
         # Create concurrent download tasks
         download_tasks = []
-        for git_url in git_urls_to_download:
+        for git_url_with_ref in git_urls_to_download:
+            # Parse URL to extract git URL and optional ref
+            git_url, ref = parse_git_url_with_ref(git_url_with_ref)
+
             task = asyncio.create_task(
                 GriptapeNodes.ahandle_request(
                     DownloadLibraryRequest(
                         git_url=git_url,
-                        branch_tag_commit=None,
+                        branch_tag_commit=ref,
                         target_directory_name=None,
                         install_dependencies=True,
                     )

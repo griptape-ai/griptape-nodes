@@ -97,7 +97,7 @@ class MCPServerConfig(BaseModel):
 class AppInitializationComplete(BaseModel):
     libraries_to_download: list[str] = Field(
         default_factory=list,
-        description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo').",
+        description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo'). Optionally specify a branch, tag, or commit with @ref syntax (e.g., 'user/repo@stable' or 'https://github.com/user/repo@v1.0.0'). If no ref is specified, uses the repository's default branch.",
     )
     libraries_to_register: list[str] = Field(
         default_factory=list,

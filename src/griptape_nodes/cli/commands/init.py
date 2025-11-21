@@ -523,13 +523,13 @@ def _build_libraries_list(
     current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
 
     # Default library
-    default_library = "https://github.com/griptape-ai/griptape-nodes-library-core"
+    default_library = "https://github.com/griptape-ai/griptape-nodes-library-core@stable"
     default_identifier = extract_repo_name_from_url(default_library)
     if default_identifier not in current_download_identifiers:
         new_downloads.append(default_library)
 
     # Advanced media library
-    advanced_media_library = "https://github.com/griptape-ai/griptape-nodes-library-advanced"
+    advanced_media_library = "https://github.com/griptape-ai/griptape-nodes-library-advanced@stable"
     advanced_identifier = extract_repo_name_from_url(advanced_media_library)
     if register_advanced_library:
         if advanced_identifier not in current_download_identifiers:
@@ -540,7 +540,7 @@ def _build_libraries_list(
             new_downloads.remove(lib)
 
     # Griptape Cloud library
-    griptape_cloud_library = "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud"
+    griptape_cloud_library = "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud@stable"
     griptape_cloud_identifier = extract_repo_name_from_url(griptape_cloud_library)
     if register_griptape_cloud_library:
         if griptape_cloud_identifier not in current_download_identifiers:

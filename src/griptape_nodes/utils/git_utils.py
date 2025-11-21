@@ -56,55 +56,118 @@ def is_git_url(url: str) -> bool:
     return url.startswith(git_url_patterns)
 
 
+def parse_git_url_with_ref(url_with_ref: str) -> tuple[str, str | None]:
+    """Parse a git URL that may contain a ref specification using @ delimiter.
+
+    Supports format: url@ref where ref can be a branch, tag, or commit SHA.
+    If no @ delimiter is present, returns the URL with None as the ref.
+
+    Args:
+        url_with_ref: A git URL optionally followed by @ref
+            (e.g., "https://github.com/user/repo@stable" or "user/repo@v1.0.0")
+
+    Returns:
+        tuple[str, str | None]: A tuple of (git_url, ref) where ref is None if not specified.
+
+    Examples:
+        "https://github.com/user/repo@stable" -> ("https://github.com/user/repo", "stable")
+        "user/repo@main" -> ("user/repo", "main")
+        "https://github.com/user/repo" -> ("https://github.com/user/repo", None)
+        "user/repo" -> ("user/repo", None)
+    """
+    url_with_ref = url_with_ref.strip()
+
+    # Check for @ delimiter (but not in SSH URLs like git@github.com)
+    # We need to be careful not to split on the @ in git@github.com
+    if url_with_ref.startswith("git@"):
+        # SSH URL format - look for @ after the domain
+        # Format: git@github.com:user/repo@ref
+        parts = url_with_ref.split(":", 1)
+        if len(parts) == 2 and "@" in parts[1]:  # noqa: PLR2004
+            # Split the path part only
+            path_parts = parts[1].rsplit("@", 1)
+            if len(path_parts) == 2:  # noqa: PLR2004
+                return (f"{parts[0]}:{path_parts[0]}", path_parts[1])
+        return (url_with_ref, None)
+
+    # For HTTPS/HTTP URLs and shorthand, split on last @
+    if "@" in url_with_ref:
+        # Use rsplit to split from the right, so we get the last @ (in case of user:pass@host format)
+        parts = url_with_ref.rsplit("@", 1)
+        if len(parts) == 2:  # noqa: PLR2004
+            return (parts[0], parts[1])
+
+    return (url_with_ref, None)
+
+
 def normalize_github_url(url_or_shorthand: str) -> str:
     """Normalize a GitHub URL or shorthand to a full HTTPS git URL.
 
     Converts GitHub shorthand (e.g., "owner/repo") to full HTTPS URLs.
     Ensures .git suffix on GitHub URLs. Passes through non-GitHub URLs unchanged.
+    Preserves @ref suffix if present.
 
     Args:
-        url_or_shorthand: Either a full git URL or GitHub shorthand (e.g., "user/repo").
+        url_or_shorthand: Either a full git URL or GitHub shorthand (e.g., "user/repo"),
+            optionally with @ref suffix (e.g., "user/repo@stable").
 
     Returns:
-        A normalized HTTPS git URL.
+        A normalized HTTPS git URL, preserving any @ref suffix.
 
     Examples:
         "griptape-ai/griptape-nodes-library-topazlabs" -> "https://github.com/griptape-ai/griptape-nodes-library-topazlabs.git"
+        "griptape-ai/repo@stable" -> "https://github.com/griptape-ai/repo.git@stable"
         "https://github.com/user/repo" -> "https://github.com/user/repo.git"
+        "https://github.com/user/repo@main" -> "https://github.com/user/repo.git@main"
         "git@github.com:user/repo.git" -> "git@github.com:user/repo.git"
         "https://gitlab.com/user/repo" -> "https://gitlab.com/user/repo"
     """
-    url = url_or_shorthand.strip().rstrip("/")
+    url_or_shorthand = url_or_shorthand.strip().rstrip("/")
+
+    # Parse out @ref suffix if present
+    url, ref = parse_git_url_with_ref(url_or_shorthand)
 
     # Check if it's GitHub shorthand: owner/repo (no protocol, single slash, no domain)
     if not is_git_url(url) and "/" in url and url.count("/") == 1:
         # Assume GitHub shorthand
-        return f"https://github.com/{url}.git"
+        normalized = f"https://github.com/{url}.git"
+    elif "github.com" in url and not url.endswith(".git"):
+        # If it's a GitHub URL, ensure .git suffix
+        normalized = f"{url}.git"
+    else:
+        # Pass through all other URLs unchanged
+        normalized = url
 
-    # If it's a GitHub URL, ensure .git suffix
-    if "github.com" in url and not url.endswith(".git"):
-        return f"{url}.git"
+    # Re-append @ref suffix if it was present
+    if ref is not None:
+        return f"{normalized}@{ref}"
 
-    # Pass through all other URLs unchanged
-    return url
+    return normalized
 
 
 def extract_repo_name_from_url(url: str) -> str:
     """Extract the repository name from a git URL.
 
+    Handles URLs with @ref suffix by stripping the ref before extraction.
+
     Args:
-        url: A git URL (HTTPS, SSH, or GitHub shorthand).
+        url: A git URL (HTTPS, SSH, or GitHub shorthand), optionally with @ref suffix.
 
     Returns:
-        The repository name without the .git suffix.
+        The repository name without the .git suffix or @ref.
 
     Examples:
         "https://github.com/griptape-ai/griptape-nodes-library-advanced" -> "griptape-nodes-library-advanced"
         "https://github.com/griptape-ai/griptape-nodes-library-advanced.git" -> "griptape-nodes-library-advanced"
+        "https://github.com/griptape-ai/griptape-nodes-library-advanced@stable" -> "griptape-nodes-library-advanced"
         "git@github.com:user/repo.git" -> "repo"
         "griptape-ai/repo" -> "repo"
+        "griptape-ai/repo@main" -> "repo"
     """
     url = url.strip().rstrip("/")
+
+    # Strip @ref suffix if present
+    url, _ = parse_git_url_with_ref(url)
 
     # Remove .git suffix if present
     url = url.removesuffix(".git")
