@@ -19,12 +19,15 @@ app = typer.Typer(help="Manage local libraries.")
 
 
 @app.command()
-def sync() -> None:
+def sync(
+    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
+    overwrite: bool = typer.Option(False, "--overwrite", help="Discard uncommitted changes in libraries"),  # noqa: FBT001
+) -> None:
     """Sync all libraries to latest versions from their git repositories."""
-    asyncio.run(_sync_libraries())
+    asyncio.run(_sync_libraries(install_dependencies=not no_deps, overwrite_existing=overwrite))
 
 
-async def _sync_libraries() -> None:
+async def _sync_libraries(*, install_dependencies: bool, overwrite_existing: bool) -> None:
     """Sync all libraries by checking for updates and installing dependencies."""
     console.print("[bold cyan]Loading libraries...[/bold cyan]")
 
@@ -37,8 +40,11 @@ async def _sync_libraries() -> None:
 
     console.print("[bold cyan]Syncing libraries...[/bold cyan]")
 
-    # Create sync request with default parameters
-    request = SyncLibrariesRequest(install_dependencies=True)
+    # Create sync request with provided parameters
+    request = SyncLibrariesRequest(
+        install_dependencies=install_dependencies,
+        overwrite_existing=overwrite_existing,
+    )
 
     # Execute the sync
     result = await GriptapeNodes.ahandle_request(request)
