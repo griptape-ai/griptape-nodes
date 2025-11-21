@@ -106,41 +106,56 @@ class DisplayList(ControlNode):
         if delete_excess_parameters:
             self.delete_excess_parameters(list_values)
         for i, item in enumerate(list_values):
-            # Determine the type for this specific item
             item_specific_type = self._determine_item_type(item)
-
             if i < len(self.items_list):
-                current_parameter = self.items_list[i]
-                # Update the output type for this parameter
-                if item_specific_type == ParameterTypeBuiltin.ANY.value:
-                    new_output_type = ParameterTypeBuiltin.ALL.value
-                else:
-                    new_output_type = item_specific_type
-                current_parameter.output_type = new_output_type
-
-                # Validate and remove incompatible connections
-                self._validate_and_remove_incompatible_connections(current_parameter.name, new_output_type)
-
-                self.set_parameter_value(current_parameter.name, item)
-                # Using to ensure updates are being propagated
-                self.publish_update_to_parameter(current_parameter.name, item)
-                self.parameter_output_values[current_parameter.name] = item
-                continue
-            new_child = self.items_list.add_child_parameter()
-            # Set the output type for the new child parameter
-            if item_specific_type == ParameterTypeBuiltin.ANY.value:
-                new_output_type = ParameterTypeBuiltin.ALL.value
+                self._update_existing_parameter(self.items_list[i], item, item_specific_type)
             else:
-                new_output_type = item_specific_type
-            new_child.output_type = new_output_type
-
-            # Validate and remove incompatible connections for new parameters too
-            self._validate_and_remove_incompatible_connections(new_child.name, new_output_type)
-
-            # Set the parameter value
-            self.set_parameter_value(new_child.name, item)
-            # Ensure the new child parameter is tracked for flush events
+                self._create_new_parameter(item, item_specific_type)
         self._updating_display_list = False
+
+    def _update_existing_parameter(self, parameter: Parameter, item: Any, item_specific_type: str) -> None:
+        """Update an existing parameter with new value and type.
+
+        Args:
+            parameter: The parameter to update
+            item: The item value to set
+            item_specific_type: The detected type of the item
+        """
+        # Update the output type for this parameter
+        if item_specific_type == ParameterTypeBuiltin.ANY.value:
+            new_output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            new_output_type = item_specific_type
+        parameter.output_type = new_output_type
+
+        # Validate and remove incompatible connections
+        self._validate_and_remove_incompatible_connections(parameter.name, new_output_type)
+
+        self.set_parameter_value(parameter.name, item)
+        # Using to ensure updates are being propagated
+        self.publish_update_to_parameter(parameter.name, item)
+        self.parameter_output_values[parameter.name] = item
+
+    def _create_new_parameter(self, item: Any, item_specific_type: str) -> None:
+        """Create a new child parameter for a list item.
+
+        Args:
+            item: The item value to set
+            item_specific_type: The detected type of the item
+        """
+        new_child = self.items_list.add_child_parameter()
+        # Set the output type for the new child parameter
+        if item_specific_type == ParameterTypeBuiltin.ANY.value:
+            new_output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            new_output_type = item_specific_type
+        new_child.output_type = new_output_type
+
+        # Validate and remove incompatible connections for new parameters too
+        self._validate_and_remove_incompatible_connections(new_child.name, new_output_type)
+
+        # Set the parameter value
+        self.set_parameter_value(new_child.name, item)
 
     def delete_excess_parameters(self, list_values: list) -> None:
         """Delete parameters when list is shorter than parameter count."""
