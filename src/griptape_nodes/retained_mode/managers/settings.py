@@ -97,11 +97,11 @@ class MCPServerConfig(BaseModel):
 class AppInitializationComplete(BaseModel):
     libraries_to_download: list[str] = Field(
         default_factory=list,
-        description="Git URLs to download into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo').",
+        description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo').",
     )
     libraries_to_register: list[str] = Field(
         default_factory=list,
-        description="Paths to library JSON files or directories to scan. Can contain individual griptape_nodes_library.json file paths or directory paths (scanned recursively).",
+        description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
     )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] = Field(
