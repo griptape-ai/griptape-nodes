@@ -10,6 +10,7 @@ import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
@@ -19,6 +20,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import validate_url
 
@@ -123,7 +125,7 @@ class ArtifactPathValidator(Trait):
             if not value or not str(value).strip():
                 return  # Empty values are allowed
 
-            path_str = ArtifactPathTethering._strip_surrounding_quotes(str(value).strip())
+            path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
             # Check if it's a URL
             if path_str.startswith(("http://", "https://")):
@@ -358,7 +360,7 @@ class ArtifactPathTethering:
 
     def _handle_string_input_to_artifact(self, path_value: str) -> None:
         """Handle string input to artifact parameter by processing it as a path."""
-        path_value = self._strip_surrounding_quotes(path_value.strip()) if path_value else ""
+        path_value = OSManager.strip_surrounding_quotes(path_value.strip()) if path_value else ""
 
         if path_value:
             try:
@@ -445,7 +447,7 @@ class ArtifactPathTethering:
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
-        path_value = self._strip_surrounding_quotes(str(value).strip()) if value else ""
+        path_value = OSManager.strip_surrounding_quotes(str(value).strip()) if value else ""
 
         if path_value:
             # Process the path (URL or file)
@@ -510,16 +512,6 @@ class ArtifactPathTethering:
             return artifact
         return value
 
-    @staticmethod
-    def _strip_surrounding_quotes(path_str: str) -> str:
-        """Strip surrounding quotes only if they match (from 'Copy as Pathname')."""
-        if len(path_str) >= 2 and (  # noqa: PLR2004
-            (path_str.startswith("'") and path_str.endswith("'"))
-            or (path_str.startswith('"') and path_str.endswith('"'))
-        ):
-            return path_str[1:-1]
-        return path_str
-
     def _is_url(self, path: str) -> bool:
         """Check if the path is a URL."""
         return path.startswith(("http://", "https://"))
@@ -571,23 +563,36 @@ class ArtifactPathTethering:
         return upload_result
 
     def _read_file_data(self, path: Path, file_path: str) -> tuple[bytes, int]:
-        """Read file data with specific exception handling."""
-        try:
-            file_data = path.read_bytes()
-        except FileNotFoundError:
-            error_msg = f"File not found: '{file_path}'"
-            raise ValueError(error_msg) from None
-        except PermissionError:
-            error_msg = f"Permission denied reading file: '{file_path}'"
-            raise ValueError(error_msg) from None
-        except OSError as e:
-            error_msg = f"Failed to read file '{file_path}': {e}"
-            raise ValueError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Unexpected error reading file '{file_path}': {e}"
-            raise ValueError(error_msg) from e
+        """Read file data using ReadFileRequest with thumbnail generation disabled.
 
-        file_size = len(file_data)
+        Uses OSManager's ReadFileRequest flow to ensure:
+        - Path sanitization (shell escapes, quotes)
+        - Windows long path support (paths >260 chars)
+        - Consistent security/permission checks
+        - Workspace boundary validation
+
+        Note: Thumbnail generation is disabled (should_transform_image_content_to_thumbnail=False)
+        because we need the original file bytes for uploading to static storage.
+        """
+        read_request = ReadFileRequest(
+            file_path=str(path),
+            workspace_only=False,
+            should_transform_image_content_to_thumbnail=False,  # Need original bytes, not thumbnail
+        )
+        read_result = GriptapeNodes.handle_request(read_request)
+
+        if not isinstance(read_result, ReadFileResultSuccess):
+            error_msg = f"Failed to read file '{file_path}': {read_result.result_details}"
+            raise RuntimeError(error_msg)  # noqa: TRY004
+
+        # ReadFileRequest may return str for text files, bytes for binary
+        # We need bytes for uploading, so convert if necessary
+        if isinstance(read_result.content, str):
+            file_data = read_result.content.encode(read_result.encoding or "utf-8")
+        else:
+            file_data = read_result.content
+
+        file_size = read_result.file_size
         return file_data, file_size
 
     def _upload_file_data(

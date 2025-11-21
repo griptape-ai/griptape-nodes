@@ -58,6 +58,11 @@ class ApplyMask(DataNode):
         self.add_parameter(ParameterBool(name="invert_mask", default_value=False))
         self.add_parameter(ParameterFloat(name="grow_shrink", default_value=0, slider=True, min_val=-100, max_val=100))
         self.add_parameter(ParameterFloat(name="blur_mask", default_value=0, slider=True, min_val=0, max_val=100))
+        self.add_parameter(
+            ParameterBool(
+                name="apply_mask_blur_to_edges", default_value=False, tooltip="apply blur_mask to image edges"
+            )
+        )
 
         self.add_parameter(
             Parameter(
@@ -100,7 +105,7 @@ class ApplyMask(DataNode):
 
         if parameter.name in ["input_image", "input_mask"] and value is not None:
             self._handle_parameter_change()
-        elif parameter.name in ["channel", "invert_mask", "grow_shrink", "blur_mask"]:
+        elif parameter.name in ["channel", "invert_mask", "grow_shrink", "blur_mask", "apply_mask_blur_to_edges"]:
             # When transform parameters change, re-apply the mask
             input_image = self.get_parameter_value("input_image")
             input_mask = self.get_parameter_value("input_mask")
@@ -138,6 +143,42 @@ class ApplyMask(DataNode):
         response.raise_for_status()
         return Image.open(BytesIO(response.content))
 
+    def _create_edge_mask(self, size: tuple[int, int], fade_distance: float) -> Image.Image:
+        """Create an edge mask that fades from transparent at edges to opaque at center.
+
+        Args:
+            size: (width, height) of the mask
+            fade_distance: Distance in pixels from edge where fade occurs
+
+        Returns:
+            PIL Image (grayscale) with edge fade
+        """
+        width, height = size
+        mask = Image.new("L", size, 255)
+
+        # Create gradient arrays for horizontal and vertical fades
+        for y in range(height):
+            for x in range(width):
+                # Calculate distance from each edge
+                dist_from_left = x
+                dist_from_right = width - x - 1
+                dist_from_top = y
+                dist_from_bottom = height - y - 1
+
+                # Find minimum distance to any edge
+                min_dist = min(dist_from_left, dist_from_right, dist_from_top, dist_from_bottom)
+
+                # Calculate alpha based on distance and fade_distance
+                if min_dist >= fade_distance:
+                    alpha_value = 255
+                else:
+                    # Linear fade from 0 at edge to 255 at fade_distance
+                    alpha_value = int((min_dist / fade_distance) * 255)
+
+                mask.putpixel((x, y), alpha_value)
+
+        return mask
+
     def _apply_mask_to_input(self, input_image: ImageUrlArtifact, mask_artifact: Any, channel: str) -> None:
         """Apply mask to input image using specified channel as alpha and set as output_image."""
         # Load input image
@@ -167,6 +208,16 @@ class ApplyMask(DataNode):
             blur_radius=blur_mask,
             context_name=self.name,
         )
+
+        # Apply edge blur if enabled
+        apply_edge_blur = self.get_parameter_value("apply_mask_blur_to_edges")
+        if apply_edge_blur and blur_mask > 0:
+            edge_mask = self._create_edge_mask(input_pil.size, blur_mask)
+            # Combine edge mask with alpha channel by multiplying
+            alpha_array = list(alpha.getdata())
+            edge_array = list(edge_mask.getdata())
+            combined = [int(a * e / 255) for a, e in zip(alpha_array, edge_array, strict=True)]
+            alpha.putdata(combined)
 
         # Apply alpha channel to input image
         input_pil.putalpha(alpha)
