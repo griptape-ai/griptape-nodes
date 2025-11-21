@@ -1294,6 +1294,16 @@ class FlowManager:
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
+        # Step 7.5: Retrieve NodeGroupNode if node_group_name was provided
+        node_group_node: NodeGroupNode | None = None
+        if request.node_group_name:
+            try:
+                node = GriptapeNodes.NodeManager().get_node_by_name(request.node_group_name)
+                if isinstance(node, NodeGroupNode):
+                    node_group_node = node
+            except Exception as e:
+                logger.debug("Failed to retrieve NodeGroupNode '%s': %s", request.node_group_name, e)
+
         # Step 8: Create start node with parameters for external incoming connections
         start_node_result = self._create_multi_node_start_node_with_connections(
             request=request,
@@ -1302,6 +1312,7 @@ class FlowManager:
             serialized_parameter_value_tracker=serialized_parameter_value_tracker,
             node_name_to_uuid=node_name_to_uuid,
             external_connections_dict=node_connections_dict,
+            node_group_node=node_group_node,
         )
         if isinstance(start_node_result, PackageNodesAsSerializedFlowResultFailure):
             return start_node_result
@@ -2030,6 +2041,7 @@ class FlowManager:
         external_connections_dict: dict[
             str, ConnectionAnalysis
         ],  # Contains EXTERNAL connections only - used to determine which parameters need start node inputs
+        node_group_node: NodeGroupNode | None = None,
     ) -> PackagingStartNodeResult | PackageNodesAsSerializedFlowResultFailure:
         """Create start node commands and connections for external incoming connections."""
         # Generate UUID and name for start node
@@ -2104,6 +2116,17 @@ class FlowManager:
         # Add control connections to the same list as data connections
         start_to_package_connections.extend(control_connections)
 
+        # Set parameter values from NodeGroupNode if provided
+        if node_group_node is not None:
+            self._apply_node_group_parameters_to_start_node(
+                node_group_node=node_group_node,
+                start_node_library_name=request.start_node_library_name,
+                start_node_type=request.start_node_type,  # type: ignore[arg-type]  # Guaranteed non-None
+                start_node_parameter_value_commands=start_node_parameter_value_commands,
+                unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+            )
+
         # Build complete SerializedNodeCommands for start node
         start_node_dependencies = NodeDependencies()
         start_node_dependencies.libraries.add(start_node_library_details)
@@ -2123,6 +2146,84 @@ class FlowManager:
             parameter_name_mappings=parameter_name_mappings,
             start_node_name=start_node_name,
         )
+
+    def _apply_node_group_parameters_to_start_node(  # noqa: PLR0913
+        self,
+        node_group_node: NodeGroupNode,
+        start_node_library_name: str,
+        start_node_type: str,
+        start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        serialized_parameter_value_tracker: SerializedParameterValueTracker,
+    ) -> None:
+        """Apply parameter values from NodeGroupNode to the StartFlow node.
+
+        This method reads the execution environment metadata from the NodeGroupNode,
+        extracts parameter values for the specified StartFlow node type, and creates
+        set parameter value commands for those parameters.
+
+        Args:
+            node_group_node: The NodeGroupNode containing parameter values
+            start_node_library_name: Name of the library containing the StartFlow node
+            start_node_type: Type of the StartFlow node
+            start_node_uuid: UUID of the StartFlow node being created
+            start_node_parameter_value_commands: List to append parameter value commands to
+            unique_parameter_uuid_to_values: Dict to track unique parameter values
+            serialized_parameter_value_tracker: Tracker for serialized parameter values
+        """
+        # Get execution environment metadata from NodeGroupNode
+        if not node_group_node.metadata:
+            return
+
+        execution_env_metadata = node_group_node.metadata.get("execution_environment")
+        if not execution_env_metadata:
+            return
+
+        # Find the metadata for the current library
+        library_metadata = execution_env_metadata.get(start_node_library_name)
+        if not library_metadata:
+            return
+
+        # Verify this is the correct StartFlow node type
+        if library_metadata.get("start_flow_node") != start_node_type:
+            return
+
+        # Get the list of parameter names that belong to this StartFlow node
+        parameter_names = library_metadata.get("parameter_names", [])
+        if not parameter_names:
+            return
+
+        # For each parameter, get its value from the NodeGroupNode and create a set value command
+        for prefixed_param_name in parameter_names:
+            # Get the value from the NodeGroupNode parameter
+            param_value = node_group_node.get_parameter_value(param_name=prefixed_param_name)
+
+            # Skip if no value is set
+            if param_value is None:
+                continue
+
+            # Strip the prefix to get the original parameter name for the StartFlow node
+            class_name_prefix = start_node_type.lower()
+            original_param_name = prefixed_param_name.removeprefix(f"{class_name_prefix}_")
+
+            # Create unique parameter UUID for this value
+            value_id = id(param_value)
+            unique_param_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
+            unique_parameter_uuid_to_values[unique_param_uuid] = param_value
+            serialized_parameter_value_tracker.add_as_serializable(value_id, unique_param_uuid)
+
+            # Create set parameter value command
+            set_value_request = SetParameterValueRequest(
+                parameter_name=original_param_name,
+                value=None,  # Will be overridden when instantiated
+                is_output=False,
+                initial_setup=True,
+            )
+            indirect_set_value_command = SerializedNodeCommands.IndirectSetParameterValueCommand(
+                set_parameter_value_command=set_value_request,
+                unique_value_uuid=unique_param_uuid,
+            )
+            start_node_parameter_value_commands.append(indirect_set_value_command)
 
     def _create_start_node_parameters_and_connections_for_incoming_data(  # noqa: PLR0913
         self,
