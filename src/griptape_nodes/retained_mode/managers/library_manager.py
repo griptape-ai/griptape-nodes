@@ -463,7 +463,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to list node types in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
 
             result = ListNodeTypesInLibraryResultFailure(result_details=details)
             return result
@@ -486,7 +485,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
 
             result = GetLibraryMetadataResultFailure(result_details=details)
             return result
@@ -512,7 +510,6 @@ class LibraryManager:
         # Check if the file exists
         if not json_path.exists():
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -527,7 +524,6 @@ class LibraryManager:
                 library_json = json.load(f)
         except json.JSONDecodeError:
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -537,7 +533,6 @@ class LibraryManager:
             )
         except Exception as err:
             details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -562,7 +557,6 @@ class LibraryManager:
                 problem = LibrarySchemaValidationProblem(location=loc, error_type=error_type, message=msg)
                 problems.append(problem)
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
@@ -572,7 +566,6 @@ class LibraryManager:
             )
         except Exception as err:
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
@@ -782,7 +775,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get categories in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
             result = ListCategoriesInLibraryResultFailure(result_details=details)
             return result
 
@@ -807,7 +799,6 @@ class LibraryManager:
                 problems=[LibraryNotFoundProblem(library_path=file_path)],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Use the new metadata loading functionality
@@ -839,7 +830,6 @@ class LibraryManager:
                 problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
             )
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Get the directory containing the JSON file to resolve relative paths
@@ -858,7 +848,6 @@ class LibraryManager:
 
                 if isinstance(install_result, InstallLibraryDependenciesResultFailure):
                     details = f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
-                    logger.error(details)
                     return RegisterLibraryFromFileResultFailure(result_details=details)
 
                 if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
@@ -902,7 +891,6 @@ class LibraryManager:
                     ],
                 )
                 details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
-                logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Create or get the library
@@ -925,7 +913,6 @@ class LibraryManager:
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # We are at least potentially viable.
@@ -993,7 +980,6 @@ class LibraryManager:
                 return RegisterLibraryFromFileResultFailure(result_details=details)
             case _:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected status '{library_load_results.status}' was returned."
-                logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
     async def register_library_from_requirement_specifier_request(
@@ -1012,7 +998,6 @@ class LibraryManager:
                 library_python_venv_path = await self._init_library_venv(venv_path)
             except RuntimeError as e:
                 details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
-                logger.error(details)
                 return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
             if venv_already_exists:
@@ -1028,7 +1013,6 @@ class LibraryManager:
                 if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
                     error_msg = OSManager.format_disk_space_error(Path(venv_path))
                     details = f"Attempted to install library '{request.requirement_specifier}'. Failed when installing dependencies due to insufficient disk space (requires {min_space_gb} GB): {error_msg}"
-                    logger.error(details)
                     return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
                 uv_path = find_uv_bin()
@@ -1056,11 +1040,9 @@ class LibraryManager:
                 )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
         except InvalidRequirement as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to invalid requirement specifier: {e}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
         library_path = str(files(package_name).joinpath(request.library_config_name))
@@ -1068,7 +1050,6 @@ class LibraryManager:
         register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
         if isinstance(register_result, RegisterLibraryFromFileResultFailure):
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {register_result}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(
@@ -1188,7 +1169,6 @@ class LibraryManager:
             LibraryRegistry.unregister_library(library_name=request.library_name)
         except Exception as e:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
-            logger.error(details)
             return UnloadLibraryFromRegistryResultFailure(result_details=details)
 
         # Clean up all stable module aliases for this library
@@ -1208,7 +1188,6 @@ class LibraryManager:
 
         if not list_libraries_result.succeeded():
             details = "Attempted to get all info for all libraries, but listing the registered libraries failed."
-            logger.error(details)
             return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
         try:
@@ -1223,7 +1202,6 @@ class LibraryManager:
 
                 if not library_all_info_result.succeeded():
                     details = f"Attempted to get all info for all libraries, but failed when getting all info for library named '{library_name}'."
-                    logger.error(details)
                     return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
                 library_all_info_success = cast("GetAllInfoForLibraryResultSuccess", library_all_info_result)
@@ -1231,7 +1209,6 @@ class LibraryManager:
                 library_name_to_all_info[library_name] = library_all_info_success
         except Exception as err:
             details = f"Attempted to get all info for all libraries. Encountered error {err}."
-            logger.error(details)
             return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
         # We're home free now
@@ -1254,7 +1231,6 @@ class LibraryManager:
             LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
             result = GetAllInfoForLibraryResultFailure(result_details=details)
             return result
 
@@ -1263,7 +1239,6 @@ class LibraryManager:
 
         if not library_metadata_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the library's metadata."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         list_categories_request = ListCategoriesInLibraryRequest(library=request.library)
@@ -1271,7 +1246,6 @@ class LibraryManager:
 
         if not list_categories_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of categories in the library."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         node_type_list_request = ListNodeTypesInLibraryRequest(library=request.library)
@@ -1279,7 +1253,6 @@ class LibraryManager:
 
         if not node_type_list_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of node types in the library."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         # Cast everyone to their success counterparts.
@@ -1291,7 +1264,6 @@ class LibraryManager:
             details = (
                 f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
             )
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         # Now build the map of node types to metadata.
@@ -1302,14 +1274,12 @@ class LibraryManager:
 
             if not node_metadata_result.succeeded():
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the metadata for a node type called '{node_type_name}'."
-                logger.error(details)
                 return GetAllInfoForLibraryResultFailure(result_details=details)
 
             try:
                 node_metadata_result_success = cast("GetNodeMetadataFromLibraryResultSuccess", node_metadata_result)
             except Exception as err:
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
-                logger.error(details)
                 return GetAllInfoForLibraryResultFailure(result_details=details)
 
             # Put it into the map.
@@ -2247,7 +2217,6 @@ class LibraryManager:
         clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():
             details = "Failed to clear the existing object state when preparing to reload all libraries."
-            logger.error(details)
             return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Unload all libraries now.
