@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
-from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
-    CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     BaseNode,
     NodeGroupNode,
@@ -29,6 +27,7 @@ from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.flow import ControlFlow
 
 
@@ -84,7 +83,7 @@ class ControlFlowContext:
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
 
-    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
+    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:  # noqa: C901, PLR0912
         """Get all next nodes from the current nodes.
 
         Returns:
@@ -100,16 +99,19 @@ class ControlFlowContext:
                 if node_connection is not None:
                     node, entry_parameter = node_connection
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
+            # Get next control output for this node
+            elif isinstance(current_node, NodeGroupNode):
+                next_output = current_node.get_next_control_output()
+                if next_output is not None:
+                    next_node, next_output = next_output
+                    node_connection = (
+                        GriptapeNodes.FlowManager().get_connections().get_connected_node(next_node, next_output)
+                    )
+                    if node_connection is not None:
+                        node, entry_parameter = node_connection
+                        next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             else:
-                # Get next control output for this node
-
-                if (
-                    isinstance(current_node, NodeGroupNode)
-                    and current_node.get_parameter_value(current_node.execution_environment.name) != LOCAL_EXECUTION
-                ):
-                    next_output = self.get_next_control_output_for_non_local_execution(current_node)
-                else:
-                    next_output = current_node.get_next_control_output()
+                next_output = current_node.get_next_control_output()
                 if next_output is not None:
                     if isinstance(current_node, BaseIterativeStartNode):
                         if current_node.end_node is None:
@@ -133,20 +135,6 @@ class ControlFlowContext:
                 next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
 
         return next_nodes
-
-    # Mirrored in @parallel_resolution.py. if you update one, update the other.
-    def get_next_control_output_for_non_local_execution(self, node: BaseNode) -> Parameter | None:
-        for param_name, value in node.parameter_output_values.items():
-            parameter = node.get_parameter_by_name(param_name)
-            if (
-                parameter is not None
-                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE
-                and value == CONTROL_INPUT_PARAMETER
-            ):
-                # This is the parameter
-                logger.debug("Control Flow: Found control output parameter '%s' for non-local execution", param_name)
-                return parameter
-        return None
 
     def reset(self, *, cancel: bool = False) -> None:
         if self.current_nodes is not None:

@@ -2466,10 +2466,14 @@ class NodeManager:
 
             # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
             if isinstance(node, NodeGroupNode):
+                # Remove node_names_in_group from metadata - it's redundant and will be regenerated
+                metadata_copy = copy.deepcopy(node.metadata)
+                metadata_copy.pop("node_names_in_group", None)
+
                 create_node_request = CreateNodeGroupRequest(
                     node_group_name=node_name,
                     node_names_to_add=list(node.nodes),
-                    metadata=copy.deepcopy(node.metadata),
+                    metadata=metadata_copy,
                 )
             else:
                 # For non-NodeGroupNode, library_details should always be set

@@ -9,8 +9,6 @@ from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
-    CONTROL_INPUT_PARAMETER,
-    LOCAL_EXECUTION,
     BaseNode,
     NodeResolutionState,
 )
@@ -201,22 +199,6 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
-    def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
-        for param_name, value in node.parameter_output_values.items():
-            parameter = node.get_parameter_by_name(param_name)
-            if (
-                parameter is not None
-                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value
-                and value == CONTROL_INPUT_PARAMETER
-            ):
-                # This is the parameter
-                logger.debug(
-                    "Parallel Resolution: Found control output parameter '%s' for non-local execution", param_name
-                )
-                return parameter
-        return None
-
-    @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
         flow_manager = GriptapeNodes.FlowManager()
@@ -226,13 +208,13 @@ class ExecuteDagState(State):
             return
         from griptape_nodes.exe_types.node_types import NodeGroupNode
 
-        if (
-            isinstance(node, NodeGroupNode)
-            and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
-        ):
-            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
-        else:
-            next_output = node.get_next_control_output()
+        if isinstance(node, NodeGroupNode):
+            node_and_next_output = node.get_next_control_output()
+            if node_and_next_output is not None:
+                next_node, next_output = node_and_next_output
+                ExecuteDagState._process_next_control_node(context, next_node, next_output, network_name, flow_manager)
+            return
+        next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 

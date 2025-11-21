@@ -1913,6 +1913,28 @@ class NodeGroupNode(BaseNode):
                 all_nodes.update(node.nodes)
         return all_nodes
 
+    def get_next_control_output(self) -> tuple[BaseNode, Parameter] | None:
+        control_connection = self._find_external_control_output_connection()
+        if control_connection is None:
+            return None
+        return control_connection.source_node, control_connection.source_parameter
+
+    def _find_external_control_output_connection(self) -> Connection | None:
+        """Find control flow connection from external outgoing connections.
+
+        Searches through external outgoing connections to find the control flow connection.
+        A control connection is identified by having a source parameter with CONTROL_TYPE output.
+
+        Returns:
+            Connection object if found, None otherwise
+        """
+        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+
+        for conn in self.stored_connections.external_connections.outgoing_connections:
+            if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                return conn
+        return None
+
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode
     ) -> set[BaseNode]:

@@ -59,6 +59,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
 )
+from griptape_nodes.retained_mode.events.node_events import CreateNodeGroupRequest
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
@@ -2918,7 +2919,7 @@ class WorkflowManager:
             node_creation_asts.extend(node_creation_ast)
         return node_creation_asts
 
-    def _generate_node_creation_code(
+    def _generate_node_creation_code(  # noqa: C901, PLR0912
         self,
         serialized_node_command: SerializedNodeCommands,
         node_index: int,
@@ -2952,9 +2953,34 @@ class WorkflowManager:
             for field in fields(create_node_request):
                 field_value = getattr(create_node_request, field.name)
                 if field_value != field.default:
-                    create_node_request_args.append(
-                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
-                    )
+                    # Special handling for CreateNodeGroupRequest.node_names_to_add - these are now UUIDs, convert to variable references
+                    if isinstance(create_node_request, CreateNodeGroupRequest) and field.name == "node_names_to_add":
+                        # field_value is now a list of UUIDs (converted in _serialize_package_nodes_for_local_execution)
+                        # Convert each UUID to an AST Name node referencing the generated variable
+                        node_var_ast_list = []
+                        for node_uuid in field_value:
+                            if node_uuid in node_uuid_to_node_variable_name:
+                                variable_name = node_uuid_to_node_variable_name[node_uuid]
+                                node_var_ast_list.append(ast.Name(id=variable_name, ctx=ast.Load()))
+                            else:
+                                logger.info(
+                                    "NodeGroup child UUID '%s' not found in node_uuid_to_node_variable_name. Available UUIDs: %s...",
+                                    node_uuid,
+                                    list(node_uuid_to_node_variable_name.keys())[:5],
+                                )
+                        if node_var_ast_list:
+                            create_node_request_args.append(
+                                ast.keyword(arg=field.name, value=ast.List(elts=node_var_ast_list, ctx=ast.Load()))
+                            )
+                        else:
+                            logger.info(
+                                "NodeGroup node_names_to_add resulted in empty variable list. Original UUIDs: %s",
+                                field_value,
+                            )
+                    else:
+                        create_node_request_args.append(
+                            ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                        )
         # Get the actual request class name (CreateNodeRequest or CreateNodeGroupRequest)
         request_class_name = type(create_node_request).__name__
         # Handle the create node command and assign to node name

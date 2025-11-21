@@ -513,7 +513,7 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def _package_loop_body(  # noqa: C901, PLR0915
+    async def _package_loop_body(  # noqa: C901, PLR0915, PLR0912
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
@@ -586,21 +586,17 @@ class NodeExecutor:
                 entry_control_parameter_name = first_conn.target_parameter.name
 
         # Determine library and node types based on execution_type
-        library_name = "Griptape Nodes Library"
-        start_node_type = None
-        end_node_type = None
-
+        library = None
         if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
-                start_nodes = library.get_nodes_by_base_type(StartNode)
-                end_nodes = library.get_nodes_by_base_type(EndNode)
-                if len(start_nodes) > 0 and len(end_nodes) > 0:
-                    start_node_type = start_nodes[0]
-                    end_node_type = end_nodes[0]
-                    library_name = library.get_library_data().name
             except KeyError:
                 logger.warning("Could not find library '%s' for loop execution, using default library", execution_type)
+
+        workflow_start_end_nodes = await self._get_workflow_start_end_nodes(library)
+        start_node_type = workflow_start_end_nodes.start_flow_node_type
+        end_node_type = workflow_start_end_nodes.end_flow_node_type
+        library_name = workflow_start_end_nodes.start_flow_node_library_name
 
         # Create the packaging request
         request = PackageNodesAsSerializedFlowRequest(
@@ -867,7 +863,7 @@ class NodeExecutor:
                         delete_result.result_details,
                     )
 
-    async def _handle_sequential_loop_execution(
+    async def _handle_sequential_loop_execution(  # noqa: C901
         self, start_node: BaseIterativeStartNode, end_node: BaseIterativeEndNode
     ) -> None:
         """Handle sequential loop execution by running iterations one at a time.
@@ -1607,7 +1603,6 @@ class NodeExecutor:
                     and context_manager.get_current_flow().name == deserialize_result.flow_name
                 ):
                     context_manager.pop_flow()
-
         logger.info("Successfully deserialized %d flow instances for parallel execution", total_iterations)
         # Step 2: Set input values on start nodes for each iteration
         for iteration_index, _, node_name_mappings in deserialized_flows:
@@ -1730,81 +1725,102 @@ class NodeExecutor:
                             delete_result.result_details,
                         )
 
-    async def _execute_loop_iterations_sequentially_private(
+    async def _execute_loop_iterations_via_subprocess(  # noqa: PLR0913
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
         end_loop_node: BaseIterativeEndNode,
+        workflow_path: Path,
+        workflow_result: Any,  # noqa: ARG002 - Used by wrapper methods for cleanup
+        file_name_prefix: str,
+        execution_mode: str,
+        *,
+        run_sequentially: bool,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute loop iterations sequentially in private subprocesses (no cloud publishing).
+        """Execute loop iterations via subprocess (unified helper for private/cloud execution).
 
-        This method publishes the workflow to a local file and executes it N times
-        as subprocesses with different parameter values, running one-at-a-time.
+        This unified helper handles both sequential and parallel execution modes for
+        workflows that run as subprocesses (PRIVATE or CLOUD publishers).
 
         Args:
             package_result: The packaged flow with parameter mappings
             total_iterations: Number of iterations to run
             parameter_values_per_iteration: Dict mapping iteration_index -> parameter values
             end_loop_node: The End Loop Node to extract results for
+            workflow_path: Path to the saved/published workflow file
+            workflow_result: Result from saving/publishing the workflow
+            file_name_prefix: Prefix for iteration-specific file names
+            execution_mode: Human-readable execution mode name for logging
+            run_sequentially: If True, run iterations one-at-a-time; if False, run concurrently
 
         Returns:
-            Tuple of:
-            - iteration_results: Dict mapping iteration_index -> result value
-            - successful_iterations: List of iteration indices that succeeded
-            - last_iteration_values: Dict mapping parameter names -> values from last iteration
+            Tuple of (iteration_results, successful_iterations, last_iteration_values)
         """
-        # Step 1: Save workflow file
-        workflow_path, workflow_result = await self._save_workflow_file_for_loop(
-            end_loop_node=end_loop_node,
-            package_result=package_result,
-            pickle_control_flow_result=True,
-        )
-        sanitized_loop_name = end_loop_node.name.replace(" ", "_")
-        file_name = f"{sanitized_loop_name}_private_sequential_loop_flow"
-
-        logger.info(
-            "Executing %d iterations sequentially in private subprocesses for loop '%s'...",
-            total_iterations,
-            end_loop_node.name,
-        )
-
-        # Get the StartFlow node name from package_result
         start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
         start_node_name = start_node_mapping.node_name
 
-        iteration_outputs: list[tuple[int, bool, dict[str, Any] | None]] = []
+        mode_str = "sequentially" if run_sequentially else "concurrently"
+        logger.info(
+            "Executing %d iterations %s in %s for loop '%s'",
+            total_iterations,
+            mode_str,
+            execution_mode,
+            end_loop_node.name,
+        )
 
         try:
-            # Execute iterations one-at-a-time (sequentially)
-            for iteration_index in range(total_iterations):
-                try:
-                    # Wrap parameter values with StartFlow node name
-                    flow_input_for_iteration = {start_node_name: parameter_values_per_iteration[iteration_index]}
+            if run_sequentially:
+                # Execute iterations one-at-a-time
+                iteration_outputs: list[tuple[int, bool, dict[str, Any] | None]] = []
+                for iteration_index in range(total_iterations):
+                    try:
+                        flow_input = {start_node_name: parameter_values_per_iteration[iteration_index]}
+                        logger.info(
+                            "Executing iteration %d/%d for loop '%s'",
+                            iteration_index + 1,
+                            total_iterations,
+                            end_loop_node.name,
+                        )
 
-                    logger.info(
-                        "Executing private sequential iteration %d/%d for loop '%s'",
-                        iteration_index + 1,
-                        total_iterations,
-                        end_loop_node.name,
-                    )
+                        subprocess_result = await self._execute_subprocess(
+                            published_workflow_filename=workflow_path,
+                            file_name=f"{file_name_prefix}_iteration_{iteration_index}",
+                            pickle_control_flow_result=True,
+                            flow_input=flow_input,
+                        )
+                        iteration_outputs.append((iteration_index, True, subprocess_result))
+                    except Exception:
+                        logger.exception("Iteration %d failed for loop '%s'", iteration_index, end_loop_node.name)
+                        iteration_outputs.append((iteration_index, False, None))
+            else:
+                # Execute all iterations concurrently
+                async def run_single_iteration(iteration_index: int) -> tuple[int, bool, dict[str, Any] | None]:
+                    try:
+                        flow_input = {start_node_name: parameter_values_per_iteration[iteration_index]}
+                        logger.info(
+                            "Executing iteration %d/%d for loop '%s'",
+                            iteration_index + 1,
+                            total_iterations,
+                            end_loop_node.name,
+                        )
 
-                    subprocess_result = await self._execute_subprocess(
-                        published_workflow_filename=workflow_path,
-                        file_name=f"{file_name}_iteration_{iteration_index}",
-                        pickle_control_flow_result=True,
-                        flow_input=flow_input_for_iteration,
-                    )
-                    iteration_outputs.append((iteration_index, True, subprocess_result))
-                except Exception:
-                    logger.exception(
-                        "Private sequential iteration %d failed for loop '%s'",
-                        iteration_index,
-                        end_loop_node.name,
-                    )
-                    iteration_outputs.append((iteration_index, False, None))
+                        subprocess_result = await self._execute_subprocess(
+                            published_workflow_filename=workflow_path,
+                            file_name=f"{file_name_prefix}_iteration_{iteration_index}",
+                            pickle_control_flow_result=True,
+                            flow_input=flow_input,
+                        )
+                    except Exception:
+                        logger.exception("Iteration %d failed for loop '%s'", iteration_index, end_loop_node.name)
+                        return iteration_index, False, None
+                    else:
+                        return iteration_index, True, subprocess_result
 
-            # Step 2: Extract results from each iteration's output
+                iteration_tasks = [run_single_iteration(i) for i in range(total_iterations)]
+                iteration_outputs = await asyncio.gather(*iteration_tasks)
+
+            # Extract results
             iteration_results, successful_iterations, last_iteration_values = (
                 self._extract_iteration_results_from_subprocess(
                     iteration_outputs=iteration_outputs,
@@ -1814,16 +1830,48 @@ class NodeExecutor:
             )
 
             logger.info(
-                "Successfully completed %d/%d private sequential iterations for loop '%s'",
+                "Successfully completed %d/%d iterations %s in %s for loop '%s'",
                 len(successful_iterations),
                 total_iterations,
+                mode_str,
+                execution_mode,
                 end_loop_node.name,
             )
 
             return iteration_results, successful_iterations, last_iteration_values
-
         finally:
-            # Cleanup: delete the workflow file
+            # Cleanup handled by wrapper methods
+            pass
+
+    async def _execute_loop_iterations_sequentially_private(
+        self,
+        package_result: PackageNodesAsSerializedFlowResultSuccess,
+        total_iterations: int,
+        parameter_values_per_iteration: dict[int, dict[str, Any]],
+        end_loop_node: BaseIterativeEndNode,
+    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
+        """Execute loop iterations sequentially in private subprocesses (no cloud publishing)."""
+        workflow_path, workflow_result = await self._save_workflow_file_for_loop(
+            end_loop_node=end_loop_node,
+            package_result=package_result,
+            pickle_control_flow_result=True,
+        )
+        sanitized_loop_name = end_loop_node.name.replace(" ", "_")
+        file_name_prefix = f"{sanitized_loop_name}_private_sequential_loop_flow"
+
+        try:
+            return await self._execute_loop_iterations_via_subprocess(
+                package_result=package_result,
+                total_iterations=total_iterations,
+                parameter_values_per_iteration=parameter_values_per_iteration,
+                end_loop_node=end_loop_node,
+                workflow_path=workflow_path,
+                workflow_result=workflow_result,
+                file_name_prefix=file_name_prefix,
+                execution_mode="private subprocesses",
+                run_sequentially=True,
+            )
+        finally:
             try:
                 await self._delete_workflow(
                     workflow_name=workflow_result.workflow_metadata.name, workflow_path=workflow_path
@@ -1838,98 +1886,28 @@ class NodeExecutor:
         parameter_values_per_iteration: dict[int, dict[str, Any]],
         end_loop_node: BaseIterativeEndNode,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute loop iterations in private subprocess (no cloud publishing).
-
-        This method publishes the workflow to a local file and executes it N times
-        as subprocesses with different parameter values.
-
-        Args:
-            package_result: The packaged flow with parameter mappings
-            total_iterations: Number of iterations to run
-            parameter_values_per_iteration: Dict mapping iteration_index -> parameter values
-            end_loop_node: The End Loop Node to extract results for
-
-        Returns:
-            Tuple of:
-            - iteration_results: Dict mapping iteration_index -> result value
-            - successful_iterations: List of iteration indices that succeeded
-            - last_iteration_values: Dict mapping parameter names -> values from last iteration
-        """
-        # Step 1: Save workflow file
+        """Execute loop iterations in parallel via private subprocesses (no cloud publishing)."""
         workflow_path, workflow_result = await self._save_workflow_file_for_loop(
             end_loop_node=end_loop_node,
             package_result=package_result,
             pickle_control_flow_result=True,
         )
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
-        file_name = f"{sanitized_loop_name}_private_loop_flow"
-
-        logger.info(
-            "Executing %d iterations in private subprocesses for loop '%s'...",
-            total_iterations,
-            end_loop_node.name,
-        )
-
-        # Get the StartFlow node name from package_result
-        start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        start_node_name = start_node_mapping.node_name
-
-        # Step 2: Execute N times with different flow_input values
-        async def run_single_iteration(iteration_index: int) -> tuple[int, bool, dict[str, Any] | None]:
-            """Run a single iteration and return success status and output."""
-            try:
-                # Wrap parameter values with StartFlow node name
-                # flow_input structure: {"StartFlowNodeName": {"param1": value1, "param2": value2}}
-                flow_input_for_iteration = {start_node_name: parameter_values_per_iteration[iteration_index]}
-
-                logger.info(
-                    "Executing private iteration %d/%d for loop '%s'",
-                    iteration_index + 1,
-                    total_iterations,
-                    end_loop_node.name,
-                )
-
-                subprocess_result = await self._execute_subprocess(
-                    published_workflow_filename=workflow_path,
-                    file_name=f"{file_name}_iteration_{iteration_index}",
-                    pickle_control_flow_result=True,
-                    flow_input=flow_input_for_iteration,
-                )
-            except Exception:
-                logger.exception(
-                    "Private iteration %d failed for loop '%s'",
-                    iteration_index,
-                    end_loop_node.name,
-                )
-                return iteration_index, False, None
-            else:
-                return iteration_index, True, subprocess_result
+        file_name_prefix = f"{sanitized_loop_name}_private_loop_flow"
 
         try:
-            # Run all iterations concurrently
-            iteration_tasks = [run_single_iteration(i) for i in range(total_iterations)]
-            iteration_outputs = await asyncio.gather(*iteration_tasks)
-
-            # Step 3: Extract results from each iteration's output
-            iteration_results, successful_iterations, last_iteration_values = (
-                self._extract_iteration_results_from_subprocess(
-                    iteration_outputs=iteration_outputs,
-                    package_result=package_result,
-                    end_loop_node=end_loop_node,
-                )
+            return await self._execute_loop_iterations_via_subprocess(
+                package_result=package_result,
+                total_iterations=total_iterations,
+                parameter_values_per_iteration=parameter_values_per_iteration,
+                end_loop_node=end_loop_node,
+                workflow_path=workflow_path,
+                workflow_result=workflow_result,
+                file_name_prefix=file_name_prefix,
+                execution_mode="private subprocesses",
+                run_sequentially=False,
             )
-
-            logger.info(
-                "Successfully completed %d/%d private iterations for loop '%s'",
-                len(successful_iterations),
-                total_iterations,
-                end_loop_node.name,
-            )
-
-            return iteration_results, successful_iterations, last_iteration_values
-
         finally:
-            # Cleanup: delete the workflow file
             try:
                 await self._delete_workflow(
                     workflow_name=workflow_result.workflow_metadata.name, workflow_path=workflow_path
@@ -2038,24 +2016,7 @@ class NodeExecutor:
         end_loop_node: BaseIterativeEndNode,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute loop iterations sequentially via cloud publisher (Deadline Cloud, etc.).
-
-        This method publishes the packaged workflow once, then executes it N times
-        with different parameter values passed via flow_input, running one-at-a-time.
-
-        Args:
-            package_result: The packaged flow with parameter mappings
-            total_iterations: Number of iterations to run
-            parameter_values_per_iteration: Dict mapping iteration_index -> parameter values
-            end_loop_node: The End Loop Node to extract results for
-            execution_type: The execution environment (library name)
-
-        Returns:
-            Tuple of:
-            - iteration_results: Dict mapping iteration_index -> result value
-            - successful_iterations: List of iteration indices that succeeded
-            - last_iteration_values: Dict mapping parameter names -> values from last iteration
-        """
+        """Execute loop iterations sequentially via cloud publisher (Deadline Cloud, etc.)."""
         try:
             library = LibraryRegistry.get_library(name=execution_type)
         except KeyError:
@@ -2063,88 +2024,32 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: B904
 
         library_name = library.get_library_data().name
-
-        # Step 1: Publish the base workflow ONCE
-        logger.info("Publishing workflow for sequential loop execution via library '%s'", library_name)
-
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
-        file_name = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_sequential_loop_flow"
+        file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_sequential_loop_flow"
 
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
-            file_name=file_name,
+            file_name=file_name_prefix,
         )
-
-        logger.info(
-            "Successfully published workflow to '%s'. Executing %d iterations sequentially...",
-            published_workflow_filename,
-            total_iterations,
-        )
-
-        # Get the StartFlow node name from package_result
-        start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        start_node_name = start_node_mapping.node_name
-
-        iteration_outputs: list[tuple[int, bool, dict[str, Any] | None]] = []
 
         try:
-            # Execute iterations one-at-a-time (sequentially)
-            for iteration_index in range(total_iterations):
-                try:
-                    # Wrap parameter values with StartFlow node name
-                    flow_input_for_iteration = {start_node_name: parameter_values_per_iteration[iteration_index]}
-
-                    logger.info(
-                        "Executing sequential iteration %d/%d for loop '%s'",
-                        iteration_index + 1,
-                        total_iterations,
-                        end_loop_node.name,
-                    )
-
-                    subprocess_result = await self._execute_subprocess(
-                        published_workflow_filename=published_workflow_filename,
-                        file_name=f"{file_name}_iteration_{iteration_index}",
-                        pickle_control_flow_result=True,
-                        flow_input=flow_input_for_iteration,
-                    )
-                    iteration_outputs.append((iteration_index, True, subprocess_result))
-                except Exception:
-                    logger.exception(
-                        "Sequential iteration %d failed for loop '%s'",
-                        iteration_index,
-                        end_loop_node.name,
-                    )
-                    iteration_outputs.append((iteration_index, False, None))
-
-            # Step 2: Extract results from each iteration's output
-            iteration_results, successful_iterations, last_iteration_values = (
-                self._extract_iteration_results_from_subprocess(
-                    iteration_outputs=iteration_outputs,
-                    package_result=package_result,
-                    end_loop_node=end_loop_node,
-                )
+            return await self._execute_loop_iterations_via_subprocess(
+                package_result=package_result,
+                total_iterations=total_iterations,
+                parameter_values_per_iteration=parameter_values_per_iteration,
+                end_loop_node=end_loop_node,
+                workflow_path=Path(published_workflow_filename),
+                workflow_result=workflow_result,
+                file_name_prefix=file_name_prefix,
+                execution_mode=f"{library_name} publisher",
+                run_sequentially=True,
             )
-
-            logger.info(
-                "Successfully completed %d/%d sequential iterations via '%s' for loop '%s'",
-                len(successful_iterations),
-                total_iterations,
-                library_name,
-                end_loop_node.name,
-            )
-
-            return iteration_results, successful_iterations, last_iteration_values
-
         finally:
-            # Cleanup: delete the published workflow
-            try:
-                await self._delete_workflow(
-                    workflow_name=workflow_result.workflow_metadata.name,
-                    workflow_path=Path(published_workflow_filename),
-                )
-            except Exception as e:
-                logger.warning("Failed to cleanup published workflow: %s", e)
+            await self._cleanup_published_workflows(
+                workflow_result=workflow_result,
+                published_workflow_filename=published_workflow_filename,
+            )
 
     async def _execute_loop_iterations_via_publisher(
         self,
@@ -2154,24 +2059,7 @@ class NodeExecutor:
         end_loop_node: BaseIterativeEndNode,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute loop iterations via cloud publisher (Deadline Cloud, etc.).
-
-        This method publishes the packaged workflow once, then executes it N times
-        with different parameter values passed via flow_input.
-
-        Args:
-            package_result: The packaged flow with parameter mappings
-            total_iterations: Number of iterations to run
-            parameter_values_per_iteration: Dict mapping iteration_index -> parameter values
-            end_loop_node: The End Loop Node to extract results for
-            execution_type: The execution environment (library name)
-
-        Returns:
-            Tuple of:
-            - iteration_results: Dict mapping iteration_index -> result value
-            - successful_iterations: List of iteration indices that succeeded
-            - last_iteration_values: Dict mapping parameter names -> values from last iteration
-        """
+        """Execute loop iterations in parallel via cloud publisher (Deadline Cloud, etc.)."""
         try:
             library = LibraryRegistry.get_library(name=execution_type)
         except KeyError:
@@ -2179,87 +2067,28 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: B904
 
         library_name = library.get_library_data().name
-
-        # Step 1: Publish the base workflow ONCE
-        logger.info("Publishing workflow for loop execution via library '%s'", library_name)
-
-        # Create a temporary node-like object to use with _publish_local_workflow
-        # We can't use the actual loop nodes, so we'll create the workflow directly
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
-        file_name = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_loop_flow"
+        file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_loop_flow"
 
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
-            file_name=file_name,
+            file_name=file_name_prefix,
         )
-
-        logger.info(
-            "Successfully published workflow to '%s'. Executing %d iterations...",
-            published_workflow_filename,
-            total_iterations,
-        )
-
-        # Get the StartFlow node name from package_result
-        start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        start_node_name = start_node_mapping.node_name
-
-        # Step 2: Execute N times with different flow_input values
-        async def run_single_iteration(iteration_index: int) -> tuple[int, bool, dict[str, Any] | None]:
-            """Run a single iteration and return success status and output."""
-            try:
-                # Wrap parameter values with StartFlow node name
-                # flow_input structure: {"StartFlowNodeName": {"param1": value1, "param2": value2}}
-                flow_input_for_iteration = {start_node_name: parameter_values_per_iteration[iteration_index]}
-
-                logger.info(
-                    "Executing iteration %d/%d for loop '%s'",
-                    iteration_index + 1,
-                    total_iterations,
-                    end_loop_node.name,
-                )
-
-                subprocess_result = await self._execute_subprocess(
-                    published_workflow_filename=published_workflow_filename,
-                    file_name=f"{file_name}_iteration_{iteration_index}",
-                    pickle_control_flow_result=True,
-                    flow_input=flow_input_for_iteration,
-                )
-            except Exception:
-                logger.exception(
-                    "Iteration %d failed for loop '%s'",
-                    iteration_index,
-                    end_loop_node.name,
-                )
-                return iteration_index, False, None
-            else:
-                return iteration_index, True, subprocess_result
 
         try:
-            # Run all iterations concurrently
-            iteration_tasks = [run_single_iteration(i) for i in range(total_iterations)]
-            iteration_outputs = await asyncio.gather(*iteration_tasks)
-
-            # Step 3: Extract results from each iteration's output
-            iteration_results, successful_iterations, last_iteration_values = (
-                self._extract_iteration_results_from_subprocess(
-                    iteration_outputs=iteration_outputs,
-                    package_result=package_result,
-                    end_loop_node=end_loop_node,
-                )
+            return await self._execute_loop_iterations_via_subprocess(
+                package_result=package_result,
+                total_iterations=total_iterations,
+                parameter_values_per_iteration=parameter_values_per_iteration,
+                end_loop_node=end_loop_node,
+                workflow_path=Path(published_workflow_filename),
+                workflow_result=workflow_result,
+                file_name_prefix=file_name_prefix,
+                execution_mode=f"{library_name} publisher",
+                run_sequentially=False,
             )
-
-            logger.info(
-                "Successfully completed %d/%d iterations via publisher for loop '%s'",
-                len(successful_iterations),
-                total_iterations,
-                end_loop_node.name,
-            )
-
-            return iteration_results, successful_iterations, last_iteration_values
-
         finally:
-            # Cleanup: delete the published workflow file and original workflow
             await self._cleanup_published_workflows(
                 workflow_result=workflow_result,
                 published_workflow_filename=published_workflow_filename,

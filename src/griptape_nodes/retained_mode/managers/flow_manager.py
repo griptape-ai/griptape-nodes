@@ -1465,7 +1465,7 @@ class FlowManager:
 
         return None
 
-    def _serialize_package_nodes_for_local_execution(  # noqa: PLR0913
+    def _serialize_package_nodes_for_local_execution(  # noqa: PLR0913, C901
         self,
         nodes_to_package: list[BaseNode],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -1528,6 +1528,21 @@ class FlowManager:
                 set_parameter_value_commands[serialize_result.serialized_node_commands.node_uuid] = (
                     serialize_result.set_parameter_value_commands
                 )
+
+        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # This allows workflow generation to directly look up variable names from UUIDs
+
+        for node_group_command in serialized_node_group_commands:
+            create_cmd = node_group_command.create_node_command
+
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                node_uuids = []
+                for child_node_name in create_cmd.node_names_to_add:
+                    if child_node_name in node_name_to_uuid:
+                        uuid = node_name_to_uuid[child_node_name]
+                        node_uuids.append(uuid)
+                # Replace the list with UUIDs (as strings since that's what the field expects)
+                create_cmd.node_names_to_add = node_uuids
 
         # Build internal connections between package nodes
         package_node_names_set = {n.name for n in nodes_to_package}
@@ -2923,6 +2938,22 @@ class FlowManager:
         # This ensures child nodes exist before their parent NodeGroups are created during deserialization
         serialized_node_commands.extend(serialized_node_group_commands)
 
+        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # This allows workflow generation to directly look up variable names from UUIDs
+
+        for node_group_command in serialized_node_group_commands:
+            create_cmd = node_group_command.create_node_command
+
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                # Convert node names to UUIDs
+                node_uuids = []
+                for child_node_name in create_cmd.node_names_to_add:
+                    if child_node_name in node_name_to_uuid:
+                        uuid = node_name_to_uuid[child_node_name]
+                        node_uuids.append(uuid)
+                # Replace the list with UUIDs (as strings since that's what the field expects)
+                create_cmd.node_names_to_add = node_uuids
+
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
 
@@ -2998,7 +3029,35 @@ class FlowManager:
             original_node_name = (
                 create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
             )
-            deserialize_node_request = DeserializeNodeFromCommandsRequest(serialized_node_commands=serialized_node)
+
+            # For NodeGroupNodes, remap node_names_to_add from UUIDs to actual node names
+            # Create a copy to avoid mutating the original serialized data
+            serialized_node_for_deserialization = serialized_node
+            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+                # Use list comprehension to remap UUIDs to deserialized node names
+                remapped_names = [
+                    node_uuid_to_deserialized_node_result[node_uuid].node_name
+                    for node_uuid in create_cmd.node_names_to_add
+                    if node_uuid in node_uuid_to_deserialized_node_result
+                ]
+                # Create a copy of the command with remapped names instead of mutating original
+                create_cmd_copy = CreateNodeGroupRequest(
+                    node_group_name=create_cmd.node_group_name,
+                    node_names_to_add=remapped_names,
+                    metadata=create_cmd.metadata,
+                )
+                # Create a copy of serialized_node with the new command
+                serialized_node_for_deserialization = SerializedNodeCommands(
+                    node_uuid=serialized_node.node_uuid,
+                    create_node_command=create_cmd_copy,
+                    element_modification_commands=serialized_node.element_modification_commands,
+                    node_dependencies=serialized_node.node_dependencies,
+                    lock_node_command=serialized_node.lock_node_command,
+                )
+
+            deserialize_node_request = DeserializeNodeFromCommandsRequest(
+                serialized_node_commands=serialized_node_for_deserialization
+            )
             deserialized_node_result = GriptapeNodes.handle_request(deserialize_node_request)
             if not isinstance(deserialized_node_result, DeserializeNodeFromCommandsResultSuccess):
                 details = (
