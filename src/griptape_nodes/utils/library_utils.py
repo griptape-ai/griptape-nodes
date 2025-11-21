@@ -53,5 +53,5 @@ def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    library_version, commit_sha, _ = sparse_checkout_library_json(remote_url)
+    library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url)
     return (library_version, commit_sha)
