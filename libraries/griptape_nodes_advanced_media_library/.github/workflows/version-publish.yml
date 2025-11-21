@@ -1,0 +1,47 @@
+name: Version Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(jq -r '.library_version' griptape_nodes_library.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      - name: Create and push version tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          echo "Created tag: v${{ steps.version.outputs.version }}"
+
+      - name: Create and push stable tag
+        run: |
+          git tag stable -f
+          echo "Updated stable tag"
+
+      - name: Push tags
+        run: |
+          git push origin "v${{ steps.version.outputs.version }}"
+          git push -f origin stable
+          echo "Tags pushed successfully"
