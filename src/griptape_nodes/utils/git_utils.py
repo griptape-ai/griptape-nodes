@@ -365,18 +365,46 @@ def get_git_repository_root(library_path: Path) -> Path | None:
         return git_dir.parent
 
 
-def git_pull_rebase(library_path: Path) -> None:
-    """Perform a git pull --rebase on a library directory.
+def has_uncommitted_changes(library_path: Path) -> bool:
+    """Check if a repository has uncommitted changes (including untracked files).
 
     Args:
         library_path: The path to the library directory.
 
+    Returns:
+        True if there are uncommitted changes or untracked files, False otherwise.
+
     Raises:
         GitRepositoryError: If the path is not a valid git repository.
-        GitPullError: If the pull --rebase operation fails.
     """
     if not is_git_repository(library_path):
-        msg = f"Cannot pull: {library_path} is not a git repository"
+        msg = f"Cannot check status: {library_path} is not a git repository"
+        raise GitRepositoryError(msg)
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return bool(result.stdout.strip())
+
+    except subprocess.SubprocessError as e:
+        msg = f"Failed to check git status at {library_path}: {e}"
+        raise GitRepositoryError(msg) from e
+
+
+def _validate_branch_update_preconditions(library_path: Path) -> None:
+    """Validate preconditions for branch-based update.
+
+    Raises:
+        GitRepositoryError: If validation fails.
+        GitPullError: If repository state is invalid for update.
+    """
+    if not is_git_repository(library_path):
+        msg = f"Cannot update: {library_path} is not a git repository"
         raise GitRepositoryError(msg)
 
     try:
@@ -387,24 +415,19 @@ def git_pull_rebase(library_path: Path) -> None:
 
         repo = pygit2.Repository(repo_path)
 
-        # Check for detached HEAD
         if repo.head_is_detached:
             msg = f"Repository at {library_path} has detached HEAD"
             raise GitPullError(msg)
 
-        # Get the current branch
         current_branch = repo.branches.get(repo.head.shorthand)
         if current_branch is None:
             msg = f"Cannot get current branch for repository at {library_path}"
             raise GitPullError(msg)
 
-        # Check for upstream
-        upstream = current_branch.upstream
-        if upstream is None:
+        if current_branch.upstream is None:
             msg = f"No upstream branch set for {current_branch.branch_name} at {library_path}"
             raise GitPullError(msg)
 
-        # Check for origin remote
         try:
             _ = repo.remotes["origin"]
         except (KeyError, IndexError) as e:
@@ -412,30 +435,77 @@ def git_pull_rebase(library_path: Path) -> None:
             raise GitPullError(msg) from e
 
     except pygit2.GitError as e:
-        msg = f"Git error during pull --rebase at {library_path}: {e}"
+        msg = f"Git error during update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
-    # Use subprocess to call git pull --rebase
-    # This is more reliable than implementing rebase with pygit2
+
+def git_update_from_remote(library_path: Path, *, overwrite_existing: bool = False) -> None:
+    """Update a library from remote by resetting to match upstream exactly.
+
+    This function uses git fetch + git reset --hard to force the local repository
+    to match the remote state. This is appropriate for library consumption where
+    local modifications should not be preserved.
+
+    Args:
+        library_path: The path to the library directory.
+        overwrite_existing: If True, discard any uncommitted local changes.
+            If False, fail if uncommitted changes exist.
+
+    Raises:
+        GitRepositoryError: If the path is not a valid git repository.
+        GitPullError: If the update operation fails or uncommitted changes exist
+            when overwrite_existing=False.
+    """
+    _validate_branch_update_preconditions(library_path)
+
+    if has_uncommitted_changes(library_path):
+        if not overwrite_existing:
+            msg = f"Cannot update library at {library_path}: You have uncommitted changes. Use overwrite_existing=True to discard them."
+            raise GitPullError(msg)
+
+        logger.warning("Discarding uncommitted changes at %s", library_path)
+
     try:
-        result = subprocess.run(
-            ["git", "pull", "--rebase"],  # noqa: S607
+        fetch_result = subprocess.run(
+            ["git", "fetch", "origin"],  # noqa: S607
             cwd=str(library_path),
             capture_output=True,
             text=True,
             check=False,
         )
 
-        if result.returncode != 0:
-            msg = f"Git pull --rebase failed at {library_path}: {result.stderr}"
+        if fetch_result.returncode != 0:
+            msg = f"Git fetch failed at {library_path}: {fetch_result.stderr}"
             raise GitPullError(msg)
 
+        try:
+            repo_path = pygit2.discover_repository(str(library_path))
+            repo = pygit2.Repository(repo_path)
+            upstream_name = repo.branches.get(repo.head.shorthand).upstream.branch_name
+        except (pygit2.GitError, AttributeError) as e:
+            msg = f"Failed to determine upstream branch at {library_path}: {e}"
+            raise GitPullError(msg) from e
+
+        reset_result = subprocess.run(  # noqa: S603
+            ["git", "reset", "--hard", upstream_name],  # noqa: S607
+            cwd=str(library_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if reset_result.returncode != 0:
+            msg = f"Git reset --hard failed at {library_path}: {reset_result.stderr}"
+            raise GitPullError(msg)
+
+        logger.debug("Successfully updated library at %s to match remote %s", library_path, upstream_name)
+
     except subprocess.SubprocessError as e:
-        msg = f"Subprocess error during pull --rebase at {library_path}: {e}"
+        msg = f"Subprocess error during update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
 
-def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
+def update_to_moving_tag(library_path: Path, tag_name: str, *, overwrite_existing: bool = False) -> None:  # noqa: C901
     """Update library to the latest version of a moving tag.
 
     This function is designed for tags that are force-pushed to point to new commits
@@ -444,10 +514,13 @@ def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
     Args:
         library_path: The path to the library directory.
         tag_name: The name of the tag to update to (e.g., "latest").
+        overwrite_existing: If True, discard any uncommitted local changes.
+            If False, fail if uncommitted changes exist.
 
     Raises:
         GitRepositoryError: If the path is not a valid git repository.
-        GitPullError: If the tag update operation fails.
+        GitPullError: If the tag update operation fails or uncommitted changes exist
+            when overwrite_existing=False.
     """
     if not is_git_repository(library_path):
         msg = f"Cannot update tag: {library_path} is not a git repository"
@@ -472,6 +545,14 @@ def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
         msg = f"Git error during tag update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
+    # Check for uncommitted changes
+    if has_uncommitted_changes(library_path):
+        if not overwrite_existing:
+            msg = f"Cannot update library at {library_path}: You have uncommitted changes. Use overwrite_existing=True to discard them."
+            raise GitPullError(msg)
+
+        logger.warning("Discarding uncommitted changes at %s", library_path)
+
     # Use subprocess to fetch tags and checkout
     try:
         # Step 1: Fetch all tags, force update existing ones
@@ -487,9 +568,14 @@ def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
             msg = f"Git fetch --tags --force failed at {library_path}: {fetch_result.stderr}"
             raise GitPullError(msg)
 
-        # Step 2: Checkout the tag (this will put us in detached HEAD state, which is expected)
+        # Step 2: Checkout the tag with force to discard local changes
+        checkout_args = ["git", "checkout"]
+        if overwrite_existing:
+            checkout_args.append("--force")
+        checkout_args.append(f"tags/{tag_name}")
+
         checkout_result = subprocess.run(  # noqa: S603
-            ["git", "checkout", f"tags/{tag_name}"],  # noqa: S607
+            checkout_args,
             cwd=str(library_path),
             capture_output=True,
             text=True,
@@ -500,25 +586,30 @@ def update_to_moving_tag(library_path: Path, tag_name: str) -> None:
             msg = f"Git checkout tags/{tag_name} failed at {library_path}: {checkout_result.stderr}"
             raise GitPullError(msg)
 
+        logger.debug("Successfully updated library at %s to tag %s", library_path, tag_name)
+
     except subprocess.SubprocessError as e:
         msg = f"Subprocess error during tag update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
 
-def update_library_git(library_path: Path) -> None:
+def update_library_git(library_path: Path, *, overwrite_existing: bool = False) -> None:
     """Update a library to the latest version using the appropriate git strategy.
 
     This function automatically detects whether the library uses a branch-based or
     tag-based workflow and applies the correct update mechanism:
-    - Branch-based: Uses git pull --rebase
+    - Branch-based: Uses git fetch + git reset --hard
     - Tag-based: Uses git fetch --tags --force + git checkout
 
     Args:
         library_path: The path to the library directory.
+        overwrite_existing: If True, discard any uncommitted local changes.
+            If False, fail if uncommitted changes exist.
 
     Raises:
         GitRepositoryError: If the path is not a valid git repository.
-        GitPullError: If the update operation fails.
+        GitPullError: If the update operation fails or uncommitted changes exist
+            when overwrite_existing=False.
     """
     if not is_git_repository(library_path):
         msg = f"Cannot update: {library_path} is not a git repository"
@@ -541,11 +632,11 @@ def update_library_git(library_path: Path) -> None:
                 raise GitPullError(msg)
 
             logger.debug("Detected tag-based workflow for %s (tag: %s)", library_path, tag_name)
-            update_to_moving_tag(library_path, tag_name)
+            update_to_moving_tag(library_path, tag_name, overwrite_existing=overwrite_existing)
         else:
-            # On a branch - use standard pull --rebase
+            # On a branch - use fetch + reset to match remote
             logger.debug("Detected branch-based workflow for %s", library_path)
-            git_pull_rebase(library_path)
+            git_update_from_remote(library_path, overwrite_existing=overwrite_existing)
 
     except pygit2.GitError as e:
         msg = f"Git error during library update at {library_path}: {e}"

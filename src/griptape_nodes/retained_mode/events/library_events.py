@@ -603,7 +603,7 @@ class UpdateLibraryRequest(RequestPayload):
     """Update a library to the latest version using the appropriate git strategy.
 
     Automatically detects whether the library uses branch-based or tag-based workflow:
-    - Branch-based: Uses git pull --rebase
+    - Branch-based: Uses git fetch + git reset --hard (forces local to match remote)
     - Tag-based: Uses git fetch --tags --force + git checkout (for moving tags like 'latest')
 
     Use when: Applying library updates, synchronizing with remote changes,
@@ -612,12 +612,14 @@ class UpdateLibraryRequest(RequestPayload):
     Args:
         library_name: Name of the library to update
         install_dependencies: If True, automatically install dependencies after updating (default: True)
+        overwrite_existing: If True, discard any uncommitted local changes. If False, fail if uncommitted changes exist (default: False)
 
     Results: UpdateLibraryResultSuccess (with version info) | UpdateLibraryResultFailure (library not found, git error, update failure)
     """
 
     library_name: str
     install_dependencies: bool = True
+    overwrite_existing: bool = False
 
 
 @dataclass
@@ -637,7 +639,13 @@ class UpdateLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class UpdateLibraryResultFailure(ResultPayloadFailure):
-    """Library update failed. Common causes: library not found, not a git repository, git pull error, rebase conflicts."""
+    """Library update failed. Common causes: library not found, not a git repository, git pull error, uncommitted changes.
+
+    Args:
+        retryable: If True, the operation can be retried with overwrite_existing=True
+    """
+
+    retryable: bool = False
 
 
 @dataclass
@@ -803,11 +811,13 @@ class SyncLibrariesRequest(RequestPayload):
 
     Args:
         install_dependencies: If True, install dependencies after updating (default: True)
+        overwrite_existing: If True, discard any uncommitted local changes when updating libraries. If False, fail if uncommitted changes exist (default: False)
 
     Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
     """
 
     install_dependencies: bool = True
+    overwrite_existing: bool = False
 
 
 @dataclass

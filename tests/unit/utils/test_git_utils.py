@@ -22,7 +22,7 @@ from griptape_nodes.utils.git_utils import (
     get_current_ref,
     get_git_remote,
     get_git_repository_root,
-    git_pull_rebase,
+    git_update_from_remote,
     is_git_repository,
     is_git_url,
     normalize_github_url,
@@ -444,8 +444,8 @@ class TestGetGitRepositoryRoot:
             assert "Error getting git repository root" in str(exc_info.value)
 
 
-class TestGitPullRebase:
-    """Test git_pull_rebase function."""
+class TestGitUpdateFromRemote:
+    """Test git_update_from_remote function."""
 
     @pytest.fixture
     def temp_dir(self) -> Generator[Path, None, None]:
@@ -453,17 +453,17 @@ class TestGitPullRebase:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_git_pull_rebase_raises_error_when_not_git_repository(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_not_git_repository(self, temp_dir: Path) -> None:
         """Test that GitRepositoryError is raised when not a git repository."""
         with patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git:
             mock_is_git.return_value = False
 
             with pytest.raises(GitRepositoryError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
             assert "not a git repository" in str(exc_info.value)
 
-    def test_git_pull_rebase_raises_error_when_repository_not_discovered(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_repository_not_discovered(self, temp_dir: Path) -> None:
         """Test that GitRepositoryError is raised when repository cannot be discovered."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -473,11 +473,11 @@ class TestGitPullRebase:
             mock_discover.return_value = None
 
             with pytest.raises(GitRepositoryError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
             assert "Cannot discover repository" in str(exc_info.value)
 
-    def test_git_pull_rebase_raises_error_when_head_detached(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_head_detached(self, temp_dir: Path) -> None:
         """Test that GitPullError is raised when HEAD is detached."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -492,11 +492,11 @@ class TestGitPullRebase:
             mock_repo_class.return_value = mock_repo
 
             with pytest.raises(GitPullError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
             assert "detached HEAD" in str(exc_info.value)
 
-    def test_git_pull_rebase_raises_error_when_no_upstream_branch(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_no_upstream_branch(self, temp_dir: Path) -> None:
         """Test that GitPullError is raised when no upstream branch is set."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -523,11 +523,11 @@ class TestGitPullRebase:
             mock_repo_class.return_value = mock_repo
 
             with pytest.raises(GitPullError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
             assert "No upstream branch" in str(exc_info.value)
 
-    def test_git_pull_rebase_raises_error_when_no_origin_remote(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_no_origin_remote(self, temp_dir: Path) -> None:
         """Test that GitPullError is raised when no origin remote exists."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
@@ -555,23 +555,26 @@ class TestGitPullRebase:
             mock_repo_class.return_value = mock_repo
 
             with pytest.raises(GitPullError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
             assert "No origin remote" in str(exc_info.value)
 
-    def test_git_pull_rebase_succeeds_when_subprocess_succeeds(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_succeeds_when_subprocess_succeeds(self, temp_dir: Path) -> None:
         """Test that function succeeds when subprocess call succeeds."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
             patch("griptape_nodes.utils.git_utils.pygit2.Repository") as mock_repo_class,
+            patch("griptape_nodes.utils.git_utils.has_uncommitted_changes") as mock_has_changes,
             patch("griptape_nodes.utils.git_utils.subprocess.run") as mock_run,
         ):
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
+            mock_has_changes.return_value = False
 
             mock_branch = Mock()
             mock_branch.upstream = Mock()
+            mock_branch.upstream.branch_name = "origin/main"
 
             mock_head = Mock()
             mock_head.shorthand = "main"
@@ -591,22 +594,25 @@ class TestGitPullRebase:
             mock_result.returncode = 0
             mock_run.return_value = mock_result
 
-            git_pull_rebase(temp_dir)
+            git_update_from_remote(temp_dir)
 
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][0] == ["git", "pull", "--rebase"]
+            expected_calls = 2
+            assert mock_run.call_count == expected_calls
+            first_call_args = mock_run.call_args_list[0][0]
+            assert first_call_args[0] == ["git", "fetch", "origin"]
 
-    def test_git_pull_rebase_raises_error_when_subprocess_fails(self, temp_dir: Path) -> None:
+    def test_git_update_from_remote_raises_error_when_subprocess_fails(self, temp_dir: Path) -> None:
         """Test that GitPullError is raised when subprocess call fails."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
             patch("griptape_nodes.utils.git_utils.pygit2.Repository") as mock_repo_class,
+            patch("griptape_nodes.utils.git_utils.has_uncommitted_changes") as mock_has_changes,
             patch("griptape_nodes.utils.git_utils.subprocess.run") as mock_run,
         ):
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
+            mock_has_changes.return_value = False
 
             mock_branch = Mock()
             mock_branch.upstream = Mock()
@@ -631,9 +637,9 @@ class TestGitPullRebase:
             mock_run.return_value = mock_result
 
             with pytest.raises(GitPullError) as exc_info:
-                git_pull_rebase(temp_dir)
+                git_update_from_remote(temp_dir)
 
-            assert "Git pull --rebase failed" in str(exc_info.value)
+            assert "Git fetch failed" in str(exc_info.value)
 
 
 class TestSwitchBranch:

@@ -2533,7 +2533,7 @@ class LibraryManager:
         """Update a library to the latest version using the appropriate git strategy.
 
         Automatically detects whether the library uses branch-based or tag-based workflow:
-        - Branch-based: Uses git pull --rebase
+        - Branch-based: Uses git fetch + git reset --hard (forces local to match remote)
         - Tag-based: Uses git fetch --tags --force + git checkout
         """
         library_name = request.library_name
@@ -2556,10 +2556,19 @@ class LibraryManager:
 
         # Perform git update (auto-detects branch vs tag workflow)
         try:
-            await asyncio.to_thread(update_library_git, library_dir)
+            await asyncio.to_thread(
+                update_library_git,
+                library_dir,
+                overwrite_existing=request.overwrite_existing,
+            )
         except (GitPullError, GitRepositoryError) as e:
+            error_msg = str(e).lower()
+
+            # Check if error is retryable (uncommitted changes)
+            retryable = "uncommitted changes" in error_msg or "unstaged changes" in error_msg
+
             details = f"Failed to update Library '{library_name}': {e}"
-            return UpdateLibraryResultFailure(result_details=details)
+            return UpdateLibraryResultFailure(result_details=details, retryable=retryable)
 
         # Reload library and install dependencies
         reload_result = await self._reload_library_after_git_operation(
@@ -2965,7 +2974,11 @@ class LibraryManager:
             """Update a single library."""
             logger.info("Updating library '%s' from %s to %s", library_name, old_version, new_version)
             update_result = await GriptapeNodes.ahandle_request(
-                UpdateLibraryRequest(library_name=library_name, install_dependencies=install_dependencies)
+                UpdateLibraryRequest(
+                    library_name=library_name,
+                    install_dependencies=install_dependencies,
+                    overwrite_existing=request.overwrite_existing,
+                )
             )
             return library_name, old_version, new_version, update_result
 
