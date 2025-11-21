@@ -731,7 +731,13 @@ class DownloadLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @dataclass
 @PayloadRegistry.register
 class DownloadLibraryResultFailure(ResultPayloadFailure):
-    """Library download failed. Common causes: invalid git URL, network error, target directory already exists, no griptape_nodes_library.json found."""
+    """Library download failed. Common causes: invalid git URL, network error, target directory already exists, no griptape_nodes_library.json found.
+
+    Args:
+        retryable: If True, the operation can be retried with overwrite_existing=True
+    """
+
+    retryable: bool = False
 
 
 @dataclass

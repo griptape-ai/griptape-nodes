@@ -2710,7 +2710,7 @@ class LibraryManager:
         if target_path.exists():
             if not request.overwrite_existing:
                 details = f"Cannot download library: target directory already exists at {target_path}"
-                return DownloadLibraryResultFailure(result_details=details)
+                return DownloadLibraryResultFailure(result_details=details, retryable=True)
 
             # Delete existing directory before cloning
             try:
