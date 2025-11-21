@@ -989,18 +989,6 @@ class ParameterButtonGroup(BaseNodeElement, UIOptionsMixin):
         event_data["ui_options"] = self.ui_options
         return event_data
 
-    def equals(self, other: ParameterButtonGroup) -> dict:
-        self_dict = {"name": self.name, "ui_options": self.ui_options}
-        other_dict = {"name": other.name, "ui_options": other.ui_options}
-        if self_dict == other_dict:
-            return {}
-        differences = {}
-        for key, self_value in self_dict.items():
-            other_value = other_dict.get(key)
-            if self_value != other_value:
-                differences[key] = other_value
-        return differences
-
     def add_child(self, child: BaseNodeElement) -> None:
         child.parent_group_name = self.name
         return super().add_child(child)
