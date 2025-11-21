@@ -23,7 +23,7 @@ jobs:
       - name: Get current version
         id: version
         run: |
-          VERSION=$(jq -r '.library_version' griptape_nodes_library.json)
+          VERSION=$(jq -r '.metadata.library_version' griptape_nodes_library.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Publishing version: $VERSION"
 

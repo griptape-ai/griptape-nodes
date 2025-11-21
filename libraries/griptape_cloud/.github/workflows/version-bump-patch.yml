@@ -23,7 +23,7 @@ jobs:
       - name: Get current version
         id: current_version
         run: |
-          VERSION=$(jq -r '.library_version' griptape_nodes_library.json)
+          VERSION=$(jq -r '.metadata.library_version' griptape_nodes_library.json)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Current version: $VERSION"
 
@@ -40,7 +40,7 @@ jobs:
       - name: Update version in JSON
         run: |
           jq --arg version "${{ steps.new_version.outputs.version }}" \
-            '.library_version = $version' \
+            '.metadata.library_version = $version' \
             griptape_nodes_library.json > griptape_nodes_library.json.tmp
           mv griptape_nodes_library.json.tmp griptape_nodes_library.json
 
