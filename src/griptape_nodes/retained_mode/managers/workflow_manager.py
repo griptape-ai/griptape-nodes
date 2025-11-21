@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles
-import portalocker
 import semver
 import tomlkit
 from rich.box import HEAVY_EDGE
@@ -60,6 +59,12 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    FileIOFailureReason,
+    WriteFileRequest,
+    WriteFileResultFailure,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
     BranchWorkflowResultFailure,
@@ -1273,7 +1278,7 @@ class WorkflowManager:
     def _write_workflow_file(self, file_path: Path, content: str, file_name: str) -> WriteWorkflowFileResult:
         """Write workflow content to file with proper validation and error handling.
 
-        Uses portalocker for exclusive file locking to prevent concurrent writes.
+        Uses OSManager's WriteFileRequest for file writing with exclusive locking.
         First write wins - if another process is writing, this call fails immediately.
 
         Args:
@@ -1292,41 +1297,36 @@ class WorkflowManager:
             details = f"Attempted to save workflow '{file_name}' (requires {min_space_gb:.1f} GB). Failed due to insufficient disk space: {error_msg}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
 
-        # Create directory structure
-        try:
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            details = f"Attempted to save workflow '{file_name}'. Failed when creating directory structure: {e}"
+        # Write file using OSManager's centralized file writing API
+        os_manager = GriptapeNodes.OSManager()
+        write_request = WriteFileRequest(
+            file_path=str(file_path),
+            content=content,
+            encoding="utf-8",
+            append=False,
+            existing_file_policy=ExistingFilePolicy.OVERWRITE,
+            create_parents=True,
+        )
+
+        result = os_manager.on_write_file_request(write_request)
+
+        if isinstance(result, WriteFileResultFailure):
+            # Map failure reasons to workflow-specific error messages
+            match result.failure_reason:
+                case FileIOFailureReason.IO_ERROR:
+                    # Could be lock exception or other I/O error
+                    error_msg = str(result.result_details)
+                case FileIOFailureReason.PERMISSION_DENIED:
+                    error_msg = f"Permission denied: {result.result_details}"
+                case FileIOFailureReason.IS_DIRECTORY:
+                    error_msg = "Path is a directory, not a file"
+                case FileIOFailureReason.ENCODING_ERROR:
+                    error_msg = f"Content encoding error: {result.result_details}"
+                case _:
+                    error_msg = str(result.result_details)
+
+            details = f"Attempted to save workflow '{file_name}'. {error_msg}"
             return self.WriteWorkflowFileResult(success=False, error_details=details)
-
-        # Write the file content with exclusive lock (non-blocking)
-        error_details = None
-        try:
-            with portalocker.Lock(
-                file_path,
-                mode="w",
-                encoding="utf-8",
-                timeout=0,  # Non-blocking: fail immediately if locked
-                flags=portalocker.LockFlags.EXCLUSIVE,
-            ) as fh:
-                fh.write(content)
-        except portalocker.LockException:
-            error_details = (
-                f"Attempted to save workflow '{file_name}'. Another process is currently writing to this workflow file"
-            )
-        except PermissionError as e:
-            error_details = f"Attempted to save workflow '{file_name}'. Permission denied: {e}"
-        except IsADirectoryError:
-            error_details = f"Attempted to save workflow '{file_name}'. Path is a directory, not a file"
-        except UnicodeEncodeError as e:
-            error_details = f"Attempted to save workflow '{file_name}'. Content encoding error: {e}"
-        except OSError as e:
-            error_details = f"Attempted to save workflow '{file_name}'. OS error: {e}"
-        except Exception as e:
-            error_details = f"Attempted to save workflow '{file_name}'. Unexpected error: {type(e).__name__}: {e}"
-
-        if error_details:
-            return self.WriteWorkflowFileResult(success=False, error_details=error_details)
 
         return self.WriteWorkflowFileResult(success=True, error_details="")
 
