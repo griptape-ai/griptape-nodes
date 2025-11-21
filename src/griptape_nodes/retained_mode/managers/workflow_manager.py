@@ -932,6 +932,12 @@ class WorkflowManager:
 
         # Use provided metadata object as the new metadata
         new_metadata = request.workflow_metadata
+        # Allow JSON dicts from frontend by coercing to WorkflowMetadata
+        if isinstance(new_metadata, dict):
+            try:
+                new_metadata = WorkflowMetadata.model_validate(new_metadata)
+            except Exception as e:
+                return SetWorkflowMetadataResultFailure(result_details=f"Invalid workflow_metadata: {e!s}")
         # Refresh last_modified_date to reflect this change
         new_metadata.last_modified_date = datetime.now(tz=UTC)
 
