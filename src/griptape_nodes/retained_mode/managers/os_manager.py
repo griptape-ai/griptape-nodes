@@ -77,6 +77,9 @@ console = Console()
 # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
 WINDOWS_MAX_PATH = 260
 
+# Maximum number of indexed candidates to try when CREATE_NEW policy is used
+MAX_INDEXED_CANDIDATES = 1000
+
 
 @dataclass
 class DiskSpaceInfo:
@@ -1506,24 +1509,27 @@ class OSManager:
                         )
 
                     # We have a macro with one and only one index variable on it. The heuristic here is:
-                    # 1. Find the FIRST available file name with our index
-                    # 2. Build a list of candidates that fit the index. The user could have specified
-                    #    using the index value as a DIRECTORY, so it's not always output_1, output_2, etc.
-                    # 3. We build this candidate list instead of doing a for loop so we don't have to keep
-                    #    hitting the file system until we're actually ready to roll. This reduces collision overhead.
+                    # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have
+                    #    ganked it while we were attempting to write to it.
+                    # 2. Try candidates in sequence until we find one that works, or fail if we've tried too many times.
+                    # Note: The user could have specified using the index value as a DIRECTORY,
+                    # so it's not always output_1, output_2, etc. It could be run_1/output.png, run_2/output.png, etc.
 
                     # Scan for starting index
                     starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
 
-                    # Build indexed candidates
+                    # Try indexed candidates on-demand (up to max attempts)
                     secrets_manager = GriptapeNodes.SecretsManager()
-                    candidates = []
                     start_idx = starting_index if starting_index is not None else 1
-                    for idx in range(start_idx, start_idx + 1000):
+                    attempted_count = 0
+
+                    for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
+                        attempted_count += 1
+
+                        # Step 1: Resolve macro with current index
                         try:
                             index_vars = {**variables, index_info.info.name: idx}
-                            indexed_filename = parsed_macro.resolve(index_vars, secrets_manager)
-                            candidates.append(indexed_filename)
+                            candidate_str = parsed_macro.resolve(index_vars, secrets_manager)
                         except MacroResolutionError as e:
                             msg = f"Attempted to write to file '{path_display}'. Failed due to unable to resolve path template with index {idx}: {e}"
                             return WriteFileResultFailure(
@@ -1537,8 +1543,7 @@ class OSManager:
                                 result_details=msg,
                             )
 
-                    # Try each indexed candidate
-                    for candidate_str in candidates:
+                        # Step 2: Resolve file path
                         try:
                             candidate_path = self._resolve_file_path(candidate_str, workspace_only=False)
                         except (ValueError, RuntimeError) as e:
@@ -1602,12 +1607,13 @@ class OSManager:
 
                     # Check if we exhausted all indexed candidates
                     if final_file_path is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to could not find available filename after trying {len(candidates)} candidates"
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to could not find available filename after trying {attempted_count} candidates"
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.IO_ERROR,
                             result_details=msg,
                         )
                 except Exception as e:
+                    # Blanket handler for initial write failure (not a collision, an actual I/O failure).
                     msg = f"Attempted to write to file '{file_path}'. Failed due to unexpected error: {e}"
                     return WriteFileResultFailure(
                         failure_reason=FileIOFailureReason.IO_ERROR,
