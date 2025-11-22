@@ -939,11 +939,11 @@ class FlowManager:
 
         # Check if either node is in a NodeGroup and track connections
 
-        source_parent = source_node.parent_group
-        target_parent = target_node.parent_group
+        source_parent = source_node.parent_group if source_node.parent_group is not None else source_node
+        target_parent = target_node.parent_group if target_node.parent_group is not None else target_node
 
         # If source is in a group, this is an outgoing external connection
-        if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
+        if isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
             source_parent.track_external_connection(
                 conn=conn,
                 conn_id=conn_id,
@@ -952,7 +952,7 @@ class FlowManager:
             )
 
         # If target is in a group, this is an incoming external connection
-        if target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
+        if isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
             target_parent.track_external_connection(
                 conn=conn,
                 conn_id=conn_id,
@@ -961,7 +961,7 @@ class FlowManager:
             )
 
         # If both in same group, track as internal connection
-        if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
+        if source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
             source_parent.track_internal_connection(conn)
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
