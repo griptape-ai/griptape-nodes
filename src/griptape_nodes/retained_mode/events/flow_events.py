@@ -486,3 +486,91 @@ class PackageNodesAsSerializedFlowResultFailure(WorkflowNotAlteredMixin, ResultP
     Common causes: one or more nodes not found, no current context, serialization error,
     entry control node/parameter not found, connection analysis failed.
     """
+
+
+@dataclass
+class NodeState:
+    """Represents the complete runtime state of a node.
+
+    Attributes:
+        name: Node name
+        node_type: Node type (e.g., "TextNode", "ImageNode")
+        library_name: Library containing this node type
+        metadata: Node metadata (position, etc.)
+        locked: Whether the node is locked
+        resolution_state: Current node resolution state
+        parameter_values: All current parameter values keyed by parameter name
+    """
+
+    name: str
+    node_type: str
+    library_name: str
+    metadata: dict
+    locked: bool
+    resolution_state: str
+    parameter_values: dict[str, Any]
+
+
+@dataclass
+class ConnectionState:
+    """Represents the complete state of a connection.
+
+    Attributes:
+        connection_id: Unique identifier for this connection
+        source_node_name: Name of the source node
+        source_parameter_name: Name of the source parameter
+        source_parameter_type: Type of the source parameter
+        target_node_name: Name of the target node
+        target_parameter_name: Name of the target parameter
+        target_parameter_type: Type of the target parameter
+    """
+
+    connection_id: str
+    source_node_name: str
+    source_parameter_name: str
+    source_parameter_type: str
+    target_node_name: str
+    target_parameter_name: str
+    target_parameter_type: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowSnapshotRequest(RequestPayload):
+    """Get a complete snapshot of a flow's current runtime state.
+
+    Returns comprehensive information about all nodes and connections using actual node names
+    (not UUIDs), making it ideal for runtime introspection and monitoring.
+
+    Use when: Building flow visualizations, monitoring flow state, debugging workflows,
+    implementing flow management features, creating flow snapshots for analysis.
+
+    Args:
+        flow_name: Name of the flow to get state for (None for current context flow)
+
+    Results: GetFlowSnapshotResultSuccess (with complete state) | GetFlowSnapshotResultFailure (flow not found)
+    """
+
+    flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowSnapshotResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Flow snapshot retrieved successfully.
+
+    Args:
+        nodes: List of all nodes with complete state information
+        connections: List of all connections with complete information
+        metadata: Flow-level metadata
+    """
+
+    nodes: list[NodeState]
+    connections: list[ConnectionState]
+    metadata: dict
+
+
+@dataclass
+@PayloadRegistry.register
+class GetFlowSnapshotResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Flow snapshot retrieval failed. Common causes: flow not found, no current context."""

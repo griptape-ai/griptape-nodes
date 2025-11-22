@@ -98,6 +98,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     GetFlowMetadataRequest,
     GetFlowMetadataResultFailure,
     GetFlowMetadataResultSuccess,
+    GetFlowSnapshotRequest,
     GetTopLevelFlowRequest,
     GetTopLevelFlowResultSuccess,
     ListFlowsInCurrentContextRequest,
@@ -257,6 +258,7 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(UnresolveFlowRequest, self.on_unresolve_flow_request)
 
         event_manager.assign_manager_to_request_type(GetFlowStateRequest, self.on_get_flow_state_request)
+        event_manager.assign_manager_to_request_type(GetFlowSnapshotRequest, self.on_get_flow_snapshot_request)
         event_manager.assign_manager_to_request_type(GetIsFlowRunningRequest, self.on_get_is_flow_running_request)
         event_manager.assign_manager_to_request_type(
             ValidateFlowDependenciesRequest, self.on_validate_flow_dependencies_request
@@ -457,6 +459,94 @@ class FlowManager:
         details = f"Successfully set metadata for a Flow '{flow_name}'."
 
         return SetFlowMetadataResultSuccess(result_details=details)
+
+    def on_get_flow_snapshot_request(self, request: GetFlowSnapshotRequest) -> ResultPayload:  # noqa: C901
+        from griptape_nodes.exe_types.node_types import BaseNode, ErrorProxyNode
+        from griptape_nodes.retained_mode.events.flow_events import (
+            ConnectionState,
+            GetFlowSnapshotResultFailure,
+            GetFlowSnapshotResultSuccess,
+            NodeState,
+        )
+
+        flow_name = request.flow_name
+        flow = None
+        if flow_name is None:
+            if not GriptapeNodes.ContextManager().has_current_flow():
+                details = "Attempted to get flow snapshot from the Current Context. Failed because the Current Context is empty."
+                return GetFlowSnapshotResultFailure(result_details=details)
+
+            flow = GriptapeNodes.ContextManager().get_current_flow()
+            flow_name = flow.name
+
+        if flow is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            flow = obj_mgr.attempt_get_object_by_name_as_type(flow_name, ControlFlow)
+            if flow is None:
+                details = f"Attempted to get snapshot for Flow '{flow_name}', but no such Flow was found."
+                return GetFlowSnapshotResultFailure(result_details=details)
+
+        # Get all nodes in the flow
+        nodes_list = list(flow.nodes.keys())
+        node_states = []
+
+        for node_name in nodes_list:
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = (
+                    f"Attempted to get snapshot for Flow '{flow_name}'. Failed to find Node '{node_name}' in the flow."
+                )
+                return GetFlowSnapshotResultFailure(result_details=details)
+
+            # Get node type and library name
+            if isinstance(node, ErrorProxyNode):
+                node_type = node.original_node_type
+                library_name = node.original_library_name
+            else:
+                node_type = node.__class__.__name__
+                library_name = node.metadata.get("library", "unknown")
+
+            # Get all parameter values
+            parameter_values = {}
+            for param in node.parameters:
+                if param.name in node.parameter_values:
+                    parameter_values[param.name] = node.parameter_values[param.name]
+
+            # Create NodeState
+            node_state = NodeState(
+                name=node_name,
+                node_type=node_type,
+                library_name=library_name,
+                metadata=node.metadata,
+                locked=node.lock,
+                resolution_state=node.state.value,
+                parameter_values=parameter_values,
+            )
+            node_states.append(node_state)
+
+        # Get all connections for the flow
+        flow_connections = self._get_connections_for_flow(flow)
+        connection_states = []
+
+        for connection in flow_connections:
+            connection_state = ConnectionState(
+                connection_id=str(id(connection)),
+                source_node_name=connection.source_node.name,
+                source_parameter_name=connection.source_parameter.name,
+                source_parameter_type=connection.source_parameter.type,
+                target_node_name=connection.target_node.name,
+                target_parameter_name=connection.target_parameter.name,
+                target_parameter_type=connection.target_parameter.type,
+            )
+            connection_states.append(connection_state)
+
+        details = f"Successfully retrieved complete snapshot for Flow '{flow_name}'."
+        return GetFlowSnapshotResultSuccess(
+            nodes=node_states,
+            connections=connection_states,
+            metadata=flow.metadata,
+            result_details=details,
+        )
 
     def does_canvas_exist(self) -> bool:
         """Determines if there is already an existing flow with no parent flow.Returns True if there is an existing flow with no parent flow.Return False if there is no existing flow with no parent flow."""
