@@ -426,7 +426,7 @@ class FileOperationBaseNode(SuccessFailureNode):
     def _collect_all_files(
         self,
         paths: list[str],
-        info_class: type[Any],  # Dataclass type (e.g., CopyFileInfo, MoveFileInfo)
+        info_class: Callable[..., T],  # Dataclass type or factory (e.g., CopyFileInfo, MoveFileInfo)
         pending_status: Enum,
         invalid_status: Enum,
     ) -> list[T]:
