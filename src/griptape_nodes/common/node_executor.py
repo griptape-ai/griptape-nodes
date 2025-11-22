@@ -409,6 +409,9 @@ class NodeExecutor:
         if len(node_names) == 0:
             return None
 
+        # Pass node_group_name if we're packaging a NodeGroupNode
+        node_group_name = node.name if isinstance(node, NodeGroupNode) else None
+
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
             start_node_type=workflow_start_end_nodes.start_flow_node_type,
@@ -418,6 +421,7 @@ class NodeExecutor:
             output_parameter_prefix=output_parameter_prefix,
             entry_control_node_name=None,
             entry_control_parameter_name=None,
+            node_group_name=node_group_name,
         )
         package_result = GriptapeNodes.handle_request(request)
         if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
