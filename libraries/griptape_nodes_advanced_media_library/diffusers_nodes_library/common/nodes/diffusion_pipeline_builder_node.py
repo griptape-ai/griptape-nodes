@@ -1,7 +1,10 @@
+import gc
 import hashlib
 import json
 import logging
 from typing import Any, ClassVar
+
+import torch  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
     ParameterConnectionPreservationMixin,
@@ -161,11 +164,22 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
-        def builder() -> Any:
-            return self._build_pipeline()
+        def work() -> Any:
+            config_hash = self.get_parameter_value("pipeline")
+            try:
+                with self.log_params.append_profile_to_logs("Pipeline building/caching"):
+                    return model_cache.get_or_build_pipeline(config_hash, self._build_pipeline)
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline build failed", self.name)
+                # Remove partial/corrupted pipeline from cache
+                model_cache.remove_pipeline(config_hash)
+                # Aggressive cleanup on failure
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                raise
 
-        with self.log_params.append_profile_to_logs("Pipeline building/caching"):
-            yield lambda: model_cache.get_or_build_pipeline(self.get_parameter_value("pipeline"), builder)
+        yield work
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 
@@ -176,7 +190,7 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         with self.log_params.append_profile_to_logs("Loading pipeline"):
             pipe = self.params.pipeline_type_parameters.pipeline_type_pipeline_params.build_pipeline()
 
-        with self.log_params.append_profile_to_logs("Configuring FLUX loras"):
+        with self.log_params.append_profile_to_logs("Configuring LoRAs"):
             self.loras_params.configure_loras(pipe)
 
         with self.log_params.append_profile_to_logs("Applying optimizations"):

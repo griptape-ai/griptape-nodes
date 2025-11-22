@@ -1,6 +1,8 @@
+import gc
 import logging
 from typing import Any, ClassVar
 
+import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
@@ -159,4 +161,15 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
-        yield lambda: self.pipe_params.runtime_parameters.process_pipeline(pipe)
+        def work() -> Any:
+            try:
+                return self.pipe_params.runtime_parameters.process_pipeline(pipe)
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline execution failed", self.name)
+                # Aggressive cleanup on failure
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                raise
+
+        yield work
