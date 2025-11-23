@@ -82,17 +82,64 @@ class Payload(ABC):  # noqa: B024
 # Request payload base class with optional request ID
 @dataclass(kw_only=True)
 class RequestPayload(Payload, ABC):
+    """Base class for all request payloads.
+
+    All request types in the system inherit from this class, providing common fields
+    for request identification and error handling behavior.
+
+    Attributes:
+        request_id: Optional unique identifier for correlating requests with their responses.
+            When set, the corresponding result event will include this same request_id,
+            allowing clients to match asynchronous responses to their originating requests.
+
+        squelch_errors_on_failure: When True, instructs clients (typically frontends) to
+            suppress error toast notifications for failed results. This is useful for benign
+            operations where failure is expected and handled gracefully, such as checking
+            file existence or probing for optional resources. The backend will still send
+            the failure result, but clients can inspect this flag and choose not to display
+            an error toast to the user. Defaults to False.
+    """
+
     request_id: int | None = None
+    squelch_errors_on_failure: bool = False
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
 @dataclass(kw_only=True)
 class ResultPayload(Payload, ABC):
-    """Base class for all result payloads."""
+    """Base class for all result payloads.
+
+    All result types in the system inherit from this class, providing common fields
+    for operation results, status information, and workflow state tracking.
+
+    Result payloads are returned by request handlers to communicate the outcome of an
+    operation, including success/failure status, human-readable details, and whether
+    the operation modified the workflow state.
+
+    Attributes:
+        result_details: Information about the operation result. Can be either:
+            - A ResultDetails object containing one or more ResultDetail entries with
+              logging levels and messages for structured result reporting.
+            - A simple string message that will be automatically converted to a
+              ResultDetails object with an appropriate logging level (ERROR for failures,
+              DEBUG for successes) in the __post_init__ method of subclasses.
+
+        altered_workflow_state: When True, alerts clients that this result made changes
+            to the workflow state. Editors can use this flag to determine if the workflow
+            is "dirty" and needs to be re-saved. For example, creating a new node, deleting
+            a node, or modifying node connections would set this to True. Read-only operations
+            like getting node values or listing files would leave this as False.
+            Defaults to False.
+
+    Methods:
+        succeeded(): Abstract method that must be implemented by subclasses to return
+            True for success results and False for failure results.
+
+        failed(): Convenience method that returns the inverse of succeeded(). Returns
+            True for failure results and False for success results.
+    """
 
     result_details: ResultDetails | str
-    """When set to True, alerts clients that this result made changes to the workflow state.
-    Editors can use this to determine if the workflow is dirty and needs to be re-saved, for example."""
     altered_workflow_state: bool = False
 
     @abstractmethod
@@ -104,6 +151,13 @@ class ResultPayload(Payload, ABC):
         """
 
     def failed(self) -> bool:
+        """Returns whether this result represents a failure.
+
+        Convenience method that returns the inverse of succeeded().
+
+        Returns:
+            bool: True if failure, False if success
+        """
         return not self.succeeded()
 
 
