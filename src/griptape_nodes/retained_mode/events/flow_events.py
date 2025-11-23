@@ -455,6 +455,7 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
+    node_group_name: str | None = None  # Name of the NodeGroupNode if packaging a group
 
 
 @dataclass
