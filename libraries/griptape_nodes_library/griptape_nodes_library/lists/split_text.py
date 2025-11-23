@@ -46,6 +46,7 @@ class SplitText(ControlNode):
         "hash": "#",
         "ampersand": "&",
         "equals": "=",
+        "question mark": "?",
     }
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
