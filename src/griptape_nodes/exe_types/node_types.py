@@ -23,6 +23,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
+    Trait,
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -1995,10 +1996,6 @@ class NodeGroupNode(BaseNode):
 
         # Add each parameter from the StartFlow node to this NodeGroupNode
         for param in temp_start_flow_node.parameters:
-            # Skip internal parameters
-            if param.name.startswith("_"):
-                continue
-
             if isinstance(param, ControlParameter):
                 continue
 
@@ -2022,8 +2019,6 @@ class NodeGroupNode(BaseNode):
             param: The parameter to clone
             new_name: The new name for the cloned parameter
         """
-        from griptape_nodes.exe_types.core_types import Trait
-
         # Extract traits from parameter children (traits are stored as children of type Trait)
         traits_set: set[type[Trait] | Trait] | None = {child for child in param.children if isinstance(child, Trait)}
         if not traits_set:

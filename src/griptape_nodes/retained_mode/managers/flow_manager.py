@@ -1224,7 +1224,7 @@ class FlowManager:
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
 
-    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912
+    def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: PackageNodesAsSerializedFlowRequest
     ) -> ResultPayload:
         """Handle request to package multiple nodes as a serialized flow.
@@ -1294,7 +1294,7 @@ class FlowManager:
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
-        # Step 7.5: Retrieve NodeGroupNode if node_group_name was provided
+        # Step 8: Retrieve NodeGroupNode if node_group_name was provided
         node_group_node: NodeGroupNode | None = None
         if request.node_group_name:
             try:
@@ -1304,7 +1304,7 @@ class FlowManager:
             except Exception as e:
                 logger.debug("Failed to retrieve NodeGroupNode '%s': %s", request.node_group_name, e)
 
-        # Step 8: Create start node with parameters for external incoming connections
+        # Step 9: Create start node with parameters for external incoming connections
         start_node_result = self._create_multi_node_start_node_with_connections(
             request=request,
             library_version=library_version,
@@ -1317,7 +1317,7 @@ class FlowManager:
         if isinstance(start_node_result, PackageNodesAsSerializedFlowResultFailure):
             return start_node_result
 
-        # Step 9: Create end node with parameters for external outgoing connections and parameter mappings
+        # Step 10: Create end node with parameters for external outgoing connections and parameter mappings
         end_node_result = self._create_multi_node_end_node_with_connections(
             request=request,
             package_nodes=nodes_to_package,
@@ -1344,7 +1344,7 @@ class FlowManager:
             ),
         ]
 
-        # Step 10: Assemble final SerializedFlowCommands
+        # Step 11: Assemble final SerializedFlowCommands
         # Collect all connections from start/end nodes and internal package connections
         all_connections = self._collect_all_connections_for_multi_node_package(
             start_node_result=start_node_result,
@@ -2166,31 +2166,44 @@ class FlowManager:
             node_group_node: The NodeGroupNode containing parameter values
             start_node_library_name: Name of the library containing the StartFlow node
             start_node_type: Type of the StartFlow node
-            start_node_uuid: UUID of the StartFlow node being created
             start_node_parameter_value_commands: List to append parameter value commands to
             unique_parameter_uuid_to_values: Dict to track unique parameter values
             serialized_parameter_value_tracker: Tracker for serialized parameter values
+
+        Raises:
+            ValueError: If required metadata is missing from NodeGroupNode
         """
         # Get execution environment metadata from NodeGroupNode
         if not node_group_node.metadata:
-            return
+            msg = f"NodeGroupNode '{node_group_node.name}' is missing metadata. Cannot apply parameters to StartFlow node."
+            raise ValueError(msg)
 
         execution_env_metadata = node_group_node.metadata.get("execution_environment")
         if not execution_env_metadata:
-            return
+            msg = f"NodeGroupNode '{node_group_node.name}' metadata is missing 'execution_environment'. Cannot apply parameters to StartFlow node."
+            raise ValueError(msg)
 
         # Find the metadata for the current library
         library_metadata = execution_env_metadata.get(start_node_library_name)
         if not library_metadata:
-            return
+            msg = f"NodeGroupNode '{node_group_node.name}' metadata does not contain library '{start_node_library_name}'. Available libraries: {list(execution_env_metadata.keys())}"
+            raise ValueError(msg)
 
         # Verify this is the correct StartFlow node type
-        if library_metadata.get("start_flow_node") != start_node_type:
-            return
+        registered_start_flow_node = library_metadata.get("start_flow_node")
+        if registered_start_flow_node != start_node_type:
+            msg = f"NodeGroupNode '{node_group_node.name}' has mismatched StartFlow node type. Expected '{start_node_type}', but metadata has '{registered_start_flow_node}'"
+            raise ValueError(msg)
 
         # Get the list of parameter names that belong to this StartFlow node
         parameter_names = library_metadata.get("parameter_names", [])
         if not parameter_names:
+            # This is not an error - it's valid for a StartFlow node to have no parameters
+            logger.debug(
+                "NodeGroupNode '%s' has no parameters registered for StartFlow node '%s'",
+                node_group_node.name,
+                start_node_type,
+            )
             return
 
         # For each parameter, get its value from the NodeGroupNode and create a set value command
