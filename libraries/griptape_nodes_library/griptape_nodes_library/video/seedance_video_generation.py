@@ -403,30 +403,20 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str):
+        if not isinstance(url, str) or not url.startswith(("http://", "https://", "file://")):
             return url
 
-        # Already a data URI, return as-is
-        if url.startswith("data:image/"):
+        try:
+            image_content = load_content_from_uri(url, timeout=20.0)
+            ct = get_content_type_from_extension(url) or "image/jpeg"
+            if not ct.startswith("image/"):
+                ct = "image/jpeg"
+            b64 = base64.b64encode(image_content).decode("utf-8")
+            self._log("Frame URL converted to data URI for proxy")
+            return f"data:{ct};base64,{b64}"  # noqa: TRY300
+        except Exception as e:
+            self._log(f"Warning: failed to inline frame URL: {e}")
             return url
-
-        # Handle file://, http://, and https:// URIs
-        if url.startswith(("http://", "https://", "file://")):
-            try:
-                image_content = load_content_from_uri(url, timeout=20.0)
-                # Detect content type from extension or default to jpeg
-                ct = get_content_type_from_extension(url) or "image/jpeg"
-                if not ct.startswith("image/"):
-                    ct = "image/jpeg"
-                b64 = base64.b64encode(image_content).decode("utf-8")
-                self._log("Frame URI converted to data URI for proxy")
-                return f"data:{ct};base64,{b64}"  # noqa: TRY300
-            except Exception as e:
-                self._log(f"Warning: failed to inline frame URI: {e}")
-                return url
-
-        # Other format, return as-is
-        return url
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         def _sanitize_body(b: dict[str, Any]) -> dict[str, Any]:
@@ -703,36 +693,32 @@ class SeedanceVideoGeneration(SuccessFailureNode):
 
     @staticmethod
     def _coerce_image_url_or_data_uri(val: Any) -> str | None:
-        # FAILURE CASES FIRST
         if val is None:
             return None
-
-        result: str | None = None
 
         # String handling
         if isinstance(val, str):
             v = val.strip()
-            if v:
-                # Return as-is if it's already a URL (http://, https://, file://) or data URI
-                if v.startswith(("http://", "https://", "file://", "data:image/")):
-                    result = v
-                else:
-                    # Otherwise treat as base64 and wrap in data URI
-                    result = f"data:image/png;base64,{v}"
-        else:
-            # Artifact-like objects
-            with suppress(Exception):
-                # ImageUrlArtifact: .value holds URL string
-                v = getattr(val, "value", None)
-                if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
-                    result = v
-                else:
-                    # ImageArtifact: .base64 holds raw or data-URI
-                    b64 = getattr(val, "base64", None)
-                    if isinstance(b64, str) and b64:
-                        result = b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
+            if not v:
+                return None
+            return (
+                v if v.startswith(("http://", "https://", "file://", "data:image/")) else f"data:image/png;base64,{v}"
+            )
 
-        return result
+        # Artifact-like objects
+        try:
+            # ImageUrlArtifact: .value holds URL string
+            v = getattr(val, "value", None)
+            if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
+                return v
+            # ImageArtifact: .base64 holds raw or data-URI
+            b64 = getattr(val, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
+        except Exception:  # noqa: S110
+            pass
+
+        return None
 
     @staticmethod
     def _download_bytes_from_url(url: str) -> bytes | None:
