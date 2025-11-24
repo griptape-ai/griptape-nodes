@@ -516,7 +516,6 @@ class ConnectionState:
     """Represents the complete state of a connection.
 
     Attributes:
-        connection_id: Unique identifier for this connection
         source_node_name: Name of the source node
         source_parameter_name: Name of the source parameter
         source_parameter_type: Type of the source parameter
@@ -525,7 +524,6 @@ class ConnectionState:
         target_parameter_type: Type of the target parameter
     """
 
-    connection_id: str
     source_node_name: str
     source_parameter_name: str
     source_parameter_type: str

@@ -530,7 +530,6 @@ class FlowManager:
 
         for connection in flow_connections:
             connection_state = ConnectionState(
-                connection_id=str(id(connection)),
                 source_node_name=connection.source_node.name,
                 source_parameter_name=connection.source_parameter.name,
                 source_parameter_type=connection.source_parameter.type,
