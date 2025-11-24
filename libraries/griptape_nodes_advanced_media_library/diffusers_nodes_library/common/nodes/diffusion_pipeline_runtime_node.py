@@ -1,8 +1,6 @@
-import gc
 import logging
 from typing import Any, ClassVar
 
-import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mixin import (
@@ -10,8 +8,9 @@ from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mix
 )
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_parameters import (
     DiffusionPipelineParameters,
-)  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
+from diffusers_nodes_library.common.utils.pipeline_utils import cleanup_memory_caches
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
@@ -167,9 +166,7 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
             except Exception:
                 logger.exception("%s: Diffusion Pipeline execution failed", self.name)
                 # Aggressive cleanup on failure
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                cleanup_memory_caches()
                 raise
 
         yield work

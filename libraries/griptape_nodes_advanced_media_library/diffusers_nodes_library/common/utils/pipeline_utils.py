@@ -294,7 +294,10 @@ def clear_diffusion_pipeline(
                 setattr(pipe, component_name, None)
 
     del pipe
+    cleanup_memory_caches()
 
+def cleanup_memory_caches() -> None:
+    """Clear memory caches."""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
