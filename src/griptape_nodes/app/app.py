@@ -73,6 +73,8 @@ websocket_event_loop_ready = threading.Event()
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 
+config_manager = GriptapeNodes.ConfigManager()
+
 
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
@@ -81,7 +83,8 @@ class EventLogHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno >= logging.INFO:
+        log_level_no = logging.getLevelNamesMapping()[config_manager.get_config_value("log_level").upper()]
+        if record.levelno >= log_level_no:
             log_event = AppEvent(
                 payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
             )
