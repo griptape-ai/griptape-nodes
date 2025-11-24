@@ -81,7 +81,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterList(
                 name="object_images",
-                input_types=["ImageUrlArtifact", "list", "list[ImageUrlArtifact]"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 default_value=[],
                 tooltip="Optional reference images for high-fidelity objects",
                 allowed_modes={ParameterMode.INPUT},
@@ -93,7 +93,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterList(
                 name="human_images",
-                input_types=["ImageUrlArtifact", "list", "list[ImageUrlArtifact]"],
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 default_value=[],
                 tooltip="Optional reference images for character consistency",
                 allowed_modes={ParameterMode.INPUT},
@@ -120,7 +120,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 name="image_size",
                 input_types=["str"],
                 type="str",
-                default_value="2K",
+                default_value="1K",
                 tooltip="Image size/resolution for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["1K", "2K", "4K"])},
