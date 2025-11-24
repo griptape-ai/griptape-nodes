@@ -49,25 +49,27 @@ async def _sync_libraries(*, install_dependencies: bool, overwrite_existing: boo
     # Execute the sync
     result = await GriptapeNodes.ahandle_request(request)
 
-    # Display results
-    if isinstance(result, SyncLibrariesResultSuccess):
-        console.print(f"[green]Checked {result.libraries_checked} libraries[/green]")
-
-        if result.libraries_updated > 0:
-            console.print(f"[bold green]Updated {result.libraries_updated} libraries:[/bold green]")
-            for lib_name, update_info in result.update_summary.items():
-                if update_info.get("status") == "updated":
-                    console.print(
-                        f"  [green]✓ {lib_name}: {update_info['old_version']} → {update_info['new_version']}[/green]"
-                    )
-                elif update_info.get("status") == "failed":
-                    console.print(f"  [red]✗ {lib_name}: {update_info.get('error', 'Unknown error')}[/red]")
-        else:
-            console.print("[green]All libraries are up to date[/green]")
-
-        console.print("[bold green]Libraries synced successfully.[/bold green]")
-    else:
+    # Display results - failure case first
+    if not isinstance(result, SyncLibrariesResultSuccess):
         console.print(f"[red]Failed to sync libraries: {result.result_details}[/red]")
+        return
+
+    # Success path
+    console.print(f"[green]Checked {result.libraries_checked} libraries[/green]")
+
+    if result.libraries_updated > 0:
+        console.print(f"[bold green]Updated {result.libraries_updated} libraries:[/bold green]")
+        for lib_name, update_info in result.update_summary.items():
+            if update_info.get("status") == "updated":
+                console.print(
+                    f"  [green]✓ {lib_name}: {update_info['old_version']} → {update_info['new_version']}[/green]"
+                )
+            elif update_info.get("status") == "failed":
+                console.print(f"  [red]✗ {lib_name}: {update_info.get('error', 'Unknown error')}[/red]")
+    else:
+        console.print("[green]All libraries are up to date[/green]")
+
+    console.print("[bold green]Libraries synced successfully.[/bold green]")
 
 
 @app.command()

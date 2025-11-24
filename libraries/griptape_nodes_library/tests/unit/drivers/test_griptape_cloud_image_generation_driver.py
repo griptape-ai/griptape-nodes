@@ -1,8 +1,6 @@
 from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageGenerationDriver
 from griptape_nodes_library.config.image.griptape_cloud_image_driver import GriptapeCloudImage
 
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
 
 class TestGriptapeCloudImageGenerationNode:
     def test___init__(self) -> None:
@@ -22,28 +20,12 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert parameters == [
             {
-                "input_types": ["parametercontroltype"],
-                "output_type": "parametercontroltype",
-                "type": "parametercontroltype",
-                "default_value": None,
-                "name": "exec_in",
-                "tooltip": "Connection from previous node in the execution chain",
-            },
-            {
-                "input_types": ["parametercontroltype"],
-                "output_type": "parametercontroltype",
-                "type": "parametercontroltype",
-                "default_value": None,
-                "name": "exec_out",
-                "tooltip": "Connection to the next node in the execution chain",
-            },
-            {
                 "input_types": ["Image Generation Driver"],
                 "output_type": "Image Generation Driver",
                 "type": "Image Generation Driver",
                 "default_value": None,
                 "name": "image_model_config",
-                "tooltip": "Enter any type of data for driver.",
+                "tooltip": "",
             },
             {
                 "input_types": ["str"],
@@ -51,7 +33,7 @@ class TestGriptapeCloudImageGenerationNode:
                 "type": "str",
                 "default_value": "⚠️ This node requires an API key to function.",
                 "name": "message",
-                "tooltip": "Enter text/string for message.",
+                "tooltip": "",
             },
             {
                 "input_types": ["str"],
@@ -96,5 +78,7 @@ class TestGriptapeCloudImageGenerationNode:
 
         assert isinstance(driver, GriptapeCloudImageGenerationDriver)
         assert driver.model == "dall-e-3"
-        assert driver.api_key == GriptapeNodes.SecretsManager().get_secret("GT_CLOUD_API_KEY")
+        assert driver.api_key == griptape_cloud_image_generation_node.get_config_value(
+            service="Griptape", value="GT_CLOUD_API_KEY"
+        )
         assert driver.image_size == "1024x1024"

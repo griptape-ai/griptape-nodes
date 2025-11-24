@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NamedTuple
 
 import typer
 from rich.box import HEAVY_EDGE
@@ -229,18 +229,24 @@ def _handle_additional_library_config(config: InitConfig) -> bool | None:
         )
 
     if register_advanced_library is not None or register_griptape_cloud_library is not None:
-        libraries_to_download, libraries_to_register = _build_libraries_list(
+        libraries_config = _build_libraries_list(
             register_advanced_library=register_advanced_library,
             register_griptape_cloud_library=register_griptape_cloud_library,
         )
         config_manager.set_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_download", libraries_to_download
+            "app_events.on_app_initialization_complete.libraries_to_download",
+            libraries_config.libraries_to_download,
         )
         config_manager.set_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
+            "app_events.on_app_initialization_complete.libraries_to_register",
+            libraries_config.libraries_to_register,
         )
-        console.print(f"[bold green]Libraries to download: {', '.join(libraries_to_download)}[/bold green]")
-        console.print(f"[bold green]Libraries to register: {', '.join(libraries_to_register)}[/bold green]")
+        console.print(
+            f"[bold green]Libraries to download: {', '.join(libraries_config.libraries_to_download)}[/bold green]"
+        )
+        console.print(
+            f"[bold green]Libraries to register: {', '.join(libraries_config.libraries_to_register)}[/bold green]"
+        )
 
     return register_advanced_library
 
@@ -493,14 +499,17 @@ def _prompt_for_griptape_cloud_library(*, default_prompt_for_griptape_cloud_libr
     return Confirm.ask("Register Griptape Cloud Library?", default=default_prompt_for_griptape_cloud_library)
 
 
+class LibrariesConfig(NamedTuple):
+    """Configuration for library lists."""
+
+    libraries_to_download: list[str]
+    libraries_to_register: list[str]
+
+
 def _build_libraries_list(
     *, register_advanced_library: bool | None = False, register_griptape_cloud_library: bool | None = False
-) -> tuple[list[str], list[str]]:
-    """Builds the lists of libraries to download and register based on library settings.
-
-    Returns:
-        tuple: (libraries_to_download, libraries_to_register)
-    """
+) -> LibrariesConfig:
+    """Builds the lists of libraries to download and register based on library settings."""
     # Get current configuration for both lists
     download_key = "app_events.on_app_initialization_complete.libraries_to_download"
     register_key = "app_events.on_app_initialization_complete.libraries_to_register"
@@ -552,7 +561,7 @@ def _build_libraries_list(
         for lib in libraries_to_remove:
             new_downloads.remove(lib)
 
-    return new_downloads, new_register
+    return LibrariesConfig(libraries_to_download=new_downloads, libraries_to_register=new_register)
 
 
 def _create_new_bucket(bucket_name: str) -> str:
