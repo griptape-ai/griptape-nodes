@@ -30,15 +30,34 @@ class CreateList(ControlNode):
         )
         self.add_parameter(self.output)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name != "output":
-            list_values = self.get_parameter_value("items")
-            self.parameter_output_values["output"] = list_values
-            self.publish_update_to_parameter("output", list_values)
-        return super().after_value_set(parameter, value)
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
+        # If items parameter was set, update output immediately
+        if param_name == self.items_list.name:
+            self._update_output()
 
     def process(self) -> None:
-        # Get the list of items from the input parameter
-        list_values = self.get_parameter_value("items")
+        self._update_output()
 
-        self.parameter_output_values["output"] = list_values
+    def _update_output(self) -> None:
+        """Gets items, sets output value, and publishes update."""
+        list_values = self.get_parameter_value(self.items_list.name)
+        self.set_parameter_value(self.output.name, list_values)
+        self.parameter_output_values[self.output.name] = list_values
+
+        self.publish_update_to_parameter(self.output.name, list_values)
