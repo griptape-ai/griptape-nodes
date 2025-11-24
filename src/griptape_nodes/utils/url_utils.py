@@ -160,7 +160,7 @@ def load_content_from_uri(
     raise ValueError(msg)
 
 
-async def async_load_content_from_uri(
+async def aload_content_from_uri(
     uri: str,
     *,
     timeout: float = DEFAULT_HTTP_TIMEOUT,  # noqa: ASYNC109
