@@ -181,10 +181,14 @@ class LoadLibraryMetadataFromFileResultSuccess(WorkflowNotAlteredMixin, ResultPa
         library_schema: The validated LibrarySchema object containing all metadata
                        about the library including nodes, categories, and settings.
         file_path: The file path from which the library metadata was loaded.
+        git_remote: The git remote URL if the library is in a git repository, None otherwise.
+        git_ref: The current git reference (branch, tag, or commit) if the library is in a git repository, None otherwise.
     """
 
     library_schema: LibrarySchema
     file_path: str
+    git_remote: str | None
+    git_ref: str | None
 
 
 @dataclass
@@ -539,3 +543,349 @@ class LoadLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class LoadLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library loading failed. Common causes: library loading errors, configuration issues, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateRequest(RequestPayload):
+    """Check if a library has updates available via git.
+
+    Use when: Checking for library updates, displaying update status,
+    validating library versions, implementing update notifications.
+
+    Args:
+        library_name: Name of the library to check for updates
+
+    Results: CheckLibraryUpdateResultSuccess (with update info) | CheckLibraryUpdateResultFailure (library not found, not a git repo, check error)
+    """
+
+    library_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library update check completed successfully.
+
+    Updates are detected based on either version changes or commit differences:
+    - If remote version > local version: update available (semantic versioning)
+    - If remote version < local version: no update (prevent regression)
+    - If versions equal: compare commits; if different, update available
+
+    Args:
+        has_update: True if an update is available, False otherwise
+        current_version: The current library version
+        latest_version: The latest library version from remote
+        git_remote: The git remote URL
+        git_ref: The current git reference (branch, tag, or commit)
+        local_commit: The local HEAD commit SHA (None if not a git repository)
+        remote_commit: The remote HEAD commit SHA (None if not available)
+    """
+
+    has_update: bool
+    current_version: str | None
+    latest_version: str | None
+    git_remote: str | None
+    git_ref: str | None
+    local_commit: str | None
+    remote_commit: str | None
+
+
+@dataclass
+@PayloadRegistry.register
+class CheckLibraryUpdateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library update check failed. Common causes: library not found, not a git repository, git remote error, network error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryRequest(RequestPayload):
+    """Update a library to the latest version using the appropriate git strategy.
+
+    Automatically detects whether the library uses branch-based or tag-based workflow:
+    - Branch-based: Uses git fetch + git reset --hard (forces local to match remote)
+    - Tag-based: Uses git fetch --tags --force + git checkout (for moving tags like 'latest')
+
+    Use when: Applying library updates, synchronizing with remote changes,
+    updating library versions, implementing auto-update features.
+
+    Args:
+        library_name: Name of the library to update
+        install_dependencies: If True, automatically install dependencies after updating (default: True)
+        overwrite_existing: If True, discard any uncommitted local changes. If False, fail if uncommitted changes exist (default: False)
+
+    Results: UpdateLibraryResultSuccess (with version info) | UpdateLibraryResultFailure (library not found, git error, update failure)
+    """
+
+    library_name: str
+    install_dependencies: bool = True
+    overwrite_existing: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library updated successfully.
+
+    Args:
+        old_version: The previous library version
+        new_version: The new library version after update
+    """
+
+    old_version: str
+    new_version: str
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateLibraryResultFailure(ResultPayloadFailure):
+    """Library update failed. Common causes: library not found, not a git repository, git pull error, uncommitted changes.
+
+    Args:
+        retryable: If True, the operation can be retried with overwrite_existing=True
+    """
+
+    retryable: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryRefRequest(RequestPayload):
+    """Switch a library to a different git branch or tag.
+
+    Supports switching to both branches and tags (e.g., 'main', 'develop', 'latest', 'v1.0.0').
+
+    Use when: Switching between branches for development, testing different versions,
+    reverting to stable branches, checking out feature branches, or switching to specific tags.
+
+    Args:
+        library_name: Name of the library to switch
+        ref_name: Name of the branch or tag to switch to
+        install_dependencies: If True, automatically install dependencies after switching (default: True)
+
+    Results: SwitchLibraryRefResultSuccess (with ref/version info) | SwitchLibraryRefResultFailure (library not found, git error, ref not found)
+    """
+
+    library_name: str
+    ref_name: str
+    install_dependencies: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryRefResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library branch or tag switched successfully.
+
+    Args:
+        old_ref: The previous branch or tag name
+        new_ref: The new branch or tag name after switch
+        old_version: The previous library version
+        new_version: The new library version after switch
+    """
+
+    old_ref: str
+    new_ref: str
+    old_version: str
+    new_version: str
+
+
+@dataclass
+@PayloadRegistry.register
+class SwitchLibraryRefResultFailure(ResultPayloadFailure):
+    """Library ref switch failed. Common causes: library not found, not a git repository, ref not found, git checkout error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryRequest(RequestPayload):
+    """Download a library from a git repository.
+
+    Use when: Installing new libraries from git repositories, downloading third-party libraries,
+    setting up development libraries, adding community libraries.
+
+    Args:
+        git_url: The git repository URL to clone
+        branch_tag_commit: Optional branch, tag, or commit to checkout (defaults to default branch)
+        target_directory_name: Optional name for the target directory (defaults to repository name)
+        download_directory: Optional parent directory path for download (defaults to workspace/libraries)
+        install_dependencies: If True, automatically install dependencies after downloading (default: True)
+        overwrite_existing: If True, delete existing directory before cloning (default: False)
+
+    Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
+    """
+
+    git_url: str
+    branch_tag_commit: str | None = None
+    target_directory_name: str | None = None
+    download_directory: str | None = None
+    install_dependencies: bool = True
+    overwrite_existing: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Library downloaded successfully.
+
+    Args:
+        library_name: Name of the library extracted from griptape_nodes_library.json
+        library_path: Full path where the library was downloaded
+    """
+
+    library_name: str
+    library_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadLibraryResultFailure(ResultPayloadFailure):
+    """Library download failed. Common causes: invalid git URL, network error, target directory already exists, no griptape_nodes_library.json found.
+
+    Args:
+        retryable: If True, the operation can be retried with overwrite_existing=True
+    """
+
+    retryable: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesRequest(RequestPayload):
+    """Install dependencies for a library.
+
+    Use when: Installing or reinstalling dependencies for a library,
+    setting up a library's environment, updating dependencies after changes.
+
+    This operation:
+    1. Loads library metadata from the file
+    2. Gets library dependencies from metadata
+    3. Initializes the library's virtual environment
+    4. Installs pip dependencies specified in the library metadata
+    5. Always installs dependencies without version checks
+
+    Args:
+        library_file_path: Path to the library JSON file
+
+    Results: InstallLibraryDependenciesResultSuccess | InstallLibraryDependenciesResultFailure
+    """
+
+    library_file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesResultSuccess(ResultPayloadSuccess):
+    """Library dependencies installed successfully.
+
+    Args:
+        library_name: Name of the library whose dependencies were installed
+        dependencies_installed: Number of dependencies that were installed
+    """
+
+    library_name: str
+    dependencies_installed: int
+
+
+@dataclass
+@PayloadRegistry.register
+class InstallLibraryDependenciesResultFailure(ResultPayloadFailure):
+    """Library dependency installation failed. Common causes: library not found, no dependencies defined, venv initialization failed, pip install error."""
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesRequest(RequestPayload):
+    """Sync all libraries to latest versions and ensure dependencies are installed.
+
+    Similar to `uv sync` - ensures workspace is in a consistent, up-to-date state.
+    This operation:
+    1. Downloads missing libraries from git URLs specified in config
+    2. Gets all registered libraries (including newly downloaded)
+    3. Checks each library for available updates
+    4. Updates libraries that have updates available
+    5. Installs/updates dependencies for all libraries
+    6. Returns comprehensive summary of changes
+
+    Use when: Updating workspace to latest versions, ensuring all libraries are
+    up-to-date, setting up development environment, periodic maintenance.
+
+    Args:
+        install_dependencies: If True, install dependencies after updating (default: True)
+        overwrite_existing: If True, discard any uncommitted local changes when updating libraries. If False, fail if uncommitted changes exist (default: False)
+
+    Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
+    """
+
+    install_dependencies: bool = True
+    overwrite_existing: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Libraries synced successfully.
+
+    Args:
+        libraries_downloaded: Number of libraries that were downloaded from git URLs
+        libraries_checked: Number of libraries checked for updates
+        libraries_updated: Number of libraries that were updated
+        update_summary: Dict mapping library names to their update info (old_version -> new_version, or status for downloads)
+    """
+
+    libraries_downloaded: int
+    libraries_checked: int
+    libraries_updated: int
+    update_summary: dict[str, dict[str, str]]
+
+
+@dataclass
+@PayloadRegistry.register
+class SyncLibrariesResultFailure(ResultPayloadFailure):
+    """Library sync failed. Common causes: git errors, network errors, dependency installation failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoRequest(RequestPayload):
+    """Inspect a library's metadata from a git repository without downloading the full repository.
+
+    Performs a sparse checkout to fetch only the library JSON file, which is efficient for
+    previewing library information, checking compatibility, or validating git URLs before
+    full download.
+
+    Use when: Previewing library details, displaying library information in UI,
+    validating library compatibility, checking library versions remotely.
+
+    Args:
+        git_url: Git repository URL (supports GitHub shorthand like "user/repo")
+        ref: Branch, tag, or commit to inspect (defaults to "HEAD")
+
+    Results: InspectLibraryRepoResultSuccess (with library metadata) | InspectLibraryRepoResultFailure (invalid URL, network error, no library JSON found)
+    """
+
+    git_url: str
+    ref: str = "HEAD"
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library repository inspection completed successfully.
+
+    Args:
+        library_schema: Complete library schema with all metadata (name, version, nodes, categories, dependencies, settings, etc.)
+        commit_sha: Git commit SHA that was inspected
+        git_url: Git URL that was inspected (normalized)
+        ref: Git reference that was inspected
+    """
+
+    library_schema: LibrarySchema
+    commit_sha: str
+    git_url: str
+    ref: str
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryRepoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library repository inspection failed. Common causes: invalid git URL, network error, no library JSON found, invalid JSON format."""

@@ -8,8 +8,9 @@ from diffusers_nodes_library.common.mixins.parameter_connection_preservation_mix
 )
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_parameters import (
     DiffusionPipelineParameters,
-)  # type: ignore[reportMissingImports]
+)
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
+from diffusers_nodes_library.common.utils.pipeline_utils import cleanup_memory_caches
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
@@ -159,4 +160,13 @@ class DiffusionPipelineRuntimeNode(ParameterConnectionPreservationMixin, Control
         self.pipe_params.runtime_parameters.publish_output_image_preview_placeholder()
         pipe = self._get_pipeline()
 
-        yield lambda: self.pipe_params.runtime_parameters.process_pipeline(pipe)
+        def work() -> Any:
+            try:
+                return self.pipe_params.runtime_parameters.process_pipeline(pipe)
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline execution failed", self.name)
+                # Aggressive cleanup on failure
+                cleanup_memory_caches()
+                raise
+
+        yield work

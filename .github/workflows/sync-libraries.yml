@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout source repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 2
           path: source
@@ -45,7 +45,7 @@ jobs:
 
       - name: Checkout target repository
         if: steps.changed.outputs.changed == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ matrix.library.target_repo }}
           token: ${{ secrets.LIBRARY_SYNC_TOKEN }}

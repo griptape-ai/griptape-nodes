@@ -13,8 +13,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
+import aioshutil
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -23,6 +24,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -45,7 +47,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 )
 
 # Runtime imports for ResultDetails since it's used at runtime
-from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails
+from griptape_nodes.retained_mode.events.base_events import AppEvent, ResultDetails, ResultPayloadFailure
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
     GetConfigCategoryResultSuccess,
@@ -53,6 +55,12 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigCategoryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.library_events import (
+    CheckLibraryUpdateRequest,
+    CheckLibraryUpdateResultFailure,
+    CheckLibraryUpdateResultSuccess,
+    DownloadLibraryRequest,
+    DownloadLibraryResultFailure,
+    DownloadLibraryResultSuccess,
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
@@ -65,6 +73,12 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
+    InspectLibraryRepoRequest,
+    InspectLibraryRepoResultFailure,
+    InspectLibraryRepoResultSuccess,
+    InstallLibraryDependenciesRequest,
+    InstallLibraryDependenciesResultFailure,
+    InstallLibraryDependenciesResultSuccess,
     ListCapableLibraryEventHandlersRequest,
     ListCapableLibraryEventHandlersResultFailure,
     ListCapableLibraryEventHandlersResultSuccess,
@@ -93,9 +107,18 @@ from griptape_nodes.retained_mode.events.library_events import (
     ReloadAllLibrariesRequest,
     ReloadAllLibrariesResultFailure,
     ReloadAllLibrariesResultSuccess,
+    SwitchLibraryRefRequest,
+    SwitchLibraryRefResultFailure,
+    SwitchLibraryRefResultSuccess,
+    SyncLibrariesRequest,
+    SyncLibrariesResultFailure,
+    SyncLibrariesResultSuccess,
     UnloadLibraryFromRegistryRequest,
     UnloadLibraryFromRegistryResultFailure,
     UnloadLibraryFromRegistryResultSuccess,
+    UpdateLibraryRequest,
+    UpdateLibraryResultFailure,
+    UpdateLibraryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
@@ -105,10 +128,8 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AfterLibraryCallbackProblem,
     BeforeLibraryCallbackProblem,
     CreateConfigCategoryProblem,
-    DependencyInstallationFailedProblem,
     DuplicateLibraryProblem,
     EngineVersionErrorProblem,
-    InsufficientDiskSpaceProblem,
     InvalidVersionStringProblem,
     LibraryJsonDecodeProblem,
     LibraryLoadExceptionProblem,
@@ -121,7 +142,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     NodeModuleImportProblem,
     SandboxDirectoryMissingProblem,
     UpdateConfigCategoryProblem,
-    VenvCreationFailedProblem,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory import LibraryDirectory
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
@@ -131,6 +151,24 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_status impo
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
+from griptape_nodes.utils.file_utils import find_file_in_directory
+from griptape_nodes.utils.git_utils import (
+    GitCloneError,
+    GitPullError,
+    GitRefError,
+    GitRemoteError,
+    GitRepositoryError,
+    clone_repository,
+    extract_repo_name_from_url,
+    get_current_ref,
+    get_git_remote,
+    get_local_commit_sha,
+    is_git_url,
+    parse_git_url_with_ref,
+    switch_branch_or_tag,
+    update_library_git,
+)
+from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -146,6 +184,32 @@ logger = logging.getLogger("griptape_nodes")
 console = Console()
 
 TRegisteredEventData = TypeVar("TRegisteredEventData")
+
+
+class LibraryGitOperationContext(NamedTuple):
+    """Context information for git operations on a library."""
+
+    library: Library
+    old_version: str
+    library_file_path: str
+    library_dir: Path
+
+
+class LibraryUpdateInfo(NamedTuple):
+    """Information about a library pending update."""
+
+    library_name: str
+    old_version: str
+    new_version: str
+
+
+class LibraryUpdateResult(NamedTuple):
+    """Result of updating a single library."""
+
+    library_name: str
+    old_version: str
+    new_version: str
+    result: ResultPayload
 
 
 class LibraryManager:
@@ -255,6 +319,15 @@ class LibraryManager:
         )
         event_manager.assign_manager_to_request_type(ReloadAllLibrariesRequest, self.reload_libraries_request)
         event_manager.assign_manager_to_request_type(LoadLibrariesRequest, self.load_libraries_request)
+        event_manager.assign_manager_to_request_type(CheckLibraryUpdateRequest, self.check_library_update_request)
+        event_manager.assign_manager_to_request_type(UpdateLibraryRequest, self.update_library_request)
+        event_manager.assign_manager_to_request_type(SwitchLibraryRefRequest, self.switch_library_ref_request)
+        event_manager.assign_manager_to_request_type(DownloadLibraryRequest, self.download_library_request)
+        event_manager.assign_manager_to_request_type(
+            InstallLibraryDependenciesRequest, self.install_library_dependencies_request
+        )
+        event_manager.assign_manager_to_request_type(SyncLibrariesRequest, self.sync_libraries_request)
+        event_manager.assign_manager_to_request_type(InspectLibraryRepoRequest, self.inspect_library_repo_request)
 
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
@@ -417,7 +490,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to list node types in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
 
             result = ListNodeTypesInLibraryResultFailure(result_details=details)
             return result
@@ -440,7 +512,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
 
             result = GetLibraryMetadataResultFailure(result_details=details)
             return result
@@ -466,7 +537,6 @@ class LibraryManager:
         # Check if the file exists
         if not json_path.exists():
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -481,7 +551,6 @@ class LibraryManager:
                 library_json = json.load(f)
         except json.JSONDecodeError:
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' was improperly formatted."
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -491,7 +560,6 @@ class LibraryManager:
             )
         except Exception as err:
             details = f"Attempted to load Library JSON file from location '{json_path}'. Failed because an exception occurred: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
@@ -516,7 +584,6 @@ class LibraryManager:
                 problem = LibrarySchemaValidationProblem(location=loc, error_type=error_type, message=msg)
                 problems.append(problem)
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
@@ -526,7 +593,6 @@ class LibraryManager:
             )
         except Exception as err:
             details = f"Attempted to load Library JSON file. Failed because the file at path '{json_path}' failed to match the library schema due to: {err}"
-            logger.error(details)
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
@@ -535,9 +601,18 @@ class LibraryManager:
                 result_details=details,
             )
 
+        # Get git remote and ref if this library is in a git repository
+        library_dir = json_path.parent.absolute()
+        git_remote = get_git_remote(library_dir)
+        git_ref = get_current_ref(library_dir)
+
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
-            library_schema=library_data, file_path=file_path, result_details=details
+            library_schema=library_data,
+            file_path=file_path,
+            git_remote=git_remote,
+            git_ref=git_ref,
+            result_details=details,
         )
 
     def load_metadata_for_all_libraries_request(self, request: LoadMetadataForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
@@ -683,9 +758,17 @@ class LibraryManager:
             nodes=node_definitions,
         )
 
+        # Get git remote and ref if the sandbox directory is in a git repository
+        git_remote = get_git_remote(sandbox_library_dir)
+        git_ref = get_current_ref(sandbox_library_dir)
+
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
         return LoadLibraryMetadataFromFileResultSuccess(
-            library_schema=library_schema, file_path=str(sandbox_library_dir), result_details=details
+            library_schema=library_schema,
+            file_path=str(sandbox_library_dir),
+            git_remote=git_remote,
+            git_ref=git_ref,
+            result_details=details,
         )
 
     def get_node_metadata_from_library_request(self, request: GetNodeMetadataFromLibraryRequest) -> ResultPayload:
@@ -719,7 +802,6 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get categories in a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
             result = ListCategoriesInLibraryResultFailure(result_details=details)
             return result
 
@@ -744,7 +826,6 @@ class LibraryManager:
                 problems=[LibraryNotFoundProblem(library_path=file_path)],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Use the new metadata loading functionality
@@ -776,13 +857,45 @@ class LibraryManager:
                 problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
             )
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
+
+        # Install dependencies and add library venv to sys.path if library has dependencies
+        if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
+            venv_path = self._get_library_venv_path(library_data.name, file_path)
+
+            # If venv doesn't exist, install dependencies
+            if not venv_path.exists():
+                install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
+                install_result = await self.install_library_dependencies_request(install_request)
+
+                if isinstance(install_result, InstallLibraryDependenciesResultFailure):
+                    details = f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
+                    return RegisterLibraryFromFileResultFailure(result_details=details)
+
+                if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
+                    logger.info(
+                        "Installed %d dependencies for library '%s'",
+                        install_result.dependencies_installed,
+                        library_data.name,
+                    )
+
+            # Add venv site-packages to sys.path so node imports can find dependencies
+            if venv_path.exists():
+                site_packages = str(
+                    Path(
+                        sysconfig.get_path(
+                            "purelib",
+                            vars={"base": str(venv_path), "platbase": str(venv_path)},
+                        )
+                    )
+                )
+                sys.path.insert(0, site_packages)
+                logger.debug("Added library '%s' venv to sys.path: %s", library_data.name, site_packages)
 
         # Load the advanced library module if specified
         advanced_library_instance = None
@@ -805,7 +918,6 @@ class LibraryManager:
                     ],
                 )
                 details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed to load Advanced Library module: {err}"
-                logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Create or get the library
@@ -828,91 +940,6 @@ class LibraryManager:
             )
 
             details = f"Attempted to load Library JSON file from '{json_path}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
-            logger.error(details)
-            return RegisterLibraryFromFileResultFailure(result_details=details)
-
-        # Install node library dependencies
-        try:
-            if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
-                pip_install_flags = library_data.metadata.dependencies.pip_install_flags
-                if pip_install_flags is None:
-                    pip_install_flags = []
-                pip_dependencies = library_data.metadata.dependencies.pip_dependencies
-
-                # Determine venv path for dependency installation
-                venv_path = self._get_library_venv_path(library_data.name, file_path)
-
-                # Only install dependencies if conditions are met
-                try:
-                    library_venv_python_path = await self._init_library_venv(venv_path)
-                except RuntimeError as e:
-                    self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                        library_path=file_path,
-                        library_name=library_data.name,
-                        library_version=library_version,
-                        status=LibraryStatus.UNUSABLE,
-                        problems=[VenvCreationFailedProblem(error_message=str(e))],
-                    )
-                    details = f"Attempted to load Library JSON file from '{json_path}'. Failed when creating the virtual environment: {e}."
-                    logger.error(details)
-                    return RegisterLibraryFromFileResultFailure(result_details=details)
-                if self._can_write_to_venv_location(library_venv_python_path):
-                    # Check disk space before installing dependencies
-                    config_manager = GriptapeNodes.ConfigManager()
-                    min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
-                    if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
-                        error_msg = OSManager.format_disk_space_error(Path(venv_path))
-                        details = f"Attempted to load Library JSON from '{json_path}'. Failed when installing dependencies due to insufficient disk space (requires {min_space_gb} GB): {error_msg}"
-                        logger.error(details)
-                        self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                            library_path=file_path,
-                            library_name=library_data.name,
-                            library_version=library_version,
-                            status=LibraryStatus.UNUSABLE,
-                            problems=[InsufficientDiskSpaceProblem(min_space_gb=min_space_gb, error_message=error_msg)],
-                        )
-                        return RegisterLibraryFromFileResultFailure(result_details=details)
-
-                    # Grab the python executable from the virtual environment so that we can pip install there
-                    logger.info(
-                        "Installing dependencies for library '%s' with pip in venv at %s", library_data.name, venv_path
-                    )
-                    is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
-                    await subprocess_run(
-                        [
-                            sys.executable,
-                            "-m",
-                            "uv",
-                            "pip",
-                            "install",
-                            *pip_dependencies,
-                            *pip_install_flags,
-                            "--python",
-                            str(library_venv_python_path),
-                        ],
-                        check=True,
-                        capture_output=not is_debug,
-                        text=True,
-                    )
-                else:
-                    logger.debug(
-                        "Skipping dependency installation for library '%s' - venv location at %s is not writable",
-                        library_data.name,
-                        venv_path,
-                    )
-        except subprocess.CalledProcessError as e:
-            # Failed to create the library
-            error_details = f"return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
-
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                library_path=file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                status=LibraryStatus.UNUSABLE,
-                problems=[DependencyInstallationFailedProblem(error_details=error_details)],
-            )
-            details = f"Attempted to load Library JSON file from '{json_path}'. Failed when installing dependencies: {error_details}"
-            logger.error(details)
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # We are at least potentially viable.
@@ -980,7 +1007,6 @@ class LibraryManager:
                 return RegisterLibraryFromFileResultFailure(result_details=details)
             case _:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected status '{library_load_results.status}' was returned."
-                logger.error(details)
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
     async def register_library_from_requirement_specifier_request(
@@ -991,21 +1017,29 @@ class LibraryManager:
             # Determine venv path for dependency installation
             venv_path = self._get_library_venv_path(package_name, None)
 
+            # Check if venv already exists before initialization
+            venv_already_exists = venv_path.exists()
+
             # Only install dependencies if conditions are met
             try:
                 library_python_venv_path = await self._init_library_venv(venv_path)
             except RuntimeError as e:
                 details = f"Attempted to install library '{request.requirement_specifier}'. Failed when creating the virtual environment: {e}"
-                logger.error(details)
                 return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
-            if self._can_write_to_venv_location(library_python_venv_path):
+
+            if venv_already_exists:
+                logger.debug(
+                    "Skipping dependency installation for package '%s' - venv already exists at %s",
+                    package_name,
+                    venv_path,
+                )
+            elif self._can_write_to_venv_location(library_python_venv_path):
                 # Check disk space before installing dependencies
                 config_manager = GriptapeNodes.ConfigManager()
                 min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
                 if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
                     error_msg = OSManager.format_disk_space_error(Path(venv_path))
                     details = f"Attempted to install library '{request.requirement_specifier}'. Failed when installing dependencies due to insufficient disk space (requires {min_space_gb} GB): {error_msg}"
-                    logger.error(details)
                     return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
                 uv_path = find_uv_bin()
@@ -1033,11 +1067,9 @@ class LibraryManager:
                 )
         except subprocess.CalledProcessError as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed: return code={e.returncode}, stdout={e.stdout}, stderr={e.stderr}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
         except InvalidRequirement as e:
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to invalid requirement specifier: {e}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
         library_path = str(files(package_name).joinpath(request.library_config_name))
@@ -1045,7 +1077,6 @@ class LibraryManager:
         register_result = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path=library_path))
         if isinstance(register_result, RegisterLibraryFromFileResultFailure):
             details = f"Attempted to install library '{request.requirement_specifier}'. Failed due to {register_result}"
-            logger.error(details)
             return RegisterLibraryFromRequirementSpecifierResultFailure(result_details=details)
 
         return RegisterLibraryFromRequirementSpecifierResultSuccess(
@@ -1107,17 +1138,6 @@ class LibraryManager:
         else:
             library_venv_python_path = library_venv_path / "bin" / "python"
 
-        # Need to insert into the path so that the library picks up on the venv
-        site_packages = str(
-            Path(
-                sysconfig.get_path(
-                    "purelib",
-                    vars={"base": str(library_venv_path), "platbase": str(library_venv_path)},
-                )
-            )
-        )
-        sys.path.insert(0, site_packages)
-
         return library_venv_python_path
 
     def _get_library_venv_path(self, library_name: str, library_file_path: str | None = None) -> Path:
@@ -1176,7 +1196,6 @@ class LibraryManager:
             LibraryRegistry.unregister_library(library_name=request.library_name)
         except Exception as e:
             details = f"Attempted to unload library '{request.library_name}'. Failed due to {e}"
-            logger.error(details)
             return UnloadLibraryFromRegistryResultFailure(result_details=details)
 
         # Clean up all stable module aliases for this library
@@ -1196,7 +1215,6 @@ class LibraryManager:
 
         if not list_libraries_result.succeeded():
             details = "Attempted to get all info for all libraries, but listing the registered libraries failed."
-            logger.error(details)
             return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
         try:
@@ -1211,7 +1229,6 @@ class LibraryManager:
 
                 if not library_all_info_result.succeeded():
                     details = f"Attempted to get all info for all libraries, but failed when getting all info for library named '{library_name}'."
-                    logger.error(details)
                     return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
                 library_all_info_success = cast("GetAllInfoForLibraryResultSuccess", library_all_info_result)
@@ -1219,7 +1236,6 @@ class LibraryManager:
                 library_name_to_all_info[library_name] = library_all_info_success
         except Exception as err:
             details = f"Attempted to get all info for all libraries. Encountered error {err}."
-            logger.error(details)
             return GetAllInfoForAllLibrariesResultFailure(result_details=details)
 
         # We're home free now
@@ -1242,7 +1258,6 @@ class LibraryManager:
             LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
-            logger.error(details)
             result = GetAllInfoForLibraryResultFailure(result_details=details)
             return result
 
@@ -1251,7 +1266,6 @@ class LibraryManager:
 
         if not library_metadata_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the library's metadata."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         list_categories_request = ListCategoriesInLibraryRequest(library=request.library)
@@ -1259,7 +1273,6 @@ class LibraryManager:
 
         if not list_categories_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of categories in the library."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         node_type_list_request = ListNodeTypesInLibraryRequest(library=request.library)
@@ -1267,7 +1280,6 @@ class LibraryManager:
 
         if not node_type_list_result.succeeded():
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the list of node types in the library."
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         # Cast everyone to their success counterparts.
@@ -1279,7 +1291,6 @@ class LibraryManager:
             details = (
                 f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
             )
-            logger.error(details)
             return GetAllInfoForLibraryResultFailure(result_details=details)
 
         # Now build the map of node types to metadata.
@@ -1290,14 +1301,12 @@ class LibraryManager:
 
             if not node_metadata_result.succeeded():
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Failed attempting to get the metadata for a node type called '{node_type_name}'."
-                logger.error(details)
                 return GetAllInfoForLibraryResultFailure(result_details=details)
 
             try:
                 node_metadata_result_success = cast("GetNodeMetadataFromLibraryResultSuccess", node_metadata_result)
             except Exception as err:
                 details = f"Attempted to get all library info for a Library named '{request.library}'. Encountered error: {err}."
-                logger.error(details)
                 return GetAllInfoForLibraryResultFailure(result_details=details)
 
             # Put it into the map.
@@ -1691,8 +1700,81 @@ class LibraryManager:
         finally:
             self._libraries_loading_complete.set()
 
+    async def _download_missing_libraries_from_config(self) -> None:
+        """Download missing libraries from git URLs specified in config.
+
+        Similar to model_manager's automatic download pattern, this method:
+        1. Reads libraries_to_download from config
+        2. Checks which libraries are missing locally
+        3. Downloads missing libraries concurrently
+        4. Logs summary of successful/failed downloads
+
+        Supports URL format with @ref suffix (e.g., "https://github.com/user/repo@stable").
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_download"
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+
+        # Get libraries directory
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if not libraries_dir_setting:
+            logger.debug("Cannot download libraries: libraries_directory setting is not configured")
+            return
+
+        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+
+        # Check which git URLs are missing locally
+        git_urls_to_download = []
+        for entry in config_libraries:
+            target_directory_name = extract_repo_name_from_url(entry)
+            target_path = libraries_path / target_directory_name
+
+            if not target_path.exists():
+                git_urls_to_download.append(entry)
+
+        # Early exit if nothing to download
+        if not git_urls_to_download:
+            logger.debug("No missing libraries to download from git URLs")
+            return
+
+        logger.info("Starting download of %d missing libraries", len(git_urls_to_download))
+
+        # Create concurrent download tasks
+        download_tasks = []
+        for git_url_with_ref in git_urls_to_download:
+            # Parse URL to extract git URL and optional ref
+            git_url, ref = parse_git_url_with_ref(git_url_with_ref)
+
+            task = asyncio.create_task(
+                GriptapeNodes.ahandle_request(
+                    DownloadLibraryRequest(
+                        git_url=git_url,
+                        branch_tag_commit=ref,
+                        target_directory_name=None,
+                        install_dependencies=True,
+                    )
+                )
+            )
+            download_tasks.append(task)
+
+        # Wait for all downloads to complete concurrently
+        results = await asyncio.gather(*download_tasks, return_exceptions=True)
+
+        # Count successes and failures
+        successful = sum(1 for result in results if isinstance(result, DownloadLibraryResultSuccess))
+        failed = len(results) - successful
+
+        logger.info(
+            "Completed automatic library downloads: %d successful, %d failed",
+            successful,
+            failed,
+        )
+
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. See if there are library JSONs to load!
+        # App just got init'd. First download any missing libraries from git URLs.
+        await self._download_missing_libraries_from_config()
+
+        # Now load all libraries from config (including newly downloaded ones)
         await self.load_all_libraries_from_config()
 
         # Register all secrets now that libraries are loaded and settings are merged
@@ -2167,7 +2249,6 @@ class LibraryManager:
         clear_all_result = await GriptapeNodes.ahandle_request(clear_all_request)
         if not clear_all_result.succeeded():
             details = "Failed to clear the existing object state when preparing to reload all libraries."
-            logger.error(details)
             return ReloadAllLibrariesResultFailure(result_details=details)
 
         # Unload all libraries now.
@@ -2242,3 +2323,796 @@ class LibraryManager:
                     process_path(library_path)
 
         return list(discovered_libraries)
+
+    async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
+        """Check if a library has updates available via git."""
+        library_name = request.library_name
+
+        # Check if the library exists
+        try:
+            library = LibraryRegistry.get_library(name=library_name)
+        except KeyError:
+            details = f"Attempted to check for updates for Library '{library_name}'. Failed because no Library with that name was registered."
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Find the library file path
+        library_file_path = None
+        for file_path, library_info in self._library_file_path_to_info.items():
+            if library_info.library_name == library_name:
+                library_file_path = file_path
+                break
+
+        if library_file_path is None:
+            details = f"Attempted to check for updates for Library '{library_name}'. Failed because no file path could be found for this library."
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Get the library directory (parent of the JSON file)
+        library_dir = Path(library_file_path).parent.absolute()
+
+        # Check if library is in a monorepo (multiple libraries in same git repository)
+        if await asyncio.to_thread(is_monorepo, library_dir):
+            details = (
+                f"Library '{library_name}' is in a monorepo with multiple libraries. Updates must be managed manually."
+            )
+            logger.info(details)
+            # Get git info for the response
+            git_remote = await asyncio.to_thread(get_git_remote, library_dir)
+            git_ref = await asyncio.to_thread(get_current_ref, library_dir)
+            current_version = library.get_metadata().library_version
+            return CheckLibraryUpdateResultSuccess(
+                has_update=False,
+                current_version=current_version,
+                latest_version=current_version,
+                git_remote=git_remote,
+                git_ref=git_ref,
+                local_commit=None,
+                remote_commit=None,
+                result_details=details,
+            )
+
+        # Check if the library directory is a git repository and get remote URL and ref
+        try:
+            git_remote = await asyncio.to_thread(get_git_remote, library_dir)
+            if git_remote is None:
+                details = f"Library '{library_name}' is not a git repository or has no remote configured."
+                logger.warning(details)
+                return CheckLibraryUpdateResultFailure(result_details=details)
+        except GitRemoteError as e:
+            details = f"Failed to get git remote for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        try:
+            git_ref = await asyncio.to_thread(get_current_ref, library_dir)
+        except GitRefError as e:
+            details = f"Failed to get current git reference for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Get current library version
+        current_version = library.get_metadata().library_version
+        if current_version is None:
+            details = f"Library '{library_name}' has no version information."
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Get local commit SHA
+        local_commit = await asyncio.to_thread(get_local_commit_sha, library_dir)
+
+        # Clone remote and get latest version and commit SHA
+        try:
+            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            latest_version = version_info.library_version
+            remote_commit = version_info.commit_sha
+        except GitCloneError as e:
+            details = f"Failed to retrieve latest version from git remote for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Determine if update is available using version comparison and commit comparison
+        try:
+            current_ver = Version.parse(current_version)
+            latest_ver = Version.parse(latest_version)
+
+            # Update detection logic:
+            # 1. If remote version > local version -> update available (semantic versioning)
+            if latest_ver > current_ver:
+                has_update = True
+                update_reason = "version increased"
+            # 2. If remote version < local version -> no update (prevent regression)
+            elif latest_ver < current_ver:
+                has_update = False
+                update_reason = "version decreased (regression blocked)"
+            # 3. If versions equal -> check commits
+            elif local_commit is not None and remote_commit is not None and local_commit != remote_commit:
+                has_update = True
+                update_reason = "commits differ (same version)"
+            else:
+                has_update = False
+                update_reason = "versions and commits match"
+
+        except ValueError as e:
+            details = f"Failed to parse version strings for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update} ({update_reason})"
+        logger.info(details)
+
+        return CheckLibraryUpdateResultSuccess(
+            has_update=has_update,
+            current_version=current_version,
+            latest_version=latest_version,
+            git_remote=git_remote,
+            git_ref=git_ref,
+            local_commit=local_commit,
+            remote_commit=remote_commit,
+            result_details=details,
+        )
+
+    async def _validate_and_prepare_library_for_git_operation(
+        self,
+        library_name: str,
+        failure_result_class: type[ResultPayloadFailure],
+        operation_description: str,
+    ) -> LibraryGitOperationContext | ResultPayloadFailure:
+        """Validate library exists and prepare for git operation.
+
+        Args:
+            library_name: Name of the library to validate
+            failure_result_class: Class to use for failure results (e.g., UpdateLibraryResultFailure)
+            operation_description: Description of operation for error messages (e.g., "update", "switch branch/tag for")
+
+        Returns:
+            On success: LibraryGitOperationContext with library info
+            On failure: ResultPayloadFailure instance
+        """
+        # Check if the library exists
+        try:
+            library = LibraryRegistry.get_library(name=library_name)
+        except KeyError:
+            details = f"Attempted to {operation_description} Library '{library_name}'. Failed because no Library with that name was registered."
+            return failure_result_class(result_details=details)
+
+        # Get current version
+        old_version = library.get_metadata().library_version
+        if old_version is None:
+            details = f"Library '{library_name}' has no version information."
+            return failure_result_class(result_details=details)
+
+        # Find the library file path
+        library_file_path = None
+        for file_path, library_info in self._library_file_path_to_info.items():
+            if library_info.library_name == library_name:
+                library_file_path = file_path
+                break
+
+        if library_file_path is None:
+            details = f"Attempted to {operation_description} Library '{library_name}'. Failed because no file path could be found for this library."
+            return failure_result_class(result_details=details)
+
+        # Get the library directory (parent of the JSON file)
+        library_dir = Path(library_file_path).parent.absolute()
+
+        return LibraryGitOperationContext(
+            library=library,
+            old_version=old_version,
+            library_file_path=library_file_path,
+            library_dir=library_dir,
+        )
+
+    async def _reload_library_after_git_operation(
+        self,
+        library_name: str,
+        library_file_path: str,
+        *,
+        install_dependencies: bool,
+        failure_result_class: type[ResultPayloadFailure],
+    ) -> str | ResultPayloadFailure:
+        """Reload library and install dependencies after git operation.
+
+        Args:
+            library_name: Name of the library to reload
+            library_file_path: Path to the library JSON file
+            install_dependencies: Whether to install dependencies after reload
+            failure_result_class: Class to use for failure results
+
+        Returns:
+            On success: new_version (str, may be "unknown")
+            On failure: ResultPayloadFailure instance
+        """
+        # Unload the library
+        unload_result = GriptapeNodes.handle_request(UnloadLibraryFromRegistryRequest(library_name=library_name))
+        if not unload_result.succeeded():
+            details = f"Failed to unload Library '{library_name}' after git operation."
+            return failure_result_class(result_details=details)
+
+        # Search for the library JSON file using flexible pattern to handle filename variations
+        # (after git operations, the filename might change between griptape-nodes-library.json and griptape_nodes_library.json)
+        library_dir = Path(library_file_path).parent
+        actual_library_file = find_file_in_directory(library_dir, "griptape[-_]nodes[-_]library.json")
+
+        if actual_library_file is None:
+            details = (
+                f"Failed to find library JSON file in {library_dir} after git operation for Library '{library_name}'."
+            )
+            return failure_result_class(result_details=details)
+
+        # Use the found file path for reloading
+        actual_library_file_path = str(actual_library_file)
+
+        # Reload the library from file
+        reload_result = await GriptapeNodes.ahandle_request(
+            RegisterLibraryFromFileRequest(file_path=actual_library_file_path)
+        )
+        if not isinstance(reload_result, RegisterLibraryFromFileResultSuccess):
+            details = f"Failed to reload Library '{library_name}' after git operation."
+            return failure_result_class(result_details=details)
+
+        # Get new version after reload
+        try:
+            updated_library = LibraryRegistry.get_library(name=library_name)
+            new_version = updated_library.get_metadata().library_version
+            if new_version is None:
+                new_version = "unknown"
+        except KeyError:
+            new_version = "unknown"
+
+        # Install dependencies if requested
+        if install_dependencies:
+            logger.info("Installing dependencies for library '%s'", library_name)
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_file_path=actual_library_file_path)
+            )
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' git operation succeeded but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
+
+        return new_version
+
+    async def update_library_request(self, request: UpdateLibraryRequest) -> ResultPayload:
+        """Update a library to the latest version using the appropriate git strategy.
+
+        Automatically detects whether the library uses branch-based or tag-based workflow:
+        - Branch-based: Uses git fetch + git reset --hard (forces local to match remote)
+        - Tag-based: Uses git fetch --tags --force + git checkout
+        """
+        library_name = request.library_name
+
+        # Validate library and prepare for git operation
+        validation_result = await self._validate_and_prepare_library_for_git_operation(
+            library_name=library_name,
+            failure_result_class=UpdateLibraryResultFailure,
+            operation_description="update",
+        )
+        if isinstance(validation_result, ResultPayloadFailure):
+            return validation_result
+
+        old_version = validation_result.old_version
+        library_file_path = validation_result.library_file_path
+        library_dir = validation_result.library_dir
+
+        # Check if library is in a monorepo (multiple libraries in same git repository)
+        if await asyncio.to_thread(is_monorepo, library_dir):
+            details = f"Cannot update Library '{library_name}'. Repository contains multiple libraries and must be updated manually."
+            return UpdateLibraryResultFailure(result_details=details)
+
+        # Perform git update (auto-detects branch vs tag workflow)
+        try:
+            await asyncio.to_thread(
+                update_library_git,
+                library_dir,
+                overwrite_existing=request.overwrite_existing,
+            )
+        except (GitPullError, GitRepositoryError) as e:
+            error_msg = str(e).lower()
+
+            # Check if error is retryable (uncommitted changes)
+            retryable = "uncommitted changes" in error_msg or "unstaged changes" in error_msg
+
+            details = f"Failed to update Library '{library_name}': {e}"
+            return UpdateLibraryResultFailure(result_details=details, retryable=retryable)
+
+        # Reload library and install dependencies
+        reload_result = await self._reload_library_after_git_operation(
+            library_name=library_name,
+            library_file_path=library_file_path,
+            install_dependencies=request.install_dependencies,
+            failure_result_class=UpdateLibraryResultFailure,
+        )
+        if isinstance(reload_result, ResultPayloadFailure):
+            return reload_result
+
+        new_version = reload_result
+
+        details = f"Successfully updated Library '{library_name}' from version {old_version} to {new_version}."
+        return UpdateLibraryResultSuccess(
+            old_version=old_version,
+            new_version=new_version,
+            result_details=details,
+        )
+
+    async def switch_library_ref_request(self, request: SwitchLibraryRefRequest) -> ResultPayload:
+        """Switch a library to a different git branch or tag."""
+        library_name = request.library_name
+        ref_name = request.ref_name
+
+        # Validate library and prepare for git operation
+        validation_result = await self._validate_and_prepare_library_for_git_operation(
+            library_name=library_name,
+            failure_result_class=SwitchLibraryRefResultFailure,
+            operation_description="switch branch/tag for",
+        )
+        if isinstance(validation_result, ResultPayloadFailure):
+            return validation_result
+
+        old_version = validation_result.old_version
+        library_file_path = validation_result.library_file_path
+        library_dir = validation_result.library_dir
+
+        # Get current ref (branch or tag) before switch
+        try:
+            old_ref = await asyncio.to_thread(get_current_ref, library_dir)
+            if old_ref is None:
+                details = f"Library '{library_name}' is not on a branch/tag or is not a git repository."
+                return SwitchLibraryRefResultFailure(result_details=details)
+        except GitRefError as e:
+            details = f"Failed to get current branch/tag for Library '{library_name}': {e}"
+            return SwitchLibraryRefResultFailure(result_details=details)
+
+        # Perform git ref switch (branch or tag)
+        try:
+            await asyncio.to_thread(switch_branch_or_tag, library_dir, ref_name)
+        except (GitRefError, GitRepositoryError) as e:
+            details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
+            return SwitchLibraryRefResultFailure(result_details=details)
+
+        # Reload library and install dependencies
+        reload_result = await self._reload_library_after_git_operation(
+            library_name=library_name,
+            library_file_path=library_file_path,
+            install_dependencies=request.install_dependencies,
+            failure_result_class=SwitchLibraryRefResultFailure,
+        )
+        if isinstance(reload_result, ResultPayloadFailure):
+            return reload_result
+
+        new_version = reload_result
+
+        # Get new ref (branch or tag) after switch
+        try:
+            new_ref = await asyncio.to_thread(get_current_ref, library_dir)
+            if new_ref is None:
+                new_ref = "unknown"
+        except GitRefError:
+            new_ref = "unknown"
+
+        details = f"Successfully switched Library '{library_name}' from '{old_ref}' (version {old_version}) to '{new_ref}' (version {new_version})."
+        return SwitchLibraryRefResultSuccess(
+            old_ref=old_ref,
+            new_ref=new_ref,
+            old_version=old_version,
+            new_version=new_version,
+            result_details=details,
+        )
+
+    async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+        """Download a library from a git repository."""
+        git_url = request.git_url
+        branch_tag_commit = request.branch_tag_commit
+        target_directory_name = request.target_directory_name
+        download_directory = request.download_directory
+
+        # Determine the parent directory for the download
+        config_mgr = GriptapeNodes.ConfigManager()
+
+        if download_directory is not None:
+            # Use custom download directory if provided
+            libraries_path = Path(download_directory)
+        else:
+            # Use default from config
+            libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+            if not libraries_dir_setting:
+                details = "Cannot download library: libraries_directory setting is not configured."
+                return DownloadLibraryResultFailure(result_details=details)
+            libraries_path = config_mgr.workspace_path / libraries_dir_setting
+
+        # Ensure parent directory exists
+        libraries_path.mkdir(parents=True, exist_ok=True)
+
+        # Determine target directory name
+        if target_directory_name is None:
+            # Extract from git URL (e.g., "https://github.com/user/repo.git" -> "repo")
+            target_directory_name = git_url.rstrip("/").split("/")[-1]
+            target_directory_name = target_directory_name.removesuffix(".git")
+
+        # Construct full target path
+        target_path = libraries_path / target_directory_name
+
+        # Check if target directory already exists
+        if target_path.exists():
+            if not request.overwrite_existing:
+                details = f"Cannot download library: target directory already exists at {target_path}"
+                return DownloadLibraryResultFailure(result_details=details, retryable=True)
+
+            # Delete existing directory before cloning
+            try:
+                await aioshutil.rmtree(target_path, onexc=OSManager.remove_readonly)
+                logger.info("Deleted existing directory at %s for overwrite", target_path)
+            except PermissionError as e:
+                details = f"Cannot delete existing directory at {target_path}: permission denied - {e}"
+                return DownloadLibraryResultFailure(result_details=details)
+            except OSError as e:
+                details = f"Cannot delete existing directory at {target_path}: I/O error - {e}"
+                return DownloadLibraryResultFailure(result_details=details)
+
+        # Clone the repository
+        try:
+            await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
+        except GitCloneError as e:
+            details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
+            return DownloadLibraryResultFailure(result_details=details)
+
+        # Recursively search for griptape_nodes_library.json file
+        library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
+        if library_json_path is None:
+            details = f"Downloaded library from {git_url} but no library JSON file found in {target_path}"
+            return DownloadLibraryResultFailure(result_details=details)
+
+        try:
+            with library_json_path.open() as f:
+                library_data = json.load(f)
+        except json.JSONDecodeError as e:
+            details = f"Failed to parse griptape_nodes_library.json from downloaded library: {e}"
+            return DownloadLibraryResultFailure(result_details=details)
+
+        # Extract library name
+        library_name = library_data.get("name")
+        if library_name is None:
+            details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
+            return DownloadLibraryResultFailure(result_details=details)
+
+        # Install dependencies if requested
+        if request.install_dependencies:
+            install_deps_result = await GriptapeNodes.ahandle_request(
+                InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
+            )
+            if not install_deps_result.succeeded():
+                logger.warning(
+                    "Library '%s' was downloaded but dependency installation failed: %s",
+                    library_name,
+                    install_deps_result.result_details,
+                )
+
+        # Automatically register the downloaded library
+        register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
+        register_result = await GriptapeNodes.ahandle_request(register_request)
+        if not register_result.succeeded():
+            logger.warning(
+                "Library '%s' was downloaded but registration failed: %s",
+                library_name,
+                register_result.result_details,
+            )
+        else:
+            logger.info("Library '%s' registered successfully", library_name)
+
+        # Add library JSON file path to config so it's registered on future startups
+        libraries_to_register = config_mgr.get_config_value(
+            "app_events.on_app_initialization_complete.libraries_to_register", default=[]
+        )
+        library_json_str = str(library_json_path)
+        if library_json_str not in libraries_to_register:
+            libraries_to_register.append(library_json_str)
+            config_mgr.set_config_value(
+                "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
+            )
+            logger.info("Added library '%s' to config for auto-registration on startup", library_name)
+
+        details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
+        return DownloadLibraryResultSuccess(
+            library_name=library_name,
+            library_path=str(library_json_path),
+            result_details=details,
+        )
+
+    async def install_library_dependencies_request(self, request: InstallLibraryDependenciesRequest) -> ResultPayload:  # noqa: PLR0911
+        """Install dependencies for a library."""
+        library_file_path = request.library_file_path
+
+        # Load library metadata from file
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_file_path)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            details = f"Failed to load library metadata from {library_file_path}: {metadata_result.result_details}"
+            return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        library_data = metadata_result.library_schema
+        library_name = library_data.name
+        library_metadata = library_data.metadata
+
+        if not library_metadata.dependencies or not library_metadata.dependencies.pip_dependencies:
+            details = f"Library '{library_name}' has no dependencies to install"
+            logger.info(details)
+            return InstallLibraryDependenciesResultSuccess(
+                library_name=library_name, dependencies_installed=0, result_details=details
+            )
+
+        pip_dependencies = library_metadata.dependencies.pip_dependencies
+        pip_install_flags = library_metadata.dependencies.pip_install_flags or []
+
+        # Get venv path and initialize it
+        venv_path = self._get_library_venv_path(library_name, library_file_path)
+
+        try:
+            library_venv_python_path = await self._init_library_venv(venv_path)
+        except RuntimeError as e:
+            details = f"Failed to initialize venv for library '{library_name}': {e}"
+            return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        if not self._can_write_to_venv_location(library_venv_python_path):
+            details = f"Venv location for library '{library_name}' at {venv_path} is not writable"
+            logger.warning(details)
+            return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        # Check disk space
+        config_manager = GriptapeNodes.ConfigManager()
+        min_space_gb = config_manager.get_config_value("minimum_disk_space_gb_libraries")
+        if not OSManager.check_available_disk_space(Path(venv_path), min_space_gb):
+            error_msg = OSManager.format_disk_space_error(Path(venv_path))
+            details = f"Insufficient disk space for dependencies (requires {min_space_gb} GB) for library '{library_name}': {error_msg}"
+            return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        # Install dependencies
+        logger.info("Installing %d dependencies for library '%s'", len(pip_dependencies), library_name)
+        is_debug = config_manager.get_config_value("log_level").upper() == "DEBUG"
+
+        try:
+            await subprocess_run(
+                [
+                    sys.executable,
+                    "-m",
+                    "uv",
+                    "pip",
+                    "install",
+                    *pip_dependencies,
+                    *pip_install_flags,
+                    "--python",
+                    str(library_venv_python_path),
+                ],
+                check=True,
+                capture_output=not is_debug,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            details = f"Failed to install dependencies for library '{library_name}': return code={e.returncode}, stderr={e.stderr}"
+            return InstallLibraryDependenciesResultFailure(result_details=details)
+
+        details = f"Successfully installed {len(pip_dependencies)} dependencies for library '{library_name}'"
+        logger.info(details)
+        return InstallLibraryDependenciesResultSuccess(
+            library_name=library_name, dependencies_installed=len(pip_dependencies), result_details=details
+        )
+
+    async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
+        """Sync all libraries to latest versions and ensure dependencies are installed."""
+        install_dependencies = request.install_dependencies
+
+        # Phase 1: Download missing libraries from config
+        config_mgr = GriptapeNodes.ConfigManager()
+        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+        if not libraries_dir_setting:
+            details = "Cannot sync libraries: libraries_directory setting is not configured."
+            return SyncLibrariesResultFailure(result_details=details)
+
+        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+        libraries_downloaded = 0
+        update_summary = {}
+
+        # Process git URLs from config and download if missing
+        async def download_library_if_missing(git_url: str) -> tuple[str, bool, str | None]:
+            """Download a library from git URL if not already present.
+
+            Returns:
+                Tuple of (git_url, success, library_name_or_error)
+            """
+            target_directory_name = extract_repo_name_from_url(git_url)
+            target_path = libraries_path / target_directory_name
+
+            if target_path.exists():
+                logger.info("Library at '%s' already exists, skipping download", target_path)
+                return git_url, False, None
+
+            logger.info("Downloading library from '%s' to '%s'", git_url, target_path)
+            download_result = await GriptapeNodes.ahandle_request(
+                DownloadLibraryRequest(git_url=git_url, install_dependencies=install_dependencies)
+            )
+
+            if isinstance(download_result, DownloadLibraryResultSuccess):
+                library_name = download_result.library_name
+                logger.info("Successfully downloaded library '%s' from %s", library_name, git_url)
+                return git_url, True, library_name
+
+            error = str(download_result.result_details)
+            logger.warning("Failed to download library from '%s': %s", git_url, error)
+            return git_url, False, error
+
+        # Download missing libraries concurrently
+        git_urls_to_download = [entry for entry in config_libraries if is_git_url(entry)]
+
+        if git_urls_to_download:
+            logger.info("Found %d git URLs in config, checking for missing libraries", len(git_urls_to_download))
+            async with asyncio.TaskGroup() as tg:
+                download_tasks = [tg.create_task(download_library_if_missing(url)) for url in git_urls_to_download]
+
+            # Collect download results
+            for task in download_tasks:
+                git_url, success, library_name_or_error = task.result()
+                if success and library_name_or_error:
+                    libraries_downloaded += 1
+                    update_summary[library_name_or_error] = {
+                        "status": "downloaded",
+                        "git_url": git_url,
+                    }
+                elif library_name_or_error:
+                    logger.warning("Download failed for '%s': %s", git_url, library_name_or_error)
+
+        logger.info("Downloaded %d new libraries", libraries_downloaded)
+
+        # Phase 2: Check and update all registered libraries
+        # Get all registered libraries
+        list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
+        if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
+            details = "Failed to list registered libraries for sync"
+            return SyncLibrariesResultFailure(result_details=details)
+
+        libraries_to_check = list_result.libraries
+
+        logger.info("Checking %d registered libraries for updates", len(libraries_to_check))
+
+        # Check all libraries for updates concurrently using task group
+        async def check_library_for_update(library_name: str) -> tuple[str, ResultPayload]:
+            """Check a single library for updates."""
+            logger.info("Checking library '%s' for updates", library_name)
+            check_result = await GriptapeNodes.ahandle_request(CheckLibraryUpdateRequest(library_name=library_name))
+            return library_name, check_result
+
+        # Gather all check results concurrently
+        check_results: dict[str, ResultPayload] = {}
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(check_library_for_update(lib)) for lib in libraries_to_check]
+
+        # Collect results from completed tasks
+        for task in tasks:
+            library_name, result = task.result()
+            check_results[library_name] = result
+
+        # Process check results and determine which libraries need updates
+        libraries_checked = len(libraries_to_check)
+        libraries_updated = 0
+        libraries_to_update: list[LibraryUpdateInfo] = []
+
+        for library_name, check_result in check_results.items():
+            if not isinstance(check_result, CheckLibraryUpdateResultSuccess):
+                logger.warning(
+                    "Failed to check for updates for library '%s': %s", library_name, check_result.result_details
+                )
+                continue
+
+            if not check_result.has_update:
+                logger.info("Library '%s' is up to date (version %s)", library_name, check_result.current_version)
+                continue
+
+            # Library has an update available
+            old_version = check_result.current_version or "unknown"
+            new_version = check_result.latest_version or "unknown"
+            logger.info("Library '%s' has update available: %s -> %s", library_name, old_version, new_version)
+            libraries_to_update.append(
+                LibraryUpdateInfo(library_name=library_name, old_version=old_version, new_version=new_version)
+            )
+
+        # Update libraries concurrently using task group
+        async def update_library(library_name: str, old_version: str, new_version: str) -> LibraryUpdateResult:
+            """Update a single library."""
+            logger.info("Updating library '%s' from %s to %s", library_name, old_version, new_version)
+            update_result = await GriptapeNodes.ahandle_request(
+                UpdateLibraryRequest(
+                    library_name=library_name,
+                    install_dependencies=install_dependencies,
+                    overwrite_existing=request.overwrite_existing,
+                )
+            )
+            return LibraryUpdateResult(
+                library_name=library_name,
+                old_version=old_version,
+                new_version=new_version,
+                result=update_result,
+            )
+
+        # Gather all update results concurrently
+        async with asyncio.TaskGroup() as tg:
+            update_tasks = [
+                tg.create_task(update_library(info.library_name, info.old_version, info.new_version))
+                for info in libraries_to_update
+            ]
+
+        # Collect update results
+        for task in update_tasks:
+            result = task.result()
+            library_name = result.library_name
+            old_version = result.old_version
+            new_version = result.new_version
+            update_result = result.result
+
+            if not isinstance(update_result, UpdateLibraryResultSuccess):
+                logger.error("Failed to update library '%s': %s", library_name, update_result.result_details)
+                update_summary[library_name] = {
+                    "old_version": old_version,
+                    "new_version": old_version,
+                    "status": "failed",
+                    "error": update_result.result_details,
+                }
+                continue
+
+            libraries_updated += 1
+            update_summary[library_name] = {
+                "old_version": update_result.old_version,
+                "new_version": update_result.new_version,
+                "status": "updated",
+            }
+            logger.info(
+                "Successfully updated library '%s' from %s to %s",
+                library_name,
+                update_result.old_version,
+                update_result.new_version,
+            )
+
+        # Build result details
+        details = f"Downloaded {libraries_downloaded} libraries. Checked {libraries_checked} libraries. {libraries_updated} updated."
+        logger.info(details)
+        return SyncLibrariesResultSuccess(
+            libraries_downloaded=libraries_downloaded,
+            libraries_checked=libraries_checked,
+            libraries_updated=libraries_updated,
+            update_summary=update_summary,
+            result_details=details,
+        )
+
+    async def inspect_library_repo_request(self, request: InspectLibraryRepoRequest) -> ResultPayload:
+        """Inspect a library's metadata from a git repository without downloading the full repository."""
+        git_url = request.git_url
+        ref = request.ref
+
+        # Normalize GitHub shorthand to full URL
+        from griptape_nodes.utils.git_utils import normalize_github_url, sparse_checkout_library_json
+
+        normalized_url = normalize_github_url(git_url)
+        logger.info("Inspecting library metadata from '%s' (ref: %s)", normalized_url, ref)
+
+        # Perform sparse checkout to get library JSON
+        try:
+            library_version, commit_sha, library_data_raw = sparse_checkout_library_json(normalized_url, ref)
+        except GitCloneError as e:
+            details = f"Failed to inspect library from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+
+        # Validate and create LibrarySchema
+        try:
+            library_schema = LibrarySchema(**library_data_raw)
+        except Exception as e:
+            details = f"Invalid library schema from {normalized_url}: {e}"
+            logger.error(details)
+            return InspectLibraryRepoResultFailure(result_details=details)
+
+        # Return success with full library metadata
+        details = f"Successfully inspected library '{library_schema.name}' (version {library_version}) from {normalized_url} at commit {commit_sha[:7]}"
+        logger.info(details)
+        return InspectLibraryRepoResultSuccess(
+            library_schema=library_schema,
+            commit_sha=commit_sha,
+            git_url=normalized_url,
+            ref=ref,
+            result_details=details,
+        )

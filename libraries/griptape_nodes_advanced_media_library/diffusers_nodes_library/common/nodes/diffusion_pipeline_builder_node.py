@@ -12,7 +12,7 @@ from diffusers_nodes_library.common.parameters.diffusion.builder_parameters impo
 from diffusers_nodes_library.common.parameters.huggingface_pipeline_parameter import HuggingFacePipelineParameter
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache
 from diffusers_nodes_library.common.utils.lora_utils import LorasParameter
-from diffusers_nodes_library.common.utils.pipeline_utils import optimize_diffusion_pipeline
+from diffusers_nodes_library.common.utils.pipeline_utils import cleanup_memory_caches, optimize_diffusion_pipeline
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode, NodeResolutionState
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
@@ -161,11 +161,20 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         self.preprocess()
         self.log_params.append_to_logs("Building pipeline...\n")
 
-        def builder() -> Any:
-            return self._build_pipeline()
+        def work() -> Any:
+            config_hash = self.get_parameter_value("pipeline")
+            try:
+                with self.log_params.append_profile_to_logs("Pipeline building/caching"):
+                    return model_cache.get_or_build_pipeline(config_hash, self._build_pipeline)
+            except Exception:
+                logger.exception("%s: Diffusion Pipeline build failed", self.name)
+                # Remove partial/corrupted pipeline from cache
+                model_cache.remove_pipeline(config_hash)
+                # Aggressive cleanup on failure
+                cleanup_memory_caches()
+                raise
 
-        with self.log_params.append_profile_to_logs("Pipeline building/caching"):
-            yield lambda: model_cache.get_or_build_pipeline(self.get_parameter_value("pipeline"), builder)
+        yield work
 
         self.log_params.append_to_logs("Pipeline building complete.\n")
 
@@ -176,7 +185,7 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
         with self.log_params.append_profile_to_logs("Loading pipeline"):
             pipe = self.params.pipeline_type_parameters.pipeline_type_pipeline_params.build_pipeline()
 
-        with self.log_params.append_profile_to_logs("Configuring FLUX loras"):
+        with self.log_params.append_profile_to_logs("Configuring LoRAs"):
             self.loras_params.configure_loras(pipe)
 
         with self.log_params.append_profile_to_logs("Applying optimizations"):
