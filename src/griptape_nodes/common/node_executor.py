@@ -2280,7 +2280,13 @@ class NodeExecutor:
 
             # Set the value on the target node
             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                target_node.set_parameter_value(target_param_name, param_value)
+                GriptapeNodes.NodeManager().on_set_parameter_value_request(
+                    SetParameterValueRequest(
+                        node_name=target_node_name,
+                        parameter_name=target_param_name,
+                        value=param_value,
+                    )
+                )
             target_node.parameter_output_values[target_param_name] = param_value
 
             logger.debug(
