@@ -1763,9 +1763,12 @@ class NodeExecutor:
         Returns:
             Tuple of (iteration_results, successful_iterations, last_iteration_values)
         """
+        # if it's private execution, we aren't republishing it in a library.
+        # So our original package is what is running, and we can count on using these mappings
         if execution_type == PRIVATE_EXECUTION:
             start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
             start_node_name = start_node_mapping.node_name
+        # For published libraries, we need to get the new Start Node name, based on what their registered nodes are.
         else:
             library = LibraryRegistry.get_library(execution_type)
             node_details = await self._get_workflow_start_end_nodes(library)
