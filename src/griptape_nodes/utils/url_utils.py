@@ -87,6 +87,26 @@ def get_content_type_from_extension(file_path: str | Path) -> str | None:
     return mime_type
 
 
+def uri_to_path_or_url(uri: str) -> str:
+    """Convert file:// URI to file path, pass through other URLs/paths unchanged.
+
+    Some libraries (like diffusers.utils.load_video) support HTTP/HTTPS URLs
+    and local file paths, but NOT file:// URIs. This helper converts file://
+    URIs to paths so they can be used with such libraries.
+
+    Args:
+        uri: A URL, file:// URI, or file path
+
+    Returns:
+        For file:// URIs: the extracted file path
+        For other inputs: the original string unchanged
+    """
+    parsed = urlparse(uri)
+    if parsed.scheme == "file":
+        return url2pathname(parsed.path)
+    return uri
+
+
 def validate_content_type_for_category(
     content_type: str | None,
     expected_category: Literal["image", "video", "audio"],
