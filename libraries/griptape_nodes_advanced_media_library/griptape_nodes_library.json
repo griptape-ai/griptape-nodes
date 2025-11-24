@@ -310,5 +310,8 @@
         "group": "diffusion"
       }
     }
+  ],
+  "workflows": [
+    "workflows/templates/qwen_edit_2509_camera_control.py"
   ]
 }
