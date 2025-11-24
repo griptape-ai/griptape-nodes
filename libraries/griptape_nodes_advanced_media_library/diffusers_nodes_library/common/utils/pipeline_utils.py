@@ -296,6 +296,7 @@ def clear_diffusion_pipeline(
     del pipe
     cleanup_memory_caches()
 
+
 def cleanup_memory_caches() -> None:
     """Clear memory caches."""
     gc.collect()
