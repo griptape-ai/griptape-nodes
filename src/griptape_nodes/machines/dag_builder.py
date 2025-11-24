@@ -242,7 +242,7 @@ class DagBuilder:
                             if connection_id in connections.connections:
                                 connection = connections.connections[connection_id]
                                 next_node = connection.target_node
-                                if next_node.name not in visited:
+                                if next_node.name not in visited and not connection.is_node_group_internal:
                                     to_visit.append(next_node)
 
         return nodes_in_path
