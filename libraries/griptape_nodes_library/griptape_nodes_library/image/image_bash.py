@@ -3,7 +3,6 @@ from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact, JsonArtifact
 from PIL import Image, ImageEnhance
 
@@ -12,6 +11,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import load_content_from_uri
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -158,12 +158,12 @@ class ImageBash(DataNode):
         self._initializing = False
 
     def _get_image_dimensions(self, image_url: str) -> tuple[int, int]:
-        """Get the width and height of an image from its URL."""
+        """Get the width and height of an image from its URL or file:// URI."""
         try:
-            response = httpx.get(image_url, timeout=30)
-            response.raise_for_status()
+            # Use load_content_from_uri which handles file://, http://, and https:// URIs
+            image_bytes = load_content_from_uri(image_url)
 
-            with Image.open(BytesIO(response.content)) as img:
+            with Image.open(BytesIO(image_bytes)) as img:
                 return img.size  # Returns (width, height)
         except Exception:
             # Fallback to default dimensions if we can't load the image
