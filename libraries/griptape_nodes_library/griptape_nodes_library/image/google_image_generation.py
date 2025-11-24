@@ -23,6 +23,9 @@ __all__ = ["GoogleImageGeneration"]
 MAX_OBJECT_IMAGES = 6
 MAX_HUMAN_IMAGES = 5
 
+# Maximum image size in bytes (7MB)
+MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
+
 
 class GoogleImageGeneration(SuccessFailureNode):
     """Generate images using Google Gemini models via Griptape Cloud model proxy."""
@@ -251,15 +254,17 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Add object images
         for img in object_images:
-            image_data = await self._process_input_image(img)
-            if image_data:
-                parts.append({"inlineData": {"mimeType": "image/png", "data": image_data}})
+            result = await self._process_input_image(img)
+            if result:
+                mime_type, image_data = result
+                parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
 
         # Add human images
         for img in human_images:
-            image_data = await self._process_input_image(img)
-            if image_data:
-                parts.append({"inlineData": {"mimeType": "image/png", "data": image_data}})
+            result = await self._process_input_image(img)
+            if result:
+                mime_type, image_data = result
+                parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
 
         payload = {
             "model": self.SUPPORTED_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
@@ -469,8 +474,12 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
 
-    async def _process_input_image(self, image_input: Any) -> str | None:
-        """Process input image and convert to base64 string (without data URI prefix)."""
+    async def _process_input_image(self, image_input: Any) -> tuple[str, str] | None:  # noqa: PLR0911
+        """Process input image and convert to base64 with mime type.
+
+        Returns:
+            Tuple of (mime_type, base64_data) or None if processing fails
+        """
         if not image_input:
             return None
 
@@ -479,7 +488,43 @@ class GoogleImageGeneration(SuccessFailureNode):
         if not image_value:
             return None
 
-        return await self._convert_to_base64(image_value)
+        # Convert to data URI if needed
+        data_uri = await self._convert_to_base64_data_uri(image_value)
+        if not data_uri:
+            return None
+
+        # Extract mime type and base64 data from data URI
+        if data_uri.startswith("data:image/"):
+            parts = data_uri.split(",", 1)
+            if len(parts) == 2:  # noqa: PLR2004
+                # Extract mime type from data URI (e.g., "data:image/png;base64")
+                mime_part = parts[0]
+                if "image/" in mime_part:
+                    mime_type = mime_part.split(":")[1].split(";")[0]
+                    base64_data = parts[1]
+
+                    # Validate image size (base64 decoded size)
+                    import base64
+
+                    try:
+                        image_bytes = base64.b64decode(base64_data)
+                        image_size = len(image_bytes)
+                        if image_size > MAX_IMAGE_SIZE_BYTES:
+                            size_mb = image_size / (1024 * 1024)
+                            max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+                            msg = (
+                                f"{self.name} input image exceeds maximum size of {max_mb}MB (image is {size_mb:.2f}MB)"
+                            )
+                            logger.warning(msg)
+                            return None
+                    except Exception as e:
+                        msg = f"{self.name} failed to validate image size: {e}"
+                        logger.warning(msg)
+                        return None
+
+                    return (mime_type, base64_data)
+
+        return None
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
@@ -504,39 +549,43 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return None
 
-    async def _convert_to_base64(self, image_value: str) -> str | None:
-        """Convert image value to base64 string without data URI prefix."""
-        # If it's already a data URI, extract the base64 part
+    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
+        """Convert image value to base64 data URI."""
+        # If it's already a data URI, return it
         if image_value.startswith("data:image/"):
-            parts = image_value.split(",", 1)
-            if len(parts) == 2:  # noqa: PLR2004
-                return parts[1]
-            return None
+            return image_value
 
         # If it's a URL, download and convert to base64
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's already raw base64
-        return image_value
+        # Assume it's raw base64 without data URI prefix
+        return f"data:image/png;base64,{image_value}"
 
     async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 string."""
+        """Download image from URL and encode as base64 data URI."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                image_bytes = resp.content
+            image_bytes = await self._download_bytes_from_url(url)
+            if image_bytes:
+                import base64
 
-                if image_bytes:
-                    import base64
-
-                    b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                    return b64_string
+                b64_string = base64.b64encode(image_bytes).decode("utf-8")
+                return f"data:image/png;base64,{b64_string}"
         except Exception as e:
             msg = f"{self.name} failed to download image from URL {url}: {e}"
             logger.info(msg)
         return None
+
+    @staticmethod
+    async def _download_bytes_from_url(url: str) -> bytes | None:
+        """Download bytes from a URL."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=120)
+                resp.raise_for_status()
+                return resp.content
+        except Exception:
+            return None
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:
