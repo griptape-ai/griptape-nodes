@@ -22,7 +22,6 @@ dependencies = [
   "mcp[ws]>=1.10.1",
   "binaryornot>=0.4.4",
   "pillow>=11.3.0",
-  "pygit2>=1.15.0",
   "watchfiles>=1.1.0",
   "typer>=0.15.0",
   "huggingface-hub>=1.1.0",
