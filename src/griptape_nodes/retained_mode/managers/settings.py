@@ -95,7 +95,14 @@ class MCPServerConfig(BaseModel):
 
 
 class AppInitializationComplete(BaseModel):
-    libraries_to_register: list[str] = Field(default_factory=list)
+    libraries_to_download: list[str] = Field(
+        default_factory=list,
+        description="Git URLs of libraries to automatically download when the engine starts. Downloaded into libraries_directory. Supports full URLs or GitHub shorthand (e.g., 'user/repo'). Optionally specify a branch, tag, or commit with @ref syntax (e.g., 'user/repo@stable' or 'https://github.com/user/repo@v1.0.0'). If no ref is specified, uses the repository's default branch.",
+    )
+    libraries_to_register: list[str] = Field(
+        default_factory=list,
+        description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
+    )
     workflows_to_register: list[str] = Field(default_factory=list)
     secrets_to_register: list[str] = Field(
         default_factory=lambda: ["HF_TOKEN", "GT_CLOUD_API_KEY"],
@@ -154,6 +161,11 @@ class Settings(BaseModel):
         category=FILE_SYSTEM,
         default="sandbox_library",
         description="Path to the sandbox library directory (useful while developing nodes). If presented as just a directory (e.g., 'sandbox_library') it will be interpreted as being relative to the workspace directory.",
+    )
+    libraries_directory: str = Field(
+        category=FILE_SYSTEM,
+        default="libraries",
+        description="Path to directory for downloaded libraries. All griptape_nodes_library.json files found recursively will be auto-discovered on startup. Relative paths are interpreted relative to the workspace directory.",
     )
     app_events: AppEvents = Field(
         category=APPLICATION_EVENTS,
