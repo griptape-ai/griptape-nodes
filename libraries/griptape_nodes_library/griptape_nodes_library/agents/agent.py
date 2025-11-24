@@ -19,6 +19,7 @@ from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissin
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
@@ -142,18 +143,14 @@ class Agent(ControlNode):
         )
         # Main prompt input for the agent.
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 tooltip="The main text prompt to send to the agent.",
                 default_value="",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Talk with the Agent.",
-                },
+                multiline=True,
+                placeholder_text="Talk with the Agent.",
                 converters=[strip_whitespace],
+                allow_output=False,
             )
         )
 
@@ -167,7 +164,7 @@ class Agent(ControlNode):
                     "Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs."
                 ),
                 default_value="",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
                 ui_options={"placeholder_text": "Any additional context for the Agent."},
             )
         )
