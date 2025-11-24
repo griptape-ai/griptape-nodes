@@ -2159,7 +2159,7 @@ class FlowManager:
 
         # Find the metadata for the current library
         library_metadata = execution_env_metadata.get(start_node_library_name)
-        if not library_metadata:
+        if library_metadata is None:
             msg = f"NodeGroupNode '{node_group_node.name}' metadata does not contain library '{start_node_library_name}'. Available libraries: {list(execution_env_metadata.keys())}"
             raise ValueError(msg)
 

@@ -1911,6 +1911,12 @@ class NodeGroupNode(BaseNode):
         self.nodes = {}
         # Track mapping from proxy parameter name to (original_node, original_param_name)
         self._proxy_param_to_connections = {}
+        if "execution_environment" not in self.metadata:
+            self.metadata["execution_environment"] = {}
+        self.metadata["execution_environment"]["Griptape Nodes Library"] = {
+            "start_flow_node": "StartFlow",
+            "parameter_names" : {}
+        }
 
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
