@@ -18,9 +18,17 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 class DisplayList(ControlNode):
     """DisplayList Node that takes a list and creates output parameters for each item in the list.
 
-    This node takes a list as input and creates a new output parameter for each item in the list,
-    with the type of the object in the list. This allows for dynamic output parameters based on
-    the content of the input list.
+    This node takes a list as input and creates a new output parameter for each item in the list.
+    Each output parameter is individually typed based on its specific item, allowing for mixed-type
+    lists where different items can have different types.
+
+    Features:
+    - Individual type detection: Each item's type is detected independently
+    - Automatic connection validation: Incompatible connections are removed when types change
+    - Type-specific UI options: Images get proper display, dicts get multiline, etc.
+    - Complete type information: Each parameter has type, output_type, and input_types set
+
+    Supported types: str, int, float, bool, dict, ImageUrlArtifact/ImageArtifact
     """
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
