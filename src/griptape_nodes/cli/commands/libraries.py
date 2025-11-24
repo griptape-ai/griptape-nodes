@@ -117,9 +117,11 @@ async def _download_library(  # noqa: PLR0913
     # Execute the download
     result = await GriptapeNodes.ahandle_request(request)
 
-    # Display results
-    if isinstance(result, DownloadLibraryResultSuccess):
-        console.print(f"[bold green]Library '{result.library_name}' downloaded successfully![/bold green]")
-        console.print(f"[green]Downloaded to: {result.library_path}[/green]")
-    else:
+    # Display results - failure case first
+    if not isinstance(result, DownloadLibraryResultSuccess):
         console.print(f"[red]Failed to download library: {result.result_details}[/red]")
+        return
+
+    # Success path
+    console.print(f"[bold green]Library '{result.library_name}' downloaded successfully![/bold green]")
+    console.print(f"[green]Downloaded to: {result.library_path}[/green]")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.utils.file_utils import find_all_files_in_directory
 from griptape_nodes.utils.git_utils import (
@@ -15,6 +15,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+class LibraryVersionInfo(NamedTuple):
+    """Library version information from git repository."""
+
+    library_version: str
+    commit_sha: str
 
 
 def is_monorepo(library_path: Path) -> bool:
@@ -38,7 +45,7 @@ def is_monorepo(library_path: Path) -> bool:
     return len(library_json_files) > 1
 
 
-def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
+def clone_and_get_library_version(remote_url: str) -> LibraryVersionInfo:
     """Fetch library version and commit SHA using sparse checkout for efficiency.
 
     Uses sparse checkout to download only the library JSON file instead of the entire repository,
@@ -48,10 +55,10 @@ def clone_and_get_library_version(remote_url: str) -> tuple[str, str]:
         remote_url: The git remote URL (HTTPS or SSH).
 
     Returns:
-        tuple[str, str]: A tuple of (library_version, commit_sha) from the repository.
+        LibraryVersionInfo: Library version and commit SHA from the repository.
 
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
     library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url)
-    return (library_version, commit_sha)
+    return LibraryVersionInfo(library_version=library_version, commit_sha=commit_sha)

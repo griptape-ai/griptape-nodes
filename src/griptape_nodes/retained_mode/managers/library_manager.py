@@ -13,7 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
 import aioshutil
 from packaging.requirements import InvalidRequirement, Requirement
@@ -184,6 +184,32 @@ logger = logging.getLogger("griptape_nodes")
 console = Console()
 
 TRegisteredEventData = TypeVar("TRegisteredEventData")
+
+
+class LibraryGitOperationContext(NamedTuple):
+    """Context information for git operations on a library."""
+
+    library: Library
+    old_version: str
+    library_file_path: str
+    library_dir: Path
+
+
+class LibraryUpdateInfo(NamedTuple):
+    """Information about a library pending update."""
+
+    library_name: str
+    old_version: str
+    new_version: str
+
+
+class LibraryUpdateResult(NamedTuple):
+    """Result of updating a single library."""
+
+    library_name: str
+    old_version: str
+    new_version: str
+    result: ResultPayload
 
 
 class LibraryManager:
@@ -2372,7 +2398,9 @@ class LibraryManager:
 
         # Clone remote and get latest version and commit SHA
         try:
-            latest_version, remote_commit = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            latest_version = version_info.library_version
+            remote_commit = version_info.commit_sha
         except GitCloneError as e:
             details = f"Failed to retrieve latest version from git remote for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
@@ -2422,7 +2450,7 @@ class LibraryManager:
         library_name: str,
         failure_result_class: type[ResultPayloadFailure],
         operation_description: str,
-    ) -> tuple[Library, str, str, Path] | ResultPayloadFailure:
+    ) -> LibraryGitOperationContext | ResultPayloadFailure:
         """Validate library exists and prepare for git operation.
 
         Args:
@@ -2431,7 +2459,7 @@ class LibraryManager:
             operation_description: Description of operation for error messages (e.g., "update", "switch branch/tag for")
 
         Returns:
-            On success: tuple of (library, old_version, file_path, library_dir)
+            On success: LibraryGitOperationContext with library info
             On failure: ResultPayloadFailure instance
         """
         # Check if the library exists
@@ -2461,7 +2489,12 @@ class LibraryManager:
         # Get the library directory (parent of the JSON file)
         library_dir = Path(library_file_path).parent.absolute()
 
-        return library, old_version, library_file_path, library_dir
+        return LibraryGitOperationContext(
+            library=library,
+            old_version=old_version,
+            library_file_path=library_file_path,
+            library_dir=library_dir,
+        )
 
     async def _reload_library_after_git_operation(
         self,
@@ -2553,7 +2586,9 @@ class LibraryManager:
         if isinstance(validation_result, ResultPayloadFailure):
             return validation_result
 
-        _library, old_version, library_file_path, library_dir = validation_result
+        old_version = validation_result.old_version
+        library_file_path = validation_result.library_file_path
+        library_dir = validation_result.library_dir
 
         # Check if library is in a monorepo (multiple libraries in same git repository)
         if await asyncio.to_thread(is_monorepo, library_dir):
@@ -2609,7 +2644,9 @@ class LibraryManager:
         if isinstance(validation_result, ResultPayloadFailure):
             return validation_result
 
-        _library, old_version, library_file_path, library_dir = validation_result
+        old_version = validation_result.old_version
+        library_file_path = validation_result.library_file_path
+        library_dir = validation_result.library_dir
 
         # Get current ref (branch or tag) before switch
         try:
@@ -2954,7 +2991,7 @@ class LibraryManager:
         # Process check results and determine which libraries need updates
         libraries_checked = len(libraries_to_check)
         libraries_updated = 0
-        libraries_to_update: list[tuple[str, str, str]] = []  # (library_name, old_version, new_version)
+        libraries_to_update: list[LibraryUpdateInfo] = []
 
         for library_name, check_result in check_results.items():
             if not isinstance(check_result, CheckLibraryUpdateResultSuccess):
@@ -2971,12 +3008,12 @@ class LibraryManager:
             old_version = check_result.current_version or "unknown"
             new_version = check_result.latest_version or "unknown"
             logger.info("Library '%s' has update available: %s -> %s", library_name, old_version, new_version)
-            libraries_to_update.append((library_name, old_version, new_version))
+            libraries_to_update.append(
+                LibraryUpdateInfo(library_name=library_name, old_version=old_version, new_version=new_version)
+            )
 
         # Update libraries concurrently using task group
-        async def update_library(
-            library_name: str, old_version: str, new_version: str
-        ) -> tuple[str, str, str, ResultPayload]:
+        async def update_library(library_name: str, old_version: str, new_version: str) -> LibraryUpdateResult:
             """Update a single library."""
             logger.info("Updating library '%s' from %s to %s", library_name, old_version, new_version)
             update_result = await GriptapeNodes.ahandle_request(
@@ -2986,15 +3023,27 @@ class LibraryManager:
                     overwrite_existing=request.overwrite_existing,
                 )
             )
-            return library_name, old_version, new_version, update_result
+            return LibraryUpdateResult(
+                library_name=library_name,
+                old_version=old_version,
+                new_version=new_version,
+                result=update_result,
+            )
 
         # Gather all update results concurrently
         async with asyncio.TaskGroup() as tg:
-            update_tasks = [tg.create_task(update_library(lib, old, new)) for lib, old, new in libraries_to_update]
+            update_tasks = [
+                tg.create_task(update_library(info.library_name, info.old_version, info.new_version))
+                for info in libraries_to_update
+            ]
 
         # Collect update results
         for task in update_tasks:
-            library_name, old_version, new_version, update_result = task.result()
+            result = task.result()
+            library_name = result.library_name
+            old_version = result.old_version
+            new_version = result.new_version
+            update_result = result.result
 
             if not isinstance(update_result, UpdateLibraryResultSuccess):
                 logger.error("Failed to update library '%s': %s", library_name, update_result.result_details)

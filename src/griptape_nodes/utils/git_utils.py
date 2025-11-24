@@ -6,9 +6,13 @@ import json
 import logging
 import re
 import subprocess
+import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import pygit2
+
+from griptape_nodes.utils.file_utils import find_file_in_directory
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -37,6 +41,13 @@ class GitPullError(GitError):
     """Raised when git pull operations fail."""
 
 
+class GitUrlWithRef(NamedTuple):
+    """Parsed git URL with optional ref (branch/tag/commit)."""
+
+    url: str
+    ref: str | None
+
+
 def is_git_url(url: str) -> bool:
     """Check if a string is a git URL.
 
@@ -56,7 +67,7 @@ def is_git_url(url: str) -> bool:
     return url.startswith(git_url_patterns)
 
 
-def parse_git_url_with_ref(url_with_ref: str) -> tuple[str, str | None]:
+def parse_git_url_with_ref(url_with_ref: str) -> GitUrlWithRef:
     """Parse a git URL that may contain a ref specification using @ delimiter.
 
     Supports format: url@ref where ref can be a branch, tag, or commit SHA.
@@ -67,13 +78,13 @@ def parse_git_url_with_ref(url_with_ref: str) -> tuple[str, str | None]:
             (e.g., "https://github.com/user/repo@stable" or "user/repo@v1.0.0")
 
     Returns:
-        tuple[str, str | None]: A tuple of (git_url, ref) where ref is None if not specified.
+        GitUrlWithRef: Parsed URL with optional ref (branch/tag/commit).
 
     Examples:
-        "https://github.com/user/repo@stable" -> ("https://github.com/user/repo", "stable")
-        "user/repo@main" -> ("user/repo", "main")
-        "https://github.com/user/repo" -> ("https://github.com/user/repo", None)
-        "user/repo" -> ("user/repo", None)
+        "https://github.com/user/repo@stable" -> GitUrlWithRef("https://github.com/user/repo", "stable")
+        "user/repo@main" -> GitUrlWithRef("user/repo", "main")
+        "https://github.com/user/repo" -> GitUrlWithRef("https://github.com/user/repo", None)
+        "user/repo" -> GitUrlWithRef("user/repo", None)
     """
     url_with_ref = url_with_ref.strip()
 
@@ -87,17 +98,17 @@ def parse_git_url_with_ref(url_with_ref: str) -> tuple[str, str | None]:
             # Split the path part only
             path_parts = parts[1].rsplit("@", 1)
             if len(path_parts) == 2:  # noqa: PLR2004
-                return (f"{parts[0]}:{path_parts[0]}", path_parts[1])
-        return (url_with_ref, None)
+                return GitUrlWithRef(url=f"{parts[0]}:{path_parts[0]}", ref=path_parts[1])
+        return GitUrlWithRef(url=url_with_ref, ref=None)
 
     # For HTTPS/HTTP URLs and shorthand, split on last @
     if "@" in url_with_ref:
         # Use rsplit to split from the right, so we get the last @ (in case of user:pass@host format)
         parts = url_with_ref.rsplit("@", 1)
         if len(parts) == 2:  # noqa: PLR2004
-            return (parts[0], parts[1])
+            return GitUrlWithRef(url=parts[0], ref=parts[1])
 
-    return (url_with_ref, None)
+    return GitUrlWithRef(url=url_with_ref, ref=None)
 
 
 def normalize_github_url(url_or_shorthand: str) -> str:
@@ -997,10 +1008,6 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    import tempfile
-
-    from griptape_nodes.utils.file_utils import find_file_in_directory
-
     # Convert SSH URLs to HTTPS for compatibility
     original_url = remote_url
     if _is_ssh_url(remote_url):
