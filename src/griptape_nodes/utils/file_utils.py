@@ -29,7 +29,6 @@ def find_file_in_directory(directory: Path, pattern: str) -> Path | None:
         >>> find_file_in_directory(Path("/empty"), "missing.txt")
         None
     """
-    directory = directory.resolve()  # Normalize to absolute path
     if not directory.exists():
         logger.debug("Directory does not exist: %s", directory)
         return None
@@ -79,7 +78,6 @@ def find_all_files_in_directory(directory: Path, pattern: str) -> list[Path]:
         >>> find_all_files_in_directory(Path("/empty"), "*.txt")
         []
     """
-    directory = directory.resolve()  # Normalize to absolute path
     if not directory.exists():
         logger.debug("Directory does not exist: %s", directory)
         return []
