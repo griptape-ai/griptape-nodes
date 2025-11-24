@@ -17,7 +17,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterList, Parame
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import async_load_content_from_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -540,7 +540,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         Supports http://, https://, and file:// URIs.
         """
         try:
-            image_bytes = self._download_bytes_from_url(url)
+            image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
                 import base64
 
@@ -693,7 +693,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = self._download_bytes_from_url(image_url)
+            image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = (
                     f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
@@ -857,13 +857,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self.parameter_output_values["image_url"] = None
 
     @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
+    async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL/URI.
 
         Supports http://, https://, and file:// URIs.
         """
         try:
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            return load_content_from_uri(url, timeout=120.0)
+            # Use async_load_content_from_uri which handles file://, http://, and https:// URIs
+            return await async_load_content_from_uri(url, timeout=120.0)
         except Exception:
             return None
