@@ -165,7 +165,8 @@ class StaticFilesManager:
         workspace are served directly from their absolute path location.
 
         Args:
-            file_path: Path to the file (absolute or workspace-relative)
+            file_path: Path to the file (absolute, workspace-relative, or file:// URI).
+                       Percent-encoded characters are decoded (e.g., %20 -> space).
 
         Returns:
             Tuple of (path, is_external, error_message). If error_message is not None,
@@ -175,35 +176,30 @@ class StaticFilesManager:
         """
         workspace_path = self.config_manager.workspace_path
 
-        # Check if it's a file:// URI and extract the path
+        # Parse file path, handling file:// URIs and percent-encoding
         parsed = urlparse(file_path)
         if parsed.scheme == "file":
-            # Extract absolute path from file:// URI and decode percent-encoding
             path = Path(url2pathname(parsed.path))
         else:
-            # Convert to Path object
-            path = Path(file_path)
+            path = Path(url2pathname(file_path))
 
         # Resolve relative paths relative to workspace
         if not path.is_absolute():
             path = workspace_path / path
 
-        # Check if file exists
+        # Validate file exists
         if not path.exists():
             return Path(), False, f"File not found: {file_path}"
 
         if not path.is_file():
             return Path(), False, f"Path is not a file: {file_path}"
 
-        # Check if file is inside workspace
+        # Determine if file is inside or outside workspace
         try:
-            # This will raise ValueError if path is not relative to workspace_path
             workspace_relative = path.relative_to(workspace_path)
         except ValueError:
-            # File is outside workspace, return absolute path and mark as external
             return path, True, None
         else:
-            # File is inside workspace, return workspace-relative path
             return workspace_relative, False, None
 
     def on_handle_create_static_file_download_url_request(
