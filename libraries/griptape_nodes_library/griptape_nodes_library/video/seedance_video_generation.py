@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import get_content_type_from_extension, load_content_from_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -406,42 +406,26 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         if not isinstance(url, str):
             return url
 
-        # Handle file:// URIs - convert to data URI
-        if url.startswith("file://"):
-            try:
-                # Use load_content_from_uri which handles file://, http://, and https:// URIs
-                image_content = load_content_from_uri(url, timeout=20.0)
-                # Try to detect content type from file extension or default to jpeg
-                ct = "image/jpeg"
-                if url.lower().endswith(".png"):
-                    ct = "image/png"
-                elif url.lower().endswith(".webp"):
-                    ct = "image/webp"
-                elif url.lower().endswith(".gif"):
-                    ct = "image/gif"
-                b64 = base64.b64encode(image_content).decode("utf-8")
-                self._log("Frame file:// URI converted to data URI for proxy")
-                return f"data:{ct};base64,{b64}"  # noqa: TRY300
-            except Exception as e:
-                self._log(f"Warning: failed to inline frame file:// URI: {e}")
-                return url
+        # Already a data URI, return as-is
+        if url.startswith("data:image/"):
+            return url
 
-        # Handle http:// and https:// URLs
-        if url.startswith(("http://", "https://")):
+        # Handle file://, http://, and https:// URIs
+        if url.startswith(("http://", "https://", "file://")):
             try:
-                rff = requests.get(url, timeout=20)
-                rff.raise_for_status()
-                ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
+                image_content = load_content_from_uri(url, timeout=20.0)
+                # Detect content type from extension or default to jpeg
+                ct = get_content_type_from_extension(url) or "image/jpeg"
                 if not ct.startswith("image/"):
                     ct = "image/jpeg"
-                b64 = base64.b64encode(rff.content).decode("utf-8")
-                self._log("Frame URL converted to data URI for proxy")
+                b64 = base64.b64encode(image_content).decode("utf-8")
+                self._log("Frame URI converted to data URI for proxy")
                 return f"data:{ct};base64,{b64}"  # noqa: TRY300
             except Exception as e:
-                self._log(f"Warning: failed to inline frame URL: {e}")
+                self._log(f"Warning: failed to inline frame URI: {e}")
                 return url
 
-        # Already a data URI or other format, return as-is
+        # Other format, return as-is
         return url
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
@@ -719,47 +703,44 @@ class SeedanceVideoGeneration(SuccessFailureNode):
 
     @staticmethod
     def _coerce_image_url_or_data_uri(val: Any) -> str | None:
+        # FAILURE CASES FIRST
         if val is None:
             return None
+
+        result: str | None = None
 
         # String handling
         if isinstance(val, str):
             v = val.strip()
-            if not v:
-                return None
-            # Return as-is if it's already a URL (http://, https://, file://) or data URI
-            if v.startswith(("http://", "https://", "file://", "data:image/")):
-                return v
-            # Otherwise treat as base64 and wrap in data URI
-            return f"data:image/png;base64,{v}"
+            if v:
+                # Return as-is if it's already a URL (http://, https://, file://) or data URI
+                if v.startswith(("http://", "https://", "file://", "data:image/")):
+                    result = v
+                else:
+                    # Otherwise treat as base64 and wrap in data URI
+                    result = f"data:image/png;base64,{v}"
+        else:
+            # Artifact-like objects
+            with suppress(Exception):
+                # ImageUrlArtifact: .value holds URL string
+                v = getattr(val, "value", None)
+                if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
+                    result = v
+                else:
+                    # ImageArtifact: .base64 holds raw or data-URI
+                    b64 = getattr(val, "base64", None)
+                    if isinstance(b64, str) and b64:
+                        result = b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
 
-        # Artifact-like objects
-        try:
-            # ImageUrlArtifact: .value holds URL string
-            v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
-                return v
-            # ImageArtifact: .base64 holds raw or data-URI
-            b64 = getattr(val, "base64", None)
-            if isinstance(b64, str) and b64:
-                return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
-        except Exception:  # noqa: S110
-            pass
-
-        return None
+        return result
 
     @staticmethod
     def _download_bytes_from_url(url: str) -> bytes | None:
-        try:
-            import requests
-        except Exception as exc:  # pragma: no cover
-            msg = "Missing optional dependency 'requests'. Add it to library dependencies."
-            raise ImportError(msg) from exc
+        """Download bytes from a URL/URI.
 
+        Supports http://, https://, and file:// URIs.
+        """
         try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
-        except Exception:  # pragma: no cover
+            return load_content_from_uri(url, timeout=120.0)
+        except Exception:
             return None
-        else:
-            return resp.content

@@ -693,7 +693,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = (
                     f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
