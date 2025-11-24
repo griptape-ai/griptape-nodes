@@ -2,7 +2,7 @@
 
 from griptape_nodes.utils.async_utils import call_function
 from griptape_nodes.utils.url_utils import (
-    async_load_content_from_uri,
+    aload_content_from_uri,
     get_content_type_from_extension,
     get_content_type_from_uri,
     get_uri_scheme,
@@ -14,7 +14,7 @@ from griptape_nodes.utils.url_utils import (
 )
 
 __all__ = [
-    "async_load_content_from_uri",
+    "aload_content_from_uri",
     "call_function",
     "get_content_type_from_extension",
     "get_content_type_from_uri",

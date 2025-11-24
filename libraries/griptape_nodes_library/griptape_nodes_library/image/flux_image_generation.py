@@ -23,7 +23,7 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import async_load_content_from_uri
+from griptape_nodes.utils.url_utils import aload_content_from_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -727,6 +727,6 @@ class FluxImageGeneration(SuccessFailureNode):
         """Download bytes from a URL/URI."""
         try:
             # Use async_load_content_from_uri which handles file://, http://, and https:// URIs
-            return await async_load_content_from_uri(url, timeout=120.0)
+            return await aload_content_from_uri(url, timeout=120.0)
         except Exception:
             return None
