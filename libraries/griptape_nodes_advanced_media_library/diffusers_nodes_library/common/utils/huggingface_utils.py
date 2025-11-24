@@ -104,6 +104,13 @@ class ModelCache:
             logger.info("Using cached pipeline with config hash: %s", config_hash)
         return self._pipeline_cache[config_hash]
 
+    def remove_pipeline(self, config_hash: str) -> None:
+        """Remove a specific pipeline from the cache."""
+        if config_hash in self._pipeline_cache:
+            logger.info("Removing pipeline from cache with config hash: %s", config_hash)
+            pipe = self._pipeline_cache.pop(config_hash)
+            clear_diffusion_pipeline(pipe)
+
     def clear_pipeline_cache(self) -> None:
         """Clear all cached pipelines."""
         logger.info("Clearing pipeline cache")
