@@ -161,7 +161,7 @@ class Agent(ControlNode):
         self.add_parameter(
             Parameter(
                 "additional_context",
-                input_types=["str", "int", "float", "dict"],
+                input_types=["str", "int", "float", "dict", "json"],
                 type="str",
                 tooltip=(
                     "Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs."
