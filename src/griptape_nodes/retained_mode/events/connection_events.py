@@ -24,6 +24,7 @@ class CreateConnectionRequest(RequestPayload):
         source_node_name: Name of the source node (None for current context)
         target_node_name: Name of the target node (None for current context)
         initial_setup: Skip setup work when loading from file
+        is_node_group_internal: Mark this connection as internal to a node group (for DAG building)
 
     Results: CreateConnectionResultSuccess | CreateConnectionResultFailure (incompatible types, invalid nodes/parameters)
     """
@@ -35,6 +36,8 @@ class CreateConnectionRequest(RequestPayload):
     target_node_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
     initial_setup: bool = False
+    # Mark this connection as internal to a node group proxy parameter
+    is_node_group_internal: bool = False
 
 
 @dataclass

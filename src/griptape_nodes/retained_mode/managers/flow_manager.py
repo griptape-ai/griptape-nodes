@@ -896,13 +896,18 @@ class FlowManager:
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
         try:
             # Actually create the Connection.
+            if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node):
+                is_node_group_internal = True
+            else:
+                is_node_group_internal = request.is_node_group_internal
             conn = self._connections.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
                 target_parameter=target_param,
+                is_node_group_internal=is_node_group_internal,
             )
-            conn_id = id(conn)
+            id(conn)
         except ValueError as e:
             details = f'Connection failed: "{e}"'
 
@@ -943,26 +948,38 @@ class FlowManager:
         target_parent = target_node.parent_group
 
         # If source is in a group, this is an outgoing external connection
-        if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
-            source_parent.track_external_connection(
+        if (
+            source_parent is not None
+            and isinstance(source_parent, NodeGroupNode)
+            and source_parent not in (target_parent, target_node)
+        ):
+            success = source_parent.map_external_connection(
                 conn=conn,
-                conn_id=conn_id,
                 is_incoming=False,
                 grouped_node=source_node,
             )
+            if success:
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
+                return CreateConnectionResultSuccess(result_details=details)
+            details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
+            return CreateConnectionResultFailure(result_details=details)
 
         # If target is in a group, this is an incoming external connection
-        if target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
-            target_parent.track_external_connection(
+        if (
+            target_parent is not None
+            and isinstance(target_parent, NodeGroupNode)
+            and target_parent not in (source_parent, source_node)
+        ):
+            success = target_parent.map_external_connection(
                 conn=conn,
-                conn_id=conn_id,
                 is_incoming=True,
                 grouped_node=target_node,
             )
-
-        # If both in same group, track as internal connection
-        if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
-            source_parent.track_internal_connection(conn)
+            if success:
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
+                return CreateConnectionResultSuccess(result_details=details)
+            details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
+            return CreateConnectionResultFailure(result_details=details)
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
 
@@ -1104,12 +1121,8 @@ class FlowManager:
 
         # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
 
-        source_parent = source_node.parent_group
-        target_parent = target_node.parent_group
 
         # Find the connection before it's deleted
-        conn = None
-        conn_id = None
         if (
             source_node.name in self._connections.outgoing_index
             and source_param.name in self._connections.outgoing_index[source_node.name]
@@ -1121,46 +1134,7 @@ class FlowManager:
                     candidate.target_node.name == target_node.name
                     and candidate.target_parameter.name == target_param.name
                 ):
-                    conn = candidate
-                    conn_id = candidate_id
                     break
-
-        # If source is in a group, untrack outgoing external connection
-        if (
-            conn
-            and conn_id
-            and source_parent is not None
-            and isinstance(source_parent, NodeGroupNode)
-            and target_parent != source_parent
-        ):
-            source_parent.untrack_external_connection(
-                conn=conn,
-                conn_id=conn_id,
-                is_incoming=False,
-            )
-
-        # If target is in a group, untrack incoming external connection
-        if (
-            conn
-            and conn_id
-            and target_parent is not None
-            and isinstance(target_parent, NodeGroupNode)
-            and source_parent != target_parent
-        ):
-            target_parent.untrack_external_connection(
-                conn=conn,
-                conn_id=conn_id,
-                is_incoming=True,
-            )
-
-        # If both in same group, untrack internal connection
-        if (
-            conn
-            and source_parent is not None
-            and source_parent == target_parent
-            and isinstance(source_parent, NodeGroupNode)
-        ):
-            source_parent.untrack_internal_connection(conn)
 
         # Remove the connection.
         if not self._connections.remove_connection(
@@ -3568,7 +3542,7 @@ class FlowManager:
                         return connection.get_source_node()
         return None
 
-    def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912
+    def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912, PLR0915
         # For cross-flow execution, we need to consider ALL nodes across ALL flows
         # Clear and use the global execution queue
         self._global_flow_queue.queue.clear()
@@ -3589,6 +3563,10 @@ class FlowManager:
         control_nodes = []
         cn_mgr = self.get_connections()
         for node in all_nodes:
+            # Skip nodes that are children of a NodeGroupNode - they should not be start nodes
+            if node.parent_group is not None and isinstance(node.parent_group, NodeGroupNode):
+                continue
+
             # if it's a start node, start here! Return the first one!
             if isinstance(node, StartNode):
                 start_nodes.append(node)

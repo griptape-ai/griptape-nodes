@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState, NodeGroupNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -34,6 +34,7 @@ class Connections:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
+        is_node_group_internal: bool = False,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
@@ -45,7 +46,7 @@ class Connections:
         if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
             target_node, target_parameter, is_source=False
         ):
-            connection = Connection(source_node, source_parameter, target_node, target_parameter)
+            connection = Connection(source_node, source_parameter, target_node, target_parameter, is_node_group_internal)
             # New index management.
             connection_id = id(connection)
             # Add connection to our dict here
@@ -135,7 +136,7 @@ class Connections:
         return None  # No connection found for this control parameter
 
     def get_connected_node(
-        self, node: BaseNode, parameter: Parameter, direction: Direction | None = None
+        self, node: BaseNode, parameter: Parameter, direction: Direction | None = None, *, include_internal: bool = True
     ) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
         # Override this method for BaseIterativeEndNodes - these might have to go backwards or forwards.
@@ -180,6 +181,9 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
+            # We don't traverse internal connections in NodeGroupNodes.
+            if isinstance(node, NodeGroupNode) and connection.is_node_group_internal and not include_internal:
+                return None
             if direction == Direction.DOWNSTREAM:
                 # Return the target (next place to go)
                 return connection.target_node, connection.target_parameter
@@ -312,3 +316,77 @@ class Connections:
                                 )
                             )
                             self.unresolve_future_nodes(target_node)
+
+    def get_outgoing_connections_to_node(self, node: BaseNode, to_node: BaseNode) -> dict[str, list[Connection]]:
+        connections = {}
+        if node.name in self.outgoing_index:
+            parameters = self.outgoing_index[node.name]
+            for parameter, connection_ids in parameters.items():
+                for conn_id in connection_ids:
+                    connection = self.connections[conn_id]
+                    if connection.target_node.name == to_node.name:
+                        if parameter not in connections:
+                            connections[parameter] = [connection]
+                        else:
+                            connections[parameter].append(connection)
+        return connections
+
+    def get_incoming_connections_from_node(self, node: BaseNode, from_node: BaseNode) -> dict[str, list[Connection]]:
+        connections = {}
+        if node.name in self.incoming_index:
+            parameters = self.incoming_index[node.name]
+            for parameter, connection_ids in parameters.items():
+                for conn_id in connection_ids:
+                    connection = self.connections[conn_id]
+                    if connection.source_node.name == from_node.name:
+                        if parameter not in connections:
+                            connections[parameter] = [connection]
+                        else:
+                            connections[parameter].append(connection)
+        return connections
+
+    def get_outgoing_connections_from_parameter(self, node: BaseNode, parameter: Parameter) -> list[Connection]:
+        connections = []
+        if node.name in self.outgoing_index and parameter.name in self.outgoing_index[node.name]:
+            for conn_id in self.outgoing_index[node.name][parameter.name]:
+                connections.append(self.connections[conn_id])  # noqa: PERF401
+        return connections
+
+    def get_incoming_connections_to_parameter(self, node: BaseNode, parameter: Parameter) -> list[Connection]:
+        connections = []
+        if node.name in self.incoming_index and parameter.name in self.incoming_index[node.name]:
+            for conn_id in self.incoming_index[node.name][parameter.name]:
+                connections.append(self.connections[conn_id])  # noqa: PERF401
+        return connections
+
+    def get_all_outgoing_connections(self, node: BaseNode) -> list[Connection]:
+        """Get all outgoing connections from a node.
+
+        Args:
+            node: The node to get outgoing connections for
+
+        Returns:
+            List of all outgoing connections from the node
+        """
+        connections = []
+        if node.name in self.outgoing_index:
+            for connection_ids in self.outgoing_index[node.name].values():
+                for conn_id in connection_ids:
+                    connections.append(self.connections[conn_id])
+        return connections
+
+    def get_all_incoming_connections(self, node: BaseNode) -> list[Connection]:
+        """Get all incoming connections to a node.
+
+        Args:
+            node: The node to get incoming connections for
+
+        Returns:
+            List of all incoming connections to the node
+        """
+        connections = []
+        if node.name in self.incoming_index:
+            for connection_ids in self.incoming_index[node.name].values():
+                for conn_id in connection_ids:
+                    connections.append(self.connections[conn_id])
+        return connections

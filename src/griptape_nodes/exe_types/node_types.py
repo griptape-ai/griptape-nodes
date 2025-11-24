@@ -33,8 +33,14 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    DeleteConnectionRequest,
+    DeleteConnectionResultSuccess,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
@@ -42,6 +48,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
+    from griptape_nodes.exe_types.connections import Connections
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
@@ -1884,8 +1891,7 @@ class NodeGroupNode(BaseNode):
     """
 
     nodes: dict[str, BaseNode]
-    stored_connections: NodeGroupStoredConnections
-    _proxy_param_to_node_param: dict[str, tuple[BaseNode, str]]
+    _proxy_param_to_connections: dict[str, int]
 
     def __init__(
         self,
@@ -1904,8 +1910,7 @@ class NodeGroupNode(BaseNode):
         self.add_parameter(self.execution_environment)
         self.nodes = {}
         # Track mapping from proxy parameter name to (original_node, original_param_name)
-        self._proxy_param_to_node_param = {}
-        self.stored_connections = NodeGroupStoredConnections()
+        self._proxy_param_to_connections = {}
 
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
@@ -2039,6 +2044,57 @@ class NodeGroupNode(BaseNode):
         # Add the parameter to this node
         self.add_parameter(cloned_param)
 
+    def _create_proxy_parameter_for_connection(
+        self,
+        original_param: Parameter,
+        grouped_node: BaseNode,
+        is_incoming: bool
+    ) -> Parameter:
+        """Create a proxy parameter on this NodeGroupNode for an external connection.
+
+        Args:
+            original_param: The parameter from the grouped node
+            grouped_node: The node within the group that has the original parameter
+            conn_id: The connection ID for uniqueness
+            is_incoming: True if this is an incoming connection to the group
+
+        Returns:
+            The newly created proxy parameter
+        """
+        # Clone the parameter with the new name
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        request = AddParameterToNodeRequest(
+            node_name=self.name,
+            parameter_name=original_param.name,
+            type=original_param.type,
+            tooltip="",
+            mode_allowed_input=True,
+            mode_allowed_output=True,
+        )
+        # Add with a request, because this will handle naming for us.
+        result = GriptapeNodes.handle_request(request)
+        if not isinstance(result, AddParameterToNodeResultSuccess):
+            msg = "Failed to add parameter to node."
+            raise RuntimeError(msg)
+        # Retrieve and return the newly created parameter
+        proxy_param = self.get_parameter_by_name(result.parameter_name)
+        if proxy_param is None:
+            msg = f"{self.name} failed to create proxy parameter '{result.parameter_name}'"
+            raise RuntimeError(msg)
+        if is_incoming:
+            if "left_parameters" in self.metadata:
+                self.metadata["left_parameters"].append(proxy_param.name)
+            else:
+                self.metadata["left_parameters"] = [proxy_param.name]
+        else:
+            if "right_parameters" in self.metadata:
+                self.metadata["right_parameters"].append(proxy_param.name)
+            else:
+                self.metadata["right_parameters"] = [proxy_param.name]
+
+        return proxy_param
+
     def get_all_nodes(self) -> dict[str, BaseNode]:
         all_nodes = {}
         for node_name, node in self.nodes.items():
@@ -2046,28 +2102,6 @@ class NodeGroupNode(BaseNode):
             if isinstance(node, NodeGroupNode):
                 all_nodes.update(node.nodes)
         return all_nodes
-
-    def get_next_control_output(self) -> tuple[BaseNode, Parameter] | None:
-        control_connection = self._find_external_control_output_connection()
-        if control_connection is None:
-            return None
-        return control_connection.source_node, control_connection.source_parameter
-
-    def _find_external_control_output_connection(self) -> Connection | None:
-        """Find control flow connection from external outgoing connections.
-
-        Searches through external outgoing connections to find the control flow connection.
-        A control connection is identified by having a source parameter with CONTROL_TYPE output.
-
-        Returns:
-            Connection object if found, None otherwise
-        """
-        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-
-        for conn in self.stored_connections.external_connections.outgoing_connections:
-            if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
-                return conn
-        return None
 
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode
@@ -2159,23 +2193,13 @@ class NodeGroupNode(BaseNode):
                     )
                     raise ValueError(msg)
 
-    def track_internal_connection(self, conn: Connection) -> None:
-        """Track a connection between nodes within the group.
-
-        Args:
-            conn: The internal connection to track
-        """
-        if conn not in self.stored_connections.internal_connections:
-            self.stored_connections.internal_connections.append(conn)
-
-    def track_external_connection(
+    def map_external_connection(
         self,
         conn: Connection,
-        conn_id: int,
         is_incoming: bool,  # noqa: FBT001
         grouped_node: BaseNode,
-    ) -> None:
-        """Track a connection to/from a node in the group.
+    ) -> bool:
+        """Track a connection to/from a node in the group and rewire it through a proxy parameter.
 
         Args:
             conn: The external connection to track
@@ -2184,46 +2208,143 @@ class NodeGroupNode(BaseNode):
             grouped_node: The node in the group involved in the connection
         """
         if is_incoming:
-            if conn not in self.stored_connections.external_connections.incoming_connections:
-                self.stored_connections.external_connections.incoming_connections.append(conn)
-            self.stored_connections.original_targets.incoming_sources[conn_id] = grouped_node
+            grouped_parameter = conn.target_parameter
+            # Store the existing connection so it can be recreated if needed.
         else:
-            if conn not in self.stored_connections.external_connections.outgoing_connections:
-                self.stored_connections.external_connections.outgoing_connections.append(conn)
-            self.stored_connections.original_targets.outgoing_targets[conn_id] = grouped_node
+            grouped_parameter = conn.source_parameter
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    def untrack_internal_connection(self, conn: Connection) -> None:
-        """Remove tracking of an internal connection.
+        request = DeleteConnectionRequest(
+            conn.source_parameter.name,
+            conn.target_parameter.name,
+            conn.source_node.name,
+            conn.target_node.name,
+        )
+        result = GriptapeNodes.handle_request(request)
+        if not isinstance(result, DeleteConnectionResultSuccess):
+            return False
+        proxy_parameter = self._create_proxy_parameter_for_connection(grouped_parameter, grouped_node, is_incoming)
+        # Create connections for proxy parameter
+        self.create_connections_for_proxy(proxy_parameter, conn, is_incoming)
+        return True
 
-        Args:
-            conn: The internal connection to untrack
-        """
-        if conn in self.stored_connections.internal_connections:
-            self.stored_connections.internal_connections.remove(conn)
+    def create_connections_for_proxy(self, proxy_parameter: Parameter, old_connection: Connection, is_incoming: bool) -> None:  # noqa: FBT001
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-    def untrack_external_connection(
-        self,
-        conn: Connection,
-        conn_id: int,
-        is_incoming: bool,  # noqa: FBT001
+        create_first_connection = CreateConnectionRequest(
+            source_parameter_name=old_connection.source_parameter.name,
+            target_parameter_name=proxy_parameter.name,
+            source_node_name=old_connection.source_node.name,
+            target_node_name=self.name,
+            is_node_group_internal=not is_incoming,
+        )
+        create_second_connection = CreateConnectionRequest(
+            source_parameter_name=proxy_parameter.name,
+            target_parameter_name=old_connection.target_parameter.name,
+            source_node_name=self.name,
+            target_node_name=old_connection.target_node.name,
+            is_node_group_internal=is_incoming,
+        )
+        # Store the mapping from proxy parameter to original node/parameter
+        # only increment by 1, even though we're making two connections.
+        if proxy_parameter.name not in self._proxy_param_to_connections:
+            self._proxy_param_to_connections[proxy_parameter.name] = 1
+        else:
+            self._proxy_param_to_connections[proxy_parameter.name] += 1
+        GriptapeNodes.handle_request(create_first_connection)
+        GriptapeNodes.handle_request(create_second_connection)
+
+    def unmap_node_connections(  # noqa: C901
+        self, node: BaseNode
     ) -> None:
-        """Remove tracking of an external connection.
+        """Remove tracking of an external connection, restore original connection, and clean up proxy parameter.
 
         Args:
-            conn: The external connection to untrack
-            conn_id: ID of the connection
-            is_incoming: True if connection was coming INTO the group
+            node: The node to unmap
         """
-        if is_incoming:
-            if conn in self.stored_connections.external_connections.incoming_connections:
-                self.stored_connections.external_connections.incoming_connections.remove(conn)
-            if conn_id in self.stored_connections.original_targets.incoming_sources:
-                del self.stored_connections.original_targets.incoming_sources[conn_id]
-        else:
-            if conn in self.stored_connections.external_connections.outgoing_connections:
-                self.stored_connections.external_connections.outgoing_connections.remove(conn)
-            if conn_id in self.stored_connections.original_targets.outgoing_targets:
-                del self.stored_connections.original_targets.outgoing_targets[conn_id]
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # For the node being removed - We need to figure out all of it's connections TO the node group. These connections need to be remapped.
+        # If we delete connections from a proxy parameter, and it has no more connections, then the proxy parameter should be deleted unless it's user defined.
+        # It will 1. not be in the proxy map. and 2. it will have a value of > 0
+        connections = GriptapeNodes.FlowManager().get_connections()
+        # Get all outgoing connections
+        outgoing_connections = connections.get_outgoing_connections_to_node(node, to_node=self)
+        # Delete outgoing connections
+        for parameter_name, outgoing_connection_list in outgoing_connections.items():
+            for outgoing_connection in outgoing_connection_list:
+                proxy_parameter = outgoing_connection.target_parameter
+                # Delete the internal connection
+                GriptapeNodes.FlowManager().on_delete_connection_request(
+                    DeleteConnectionRequest(
+                        source_parameter_name=parameter_name,
+                        target_parameter_name=proxy_parameter.name,
+                        source_node_name=node.name,
+                        target_node_name=self.name,
+                    )
+                )
+                # Get the outgoing connections from the proxy parameter
+                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
+                if proxy_parameter.name in self._proxy_param_to_connections:
+                    self._proxy_param_to_connections[proxy_parameter.name] -= 1
+                    if self._proxy_param_to_connections[proxy_parameter.name] == 0:
+                        # Delete the proxy parameter. It no longer has any important connections.
+                        GriptapeNodes.NodeManager().on_remove_parameter_from_node_request(
+                            request=RemoveParameterFromNodeRequest(
+                                node_name=self.name, parameter_name=proxy_parameter.name
+                            )
+                        )
+                        del self._proxy_param_to_connections[proxy_parameter.name]
+                        self.metadata["right_parameters"].remove(proxy_parameter.name)
+                # Now create the new connection! We need to get the connections from the proxy parameter
+                for connection in remap_connections:
+                    GriptapeNodes.FlowManager().on_create_connection_request(
+                        CreateConnectionRequest(
+                            source_parameter_name=parameter_name,
+                            target_parameter_name=connection.target_parameter.name,
+                            source_node_name=node.name,
+                            target_node_name=connection.target_node.name,
+                        )
+                    )
+
+        # Get all incoming connections
+        incoming_connections = connections.get_incoming_connections_from_node(node, from_node=self)
+        # Delete incoming connections
+        for parameter_name, incoming_connection_list in incoming_connections.items():
+            for incoming_connection in incoming_connection_list:
+                proxy_parameter = incoming_connection.source_parameter
+                # Delete the internal connection
+                GriptapeNodes.FlowManager().on_delete_connection_request(
+                    DeleteConnectionRequest(
+                        source_parameter_name=proxy_parameter.name,
+                        target_parameter_name=parameter_name,
+                        source_node_name=self.name,
+                        target_node_name=node.name,
+                    )
+                )
+                # Get the incoming connections to the proxy parameter
+                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
+                if proxy_parameter.name in self._proxy_param_to_connections:
+                    self._proxy_param_to_connections[proxy_parameter.name] -= 1
+                    if self._proxy_param_to_connections[proxy_parameter.name] == 0:
+                        # Delete the proxy parameter. It no longer has any important connections.
+                        GriptapeNodes.NodeManager().on_remove_parameter_from_node_request(
+                            request=RemoveParameterFromNodeRequest(
+                                node_name=self.name, parameter_name=proxy_parameter.name
+                            )
+                        )
+                        del self._proxy_param_to_connections[proxy_parameter.name]
+                        self.metadata["left_parameters"].remove(proxy_parameter.name)
+                # Now create the new connection! We need to get the connections to the proxy parameter
+                for connection in remap_connections:
+                    GriptapeNodes.FlowManager().on_create_connection_request(
+                        CreateConnectionRequest(
+                            source_parameter_name=connection.source_parameter.name,
+                            target_parameter_name=parameter_name,
+                            source_node_name=connection.source_node.name,
+                            target_node_name=node.name,
+                        )
+                    )
 
     def _remove_nodes_from_existing_parents(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from their existing parent groups."""
@@ -2242,36 +2363,6 @@ class NodeGroupNode(BaseNode):
             node.parent_group = self
             self.nodes[node.name] = node
 
-    def _track_incoming_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
-        """Track incoming external connections for a node."""
-        if node.name not in connections.incoming_index:
-            return
-
-        for connection_ids in connections.incoming_index[node.name].values():
-            for conn_id in connection_ids:
-                if conn_id not in connections.connections:
-                    continue
-                conn = connections.connections[conn_id]
-
-                if conn.source_node.name not in node_names_in_group:
-                    self.track_external_connection(conn, conn_id, is_incoming=True, grouped_node=node)
-                elif conn not in self.stored_connections.internal_connections:
-                    self.track_internal_connection(conn)
-
-    def _track_outgoing_connections(self, node: BaseNode, connections: Any, node_names_in_group: set[str]) -> None:
-        """Track outgoing external connections for a node."""
-        if node.name not in connections.outgoing_index:
-            return
-
-        for connection_ids in connections.outgoing_index[node.name].values():
-            for conn_id in connection_ids:
-                if conn_id not in connections.connections:
-                    continue
-                conn = connections.connections[conn_id]
-
-                if conn.target_node.name not in node_names_in_group:
-                    self.track_external_connection(conn, conn_id, is_incoming=False, grouped_node=node)
-
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group and track their connections.
 
@@ -2286,15 +2377,36 @@ class NodeGroupNode(BaseNode):
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
         self.metadata["node_names_in_group"] = list(node_names_in_group)
+        self._map_external_connections_for_nodes(nodes, connections, node_names_in_group)
 
-        nodes_being_added = {node.name for node in nodes}
-        internal_conns = connections.get_connections_between_nodes(nodes_being_added)
-        for conn in internal_conns:
-            self.track_internal_connection(conn)
+    def _map_external_connections_for_nodes(
+        self, nodes: list[BaseNode], connections: Connections, node_names_in_group: set[str]
+    ) -> None:
+        """Map external connections for nodes being added to the group.
 
+        Args:
+            nodes: List of nodes being added
+            connections: Connections object from FlowManager
+            node_names_in_group: Set of all node names currently in the group
+        """
         for node in nodes:
-            self._track_incoming_connections(node, connections, node_names_in_group)
-            self._track_outgoing_connections(node, connections, node_names_in_group)
+            outgoing_connections = connections.get_all_outgoing_connections(node)
+            for conn in outgoing_connections:
+                if conn.target_node.name not in node_names_in_group:
+                    self.map_external_connection(
+                        conn=conn,
+                        is_incoming=False,
+                        grouped_node=node,
+                    )
+
+            incoming_connections = connections.get_all_incoming_connections(node)
+            for conn in incoming_connections:
+                if conn.source_node.name not in node_names_in_group:
+                    self.map_external_connection(
+                        conn=conn,
+                        is_incoming=True,
+                        grouped_node=node,
+                    )
 
     def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
         """Validate that all nodes are in the group."""
@@ -2302,48 +2414,6 @@ class NodeGroupNode(BaseNode):
             if node.name not in self.nodes:
                 msg = f"Node {node.name} is not in node group {self.name}"
                 raise ValueError(msg)
-
-    def _untrack_external_incoming_for_node(self, node: BaseNode) -> None:
-        """Untrack external incoming connections for a node."""
-        for conn in list(self.stored_connections.external_connections.incoming_connections):
-            conn_id = id(conn)
-            original_target = self.stored_connections.original_targets.incoming_sources.get(conn_id)
-            if original_target and original_target.name == node.name:
-                self.untrack_external_connection(conn, conn_id, is_incoming=True)
-
-    def _untrack_external_outgoing_for_node(self, node: BaseNode) -> None:
-        """Untrack external outgoing connections for a node."""
-        for conn in list(self.stored_connections.external_connections.outgoing_connections):
-            conn_id = id(conn)
-            original_source = self.stored_connections.original_targets.outgoing_targets.get(conn_id)
-            if original_source and original_source.name == node.name:
-                self.untrack_external_connection(conn, conn_id, is_incoming=False)
-
-    def _untrack_internal_for_node(self, node: BaseNode, nodes_being_removed: set[str]) -> None:
-        """Untrack internal connections for a node."""
-        for conn in list(self.stored_connections.internal_connections):
-            if node.name not in (conn.source_node.name, conn.target_node.name):
-                continue
-
-            other_node_name = conn.target_node.name if conn.source_node.name == node.name else conn.source_node.name
-            if other_node_name in nodes_being_removed or other_node_name not in self.nodes:
-                self.untrack_internal_connection(conn)
-
-    def has_external_control_input(self) -> bool:
-        """Check if this NodeGroup has any external incoming control connections.
-
-        Returns:
-            True if any external incoming connection is a control input, False otherwise
-        """
-        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-
-        for conn in self.stored_connections.external_connections.incoming_connections:
-            if conn.target_parameter.type == ParameterTypeBuiltin.CONTROL_TYPE:
-                return True
-            if ParameterTypeBuiltin.CONTROL_TYPE.value in conn.target_parameter.input_types:
-                return True
-
-        return False
 
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from the group and untrack their connections.
@@ -2355,19 +2425,20 @@ class NodeGroupNode(BaseNode):
 
         self._validate_nodes_in_group(nodes)
 
-        GriptapeNodes.FlowManager().get_connections()
-        nodes_being_removed = {node.name for node in nodes}
-
-        for node in nodes:
-            self._untrack_external_incoming_for_node(node)
-            self._untrack_external_outgoing_for_node(node)
-            self._untrack_internal_for_node(node, nodes_being_removed)
-
+        connections = GriptapeNodes.FlowManager().get_connections()
         for node in nodes:
             node.parent_group = None
             self.nodes.pop(node.name)
 
+        for node in nodes:
+            self.unmap_node_connections(node)
+
         self.metadata["node_names_in_group"] = list(self.nodes.keys())
+
+        remaining_nodes = list(self.nodes.values())
+        if remaining_nodes:
+            node_names_in_group = set(self.nodes.keys())
+            self._map_external_connections_for_nodes(remaining_nodes, connections, node_names_in_group)
 
     async def aprocess(self) -> None:
         """Execute all nodes in the group in parallel.
@@ -2386,6 +2457,7 @@ class Connection:
     target_node: BaseNode
     source_parameter: Parameter
     target_parameter: Parameter
+    is_node_group_internal: bool
 
     def __init__(
         self,
@@ -2393,11 +2465,13 @@ class Connection:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
+        is_node_group_internal: bool = False,
     ) -> None:
         self.source_node = source_node
         self.target_node = target_node
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
+        self.is_node_group_internal = is_node_group_internal
 
     def get_target_node(self) -> BaseNode:
         return self.target_node
