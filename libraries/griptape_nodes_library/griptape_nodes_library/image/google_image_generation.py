@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
 import os
@@ -213,9 +214,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         return exceptions if exceptions else None
 
     async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
         self._clear_execution_status()
 
         # Validate API key
@@ -323,70 +321,95 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Process the response immediately
         await self._handle_response(response_json)
 
-    async def _handle_response(self, response_json: dict[str, Any] | None) -> None:  # noqa: C901, PLR0915
+    async def _handle_response(self, response_json: dict[str, Any] | None) -> None:
         """Parse Gemini API response structure and extract images and text."""
         if not response_json:
-            self.parameter_output_values["image"] = None
-            self.parameter_output_values["all_images"] = []
-            self.parameter_output_values["text"] = ""
+            self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
                 result_details=f"{self.name} received empty response from API.",
             )
             return
 
-        # Extract candidates -> content -> parts
         candidates = response_json.get("candidates", [])
         if not candidates:
-            self.parameter_output_values["image"] = None
-            self.parameter_output_values["all_images"] = []
-            self.parameter_output_values["text"] = ""
+            self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
                 result_details=f"{self.name} no candidates found in response.",
             )
             return
 
-        # Process all parts from all candidates
         image_artifacts = []
         text_outputs = []
 
         for candidate_idx, candidate in enumerate(candidates):
-            content = candidate.get("content", {})
-            parts = content.get("parts", [])
+            self._process_candidate(candidate, candidate_idx, image_artifacts, text_outputs)
 
-            for part_idx, part in enumerate(parts):
-                # Extract text if present
-                if "text" in part:
-                    text_outputs.append(part["text"])
+        self._store_results(image_artifacts, text_outputs)
 
-                # Extract inline image data
-                inline_data = part.get("inlineData")
-                if inline_data:
-                    mime_type = inline_data.get("mimeType", "image/png")
-                    base64_data = inline_data.get("data", "")
+    def _process_candidate(
+        self,
+        candidate: dict[str, Any],
+        candidate_idx: int,
+        image_artifacts: list[ImageUrlArtifact],
+        text_outputs: list[str],
+    ) -> None:
+        """Process a single candidate and extract images and text."""
+        content = candidate.get("content", {})
+        parts = content.get("parts", [])
 
-                    if base64_data:
-                        try:
-                            import base64
+        for part_idx, part in enumerate(parts):
+            self._process_part(part, candidate_idx, part_idx, image_artifacts, text_outputs)
 
-                            image_bytes = base64.b64decode(base64_data)
-                            timestamp = int(time())
-                            ext = "png" if "png" in mime_type else "jpg"
-                            filename = f"google_image_{timestamp}_{candidate_idx}_{part_idx}.{ext}"
+    def _process_part(
+        self,
+        part: dict[str, Any],
+        candidate_idx: int,
+        part_idx: int,
+        image_artifacts: list[ImageUrlArtifact],
+        text_outputs: list[str],
+    ) -> None:
+        """Process a single part and extract text or image data."""
+        if "text" in part:
+            text_outputs.append(part["text"])
 
-                            static_files_manager = GriptapeNodes.StaticFilesManager()
-                            saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                            image_artifacts.append(ImageUrlArtifact(value=saved_url, name=filename))
+        inline_data = part.get("inlineData")
+        if inline_data:
+            self._process_inline_image(inline_data, candidate_idx, part_idx, image_artifacts)
 
-                            msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"
-                            logger.info(msg)
-                        except Exception as e:
-                            msg = f"{self.name} failed to process image from candidate {candidate_idx + 1}: {e}"
-                            logger.info(msg)
+    def _process_inline_image(
+        self,
+        inline_data: dict[str, Any],
+        candidate_idx: int,
+        part_idx: int,
+        image_artifacts: list[ImageUrlArtifact],
+    ) -> None:
+        """Process inline image data and save to static storage."""
+        mime_type = inline_data.get("mimeType", "image/png")
+        base64_data = inline_data.get("data", "")
 
-        # Store results
-        # Set text output (join all text parts)
+        if not base64_data:
+            return
+
+        try:
+            image_bytes = base64.b64decode(base64_data)
+            timestamp = int(time())
+            ext = "png" if "png" in mime_type else "jpg"
+            filename = f"google_image_{timestamp}_{candidate_idx}_{part_idx}.{ext}"
+
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            image_artifacts.append(ImageUrlArtifact(value=saved_url, name=filename))
+
+            msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"
+            logger.info(msg)
+        except Exception as e:
+            msg = f"{self.name} failed to process image from candidate {candidate_idx + 1}: {e}"
+            logger.info(msg)
+
+    def _store_results(self, image_artifacts: list[ImageUrlArtifact], text_outputs: list[str]) -> None:
+        """Store image and text results and set status."""
         self.parameter_output_values["text"] = "\n".join(text_outputs) if text_outputs else ""
 
         if image_artifacts:
@@ -474,7 +497,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
 
-    async def _process_input_image(self, image_input: Any) -> tuple[str, str] | None:  # noqa: PLR0911
+    async def _process_input_image(self, image_input: Any) -> tuple[str, str] | None:
         """Process input image and convert to base64 with mime type.
 
         Returns:
@@ -483,48 +506,84 @@ class GoogleImageGeneration(SuccessFailureNode):
         if not image_input:
             return None
 
-        # Extract string value from input
         image_value = self._extract_image_value(image_input)
         if not image_value:
             return None
 
-        # Convert to data URI if needed
         data_uri = await self._convert_to_base64_data_uri(image_value)
         if not data_uri:
             return None
 
-        # Extract mime type and base64 data from data URI
-        if data_uri.startswith("data:image/"):
-            parts = data_uri.split(",", 1)
-            if len(parts) == 2:  # noqa: PLR2004
-                # Extract mime type from data URI (e.g., "data:image/png;base64")
-                mime_part = parts[0]
-                if "image/" in mime_part:
-                    mime_type = mime_part.split(":")[1].split(";")[0]
-                    base64_data = parts[1]
+        return self._extract_mime_and_base64_from_data_uri(data_uri)
 
-                    # Validate image size (base64 decoded size)
-                    import base64
+    def _extract_mime_and_base64_from_data_uri(self, data_uri: str) -> tuple[str, str] | None:  # noqa: PLR0911
+        """Extract mime type and base64 data from data URI.
 
-                    try:
-                        image_bytes = base64.b64decode(base64_data)
-                        image_size = len(image_bytes)
-                        if image_size > MAX_IMAGE_SIZE_BYTES:
-                            size_mb = image_size / (1024 * 1024)
-                            max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
-                            msg = (
-                                f"{self.name} input image exceeds maximum size of {max_mb}MB (image is {size_mb:.2f}MB)"
-                            )
-                            logger.warning(msg)
-                            return None
-                    except Exception as e:
-                        msg = f"{self.name} failed to validate image size: {e}"
-                        logger.warning(msg)
-                        return None
+        Returns:
+            Tuple of (mime_type, base64_data) or None if extraction fails
+        """
+        if not data_uri.startswith("data:image/"):
+            return None
 
-                    return (mime_type, base64_data)
+        parts = data_uri.split(",", 1)
+        if len(parts) < 1:
+            return None
 
-        return None
+        mime_part = parts[0]
+        if "image/" not in mime_part:
+            return None
+
+        mime_type = self._parse_mime_type_from_header(mime_part)
+        if not mime_type:
+            return None
+
+        base64_data = parts[1] if len(parts) > 1 else ""
+        if not base64_data:
+            return None
+
+        if not self._validate_image_size(base64_data):
+            return None
+
+        return (mime_type, base64_data)
+
+    def _parse_mime_type_from_header(self, mime_part: str) -> str | None:
+        """Parse mime type from data URI header.
+
+        Args:
+            mime_part: Header part of data URI (e.g., "data:image/png;base64")
+
+        Returns:
+            Mime type string or None if parsing fails
+        """
+        try:
+            return mime_part.split(":")[1].split(";")[0]
+        except IndexError:
+            return None
+
+    def _validate_image_size(self, base64_data: str) -> bool:
+        """Validate that decoded image size is within limits.
+
+        Args:
+            base64_data: Base64 encoded image data
+
+        Returns:
+            True if size is valid, False otherwise
+        """
+        try:
+            image_bytes = base64.b64decode(base64_data)
+            image_size = len(image_bytes)
+            if image_size > MAX_IMAGE_SIZE_BYTES:
+                size_mb = image_size / (1024 * 1024)
+                max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+                msg = f"{self.name} input image exceeds maximum size of {max_mb}MB (image is {size_mb:.2f}MB)"
+                logger.warning(msg)
+                return False
+        except Exception as e:
+            msg = f"{self.name} failed to validate image size: {e}"
+            logger.warning(msg)
+            return False
+        else:
+            return True
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
@@ -567,8 +626,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         try:
             image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
-                import base64
-
                 b64_string = base64.b64encode(image_bytes).decode("utf-8")
                 return f"data:image/png;base64,{b64_string}"
         except Exception as e:
