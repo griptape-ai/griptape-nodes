@@ -282,7 +282,10 @@ class FluxImageGeneration(SuccessFailureNode):
             headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
 
         model = params["model"]
-        self._log(f"Generating image with {model} using Griptape model proxy")
+        if validation_result.user_api_key:
+            self._log(f"Generating image with {model} using Griptape model proxy with user-provided API key")
+        else:
+            self._log(f"Generating image with {model} using Griptape model proxy")
 
         # Submit request to get generation ID
         try:
