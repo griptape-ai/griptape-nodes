@@ -209,9 +209,15 @@ class StaticFilesManager:
             logger.error(msg)
             raise ValueError(msg) from e
 
-        url = self.storage_driver.create_signed_download_url(file_path)
+        # Return HTTP URL for static file access
+        # Format: http://localhost:8124/workspace/staticfiles/{filename}
+        static_files_dir = Path(resolved_directory).name
+        base_url_config = self.config_manager.get_config_value("static_server_base_url")
+        from griptape_nodes.servers.static import STATIC_SERVER_URL
 
-        return url
+        http_url = f"{base_url_config}{STATIC_SERVER_URL}/{static_files_dir}/{file_name}"
+
+        return http_url
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.
