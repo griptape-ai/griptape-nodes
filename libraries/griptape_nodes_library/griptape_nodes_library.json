@@ -1654,6 +1654,17 @@
       }
     },
     {
+      "class_name": "GoogleImageGeneration",
+      "file_path": "griptape_nodes_library/image/google_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Google models via Griptape model proxy",
+        "display_name": "Google Nano Banana Image Generation",
+        "group": "create",
+        "icon": "sparkles"
+      }
+    },
+    {
       "class_name": "ImagesToPdf",
       "file_path": "griptape_nodes_library/image/images_to_pdf.py",
       "metadata": {
