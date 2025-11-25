@@ -11,11 +11,9 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 
 logger = logging.getLogger("diffusers_nodes_library")
 
-QUANTIZED_FLUX_2_REPO_IDS = [
-    "diffusers/FLUX.2-dev-bnb-4bit"
-]
+QUANTIZED_FLUX_2_REPO_IDS = ["diffusers/FLUX.2-dev-bnb-4bit"]
 
-FLUX_2_REPO_IDS = QUANTIZED_FLUX_2_REPO_IDS + ["black-forest-labs/FLUX.2-dev"]
+FLUX_2_REPO_IDS = [*QUANTIZED_FLUX_2_REPO_IDS, "black-forest-labs/FLUX.2-dev"]
 
 
 class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
