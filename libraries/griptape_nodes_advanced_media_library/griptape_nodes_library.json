@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers @ https://github.com/huggingface/diffusers/archive/f3db38c1e74c49de0ff42356515e7b394561ec39.zip",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/5ffb73d4aeac9eaef8366d7b21872d64009bd1c7.zip",
         "imageio[ffmpeg]>=2.37.2",
         "ninja>=1.13.0",
         "numpy>=2.2.4",

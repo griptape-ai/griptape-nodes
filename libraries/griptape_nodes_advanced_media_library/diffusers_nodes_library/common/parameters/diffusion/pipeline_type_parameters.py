@@ -41,3 +41,11 @@ class DiffusionPipelineTypePipelineParameters(ABC):
     @abstractmethod
     def build_pipeline(self) -> diffusers.DiffusionPipeline:
         raise NotImplementedError
+
+    def is_prequantized(self) -> bool:
+        """Return True if the model is already quantized (e.g., bnb-4bit).
+
+        Pre-quantized models should not have layerwise casting or additional
+        quantization applied.
+        """
+        return False
