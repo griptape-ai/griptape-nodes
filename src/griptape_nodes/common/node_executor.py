@@ -1159,7 +1159,7 @@ class NodeExecutor:
             return current_item_values[iteration_index]
         return None
 
-    def get_parameter_values_per_iteration(
+    def get_parameter_values_per_iteration(  # noqa: C901, Needed to add special handling for node groups.
         self,
         start_node: BaseIterativeStartNode,
         package_result: PackageNodesAsSerializedFlowResultSuccess,

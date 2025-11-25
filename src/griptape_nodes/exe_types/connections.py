@@ -34,6 +34,7 @@ class Connections:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
+        *,
         is_node_group_internal: bool = False,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
@@ -47,7 +48,11 @@ class Connections:
             target_node, target_parameter, is_source=False
         ):
             connection = Connection(
-                source_node, source_parameter, target_node, target_parameter, is_node_group_internal
+                source_node,
+                source_parameter,
+                target_node,
+                target_parameter,
+                is_node_group_internal=is_node_group_internal,
             )
             # New index management.
             connection_id = id(connection)
@@ -137,7 +142,7 @@ class Connections:
                         return connection.source_node, connection.source_parameter
         return None  # No connection found for this control parameter
 
-    def get_connected_node(
+    def get_connected_node(  # noqa: C901, Need if checks.
         self, node: BaseNode, parameter: Parameter, direction: Direction | None = None, *, include_internal: bool = True
     ) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
@@ -374,7 +379,7 @@ class Connections:
         if node.name in self.outgoing_index:
             for connection_ids in self.outgoing_index[node.name].values():
                 for conn_id in connection_ids:
-                    connections.append(self.connections[conn_id])
+                    connections.append(self.connections[conn_id])  # noqa: PERF401, Keeping loop for understanding.
         return connections
 
     def get_all_incoming_connections(self, node: BaseNode) -> list[Connection]:
@@ -390,5 +395,5 @@ class Connections:
         if node.name in self.incoming_index:
             for connection_ids in self.incoming_index[node.name].values():
                 for conn_id in connection_ids:
-                    connections.append(self.connections[conn_id])
+                    connections.append(self.connections[conn_id])  # noqa: PERF401, Keeping loop for understanding.
         return connections

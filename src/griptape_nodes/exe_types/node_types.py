@@ -2050,9 +2050,7 @@ class NodeGroupNode(BaseNode):
         # Add the parameter to this node
         self.add_parameter(cloned_param)
 
-    def _create_proxy_parameter_for_connection(
-        self, original_param: Parameter, grouped_node: BaseNode, is_incoming: bool
-    ) -> Parameter:
+    def _create_proxy_parameter_for_connection(self, original_param: Parameter, *, is_incoming: bool) -> Parameter:
         """Create a proxy parameter on this NodeGroupNode for an external connection.
 
         Args:
@@ -2079,7 +2077,7 @@ class NodeGroupNode(BaseNode):
         result = GriptapeNodes.handle_request(request)
         if not isinstance(result, AddParameterToNodeResultSuccess):
             msg = "Failed to add parameter to node."
-            raise RuntimeError(msg)
+            raise TypeError(msg)
         # Retrieve and return the newly created parameter
         proxy_param = self.get_parameter_by_name(result.parameter_name)
         if proxy_param is None:
@@ -2105,19 +2103,13 @@ class NodeGroupNode(BaseNode):
                 all_nodes.update(node.nodes)
         return all_nodes
 
-    def map_external_connection(
-        self,
-        conn: Connection,
-        is_incoming: bool,  # noqa: FBT001
-        grouped_node: BaseNode,
-    ) -> bool:
+    def map_external_connection(self, conn: Connection, *, is_incoming: bool) -> bool:
         """Track a connection to/from a node in the group and rewire it through a proxy parameter.
 
         Args:
             conn: The external connection to track
             conn_id: ID of the connection
             is_incoming: True if connection is coming INTO the group
-            grouped_node: The node in the group involved in the connection
         """
         if is_incoming:
             grouped_parameter = conn.target_parameter
@@ -2135,13 +2127,13 @@ class NodeGroupNode(BaseNode):
         result = GriptapeNodes.handle_request(request)
         if not isinstance(result, DeleteConnectionResultSuccess):
             return False
-        proxy_parameter = self._create_proxy_parameter_for_connection(grouped_parameter, grouped_node, is_incoming)
+        proxy_parameter = self._create_proxy_parameter_for_connection(grouped_parameter, is_incoming=is_incoming)
         # Create connections for proxy parameter
-        self.create_connections_for_proxy(proxy_parameter, conn, is_incoming)
+        self.create_connections_for_proxy(proxy_parameter, conn, is_incoming=is_incoming)
         return True
 
     def create_connections_for_proxy(
-        self, proxy_parameter: Parameter, old_connection: Connection, is_incoming: bool
+        self, proxy_parameter: Parameter, old_connection: Connection, *, is_incoming: bool
     ) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -2168,15 +2160,15 @@ class NodeGroupNode(BaseNode):
         GriptapeNodes.handle_request(create_first_connection)
         GriptapeNodes.handle_request(create_second_connection)
 
-    def unmap_node_connections(  # noqa: C901
-        self, node: BaseNode, connections: Connections
-    ) -> None:
+    def unmap_node_connections(self, node: BaseNode, connections: Connections) -> None:
         """Remove tracking of an external connection, restore original connection, and clean up proxy parameter.
 
         Args:
             node: The node to unmap
+            connections: The connections object
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # For the node being removed - We need to figure out all of it's connections TO the node group. These connections need to be remapped.
         # If we delete connections from a proxy parameter, and it has no more connections, then the proxy parameter should be deleted unless it's user defined.
         # It will 1. not be in the proxy map. and 2. it will have a value of > 0
@@ -2417,7 +2409,6 @@ class NodeGroupNode(BaseNode):
                     self.map_external_connection(
                         conn=conn,
                         is_incoming=False,
-                        grouped_node=node,
                     )
 
             incoming_connections = connections.get_all_incoming_connections(node)
@@ -2426,7 +2417,6 @@ class NodeGroupNode(BaseNode):
                     self.map_external_connection(
                         conn=conn,
                         is_incoming=True,
-                        grouped_node=node,
                     )
 
     def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
@@ -2486,6 +2476,7 @@ class Connection:
         source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
+        *,
         is_node_group_internal: bool = False,
     ) -> None:
         self.source_node = source_node

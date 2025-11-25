@@ -958,7 +958,6 @@ class FlowManager:
             success = source_parent.map_external_connection(
                 conn=conn,
                 is_incoming=False,
-                grouped_node=source_node,
             )
             if success:
                 details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
@@ -975,7 +974,6 @@ class FlowManager:
             success = target_parent.map_external_connection(
                 conn=conn,
                 is_incoming=True,
-                grouped_node=target_node,
             )
             if success:
                 details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
