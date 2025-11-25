@@ -83,11 +83,13 @@ class CreateNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
         node_name: Final assigned name (may differ from requested)
         node_type: Class name of created node
         specific_library_name: Library that provided this node type
+        parent_flow_name: Name of the flow the node was created in
     """
 
     node_name: str
     node_type: str
     specific_library_name: str | None = None
+    parent_flow_name: str | None = None
 
 
 @dataclass
