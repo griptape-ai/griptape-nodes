@@ -2162,14 +2162,14 @@ class NodeGroupNode(BaseNode):
         # Store the mapping from proxy parameter to original node/parameter
         # only increment by 1, even though we're making two connections.
         if proxy_parameter.name not in self._proxy_param_to_connections:
-            self._proxy_param_to_connections[proxy_parameter.name] = 1
+            self._proxy_param_to_connections[proxy_parameter.name] = 2
         else:
-            self._proxy_param_to_connections[proxy_parameter.name] += 1
+            self._proxy_param_to_connections[proxy_parameter.name] += 2
         GriptapeNodes.handle_request(create_first_connection)
         GriptapeNodes.handle_request(create_second_connection)
 
     def unmap_node_connections(  # noqa: C901
-        self, node: BaseNode
+        self, node: BaseNode, connections: Connections
     ) -> None:
         """Remove tracking of an external connection, restore original connection, and clean up proxy parameter.
 
@@ -2177,17 +2177,17 @@ class NodeGroupNode(BaseNode):
             node: The node to unmap
         """
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # For the node being removed - We need to figure out all of it's connections TO the node group. These connections need to be remapped.
         # If we delete connections from a proxy parameter, and it has no more connections, then the proxy parameter should be deleted unless it's user defined.
         # It will 1. not be in the proxy map. and 2. it will have a value of > 0
-        connections = GriptapeNodes.FlowManager().get_connections()
         # Get all outgoing connections
         outgoing_connections = connections.get_outgoing_connections_to_node(node, to_node=self)
         # Delete outgoing connections
         for parameter_name, outgoing_connection_list in outgoing_connections.items():
             for outgoing_connection in outgoing_connection_list:
                 proxy_parameter = outgoing_connection.target_parameter
+                # get old connections first, since this will delete the proxy
+                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
                 # Delete the internal connection
                 GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
@@ -2197,19 +2197,6 @@ class NodeGroupNode(BaseNode):
                         target_node_name=self.name,
                     )
                 )
-                # Get the outgoing connections from the proxy parameter
-                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
-                if proxy_parameter.name in self._proxy_param_to_connections:
-                    self._proxy_param_to_connections[proxy_parameter.name] -= 1
-                    if self._proxy_param_to_connections[proxy_parameter.name] == 0:
-                        # Delete the proxy parameter. It no longer has any important connections.
-                        GriptapeNodes.NodeManager().on_remove_parameter_from_node_request(
-                            request=RemoveParameterFromNodeRequest(
-                                node_name=self.name, parameter_name=proxy_parameter.name
-                            )
-                        )
-                        del self._proxy_param_to_connections[proxy_parameter.name]
-                        self.metadata["right_parameters"].remove(proxy_parameter.name)
                 # Now create the new connection! We need to get the connections from the proxy parameter
                 for connection in remap_connections:
                     GriptapeNodes.FlowManager().on_create_connection_request(
@@ -2227,6 +2214,8 @@ class NodeGroupNode(BaseNode):
         for parameter_name, incoming_connection_list in incoming_connections.items():
             for incoming_connection in incoming_connection_list:
                 proxy_parameter = incoming_connection.source_parameter
+                # Get the incoming connections to the proxy parameter
+                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
                 # Delete the internal connection
                 GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
@@ -2236,19 +2225,6 @@ class NodeGroupNode(BaseNode):
                         target_node_name=node.name,
                     )
                 )
-                # Get the incoming connections to the proxy parameter
-                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
-                if proxy_parameter.name in self._proxy_param_to_connections:
-                    self._proxy_param_to_connections[proxy_parameter.name] -= 1
-                    if self._proxy_param_to_connections[proxy_parameter.name] == 0:
-                        # Delete the proxy parameter. It no longer has any important connections.
-                        GriptapeNodes.NodeManager().on_remove_parameter_from_node_request(
-                            request=RemoveParameterFromNodeRequest(
-                                node_name=self.name, parameter_name=proxy_parameter.name
-                            )
-                        )
-                        del self._proxy_param_to_connections[proxy_parameter.name]
-                        self.metadata["left_parameters"].remove(proxy_parameter.name)
                 # Now create the new connection! We need to get the connections to the proxy parameter
                 for connection in remap_connections:
                     GriptapeNodes.FlowManager().on_create_connection_request(
@@ -2311,6 +2287,7 @@ class NodeGroupNode(BaseNode):
         for parameter_name, outgoing_connection_list in outgoing_connections.items():
             for outgoing_connection in outgoing_connection_list:
                 proxy_parameter = outgoing_connection.target_parameter
+                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
                 GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=parameter_name,
@@ -2319,7 +2296,6 @@ class NodeGroupNode(BaseNode):
                         target_node_name=self.name,
                     )
                 )
-                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
                 for connection in remap_connections:
                     GriptapeNodes.FlowManager().on_delete_connection_request(
                         DeleteConnectionRequest(
@@ -2352,6 +2328,7 @@ class NodeGroupNode(BaseNode):
         for parameter_name, incoming_connection_list in incoming_connections.items():
             for incoming_connection in incoming_connection_list:
                 proxy_parameter = incoming_connection.source_parameter
+                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
                 GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=proxy_parameter.name,
@@ -2360,7 +2337,6 @@ class NodeGroupNode(BaseNode):
                         target_node_name=node.name,
                     )
                 )
-                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
                 for connection in remap_connections:
                     GriptapeNodes.FlowManager().on_delete_connection_request(
                         DeleteConnectionRequest(
@@ -2395,12 +2371,15 @@ class NodeGroupNode(BaseNode):
             self._remap_outgoing_connections(node, connections)
             self._remap_incoming_connections(node, connections)
 
-
-    def after_outgoing_connection_removed(self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter) -> None:
+    def after_outgoing_connection_removed(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
         self._cleanup_proxy_parameter(source_parameter, "right_parameters")
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
-    def after_incoming_connection_removed(self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter) -> None:
+    def after_incoming_connection_removed(
+        self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
+    ) -> None:
         self._cleanup_proxy_parameter(target_parameter, "left_parameters")
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
@@ -2473,7 +2452,7 @@ class NodeGroupNode(BaseNode):
             self.nodes.pop(node.name)
 
         for node in nodes:
-            self.unmap_node_connections(node)
+            self.unmap_node_connections(node, connections)
 
         self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
