@@ -896,7 +896,9 @@ class FlowManager:
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
         try:
             # Actually create the Connection.
-            if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node):
+            if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (
+                isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node
+            ):
                 is_node_group_internal = True
             else:
                 is_node_group_internal = request.is_node_group_internal
@@ -1120,7 +1122,6 @@ class FlowManager:
             return DeleteConnectionResultFailure(result_details=details)
 
         # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
-
 
         # Find the connection before it's deleted
         if (

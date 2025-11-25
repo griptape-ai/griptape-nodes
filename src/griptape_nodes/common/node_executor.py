@@ -516,7 +516,7 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def _package_loop_body(  # noqa: C901, PLR0915, PLR0912
+    async def _package_loop_body(  # noqa: C901, PLR0915
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
@@ -1228,7 +1228,10 @@ class NodeExecutor:
                         if proxy_param:
                             internal_connections = connections.get_all_outgoing_connections(target_node)
                             for internal_conn in internal_connections:
-                                if internal_conn.source_parameter.name == target_param_name and internal_conn.is_node_group_internal:
+                                if (
+                                    internal_conn.source_parameter.name == target_param_name
+                                    and internal_conn.is_node_group_internal
+                                ):
                                     target_node_name = internal_conn.target_node.name
                                     target_param_name = internal_conn.target_parameter.name
                                     break
@@ -1403,7 +1406,10 @@ class NodeExecutor:
                         if proxy_param:
                             internal_connections = connections.get_all_incoming_connections(source_node)
                             for internal_conn in internal_connections:
-                                if internal_conn.target_parameter.name == source_param_name and internal_conn.is_node_group_internal:
+                                if (
+                                    internal_conn.target_parameter.name == source_param_name
+                                    and internal_conn.is_node_group_internal
+                                ):
                                     source_node_name = internal_conn.source_node.name
                                     source_param_name = internal_conn.source_parameter.name
                                     break

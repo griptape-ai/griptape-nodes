@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState, NodeGroupNode
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeGroupNode, NodeResolutionState
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -46,7 +46,9 @@ class Connections:
         if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
             target_node, target_parameter, is_source=False
         ):
-            connection = Connection(source_node, source_parameter, target_node, target_parameter, is_node_group_internal)
+            connection = Connection(
+                source_node, source_parameter, target_node, target_parameter, is_node_group_internal
+            )
             # New index management.
             connection_id = id(connection)
             # Add connection to our dict here

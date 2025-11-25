@@ -534,25 +534,25 @@ class NodeManager:
         except Exception as err:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)
-
+        # Add node to the flow so it is discoverable.
+        flow.add_node(node_group)
+        obj_mgr.add_object_by_name(node_group.name, node_group)
+        self._name_to_parent_flow_name[node_group.name] = flow_name
         if request.node_names_to_add:
             nodes_to_add = []
             for node_name in request.node_names_to_add:
                 try:
                     node = self.get_node_by_name(node_name)
+                    nodes_to_add.append(node)
                 except KeyError:
                     details = f"Attempted to add node '{node_name}' to NodeGroup '{final_node_group_name}'. Failed because node was not found."
-                    return CreateNodeGroupResultFailure(result_details=details)
-                nodes_to_add.append(node)
+                    logger.warning(details)
             # Add Nodes manually here, so we don't have to add the NodeGroup and remove it if it fails.
             try:
                 node_group.add_nodes_to_group(nodes_to_add)
-            except Exception:
-                details = f"Failed to add nodes to NodeGroup '{final_node_group_name}'."
-                return CreateNodeGroupResultFailure(result_details=details)
-        flow.add_node(node_group)
-        obj_mgr.add_object_by_name(node_group.name, node_group)
-        self._name_to_parent_flow_name[node_group.name] = flow_name
+            except Exception as err:
+                msg = f"Failed to add nodes to NodeGroup '{final_node_group_name}': {err}"
+                logger.warning(msg)
         if request.flow_name is None:
             details = (
                 f"Successfully created NodeGroup '{final_node_group_name}' in the Current Context (Flow '{flow_name}')"

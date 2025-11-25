@@ -1915,7 +1915,7 @@ class NodeGroupNode(BaseNode):
             self.metadata["execution_environment"] = {}
         self.metadata["execution_environment"]["Griptape Nodes Library"] = {
             "start_flow_node": "StartFlow",
-            "parameter_names" : {}
+            "parameter_names": {},
         }
 
         # Add parameters from registered StartFlow nodes for each publishing library
@@ -2051,10 +2051,7 @@ class NodeGroupNode(BaseNode):
         self.add_parameter(cloned_param)
 
     def _create_proxy_parameter_for_connection(
-        self,
-        original_param: Parameter,
-        grouped_node: BaseNode,
-        is_incoming: bool
+        self, original_param: Parameter, grouped_node: BaseNode, is_incoming: bool
     ) -> Parameter:
         """Create a proxy parameter on this NodeGroupNode for an external connection.
 
@@ -2093,11 +2090,10 @@ class NodeGroupNode(BaseNode):
                 self.metadata["left_parameters"].append(proxy_param.name)
             else:
                 self.metadata["left_parameters"] = [proxy_param.name]
+        elif "right_parameters" in self.metadata:
+            self.metadata["right_parameters"].append(proxy_param.name)
         else:
-            if "right_parameters" in self.metadata:
-                self.metadata["right_parameters"].append(proxy_param.name)
-            else:
-                self.metadata["right_parameters"] = [proxy_param.name]
+            self.metadata["right_parameters"] = [proxy_param.name]
 
         return proxy_param
 
@@ -2234,7 +2230,9 @@ class NodeGroupNode(BaseNode):
         self.create_connections_for_proxy(proxy_parameter, conn, is_incoming)
         return True
 
-    def create_connections_for_proxy(self, proxy_parameter: Parameter, old_connection: Connection, is_incoming: bool) -> None:  # noqa: FBT001
+    def create_connections_for_proxy(
+        self, proxy_parameter: Parameter, old_connection: Connection, is_incoming: bool
+    ) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         create_first_connection = CreateConnectionRequest(
@@ -2369,6 +2367,133 @@ class NodeGroupNode(BaseNode):
             node.parent_group = self
             self.nodes[node.name] = node
 
+    def _cleanup_proxy_parameter(self, proxy_parameter: Parameter, metadata_key: str) -> None:
+        """Clean up proxy parameter if it has no more connections.
+
+        Args:
+            proxy_parameter: The proxy parameter to potentially clean up
+            metadata_key: The metadata key ('left_parameters' or 'right_parameters')
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        if proxy_parameter.name not in self._proxy_param_to_connections:
+            return
+
+        self._proxy_param_to_connections[proxy_parameter.name] -= 1
+        if self._proxy_param_to_connections[proxy_parameter.name] == 0:
+            GriptapeNodes.NodeManager().on_remove_parameter_from_node_request(
+                request=RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=proxy_parameter.name)
+            )
+            del self._proxy_param_to_connections[proxy_parameter.name]
+            if metadata_key in self.metadata and proxy_parameter.name in self.metadata[metadata_key]:
+                self.metadata[metadata_key].remove(proxy_parameter.name)
+
+    def _remap_outgoing_connections(self, node: BaseNode, connections: Connections) -> None:
+        """Remap outgoing connections that go through proxy parameters.
+
+        Args:
+            node: The node being added to the group
+            connections: Connections object from FlowManager
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        outgoing_connections = connections.get_outgoing_connections_to_node(node, to_node=self)
+        for parameter_name, outgoing_connection_list in outgoing_connections.items():
+            for outgoing_connection in outgoing_connection_list:
+                proxy_parameter = outgoing_connection.target_parameter
+                GriptapeNodes.FlowManager().on_delete_connection_request(
+                    DeleteConnectionRequest(
+                        source_parameter_name=parameter_name,
+                        target_parameter_name=proxy_parameter.name,
+                        source_node_name=node.name,
+                        target_node_name=self.name,
+                    )
+                )
+                remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
+                for connection in remap_connections:
+                    GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_parameter_name=connection.source_parameter.name,
+                            target_parameter_name=connection.target_parameter.name,
+                            source_node_name=connection.source_node.name,
+                            target_node_name=connection.target_node.name,
+                        )
+                    )
+                    GriptapeNodes.FlowManager().on_create_connection_request(
+                        CreateConnectionRequest(
+                            source_parameter_name=parameter_name,
+                            target_parameter_name=connection.target_parameter.name,
+                            source_node_name=node.name,
+                            target_node_name=connection.target_node.name,
+                        )
+                    )
+                self._cleanup_proxy_parameter(proxy_parameter, "right_parameters")
+
+    def _remap_incoming_connections(self, node: BaseNode, connections: Connections) -> None:
+        """Remap incoming connections that go through proxy parameters.
+
+        Args:
+            node: The node being added to the group
+            connections: Connections object from FlowManager
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        incoming_connections = connections.get_incoming_connections_from_node(node, from_node=self)
+        for parameter_name, incoming_connection_list in incoming_connections.items():
+            for incoming_connection in incoming_connection_list:
+                proxy_parameter = incoming_connection.source_parameter
+                GriptapeNodes.FlowManager().on_delete_connection_request(
+                    DeleteConnectionRequest(
+                        source_parameter_name=proxy_parameter.name,
+                        target_parameter_name=parameter_name,
+                        source_node_name=self.name,
+                        target_node_name=node.name,
+                    )
+                )
+                remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
+                for connection in remap_connections:
+                    GriptapeNodes.FlowManager().on_delete_connection_request(
+                        DeleteConnectionRequest(
+                            source_parameter_name=connection.source_parameter.name,
+                            target_parameter_name=proxy_parameter.name,
+                            source_node_name=connection.source_node.name,
+                            target_node_name=self.name,
+                        )
+                    )
+                    GriptapeNodes.FlowManager().on_create_connection_request(
+                        CreateConnectionRequest(
+                            source_parameter_name=connection.source_parameter.name,
+                            target_parameter_name=parameter_name,
+                            source_node_name=connection.source_node.name,
+                            target_node_name=node.name,
+                        )
+                    )
+                self._cleanup_proxy_parameter(proxy_parameter, "left_parameters")
+
+    def remap_to_internal(self, nodes: list[BaseNode], connections: Connections) -> None:
+        """Remap connections that are now internal after adding nodes to the group.
+
+        When nodes are added to a group, some connections that previously went through
+        proxy parameters may now be internal. This method identifies such connections
+        and restores direct connections between the nodes.
+
+        Args:
+            nodes: List of nodes being added to the group
+            connections: Connections object from FlowManager
+        """
+        for node in nodes:
+            self._remap_outgoing_connections(node, connections)
+            self._remap_incoming_connections(node, connections)
+
+
+    def after_outgoing_connection_removed(self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter) -> None:
+        self._cleanup_proxy_parameter(source_parameter, "right_parameters")
+        return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
+
+    def after_incoming_connection_removed(self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter) -> None:
+        self._cleanup_proxy_parameter(target_parameter, "left_parameters")
+        return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group and track their connections.
 
@@ -2383,6 +2508,7 @@ class NodeGroupNode(BaseNode):
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
         self.metadata["node_names_in_group"] = list(node_names_in_group)
+        self.remap_to_internal(nodes, connections)
         self._map_external_connections_for_nodes(nodes, connections, node_names_in_group)
 
     def _map_external_connections_for_nodes(
