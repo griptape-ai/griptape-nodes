@@ -2336,12 +2336,16 @@ class NodeExecutor:
                 continue
 
             # Set the value on the target node
+            # Provide source node/parameter to bypass connection conflict validation
+            # These values are coming from execution results, treat as upstream values
             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
                 GriptapeNodes.NodeManager().on_set_parameter_value_request(
                     SetParameterValueRequest(
                         node_name=target_node_name,
                         parameter_name=target_param_name,
                         value=param_value,
+                        incoming_connection_source_node_name=node.name,
+                        incoming_connection_source_parameter_name=target_param_name,
                     )
                 )
             target_node.parameter_output_values[target_param_name] = param_value
