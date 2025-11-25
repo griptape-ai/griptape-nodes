@@ -1654,6 +1654,17 @@
       }
     },
     {
+      "class_name": "GaussianEdgeFade",
+      "file_path": "griptape_nodes_library/image/gaussian_edge_fade.py",
+      "metadata": {
+        "category": "image",
+        "description": "Apply Gaussian-blurred alpha channel fade to image edges for smooth compositing with configurable fade distance, blur radius, edge shape (square/rounded), and selective edge control",
+        "display_name": "Gaussian Edge Fade",
+        "icon": "circle-dot-dashed",
+        "group": "effects"
+      }
+    },
+    {
       "class_name": "GoogleImageGeneration",
       "file_path": "griptape_nodes_library/image/google_image_generation.py",
       "metadata": {
