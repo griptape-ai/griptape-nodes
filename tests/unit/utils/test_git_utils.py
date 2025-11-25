@@ -16,8 +16,6 @@ from griptape_nodes.utils.git_utils import (
     GitRefError,
     GitRemoteError,
     GitRepositoryError,
-    _convert_ssh_to_https,
-    _is_ssh_url,
     clone_repository,
     extract_repo_name_from_url,
     get_current_ref,
@@ -697,18 +695,23 @@ class TestGitUpdateFromRemote:
 
             assert "No origin remote" in str(exc_info.value)
 
-    def test_git_update_from_remote_succeeds_when_subprocess_succeeds(self, temp_dir: Path) -> None:
-        """Test that function succeeds when subprocess call succeeds."""
+    def test_git_update_from_remote_succeeds_with_pygit2(self, temp_dir: Path) -> None:
+        """Test that function succeeds when pygit2 operations succeed."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
             patch("griptape_nodes.utils.git_utils.pygit2.Repository") as mock_repo_class,
             patch("griptape_nodes.utils.git_utils.has_uncommitted_changes") as mock_has_changes,
-            patch("griptape_nodes.utils.git_utils.subprocess.run") as mock_run,
         ):
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
             mock_has_changes.return_value = False
+
+            mock_upstream_ref = Mock()
+            mock_upstream_ref.target = "abc123"
+
+            mock_references = Mock()
+            mock_references.get.return_value = mock_upstream_ref
 
             mock_branch = Mock()
             mock_branch.upstream = Mock()
@@ -726,27 +729,21 @@ class TestGitUpdateFromRemote:
             mock_repo.head = mock_head
             mock_repo.branches = mock_branches
             mock_repo.remotes = {"origin": mock_remote}
+            mock_repo.references = mock_references
             mock_repo_class.return_value = mock_repo
-
-            mock_result = Mock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
 
             git_update_from_remote(temp_dir)
 
-            expected_calls = 2
-            assert mock_run.call_count == expected_calls
-            first_call_args = mock_run.call_args_list[0][0]
-            assert first_call_args[0] == ["git", "fetch", "origin"]
+            mock_remote.fetch.assert_called_once()
+            mock_repo.reset.assert_called_once()
 
-    def test_git_update_from_remote_raises_error_when_subprocess_fails(self, temp_dir: Path) -> None:
-        """Test that GitPullError is raised when subprocess call fails."""
+    def test_git_update_from_remote_raises_error_when_fetch_fails(self, temp_dir: Path) -> None:
+        """Test that GitPullError is raised when fetch fails."""
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
             patch("griptape_nodes.utils.git_utils.pygit2.Repository") as mock_repo_class,
             patch("griptape_nodes.utils.git_utils.has_uncommitted_changes") as mock_has_changes,
-            patch("griptape_nodes.utils.git_utils.subprocess.run") as mock_run,
         ):
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
@@ -754,6 +751,7 @@ class TestGitUpdateFromRemote:
 
             mock_branch = Mock()
             mock_branch.upstream = Mock()
+            mock_branch.upstream.branch_name = "origin/main"
 
             mock_head = Mock()
             mock_head.shorthand = "main"
@@ -762,6 +760,7 @@ class TestGitUpdateFromRemote:
             mock_branches.get.return_value = mock_branch
 
             mock_remote = Mock()
+            mock_remote.fetch.side_effect = pygit2.GitError("fetch failed")
             mock_repo = Mock()
             mock_repo.head_is_detached = False
             mock_repo.head = mock_head
@@ -769,15 +768,10 @@ class TestGitUpdateFromRemote:
             mock_repo.remotes = {"origin": mock_remote}
             mock_repo_class.return_value = mock_repo
 
-            mock_result = Mock()
-            mock_result.returncode = 1
-            mock_result.stderr = "error message"
-            mock_run.return_value = mock_result
-
             with pytest.raises(GitPullError) as exc_info:
                 git_update_from_remote(temp_dir)
 
-            assert "Git fetch failed" in str(exc_info.value)
+            assert "Git error during update" in str(exc_info.value)
 
 
 class TestSwitchBranch:
@@ -905,64 +899,6 @@ class TestSwitchBranch:
             assert "not found" in str(exc_info.value)
 
 
-class TestIsSshUrl:
-    """Test _is_ssh_url function."""
-
-    def test_is_ssh_url_returns_true_for_git_at_format(self) -> None:
-        """Test that git@ format is recognized as SSH."""
-        result = _is_ssh_url("git@github.com:user/repo.git")
-
-        assert result is True
-
-    def test_is_ssh_url_returns_true_for_ssh_protocol(self) -> None:
-        """Test that ssh:// protocol is recognized as SSH."""
-        result = _is_ssh_url("ssh://git@github.com/user/repo.git")
-
-        assert result is True
-
-    def test_is_ssh_url_returns_false_for_https_url(self) -> None:
-        """Test that HTTPS URLs are not recognized as SSH."""
-        result = _is_ssh_url("https://github.com/user/repo.git")
-
-        assert result is False
-
-    def test_is_ssh_url_returns_false_for_http_url(self) -> None:
-        """Test that HTTP URLs are not recognized as SSH."""
-        result = _is_ssh_url("http://github.com/user/repo.git")
-
-        assert result is False
-
-
-class TestConvertSshToHttps:
-    """Test _convert_ssh_to_https function."""
-
-    def test_convert_ssh_to_https_converts_git_at_format(self) -> None:
-        """Test that git@ format is converted to HTTPS."""
-        result = _convert_ssh_to_https("git@github.com:user/repo.git")
-
-        assert result == "https://github.com/user/repo.git"
-
-    def test_convert_ssh_to_https_converts_ssh_protocol(self) -> None:
-        """Test that ssh:// protocol is converted to HTTPS."""
-        result = _convert_ssh_to_https("ssh://git@github.com/user/repo.git")
-
-        assert result == "https://github.com/user/repo.git"
-
-    def test_convert_ssh_to_https_preserves_https_url(self) -> None:
-        """Test that HTTPS URLs are passed through unchanged."""
-        https_url = "https://github.com/user/repo.git"
-        result = _convert_ssh_to_https(https_url)
-
-        assert result == https_url
-
-    def test_convert_ssh_to_https_preserves_http_url(self) -> None:
-        """Test that HTTP URLs are passed through unchanged."""
-        http_url = "http://github.com/user/repo.git"
-        result = _convert_ssh_to_https(http_url)
-
-        assert result == http_url
-
-
 class TestCloneRepository:
     """Test clone_repository function."""
 
@@ -982,20 +918,6 @@ class TestCloneRepository:
 
         assert "already exists" in str(exc_info.value)
 
-    def test_clone_repository_converts_ssh_to_https(self, temp_dir: Path) -> None:
-        """Test that SSH URLs are converted to HTTPS before cloning."""
-        target_path = temp_dir / "repo"
-
-        with patch("griptape_nodes.utils.git_utils.pygit2.clone_repository") as mock_clone:
-            mock_clone.return_value = Mock()
-
-            clone_repository("git@github.com:user/repo.git", target_path)
-
-            mock_clone.assert_called_once()
-            call_args = mock_clone.call_args
-            assert call_args[0][0] == "https://github.com/user/repo.git"
-            assert call_args[0][1] == str(target_path)
-
     def test_clone_repository_clones_https_url(self, temp_dir: Path) -> None:
         """Test that HTTPS URLs are cloned successfully."""
         target_path = temp_dir / "repo"
@@ -1005,7 +927,7 @@ class TestCloneRepository:
 
             clone_repository("https://github.com/user/repo.git", target_path)
 
-            mock_clone.assert_called_once_with("https://github.com/user/repo.git", str(target_path))
+            mock_clone.assert_called_once_with("https://github.com/user/repo.git", str(target_path), callbacks=None)
 
     def test_clone_repository_raises_error_when_clone_returns_none(self, temp_dir: Path) -> None:
         """Test that GitCloneError is raised when clone returns None."""
