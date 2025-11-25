@@ -18,6 +18,7 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
             repo_ids=[
+                "diffusers/FLUX.2-dev-bnb-4bit",
                 "black-forest-labs/FLUX.2-dev",
             ],
             parameter_name="model",
