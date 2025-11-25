@@ -189,10 +189,8 @@ class GaussianEdgeFade(DataNode):
                     fade_distance_param.tooltip = (
                         "Distance from edge to fade as percentage of image dimension (e.g., 5 = 5%)"
                     )
-                    fade_distance_param.traits = {Slider(min_val=0, max_val=50)}
                 else:  # pixels
                     fade_distance_param.tooltip = "Distance from edge to fade in pixels (e.g., 50 = 50 pixels)"
-                    fade_distance_param.traits = {Slider(min_val=0, max_val=500)}
 
         return super().after_value_set(parameter, value)
 
@@ -362,7 +360,7 @@ class GaussianEdgeFade(DataNode):
         fade_bottom = fade_pixels if apply_edges["bottom"] else 0
         fade_left = fade_pixels if apply_edges["left"] else 0
         fade_right = fade_pixels if apply_edges["right"] else 0
-        
+
         # For rounded corners, we need to calculate the minimum distance to the "safe zone"
         # The safe zone is the inner rectangle that's fully opaque
         safe_top = fade_top
