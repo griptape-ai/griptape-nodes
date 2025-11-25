@@ -491,6 +491,7 @@ class NodeManager:
             node_name=node.name,
             node_type=node.__class__.__name__,
             specific_library_name=request.specific_library_name,
+            parent_flow_name=parent_flow_name,
             result_details=ResultDetails(message=details, level=log_level),
         )
 
