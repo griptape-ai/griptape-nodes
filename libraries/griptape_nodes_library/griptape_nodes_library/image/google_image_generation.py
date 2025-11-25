@@ -81,7 +81,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Object images (optional)
+        # Object images (optional, max 6)
         self.add_parameter(
             ParameterList(
                 name="object_images",
@@ -90,10 +90,11 @@ class GoogleImageGeneration(SuccessFailureNode):
                 tooltip="Optional reference images for high-fidelity objects",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"display_name": "Object Images", "expander": True},
+                max_items=MAX_OBJECT_IMAGES,
             )
         )
 
-        # Human images (optional)
+        # Human images (optional, max 5)
         self.add_parameter(
             ParameterList(
                 name="human_images",
@@ -102,6 +103,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 tooltip="Optional reference images for character consistency",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"display_name": "Human Images", "expander": True},
+                max_items=MAX_HUMAN_IMAGES,
             )
         )
 
