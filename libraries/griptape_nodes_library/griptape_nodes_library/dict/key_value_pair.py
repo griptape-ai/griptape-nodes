@@ -2,6 +2,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
 class KeyValuePair(DataNode):
@@ -21,16 +22,7 @@ class KeyValuePair(DataNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-        self.add_parameter(
-            Parameter(
-                name="value",
-                input_types=["str", "int", "float", "bool"],
-                default_value="",
-                type="str",
-                tooltip="Value for the dictionary",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
+        self.add_parameter(ParameterString("value", tooltip="Value for dictionary", allow_output=False))
         self.add_parameter(
             Parameter(
                 name="dictionary",
