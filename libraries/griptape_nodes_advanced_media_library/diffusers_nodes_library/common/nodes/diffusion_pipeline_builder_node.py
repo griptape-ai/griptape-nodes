@@ -190,7 +190,8 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
 
         with self.log_params.append_profile_to_logs("Applying optimizations"):
             optimization_kwargs = self.huggingface_pipeline_params.get_hf_pipeline_parameters()
-            optimize_diffusion_pipeline(pipe=pipe, **optimization_kwargs)
+            is_prequantized = self.params.pipeline_type_parameters.pipeline_type_pipeline_params.is_prequantized()
+            optimize_diffusion_pipeline(pipe=pipe, is_prequantized=is_prequantized, **optimization_kwargs)
 
         self.log_params.append_to_logs("Pipeline creation complete.\n")
         return pipe

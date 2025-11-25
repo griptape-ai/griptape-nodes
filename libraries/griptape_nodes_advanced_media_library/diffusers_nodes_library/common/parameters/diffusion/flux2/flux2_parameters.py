@@ -11,16 +11,19 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+QUANTIZED_FLUX_2_REPO_IDS = [
+    "diffusers/FLUX.2-dev-bnb-4bit"
+]
+
+FLUX_2_REPO_IDS = QUANTIZED_FLUX_2_REPO_IDS + ["black-forest-labs/FLUX.2-dev"]
+
 
 class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
-            repo_ids=[
-                "diffusers/FLUX.2-dev-bnb-4bit",
-                "black-forest-labs/FLUX.2-dev",
-            ],
+            repo_ids=FLUX_2_REPO_IDS,
             parameter_name="model",
             list_all_models=list_all_models,
         )
@@ -57,3 +60,7 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
             torch_dtype=torch.bfloat16,
             local_files_only=True,
         )
+
+    def is_prequantized(self) -> bool:
+        repo_id, _ = self._model_repo_parameter.get_repo_revision()
+        return repo_id in QUANTIZED_FLUX_2_REPO_IDS
