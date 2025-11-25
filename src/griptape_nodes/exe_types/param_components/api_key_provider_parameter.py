@@ -13,19 +13,19 @@ class ApiKeyValidationResult(NamedTuple):
     """Result from API key validation.
 
     Attributes:
-        api_key: The validated API key value
-        use_user_api: True if user API is enabled, False if proxy API is enabled
+        proxy_api_key: The Griptape Cloud API key for Authorization header (always required)
+        user_api_key: Optional user-provided API key for X-GTC-PROXY-AUTH-API-KEY header (None if not enabled)
     """
 
-    api_key: str
-    use_user_api: bool
+    proxy_api_key: str
+    user_api_key: str | None
 
 
 class ApiKeyProviderParameter:
     """Reusable component for adding API key provider switching functionality to nodes.
 
     This component adds:
-    - A toggle parameter to switch between proxy (Griptape) and user API keys
+    - A toggle parameter to enable user-provided API key (always uses proxy API)
     - A button on the toggle to open secrets settings
     - A message that shows/hides based on whether the user API key is set
     - Helper methods to validate and retrieve API keys
@@ -42,8 +42,12 @@ class ApiKeyProviderParameter:
 
         # In your node's _process method:
         validation_result = api_key_provider.validate_api_key()
-        api_key = validation_result.api_key
-        use_user_api = validation_result.use_user_api
+        headers = {
+            "Authorization": f"Bearer {validation_result.proxy_api_key}",
+            "Content-Type": "application/json",
+        }
+        if validation_result.user_api_key:
+            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
         ```
 
     Args:
@@ -132,10 +136,10 @@ class ApiKeyProviderParameter:
             self._node.hide_message_by_name(self.message_name)
 
     def is_user_api_enabled(self) -> bool:
-        """Check if user API is currently enabled.
+        """Check if user API key is currently enabled.
 
         Returns:
-            bool: True if user API is enabled, False if proxy API is enabled
+            bool: True if user API key is enabled, False otherwise
         """
         return bool(self._node.get_parameter_value(self.parameter_name) or False)
 
@@ -175,14 +179,22 @@ class ApiKeyProviderParameter:
         return api_key
 
     def validate_api_key(self) -> ApiKeyValidationResult:
-        """Validate and return API key and determine which API mode to use.
+        """Validate and return API keys for proxy API usage.
+
+        Always returns proxy API key. Optionally returns user API key if enabled.
 
         Returns:
-            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
+            ApiKeyValidationResult: Named tuple containing proxy_api_key and optional user_api_key
 
         Raises:
-            ValueError: If the required API key is not set
+            ValueError: If the proxy API key is not set, or if user API is enabled but user key is not set
         """
-        use_user_api = self.is_user_api_enabled()
-        api_key = self.get_api_key(use_user_api=use_user_api)
-        return ApiKeyValidationResult(api_key=api_key, use_user_api=use_user_api)
+        # Always need proxy API key
+        proxy_api_key = self.get_api_key(use_user_api=False)
+
+        # Optionally get user API key if enabled
+        user_api_key = None
+        if self.is_user_api_enabled():
+            user_api_key = self.get_api_key(use_user_api=True)
+
+        return ApiKeyValidationResult(proxy_api_key=proxy_api_key, user_api_key=user_api_key)

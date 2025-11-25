@@ -7,7 +7,7 @@ import os
 import time
 from contextlib import suppress
 from copy import deepcopy
-from typing import Any, NamedTuple
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
@@ -49,54 +49,14 @@ STATUS_ERROR = "Error"
 STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
-# API Configuration for switching between proxy and direct API
-# This pattern can be replicated for other nodes that support API switching
-BFL_API_CONFIG = {
-    "proxy": {
-        "api_key_name": "GT_CLOUD_API_KEY",
-        "base_url": None,  # Will be set in __init__ as self._proxy_base
-        "url_template": "{base}models/{model}",
-        "display_name": "Griptape model proxy",
-        "headers": lambda api_key: {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        "response_id_key": "generation_id",
-        "polling_url_template": "{base}generations/{id}",
-    },
-    "user": {
-        "api_key_name": "BFL_API_KEY",
-        "base_url": "https://api.bfl.ai/v1",
-        "url_template": "{base}/{model}",
-        "provider_name": "BlackForest Labs",
-        "display_name": "direct BFL API",
-        "api_key_url": "https://dashboard.bfl.ai/api/keys",
-        "headers": lambda api_key: {
-            "accept": "application/json",
-            "x-key": api_key,
-            "Content-Type": "application/json",
-        },
-        "response_id_key": "id",
-        "response_polling_url_key": "polling_url",
-        "polling_url_template": None,  # Uses polling_url from response
-    },
-}
-
-
-class ApiRequestResult(NamedTuple):
-    """Result from API request submission.
-
-    Attributes:
-        generation_id: The generation/request ID from the API
-        polling_url: The URL to poll for status updates (may be None for proxy mode)
-    """
-
-    generation_id: str | None
-    polling_url: str | None
+# API Configuration for proxy API
+PROXY_URL_TEMPLATE = "{base}models/{model}"
+POLLING_URL_TEMPLATE = "{base}generations/{id}"
+RESPONSE_ID_KEY = "generation_id"
 
 
 class FluxImageGeneration(SuccessFailureNode):
-    """Generate images using Flux models via API (supports both proxy and direct API modes).
+    """Generate images using Flux models via API (supports user-provided API keys via proxy).
 
     Inputs:
         - model (str): Flux model to use (default: "flux-kontext-pro")
@@ -118,23 +78,20 @@ class FluxImageGeneration(SuccessFailureNode):
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
-    USER_API_KEY_NAME = BFL_API_CONFIG.get("user", {}).get("api_key_name") or "BFL_API_KEY"
-    USER_API_KEY_URL = BFL_API_CONFIG.get("user", {}).get("api_key_url") or "https://dashboard.bfl.ai/api/keys"
-    USER_API_KEY_PROVIDER_NAME = BFL_API_CONFIG.get("user", {}).get("provider_name") or "BlackForest Labs"
+    USER_API_KEY_NAME = "BFL_API_KEY"
+    USER_API_KEY_URL = "https://dashboard.bfl.ai/api/keys"
+    USER_API_KEY_PROVIDER_NAME = "BlackForest Labs"
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
-        self.description = "Generate images using Flux models via API (supports both proxy and direct API modes)"
+        self.description = "Generate images using Flux models via API (supports user-provided API keys via proxy)"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/")
-
-        # Set proxy base URL in config for dynamic access
-        BFL_API_CONFIG["proxy"]["base_url"] = self._proxy_base
 
         # Add API key provider component
         self._api_key_provider = ApiKeyProviderParameter(
@@ -310,28 +267,26 @@ class FluxImageGeneration(SuccessFailureNode):
 
         try:
             validation_result = self._validate_api_key()
-            api_key = validation_result.api_key
-            use_user_api = validation_result.use_user_api
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
-        # Get headers and URL based on API mode
-        config_mode = "user" if use_user_api else "proxy"
-        config = BFL_API_CONFIG[config_mode]
-        headers = config["headers"](api_key)
+        # Build headers: always use proxy API key, optionally add user API key
+        headers = {
+            "Authorization": f"Bearer {validation_result.proxy_api_key}",
+            "Content-Type": "application/json",
+        }
+        if validation_result.user_api_key:
+            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
 
         model = params["model"]
-        api_mode_str = config["display_name"]
-        self._log(f"Generating image with {model} using {api_mode_str}")
+        self._log(f"Generating image with {model} using Griptape model proxy")
 
-        # Submit request to get generation ID and polling URL
+        # Submit request to get generation ID
         try:
-            request_result = await self._submit_request(params, headers, use_user_api=use_user_api)
-            generation_id = request_result.generation_id
-            polling_url = request_result.polling_url
+            generation_id = await self._submit_request(params, headers)
             if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
@@ -346,7 +301,7 @@ class FluxImageGeneration(SuccessFailureNode):
             return
 
         # Poll for result
-        await self._poll_for_result(generation_id, headers, use_user_api=use_user_api, polling_url=polling_url)
+        await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
@@ -398,30 +353,21 @@ class FluxImageGeneration(SuccessFailureNode):
         self._api_key_provider.after_value_set(parameter, value)
         return super().after_value_set(parameter, value)
 
-    async def _submit_request(
-        self, params: dict[str, Any], headers: dict[str, str], *, use_user_api: bool
-    ) -> ApiRequestResult:
-        """Submit request to API and return generation ID and polling URL.
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+        """Submit request to proxy API and return generation ID.
 
         Args:
             params: Request parameters
             headers: Request headers
-            use_user_api: Whether to use user API (True) or proxy API (False)
 
         Returns:
-            ApiRequestResult: Named tuple containing generation_id and polling_url
+            Generation ID string, or None if not found
         """
         payload = await self._build_payload(params)
-        config_mode = "user" if use_user_api else "proxy"
-        config = BFL_API_CONFIG[config_mode]
-
-        # Build URL based on API mode
-        base_url = config["base_url"]
         model = params["model"]
-        url = config["url_template"].format(base=base_url, model=model)
+        url = PROXY_URL_TEMPLATE.format(base=self._proxy_base, model=model)
 
-        api_mode_str = config["display_name"]
-        self._log(f"Submitting request to {api_mode_str} with {model}")
+        self._log(f"Submitting request to Griptape model proxy with {model}")
         self._log_request(payload)
 
         try:
@@ -457,26 +403,16 @@ class FluxImageGeneration(SuccessFailureNode):
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
-        # Extract ID and polling URL from response based on API mode
-        id_key = config["response_id_key"]
-        generation_id = response_json.get(id_key)
+        # Extract generation ID from response
+        generation_id = response_json.get(RESPONSE_ID_KEY)
 
         if generation_id:
             self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. {id_key}={generation_id}")
+            self._log(f"Submitted. {RESPONSE_ID_KEY}={generation_id}")
+            return str(generation_id)
 
-            # Get polling URL if available (only for user API mode)
-            polling_url = None
-            if use_user_api:
-                polling_url = response_json.get(config.get("response_polling_url_key"))
-                if not polling_url:
-                    # Fallback: construct polling URL
-                    polling_url = f"{config['base_url']}/get_result?id={generation_id}"
-
-            return ApiRequestResult(generation_id=str(generation_id), polling_url=polling_url)
-
-        self._log(f"No {id_key} returned from POST response")
-        return ApiRequestResult(generation_id=None, polling_url=None)
+        self._log(f"No {RESPONSE_ID_KEY} returned from POST response")
+        return None
 
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
@@ -576,30 +512,15 @@ class FluxImageGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(  # noqa: PLR0912, PLR0915, C901
-        self, generation_id: str, headers: dict[str, str], *, use_user_api: bool, polling_url: str | None = None
-    ) -> None:
-        """Poll the API endpoint until ready.
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+        """Poll the proxy API endpoint until ready.
 
         Args:
             generation_id: The generation/request ID to poll for
             headers: Request headers
-            use_user_api: Whether using user API (True) or proxy API (False)
-            polling_url: Optional polling URL from user API response (only used if use_user_api=True)
         """
-        # Build polling URL based on API mode
-        config_mode = "user" if use_user_api else "proxy"
-        config = BFL_API_CONFIG[config_mode]
-
-        if use_user_api and polling_url:
-            # Use polling URL from direct API response
-            get_url = polling_url
-        elif use_user_api:
-            # Fallback: construct polling URL for direct API
-            get_url = f"{config['base_url']}/get_result?id={generation_id}"
-        else:
-            # Proxy mode: use template
-            get_url = config["polling_url_template"].format(base=self._proxy_base, id=generation_id)
+        # Build polling URL for proxy API
+        get_url = POLLING_URL_TEMPLATE.format(base=self._proxy_base, id=generation_id)
 
         max_attempts = 120  # 10 minutes with 5s intervals
         poll_interval = 5
