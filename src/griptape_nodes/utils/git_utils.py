@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
@@ -850,6 +851,52 @@ def _get_ssh_callbacks() -> pygit2.RemoteCallbacks | None:
     return pygit2.RemoteCallbacks(credentials=pygit2.KeypairFromAgent("git"))
 
 
+def _is_git_available() -> bool:
+    """Check if git CLI is available on PATH.
+
+    Returns:
+        bool: True if git CLI is available, False otherwise.
+    """
+    try:
+        subprocess.run(
+            ["git", "--version"],  # noqa: S607
+            capture_output=True,
+            check=True,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+    else:
+        return True
+
+
+def _run_git_command(args: list[str], cwd: str, error_msg: str) -> subprocess.CompletedProcess[str]:
+    """Run a git command and raise GitCloneError on failure.
+
+    Args:
+        args: Git command arguments (e.g., ["git", "init"]).
+        cwd: Working directory for the command.
+        error_msg: Error message prefix to use if command fails.
+
+    Returns:
+        subprocess.CompletedProcess: The result of the command.
+
+    Raises:
+        GitCloneError: If the command returns a non-zero exit code.
+    """
+    result = subprocess.run(  # noqa: S603
+        args,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        msg = f"{error_msg}: {result.stderr}"
+        raise GitCloneError(msg)
+
+    return result
+
+
 def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
     """Clone a git repository to a target directory.
 
@@ -933,15 +980,107 @@ def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
     return library_data["metadata"]["library_version"]
 
 
-def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, dict]:
-    """Fetch library JSON file from a git repository using shallow clone.
+def _sparse_checkout_with_git_cli(remote_url: str, ref: str) -> tuple[str, str, dict]:
+    """Perform sparse checkout using git CLI to fetch only library JSON file.
 
-    This is optimized for checking library updates without downloading the entire repository.
-    Uses depth=1 shallow clone to minimize download size.
+    This is the most efficient method as it only downloads files matching the sparse
+    checkout patterns, not the entire repository.
 
     Args:
         remote_url: The git repository URL (HTTPS or SSH).
-        ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
+        ref: The git reference (branch, tag, or commit) to checkout.
+
+    Returns:
+        tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
+
+    Raises:
+        GitCloneError: If sparse checkout fails or library metadata is invalid.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        try:
+            # Initialize empty git repository
+            _run_git_command(["git", "init"], temp_dir, "Git init failed")
+
+            # Add remote
+            _run_git_command(
+                ["git", "remote", "add", "origin", remote_url],
+                temp_dir,
+                "Git remote add failed",
+            )
+
+            # Enable sparse checkout
+            _run_git_command(
+                ["git", "config", "core.sparseCheckout", "true"],
+                temp_dir,
+                "Git sparse checkout config failed",
+            )
+
+            # Configure sparse-checkout patterns
+            sparse_checkout_file = temp_path / ".git" / "info" / "sparse-checkout"
+            sparse_checkout_file.parent.mkdir(parents=True, exist_ok=True)
+            patterns = [
+                "griptape_nodes_library.json",
+                "*/griptape_nodes_library.json",
+                "*/*/griptape_nodes_library.json",
+                "griptape-nodes-library.json",
+                "*/griptape-nodes-library.json",
+                "*/*/griptape-nodes-library.json",
+            ]
+            sparse_checkout_file.write_text("\n".join(patterns))
+
+            # Fetch with depth 1 (shallow clone)
+            _run_git_command(
+                ["git", "fetch", "--depth=1", "origin", ref],
+                temp_dir,
+                f"Git fetch failed for {ref}",
+            )
+
+            # Checkout the ref
+            _run_git_command(["git", "checkout", "FETCH_HEAD"], temp_dir, "Git checkout failed")
+
+            # Find the library JSON file
+            library_json_path = find_file_in_directory(temp_path, "griptape[-_]nodes[-_]library.json")
+            if library_json_path is None:
+                msg = f"No library JSON file found in sparse checkout from {remote_url}"
+                raise GitCloneError(msg)
+
+            # Extract version from JSON
+            library_version = _extract_library_version_from_json(library_json_path, remote_url)
+
+            # Get commit SHA
+            rev_parse_result = _run_git_command(
+                ["git", "rev-parse", "HEAD"],
+                temp_dir,
+                "Git rev-parse failed",
+            )
+            commit_sha = rev_parse_result.stdout.strip()
+
+            # Read the JSON data before temp directory is deleted
+            try:
+                with library_json_path.open() as f:
+                    library_data = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                msg = f"Failed to read library file from {remote_url}: {e}"
+                raise GitCloneError(msg) from e
+
+        except subprocess.SubprocessError as e:
+            msg = f"Subprocess error during sparse checkout from {remote_url}: {e}"
+            raise GitCloneError(msg) from e
+
+        return (library_version, commit_sha, library_data)
+
+
+def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dict]:
+    """Perform shallow clone using pygit2 to fetch library JSON file.
+
+    This is a fallback method when git CLI is not available. It downloads all files
+    but with limited history (depth=1).
+
+    Args:
+        remote_url: The git repository URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit) to checkout.
 
     Returns:
         tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
@@ -995,5 +1134,30 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
         except pygit2.GitError as e:
             msg = f"Git error during clone from {remote_url}: {e}"
             raise GitCloneError(msg) from e
-        else:
-            return (library_version, commit_sha, library_data)
+
+        return (library_version, commit_sha, library_data)
+
+
+def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, dict]:
+    """Fetch library JSON file from a git repository.
+
+    This function uses the most efficient method available:
+    - If git CLI is available: uses sparse checkout (only downloads needed files)
+    - Otherwise: falls back to pygit2 shallow clone (downloads all files with depth=1)
+
+    Args:
+        remote_url: The git repository URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
+
+    Returns:
+        tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
+
+    Raises:
+        GitCloneError: If the operation fails or library metadata is invalid.
+    """
+    if _is_git_available():
+        logger.debug("Using git CLI for sparse checkout from %s", remote_url)
+        return _sparse_checkout_with_git_cli(remote_url, ref)
+
+    logger.debug("Git CLI not available, using pygit2 shallow clone from %s", remote_url)
+    return _shallow_clone_with_pygit2(remote_url, ref)

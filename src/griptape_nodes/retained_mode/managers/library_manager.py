@@ -2406,8 +2406,9 @@ class LibraryManager:
             git_remote = await asyncio.to_thread(get_git_remote, library_dir)
             if git_remote is None:
                 details = f"Library '{library_name}' is not a git repository or has no remote configured."
-                logger.warning(details)
-                return CheckLibraryUpdateResultFailure(result_details=details)
+                return CheckLibraryUpdateResultFailure(
+                    result_details=ResultDetails(message=details, level=logging.WARNING)
+                )
         except GitRemoteError as e:
             details = f"Failed to get git remote for Library '{library_name}': {e}"
             return CheckLibraryUpdateResultFailure(result_details=details)
@@ -3014,9 +3015,6 @@ class LibraryManager:
 
         for library_name, check_result in check_results.items():
             if not isinstance(check_result, CheckLibraryUpdateResultSuccess):
-                logger.warning(
-                    "Failed to check for updates for library '%s': %s", library_name, check_result.result_details
-                )
                 continue
 
             if not check_result.has_update:
