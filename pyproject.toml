@@ -32,6 +32,7 @@ dependencies = [
   "ruamel.yaml>=0.18.15",
   "asyncio-thread-runner>=1.0",
   "portalocker>=2.10.0",
+  "aiortc>=1.6.0",
 ]
 
 [project.optional-dependencies]

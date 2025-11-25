@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
         VersionCompatibilityManager,
     )
+    from griptape_nodes.retained_mode.managers.webrtc_manager import WebRTCManager
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
@@ -97,6 +98,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _sync_manager: SyncManager
     _user_manager: UserManager
     _project_manager: ProjectManager
+    _webrtc_manager: WebRTCManager
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -132,6 +134,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
             VersionCompatibilityManager,
         )
+        from griptape_nodes.retained_mode.managers.webrtc_manager import WebRTCManager
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
@@ -164,6 +167,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
+            self._webrtc_manager = WebRTCManager(self._config_manager, self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -337,6 +341,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ProjectManager(cls) -> ProjectManager:
         return GriptapeNodes.get_instance()._project_manager
+
+    @classmethod
+    def WebRTCManager(cls) -> WebRTCManager:
+        return GriptapeNodes.get_instance()._webrtc_manager
 
     @classmethod
     def clear_data(cls) -> None:
