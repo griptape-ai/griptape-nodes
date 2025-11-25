@@ -492,7 +492,6 @@ class NodeExecutor:
         )
 
         subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
-
         try:
             async with subprocess_executor as executor:
                 await executor.arun(
@@ -552,6 +551,9 @@ class NodeExecutor:
                     node_obj, connections, nodes_in_control_flow, visited_deps
                 )
                 all_nodes.update(deps)
+                if isinstance(node_obj, NodeGroupNode):
+                    node_children = node_obj.get_all_nodes()
+                    all_nodes.update(node_children.keys())
 
         # Exclude the start and end loop nodes from packaging
         all_nodes.discard(start_node.name)
@@ -595,8 +597,11 @@ class NodeExecutor:
             try:
                 library = LibraryRegistry.get_library(name=execution_type)
             except KeyError:
-                logger.warning("Could not find library '%s' for loop execution, using default library", execution_type)
+                msg = "Could not find library '%s' for loop execution", execution_type
+                logger.error(msg)
+                raise RuntimeError(msg)  # noqa: B904
 
+            library_name = library.get_library_data().name
         workflow_start_end_nodes = await self._get_workflow_start_end_nodes(library)
         start_node_type = workflow_start_end_nodes.start_flow_node_type
         end_node_type = workflow_start_end_nodes.end_flow_node_type
@@ -608,6 +613,7 @@ class NodeExecutor:
             start_node_type=start_node_type,
             end_node_type=end_node_type,
             start_node_library_name=library_name,
+            end_node_library_name=library_name,
             entry_control_node_name=entry_control_node_name,
             entry_control_parameter_name=entry_control_parameter_name,
             output_parameter_prefix=f"{end_node.name.replace(' ', '_')}_loop_",
@@ -1738,7 +1744,7 @@ class NodeExecutor:
         workflow_path: Path,
         workflow_result: Any,  # noqa: ARG002 - Used by wrapper methods for cleanup
         file_name_prefix: str,
-        execution_mode: str,
+        execution_type: str,
         *,
         run_sequentially: bool,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
@@ -1755,21 +1761,31 @@ class NodeExecutor:
             workflow_path: Path to the saved/published workflow file
             workflow_result: Result from saving/publishing the workflow
             file_name_prefix: Prefix for iteration-specific file names
-            execution_mode: Human-readable execution mode name for logging
+            execution_type: Human-readable execution mode name for logging
             run_sequentially: If True, run iterations one-at-a-time; if False, run concurrently
 
         Returns:
             Tuple of (iteration_results, successful_iterations, last_iteration_values)
         """
-        start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        start_node_name = start_node_mapping.node_name
+        # if it's private execution, we aren't republishing it in a library.
+        # So our original package is what is running, and we can count on using these mappings
+        if execution_type == PRIVATE_EXECUTION:
+            start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
+            start_node_name = start_node_mapping.node_name
+        # For published libraries, we need to get the new Start Node name, based on what their registered nodes are.
+        else:
+            library = LibraryRegistry.get_library(execution_type)
+            node_details = await self._get_workflow_start_end_nodes(library)
+            start_node_type = node_details.start_flow_node_type
+            node_metadata = library.get_node_metadata(start_node_type)
+            start_node_name = node_metadata.display_name
 
         mode_str = "sequentially" if run_sequentially else "concurrently"
         logger.info(
             "Executing %d iterations %s in %s for loop '%s'",
             total_iterations,
             mode_str,
-            execution_mode,
+            execution_type,
             end_loop_node.name,
         )
 
@@ -1838,7 +1854,7 @@ class NodeExecutor:
                 len(successful_iterations),
                 total_iterations,
                 mode_str,
-                execution_mode,
+                execution_type,
                 end_loop_node.name,
             )
 
@@ -1872,7 +1888,7 @@ class NodeExecutor:
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_mode="private subprocesses",
+                execution_type=PRIVATE_EXECUTION,
                 run_sequentially=True,
             )
         finally:
@@ -1908,7 +1924,7 @@ class NodeExecutor:
                 workflow_path=workflow_path,
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_mode="private subprocesses",
+                execution_type=PRIVATE_EXECUTION,
                 run_sequentially=False,
             )
         finally:
@@ -2046,7 +2062,7 @@ class NodeExecutor:
                 workflow_path=Path(published_workflow_filename),
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_mode=f"{library_name} publisher",
+                execution_type=execution_type,
                 run_sequentially=True,
             )
         finally:
@@ -2089,7 +2105,7 @@ class NodeExecutor:
                 workflow_path=Path(published_workflow_filename),
                 workflow_result=workflow_result,
                 file_name_prefix=file_name_prefix,
-                execution_mode=f"{library_name} publisher",
+                execution_type=library_name,
                 run_sequentially=False,
             )
         finally:

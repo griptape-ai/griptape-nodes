@@ -1,9 +1,8 @@
 """Init command for Griptape Nodes CLI."""
 
-import asyncio
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, NamedTuple
 
 import typer
 from rich.box import HEAVY_EDGE
@@ -11,12 +10,10 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from griptape_nodes.cli.commands.libraries import _sync_libraries
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
     CONFIG_FILE,
     ENV_FILE,
-    ENV_LIBRARIES_BASE_DIR,
     GT_CLOUD_BASE_URL,
     NODES_APP_URL,
     InitConfig,
@@ -25,6 +22,7 @@ from griptape_nodes.cli.shared import (
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.git_utils import extract_repo_name_from_url
 
 config_manager = GriptapeNodes.ConfigManager()
 secrets_manager = GriptapeNodes.SecretsManager()
@@ -53,10 +51,6 @@ def init_command(  # noqa: PLR0913
             "--register-griptape-cloud-library/--no-register-griptape-cloud-library",
             help="Install the Griptape Cloud Library.",
         ),
-    ] = None,
-    libraries_sync: Annotated[
-        bool | None,
-        typer.Option("--libraries-sync/--no-libraries-sync", help="Sync the Griptape Nodes libraries."),
     ] = None,
     no_interactive: Annotated[  # noqa: FBT002
         bool,
@@ -93,7 +87,6 @@ def init_command(  # noqa: PLR0913
             register_griptape_cloud_library=register_griptape_cloud_library,
             config_values=config_values,
             secret_values=secret_values,
-            libraries_sync=libraries_sync,
             bucket_name=bucket_name,
             hf_token=hf_token,
         )
@@ -110,10 +103,6 @@ def _run_init(config: InitConfig) -> None:
 
     # Run configuration flow
     _run_init_configuration(config)
-
-    # Sync libraries
-    if config.libraries_sync is not False:
-        asyncio.run(_sync_libraries(load_libraries_from_config=False))
 
     console.print("[bold green]Initialization complete![/bold green]")
 
@@ -240,14 +229,24 @@ def _handle_additional_library_config(config: InitConfig) -> bool | None:
         )
 
     if register_advanced_library is not None or register_griptape_cloud_library is not None:
-        libraries_to_register = _build_libraries_list(
+        libraries_config = _build_libraries_list(
             register_advanced_library=register_advanced_library,
             register_griptape_cloud_library=register_griptape_cloud_library,
         )
         config_manager.set_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
+            "app_events.on_app_initialization_complete.libraries_to_download",
+            libraries_config.libraries_to_download,
         )
-        console.print(f"[bold green]Libraries to register set to: {', '.join(libraries_to_register)}[/bold green]")
+        config_manager.set_config_value(
+            "app_events.on_app_initialization_complete.libraries_to_register",
+            libraries_config.libraries_to_register,
+        )
+        console.print(
+            f"[bold green]Libraries to download: {', '.join(libraries_config.libraries_to_download)}[/bold green]"
+        )
+        console.print(
+            f"[bold green]Libraries to register: {', '.join(libraries_config.libraries_to_register)}[/bold green]"
+        )
 
     return register_advanced_library
 
@@ -500,62 +499,69 @@ def _prompt_for_griptape_cloud_library(*, default_prompt_for_griptape_cloud_libr
     return Confirm.ask("Register Griptape Cloud Library?", default=default_prompt_for_griptape_cloud_library)
 
 
+class LibrariesConfig(NamedTuple):
+    """Configuration for library lists."""
+
+    libraries_to_download: list[str]
+    libraries_to_register: list[str]
+
+
 def _build_libraries_list(
     *, register_advanced_library: bool | None = False, register_griptape_cloud_library: bool | None = False
-) -> list[str]:
-    """Builds the list of libraries to register based on library settings."""
-    # TODO: https://github.com/griptape-ai/griptape-nodes/issues/929
-    libraries_key = "app_events.on_app_initialization_complete.libraries_to_register"
-    library_base_dir = Path(ENV_LIBRARIES_BASE_DIR)
+) -> LibrariesConfig:
+    """Builds the lists of libraries to download and register based on library settings."""
+    # Get current configuration for both lists
+    download_key = "app_events.on_app_initialization_complete.libraries_to_download"
+    register_key = "app_events.on_app_initialization_complete.libraries_to_register"
 
-    current_libraries = config_manager.get_config_value(
-        libraries_key,
+    current_downloads = config_manager.get_config_value(
+        download_key,
         config_source="user_config",
-        default=config_manager.get_config_value(libraries_key, config_source="default_config", default=[]),
+        default=config_manager.get_config_value(download_key, config_source="default_config", default=[]),
     )
-    new_libraries = current_libraries.copy()
+    current_register = config_manager.get_config_value(
+        register_key,
+        config_source="user_config",
+        default=config_manager.get_config_value(register_key, config_source="default_config", default=[]),
+    )
 
-    def _get_library_identifier(library_path: str) -> str:
-        """Get the unique identifier for a library based on parent/filename."""
-        path = Path(library_path)
-        return f"{path.parent.name}/{path.name}"
+    new_downloads = current_downloads.copy()
+    new_register = current_register.copy()
 
-    # Create a set of current library identifiers for fast lookup
-    current_identifiers = {_get_library_identifier(lib) for lib in current_libraries}
+    # Create a set of current download identifiers for fast lookup
+    current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
 
-    default_library = str(library_base_dir / "griptape_nodes_library/griptape_nodes_library.json")
-    default_identifier = _get_library_identifier(default_library)
-    # If somehow the user removed the default library, add it back
-    if default_identifier not in current_identifiers:
-        new_libraries.append(default_library)
+    # Default library
+    default_library = "https://github.com/griptape-ai/griptape-nodes-library-core@stable"
+    default_identifier = extract_repo_name_from_url(default_library)
+    if default_identifier not in current_download_identifiers:
+        new_downloads.append(default_library)
 
-    advanced_media_library = str(library_base_dir / "griptape_nodes_advanced_media_library/griptape_nodes_library.json")
-    advanced_identifier = _get_library_identifier(advanced_media_library)
+    # Advanced media library
+    advanced_media_library = "https://github.com/griptape-ai/griptape-nodes-library-advanced@stable"
+    advanced_identifier = extract_repo_name_from_url(advanced_media_library)
     if register_advanced_library:
-        # If the advanced media library is not registered, add it
-        if advanced_identifier not in current_identifiers:
-            new_libraries.append(advanced_media_library)
+        if advanced_identifier not in current_download_identifiers:
+            new_downloads.append(advanced_media_library)
     else:
-        # If the advanced media library is registered, remove it
-        libraries_to_remove = [lib for lib in new_libraries if _get_library_identifier(lib) == advanced_identifier]
+        libraries_to_remove = [lib for lib in new_downloads if extract_repo_name_from_url(lib) == advanced_identifier]
         for lib in libraries_to_remove:
-            new_libraries.remove(lib)
+            new_downloads.remove(lib)
 
-    griptape_cloud_library = str(library_base_dir / "griptape_cloud/griptape_nodes_library.json")
-    griptape_cloud_identifier = _get_library_identifier(griptape_cloud_library)
+    # Griptape Cloud library
+    griptape_cloud_library = "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud@stable"
+    griptape_cloud_identifier = extract_repo_name_from_url(griptape_cloud_library)
     if register_griptape_cloud_library:
-        # If the griptape cloud library is not registered, add it
-        if griptape_cloud_identifier not in current_identifiers:
-            new_libraries.append(griptape_cloud_library)
+        if griptape_cloud_identifier not in current_download_identifiers:
+            new_downloads.append(griptape_cloud_library)
     else:
-        # If the griptape cloud library is registered, remove it
         libraries_to_remove = [
-            lib for lib in new_libraries if _get_library_identifier(lib) == griptape_cloud_identifier
+            lib for lib in new_downloads if extract_repo_name_from_url(lib) == griptape_cloud_identifier
         ]
         for lib in libraries_to_remove:
-            new_libraries.remove(lib)
+            new_downloads.remove(lib)
 
-    return new_libraries
+    return LibrariesConfig(libraries_to_download=new_downloads, libraries_to_register=new_register)
 
 
 def _create_new_bucket(bucket_name: str) -> str:
