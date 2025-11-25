@@ -295,7 +295,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         try:
             async with httpx.AsyncClient() as client:
-                post_resp = await client.post(post_url, json=payload, headers=headers, timeout=120)
+                post_resp = await client.post(post_url, json=payload, headers=headers, timeout=None)
                 post_resp.raise_for_status()
                 response_json = post_resp.json()
         except httpx.HTTPStatusError as e:
