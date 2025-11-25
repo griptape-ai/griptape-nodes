@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -23,6 +23,20 @@ if TYPE_CHECKING:
 
 # Type alias for macro variable dictionaries (used by ParsedMacro)
 MacroVariables = dict[str, str | int]
+
+
+class MacroPath(NamedTuple):
+    """A macro path with its parsed template and variable values.
+
+    Used when file paths need macro resolution before filesystem operations.
+
+    Attributes:
+        parsed_macro: The parsed macro template
+        variables: Variable values for macro substitution
+    """
+
+    parsed_macro: ParsedMacro
+    variables: MacroVariables
 
 
 class PathResolutionFailureReason(StrEnum):

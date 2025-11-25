@@ -1,0 +1,82 @@
+name: Sync Libraries
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "libraries/**"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        library:
+          - source_path: libraries/griptape_nodes_library
+            target_repo: griptape-ai/griptape-nodes-library-core
+            name: Core Library
+          - source_path: libraries/griptape_nodes_advanced_media_library
+            target_repo: griptape-ai/griptape-nodes-library-advanced
+            name: Advanced Media Library
+          - source_path: libraries/griptape_cloud
+            target_repo: griptape-ai/griptape-nodes-library-griptape-cloud
+            name: Griptape Cloud Library
+
+    name: Sync ${{ matrix.library.name }}
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          path: source
+
+      - name: Check if library changed
+        id: changed
+        run: |
+          cd source
+          if git diff --name-only HEAD~1 HEAD | grep -q "^${{ matrix.library.source_path }}/"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout target repository
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.library.target_repo }}
+          token: ${{ secrets.LIBRARY_SYNC_TOKEN }}
+          path: target
+
+      - name: Sync library files
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          # Remove all files from target except .git
+          cd target
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cd ..
+
+          # Copy library contents to target root
+          cp -r source/${{ matrix.library.source_path }}/. target/
+
+          # Remove .venv if it exists
+          rm -rf target/.venv
+
+      - name: Commit and push changes
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          cd target
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Sync from griptape-nodes@${GITHUB_SHA::7}"
+            git push
+          else
+            echo "No changes to commit"
+          fi

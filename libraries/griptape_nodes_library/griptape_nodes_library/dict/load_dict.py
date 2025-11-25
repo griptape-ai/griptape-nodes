@@ -4,7 +4,9 @@ from griptape.loaders import TextLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.utils.dict_utils import to_dict
+from griptape_nodes_library.utils.file_utils import SUPPORTED_TEXT_EXTENSIONS
 
 
 class LoadDictionary(ControlNode):
@@ -15,29 +17,24 @@ class LoadDictionary(ControlNode):
     ) -> None:
         super().__init__(name, metadata)
 
-        # Define supported file formats
-        self.supported_formats = (
-            ".data",
-            ".env",
-            ".info",
-            ".json",
-            ".text",
-            ".txt",
-            ".yaml",
-            ".yml",
-        )
-
         # Add output parameters
-        self.add_parameter(
-            Parameter(
-                name="file_path",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["str"],
-                type="str",
-                default_value="",
-                tooltip="The full path to the loaded file.",
+        self.file_path = Parameter(
+            name="file_path",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            input_types=["str"],
+            type="str",
+            default_value="",
+            tooltip="The full path to the loaded file.",
+        )
+        self.file_path.add_trait(
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                multiple=False,
+                file_types=list(SUPPORTED_TEXT_EXTENSIONS),
             )
         )
+        self.add_parameter(self.file_path)
 
         self.add_parameter(
             Parameter(

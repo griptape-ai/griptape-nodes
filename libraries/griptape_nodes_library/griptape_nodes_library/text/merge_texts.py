@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -7,6 +8,10 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+
+logger = logging.getLogger("griptape_nodes")
+
+DEFAULT_MERGE_STRING = "\\n\\n"
 
 
 class MergeTexts(DataNode):
@@ -34,7 +39,7 @@ class MergeTexts(DataNode):
                 name="merge_string",
                 allow_output=False,
                 placeholder_text="text separator",
-                default_value="\\n\\n",
+                default_value=DEFAULT_MERGE_STRING,
                 tooltip="The string to use as separator between inputs.",
             )
         )
@@ -60,7 +65,41 @@ class MergeTexts(DataNode):
             )
         )
 
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        # Check if this is the merge_string parameter during initial setup
+        if (
+            param_name == "merge_string"
+            and initial_setup
+            and self.metadata.get("empty_merge_string_migrated") is not True
+            and (value is None or value == "")
+        ):
+            logger.info("%s: Migrating empty merge_string to default value", self.name)
+            value = DEFAULT_MERGE_STRING
+            self.metadata["empty_merge_string_migrated"] = True
+
+        # Call the parent implementation
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        # If merge_string is set manually (not during initial_setup), mark migration as complete
+        # This ensures user's explicit choice is preserved on future loads
+        if parameter.name == "merge_string":
+            self.metadata["empty_merge_string_migrated"] = True
+
         if parameter.name.startswith("input_") or parameter.name in ["merge_string", "whitespace"]:
             self._merge_texts()
         return super().after_value_set(parameter, value)
@@ -84,17 +123,11 @@ class MergeTexts(DataNode):
                 input_texts.append(text)
 
         # Get the separator string and replace \n with actual newlines
-        # If trim_whitespace is True, use separator as-is (even if empty)
-        # If trim_whitespace is False and separator is None or empty, default to \\n\\n (double newline)
-        separator = self.get_parameter_value("merge_string")
-        if not trim_whitespace and (separator is None or separator == ""):
-            separator = "\\n\\n"
-        # Replace escaped newlines with actual newlines
-        if separator is not None:
-            separator = separator.replace("\\n", "\n")
+        separator = self.get_parameter_value("merge_string") or ""
+        formatted_separator = separator.replace("\\n", "\n")
 
-        # Join all the inputs with the separator
-        merged_text = separator.join(input_texts)
+        # Join all the inputs with the formatted_separator
+        merged_text = formatted_separator.join(input_texts)
         # Only strip the final result if trim_whitespace is True
         if trim_whitespace:
             merged_text = merged_text.strip()

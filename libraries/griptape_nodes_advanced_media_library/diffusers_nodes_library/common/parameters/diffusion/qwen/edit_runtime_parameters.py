@@ -50,6 +50,14 @@ class QwenEditPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         )
         self._node.add_parameter(
             Parameter(
+                name="true_cfg_scale",
+                default_value=1.0,
+                type="float",
+                tooltip="True classifier-free guidance (guidance scale) is enabled when true_cfg_scale > 1 and negative_prompt is provided.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="guidance_scale",
                 default_value=4.0,
                 type="float",
@@ -60,6 +68,7 @@ class QwenEditPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("prompt")
         self._node.remove_parameter_element_by_name("negative_prompt")
+        self._node.remove_parameter_element_by_name("true_cfg_scale")
         self._node.remove_parameter_element_by_name("guidance_scale")
         self._node.remove_parameter_element_by_name("image")
 
@@ -74,6 +83,7 @@ class QwenEditPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         return {
             "prompt": self._node.get_parameter_value("prompt"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
+            "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "image": self.get_image_pil(),
         }

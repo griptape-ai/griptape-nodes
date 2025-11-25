@@ -123,7 +123,7 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
         if hasattr(pipe, "enable_vae_slicing"):
             logger.info("Enabling vae slicing")
             pipe.enable_vae_slicing()
-        elif hasattr(pipe, "vae"):
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "use_slicing"):
             logger.info("Enabling vae slicing")
             pipe.vae.enable_slicing()
 
@@ -217,9 +217,11 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
         if hasattr(pipe, "enable_vae_slicing"):
             logger.info("Enabling vae slicing")
             pipe.enable_vae_slicing()
-        elif hasattr(pipe, "vae"):
+        elif hasattr(pipe, "vae") and hasattr(pipe.vae, "use_slicing"):
             logger.info("Enabling vae slicing")
             pipe.vae.enable_slicing()
+        elif hasattr(pipe, "vae"):
+            logger.debug("VAE does not support slicing (e.g., AutoencoderKLTemporalDecoder), skipping")
     if transformer_layerwise_casting and hasattr(pipe, "transformer"):
         logger.info("Enabling fp8 layerwise casting for transformer")
         pipe.transformer.enable_layerwise_casting(
@@ -294,7 +296,11 @@ def clear_diffusion_pipeline(
                 setattr(pipe, component_name, None)
 
     del pipe
+    cleanup_memory_caches()
 
+
+def cleanup_memory_caches() -> None:
+    """Clear memory caches."""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()

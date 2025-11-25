@@ -73,6 +73,8 @@ websocket_event_loop_ready = threading.Event()
 # Semaphore to limit concurrent requests
 REQUEST_SEMAPHORE = asyncio.Semaphore(100)
 
+config_manager = GriptapeNodes.ConfigManager()
+
 
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
@@ -81,10 +83,12 @@ class EventLogHandler(logging.Handler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        log_event = AppEvent(
-            payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
-        )
-        griptape_nodes.EventManager().put_event(log_event)
+        log_level_no = logging.getLevelNamesMapping()[config_manager.get_config_value("log_level").upper()]
+        if record.levelno >= log_level_no:
+            log_event = AppEvent(
+                payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
+            )
+            griptape_nodes.EventManager().put_event(log_event)
 
 
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
@@ -313,6 +317,10 @@ async def _process_app_event(event: AppEvent) -> None:
 
 async def _process_node_event(event: GriptapeNodeEvent) -> None:
     """Process GriptapeNodeEvents and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(event):
+        return
+
     # Emit the result back to the GUI
     result_event = event.wrapped_event
 
@@ -341,11 +349,19 @@ async def _process_node_event(event: GriptapeNodeEvent) -> None:
 
 async def _process_execution_node_event(event: ExecutionGriptapeNodeEvent) -> None:
     """Process ExecutionGriptapeNodeEvents and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(event):
+        return
+
     await _send_message("execution_event", event.wrapped_event.json())
 
 
 async def _process_progress_event(gt_event: ProgressEvent) -> None:
     """Process Griptape framework events and send them to the API (async version)."""
+    # Check if events are suppressed
+    if griptape_nodes.EventManager().should_suppress_event(gt_event):
+        return
+
     node_name = gt_event.node_name
     if node_name:
         value = gt_event.value

@@ -71,6 +71,19 @@ Press **y** to install the Advanced Media Library, or **n** to skip installation
 
     Refer to each node's documentation to determine which nodes need which models; they each have links to specific requirements.
 
+## What happened to deprecated nodes from the Advanced Media Library?
+
+Version 0.64.0 removed deprecated nodes from the Advanced Media Library. These nodes were previously marked for deprecation and have been replaced with more flexible alternatives.
+
+If you have workflows that use deprecated nodes, please refer to the [MIGRATION.md](https://github.com/griptape-ai/griptape-nodes/blob/main/MIGRATION.md) guide. This comprehensive guide provides:
+
+- A complete list of removed nodes and their replacements
+- Step-by-step migration instructions
+- Visual examples of replacement nodes
+- Details about the new Diffusion Pipeline Builder system
+
+The migration guide includes replacements for all deprecated image processing, diffusion pipeline, upscaling, and LoRA nodes.
+
 ## How do I uninstall Griptape Nodes?
 
 ```bash

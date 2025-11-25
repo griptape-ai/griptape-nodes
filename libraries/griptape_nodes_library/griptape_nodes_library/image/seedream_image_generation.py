@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import os
@@ -9,11 +10,11 @@ from copy import deepcopy
 from typing import Any
 from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -101,7 +102,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
         api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/models/")
+        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # Model selection
         self.add_parameter(
@@ -338,10 +339,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+    async def aprocess(self) -> None:
+        await self._process()
 
-    def _process(self) -> None:
+    async def _process(self) -> None:
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -360,20 +361,24 @@ class SeedreamImageGeneration(SuccessFailureNode):
         model = params["model"]
         self._log(f"Generating image with {model}")
 
+        # Submit request to get generation ID
         try:
-            response = self._submit_request(params, headers)
-            if response:
-                self._handle_response(response)
-            else:
+            generation_id = await self._submit_request(params, headers)
+            if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No response received from API. Cannot proceed with generation.",
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
                 )
+                return
         except RuntimeError as e:
-            # HTTP error or other runtime error during submission
+            # HTTP error during submission
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
+            return
+
+        # Poll for result
+        await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
         params = {
@@ -400,21 +405,22 @@ class SeedreamImageGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
-        payload = self._build_payload(params)
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+        payload = await self._build_payload(params)
         # Map friendly model name to API model ID
         api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
-        proxy_url = urljoin(self._proxy_base, api_model_id)
+        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
 
         self._log(f"Submitting request to Griptape model proxy with model: {params['model']}")
         self._log_request(payload)
 
         try:
-            response = requests.post(proxy_url, json=payload, headers=headers, timeout=None)  # noqa: S113
-            response.raise_for_status()
-            response_json = response.json()
-            self._log("Request submitted successfully")
-        except requests.exceptions.HTTPError as e:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
+                response_json = response.json()
+                self._log("Request submitted successfully")
+        except httpx.HTTPStatusError as e:
             self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
             # Try to parse error response body
             try:
@@ -428,10 +434,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._log(f"Request failed: {e}")
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
-        else:
-            return response_json
 
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Extract generation_id from response
+        generation_id = response_json.get("generation_id")
+        if generation_id:
+            self.parameter_output_values["generation_id"] = str(generation_id)
+            self._log(f"Submitted. generation_id={generation_id}")
+            return str(generation_id)
+        self._log("No generation_id returned from POST response")
+        return None
+
+    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         model = params["model"]
         # Map friendly model name to API model ID
         api_model_id = MODEL_MAPPING.get(model, model)
@@ -454,7 +467,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             if images:
                 image_array = []
                 for img in images:
-                    image_data = self._process_input_image(img)
+                    image_data = await self._process_input_image(img)
                     if image_data:
                         image_array.append(image_data)
                 if image_array:
@@ -467,13 +480,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
         elif model == "seededit-3.0-i2i":
             # Add guidance scale and required image for seededit
             payload["guidance_scale"] = params["guidance_scale"]
-            image_data = self._process_input_image(params["image"])
+            image_data = await self._process_input_image(params["image"])
             if image_data:
                 payload["image"] = image_data
 
         return payload
 
-    def _process_input_image(self, image_input: Any) -> str | None:
+    async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""
         if not image_input:
             return None
@@ -483,7 +496,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if not image_value:
             return None
 
-        return self._convert_to_base64_data_uri(image_value)
+        return await self._convert_to_base64_data_uri(image_value)
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
@@ -507,7 +520,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return None
 
-    def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
+    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
         # If it's already a data URI, return it
         if image_value.startswith("data:image/"):
@@ -515,15 +528,15 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # If it's a URL, download and convert to base64
         if image_value.startswith(("http://", "https://")):
-            return self._download_and_encode_image(image_value)
+            return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix
         return f"data:image/png;base64,{image_value}"
 
-    def _download_and_encode_image(self, url: str) -> str | None:
+    async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            image_bytes = self._download_bytes_from_url(url)
+            image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
                 import base64
 
@@ -564,47 +577,123 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    def _handle_response(self, response: dict[str, Any]) -> None:
-        self.parameter_output_values["provider_response"] = response
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+        """Poll the generations endpoint until ready."""
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
+        max_attempts = 240  # 20 minutes with 5s intervals
+        poll_interval = 5
 
-        # Extract generation ID if available
-        generation_id = response.get("id", response.get("created", ""))
-        self.parameter_output_values["generation_id"] = str(generation_id)
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_attempts):
+                try:
+                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
+                    response = await client.get(get_url, headers=headers, timeout=60)
+                    response.raise_for_status()
+                    result_json = response.json()
 
-        # Extract image data (expecting single image)
-        data = response.get("data", [])
-        if not data:
-            self._log("No image data in response")
-            self.parameter_output_values["image_url"] = None
+                    # Update provider_response with latest polling data
+                    self.parameter_output_values["provider_response"] = result_json
+
+                    status = result_json.get("status", "unknown")
+                    self._log(f"Status: {status}")
+
+                    if status == "COMPLETED":
+                        # Fetch the actual result
+                        await self._fetch_result(generation_id, headers, client)
+                        return
+                    if status in ["FAILED", "ERROR"]:
+                        self._log(f"Generation failed with status: {status}")
+                        self._set_safe_defaults()
+                        # Extract error details from the response
+                        error_details = self._extract_error_details(result_json)
+                        self._set_status_results(was_successful=False, result_details=error_details)
+                        return
+
+                    # Still processing (QUEUED or RUNNING), wait before next poll
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(poll_interval)
+
+                except httpx.HTTPStatusError as e:
+                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
+                        self._set_status_results(was_successful=False, result_details=error_msg)
+                        return
+                except Exception as e:
+                    self._log(f"Error while polling: {e}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        error_msg = f"Failed to poll generation status: {e}"
+                        self._set_status_results(was_successful=False, result_details=error_msg)
+                        return
+
+            # Timeout reached
+            self._log("Polling timed out waiting for result")
+            self._set_safe_defaults()
             self._set_status_results(
-                was_successful=False, result_details="Generation completed but no image data was found in the response."
-            )
-            return
-
-        # Take first image from response
-        image_data = data[0]
-
-        # Always using URL format
-        image_url = image_data.get("url")
-        if image_url:
-            self._save_image_from_url(image_url, generation_id)
-        else:
-            self._log("No image URL in response")
-            self.parameter_output_values["image_url"] = None
-            self._set_status_results(
-                was_successful=False, result_details="Generation completed but no image URL was found in the response."
+                was_successful=False,
+                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
             )
 
-    def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
+    async def _fetch_result(self, generation_id: str, headers: dict[str, str], client: httpx.AsyncClient) -> None:
+        """Fetch the final result from the generations endpoint."""
+        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
+        self._log(f"Fetching result from {result_url}")
+
+        try:
+            response = await client.get(result_url, headers=headers, timeout=60)
+            response.raise_for_status()
+            result_json = response.json()
+
+            # Update provider_response with the final result
+            self.parameter_output_values["provider_response"] = result_json
+
+            # Extract image data (expecting single image)
+            data = result_json.get("data", [])
+            if not data:
+                self._log("No image data in result")
+                self.parameter_output_values["image_url"] = None
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="Generation completed but no image data was found in the response.",
+                )
+                return
+
+            # Take first image from response
+            image_data = data[0]
+
+            # Always using URL format
+            image_url = image_data.get("url")
+            if image_url:
+                await self._save_image_from_url(image_url, generation_id)
+            else:
+                self._log("No image URL in result")
+                self.parameter_output_values["image_url"] = None
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="Generation completed but no image URL was found in the response.",
+                )
+        except httpx.HTTPStatusError as e:
+            self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
+            self._set_safe_defaults()
+            error_msg = f"Failed to fetch generation result: HTTP {e.response.status_code}"
+            self._set_status_results(was_successful=False, result_details=error_msg)
+        except Exception as e:
+            self._log(f"Error fetching result: {e}")
+            self._set_safe_defaults()
+            error_msg = f"Failed to fetch generation result: {e}"
+            self._set_status_results(was_successful=False, result_details=error_msg)
+
+    async def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
+        """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = self._download_bytes_from_url(image_url)
+            image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = (
                     f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
                 )
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
@@ -638,6 +727,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if not response_json:
             return "Generation failed with no error details provided by API."
 
+        # Check for v2 API status_detail first (for FAILED/ERROR statuses)
+        status_detail = response_json.get("status_detail")
+        if status_detail:
+            error_msg = self._format_status_detail_error(status_detail)
+            if error_msg:
+                return error_msg
+
         top_level_error = response_json.get("error")
         parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
 
@@ -652,6 +748,58 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Final fallback
         return f"Generation failed.\n\nFull API response:\n{response_json}"
+
+    def _format_status_detail_error(self, status_detail: dict[str, Any]) -> str | None:
+        r"""Format error message from v2 API status_detail field.
+
+        Args:
+            status_detail: The status_detail object from a FAILED/ERROR generation response
+            Example: {"error": "invalid input", "details": "{\"error\":{\"code\":\"...\",\"message\":\"...\"}}"}
+
+        Returns:
+            A formatted error message string, or None if status_detail doesn't contain useful error info
+        """
+        if not isinstance(status_detail, dict):
+            return None
+
+        self._log(f"Parsing status_detail: {status_detail}")
+
+        # Extract top-level error message
+        top_error = status_detail.get("error", "")
+
+        # Try to parse the details field (which is a JSON string)
+        details_str = status_detail.get("details")
+        if details_str and isinstance(details_str, str):
+            self._log(f"Found details string, attempting to parse: {details_str[:200]}...")
+            try:
+                details_obj = _json.loads(details_str)
+                self._log(f"Parsed details object: {details_obj}")
+
+                if isinstance(details_obj, dict):
+                    error_info = details_obj.get("error", {})
+                    if isinstance(error_info, dict):
+                        error_code = error_info.get("code", "")
+                        error_message = error_info.get("message", "")
+
+                        self._log(f"Extracted error_code={error_code}, error_message length={len(error_message)}")
+
+                        if error_message:
+                            # Use the detailed error message as the primary message
+                            formatted_msg = error_message
+                            if error_code:
+                                formatted_msg += f"\nError Code: {error_code}"
+                            return formatted_msg
+            except Exception as e:
+                # If we can't parse details, fall through to simpler format
+                self._log(f"Failed to parse status_detail.details JSON: {e}")
+        else:
+            self._log(f"No details string found or details is not a string: {type(details_str)}")
+
+        # If we have a top-level error but couldn't parse details
+        if top_error:
+            return f"Generation failed: {top_error}"
+
+        return None
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
         """Parse provider_response if it's a JSON string."""
@@ -705,11 +853,12 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self.parameter_output_values["image_url"] = None
 
     @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
+    async def _download_bytes_from_url(url: str) -> bytes | None:
+        """Download bytes from a URL."""
         try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=120)
+                resp.raise_for_status()
+                return resp.content
         except Exception:
             return None
-        else:
-            return resp.content

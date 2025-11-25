@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -6,18 +7,28 @@ from griptape_nodes.exe_types.core_types import (
     Parameter,
     ParameterList,
     ParameterMode,
+    ParameterType,
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 
 
 class DisplayList(ControlNode):
     """DisplayList Node that takes a list and creates output parameters for each item in the list.
 
-    This node takes a list as input and creates a new output parameter for each item in the list,
-    with the type of the object in the list. This allows for dynamic output parameters based on
-    the content of the input list.
+    This node takes a list as input and creates a new output parameter for each item in the list.
+    Each output parameter is individually typed based on its specific item, allowing for mixed-type
+    lists where different items can have different types.
+
+    Features:
+    - Individual type detection: Each item's type is detected independently
+    - Automatic connection validation: Incompatible connections are removed when types change
+    - Type-specific UI options: Images get proper display, dicts get multiline, etc.
+    - Complete type information: Each parameter has type, output_type, and input_types set
+
+    Supported types: str, int, float, bool, dict, ImageUrlArtifact/ImageArtifact
     """
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
@@ -98,32 +109,79 @@ class DisplayList(ControlNode):
 
         new_ui_options["hide"] = False
         item_type = self._determine_item_type(list_values[0])
-
-        # Apply both changes first
-        # We have to change all three because parameters are created with all three initialized.
-        self.items_list.type = item_type
-        if item_type == ParameterTypeBuiltin.ANY.value:
-            self.items_list.output_type = ParameterTypeBuiltin.ALL.value
-        else:
-            self.items_list.output_type = item_type
-        self.items_list.input_types = [item_type]
-        self.items_list.ui_options = new_ui_options
+        self._configure_list_type_and_ui(item_type, new_ui_options)
         # Only delete excess parameters if explicitly requested (e.g., during process())
         if delete_excess_parameters:
             self.delete_excess_parameters(list_values)
         for i, item in enumerate(list_values):
+            item_specific_type = self._determine_item_type(item)
             if i < len(self.items_list):
-                current_parameter = self.items_list[i]
-                self.set_parameter_value(current_parameter.name, item)
-                # Using to ensure updates are being propagated
-                self.publish_update_to_parameter(current_parameter.name, item)
-                self.parameter_output_values[current_parameter.name] = item
-                continue
-            new_child = self.items_list.add_child_parameter()
-            # Set the parameter value
-            self.set_parameter_value(new_child.name, item)
-            # Ensure the new child parameter is tracked for flush events
+                self._update_existing_parameter(self.items_list[i], item, item_specific_type)
+            else:
+                self._create_new_parameter(item, item_specific_type)
         self._updating_display_list = False
+
+    def _update_existing_parameter(self, parameter: Parameter, item: Any, item_specific_type: str) -> None:
+        """Update an existing parameter with new value and type.
+
+        Args:
+            parameter: The parameter to update
+            item: The item value to set
+            item_specific_type: The detected type of the item
+        """
+        # Update all type fields for this parameter
+        if item_specific_type == ParameterTypeBuiltin.ANY.value:
+            new_output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            new_output_type = item_specific_type
+
+        parameter.type = item_specific_type
+        parameter.output_type = new_output_type
+        parameter.input_types = [item_specific_type]
+
+        # Set UI options based on type
+        if item_specific_type == "ImageUrlArtifact":
+            parameter.ui_options = {"display": "image"}
+        elif item_specific_type == "dict":
+            parameter.ui_options = {"multiline": True}
+
+        # Validate and remove incompatible connections
+        self._validate_and_remove_incompatible_connections(parameter.name, new_output_type)
+
+        self.set_parameter_value(parameter.name, item)
+        # Using to ensure updates are being propagated
+        self.publish_update_to_parameter(parameter.name, item)
+        self.parameter_output_values[parameter.name] = item
+
+    def _create_new_parameter(self, item: Any, item_specific_type: str) -> None:
+        """Create a new child parameter for a list item.
+
+        Args:
+            item: The item value to set
+            item_specific_type: The detected type of the item
+        """
+        new_child = self.items_list.add_child_parameter()
+        # Set all type fields for the new child parameter
+        if item_specific_type == ParameterTypeBuiltin.ANY.value:
+            new_output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            new_output_type = item_specific_type
+
+        new_child.type = item_specific_type
+        new_child.output_type = new_output_type
+        new_child.input_types = [item_specific_type]
+
+        # Set UI options based on type
+        if item_specific_type == "ImageUrlArtifact":
+            new_child.ui_options = {"display": "image"}
+        elif item_specific_type == "dict":
+            new_child.ui_options = {"multiline": True}
+
+        # Validate and remove incompatible connections for new parameters too
+        self._validate_and_remove_incompatible_connections(new_child.name, new_output_type)
+
+        # Set the parameter value
+        self.set_parameter_value(new_child.name, item)
 
     def delete_excess_parameters(self, list_values: list) -> None:
         """Delete parameters when list is shorter than parameter count."""
@@ -151,19 +209,109 @@ class DisplayList(ControlNode):
             # Remove the parameter from the list
         self.items_list.clear_list()
 
+    def _configure_list_type_and_ui(self, item_type: str, ui_options: dict[str, Any]) -> None:
+        """Configure the items_list parameter type and UI options based on item type.
+
+        Args:
+            item_type: The type string for list items
+            ui_options: Dictionary of UI options to configure
+        """
+        # Configure UI options for dict display
+        if item_type == "dict":
+            ui_options["multiline"] = True
+            ui_options["placeholder_text"] = "The dictionary content will be displayed here."
+        elif item_type == "ImageUrlArtifact":
+            ui_options["display"] = "image"
+
+        # We have to change all three because parameters are created with all three initialized.
+        self.items_list.type = item_type
+        if item_type == ParameterTypeBuiltin.ANY.value:
+            self.items_list.output_type = ParameterTypeBuiltin.ALL.value
+        else:
+            self.items_list.output_type = item_type
+        self.items_list.input_types = [item_type]
+        self.items_list.ui_options = ui_options
+
     def _determine_item_type(self, item: Any) -> str:
         """Determine the type of an item for parameter type assignment."""
-        if isinstance(item, str):
-            return ParameterTypeBuiltin.STR.value
+        result = ParameterTypeBuiltin.ANY.value
         if isinstance(item, bool):
-            return ParameterTypeBuiltin.BOOL.value
-        if isinstance(item, int):
-            return ParameterTypeBuiltin.INT.value
-        if isinstance(item, float):
-            return ParameterTypeBuiltin.FLOAT.value
-        if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            return "ImageUrlArtifact"
-        return ParameterTypeBuiltin.ANY.value
+            result = ParameterTypeBuiltin.BOOL.value
+        elif isinstance(item, str):
+            result = ParameterTypeBuiltin.STR.value
+        elif isinstance(item, int):
+            result = ParameterTypeBuiltin.INT.value
+        elif isinstance(item, float):
+            result = ParameterTypeBuiltin.FLOAT.value
+        elif isinstance(item, dict):
+            result = "dict"
+        elif isinstance(item, (ImageUrlArtifact, ImageArtifact)):
+            result = "ImageUrlArtifact"
+        return result
+
+    def _validate_and_remove_incompatible_connections(self, parameter_name: str, new_output_type: str) -> None:
+        """Validate and remove incompatible outgoing connections when output type changes.
+
+        Args:
+            parameter_name: The name of the parameter whose type changed
+            new_output_type: The new output type that was set
+        """
+        node_logger = logging.getLogger("griptape_nodes")
+
+        # Get outgoing connections from the specific parameter
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing_for_node = connections.outgoing_index.get(self.name, {})
+        connection_ids = outgoing_for_node.get(parameter_name, [])
+
+        if not connection_ids:
+            return
+
+        # Validate type compatibility and remove incompatible connections
+        for connection_id in connection_ids:
+            if connection_id not in connections.connections:
+                continue
+
+            connection = connections.connections[connection_id]
+            target_param = connection.target_parameter
+            target_node = connection.target_node
+
+            # Check if target parameter accepts the new output type
+            is_compatible = any(
+                ParameterType.are_types_compatible(new_output_type, input_type)
+                for input_type in target_param.input_types
+            )
+
+            if not is_compatible:
+                node_logger.info(
+                    "Removing incompatible connection: %s '%s' %s (%s) to '%s.%s' (accepts: %s)",
+                    self.__class__.__name__,
+                    self.name,
+                    parameter_name,
+                    new_output_type,
+                    target_node.name,
+                    target_param.name,
+                    target_param.input_types,
+                )
+
+                # Remove the incompatible connection
+                delete_result = GriptapeNodes.handle_request(
+                    DeleteConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name=parameter_name,
+                        target_node_name=target_node.name,
+                        target_parameter_name=target_param.name,
+                    )
+                )
+
+                if not delete_result.succeeded():
+                    node_logger.error(
+                        "Failed to delete incompatible connection from %s.%s to %s.%s: %s",
+                        self.name,
+                        parameter_name,
+                        target_node.name,
+                        target_param.name,
+                        delete_result.result_details,
+                    )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update display list when a value is assigned to the items parameter."""

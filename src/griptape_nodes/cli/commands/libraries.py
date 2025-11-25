@@ -1,101 +1,127 @@
 """Libraries command for Griptape Nodes CLI."""
 
 import asyncio
-import shutil
-import tarfile
-import tempfile
-from pathlib import Path
 
-import httpx
 import typer
-from rich.progress import Progress
 
-from griptape_nodes.cli.shared import (
-    ENV_LIBRARIES_BASE_DIR,
-    LATEST_TAG,
-    NODES_TARBALL_URL,
-    console,
+from griptape_nodes.cli.shared import console
+from griptape_nodes.retained_mode.events.library_events import (
+    DownloadLibraryRequest,
+    DownloadLibraryResultSuccess,
+    LoadLibrariesRequest,
+    SyncLibrariesRequest,
+    SyncLibrariesResultSuccess,
 )
-from griptape_nodes.retained_mode.events.os_events import DeleteFileRequest, DeleteFileResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.version_utils import get_current_version, get_install_source
+from griptape_nodes.utils.git_utils import normalize_github_url
 
 app = typer.Typer(help="Manage local libraries.")
 
 
 @app.command()
-def sync() -> None:
-    """Sync libraries with your current engine version."""
-    asyncio.run(_sync_libraries())
+def sync(
+    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
+    overwrite: bool = typer.Option(False, "--overwrite", help="Discard uncommitted changes in libraries"),  # noqa: FBT001
+) -> None:
+    """Sync all libraries to latest versions from their git repositories."""
+    asyncio.run(_sync_libraries(install_dependencies=not no_deps, overwrite_existing=overwrite))
 
 
-async def _sync_libraries(*, load_libraries_from_config: bool = True) -> None:
-    """Download and sync Griptape Nodes libraries, copying only directories from synced libraries.
+async def _sync_libraries(*, install_dependencies: bool, overwrite_existing: bool) -> None:
+    """Sync all libraries by checking for updates and installing dependencies."""
+    console.print("[bold cyan]Loading libraries...[/bold cyan]")
 
-    Args:
-        load_libraries_from_config (bool): If True, re-initialize all libraries from config
+    # First, load libraries from configuration
+    load_request = LoadLibrariesRequest()
+    load_result = await GriptapeNodes.ahandle_request(load_request)
+    if not load_result.succeeded():
+        console.print(f"[red]Failed to load libraries: {load_result.result_details}[/red]")
+        return
 
-    """
-    install_source, _ = get_install_source()
-    # Unless we're installed from PyPi, grab libraries from the 'latest' tag
-    if install_source == "pypi":
-        version = get_current_version()
+    console.print("[bold cyan]Syncing libraries...[/bold cyan]")
+
+    # Create sync request with provided parameters
+    request = SyncLibrariesRequest(
+        install_dependencies=install_dependencies,
+        overwrite_existing=overwrite_existing,
+    )
+
+    # Execute the sync
+    result = await GriptapeNodes.ahandle_request(request)
+
+    # Display results - failure case first
+    if not isinstance(result, SyncLibrariesResultSuccess):
+        console.print(f"[red]Failed to sync libraries: {result.result_details}[/red]")
+        return
+
+    # Success path
+    console.print(f"[green]Checked {result.libraries_checked} libraries[/green]")
+
+    if result.libraries_updated > 0:
+        console.print(f"[bold green]Updated {result.libraries_updated} libraries:[/bold green]")
+        for lib_name, update_info in result.update_summary.items():
+            if update_info.get("status") == "updated":
+                console.print(
+                    f"  [green]✓ {lib_name}: {update_info['old_version']} → {update_info['new_version']}[/green]"
+                )
+            elif update_info.get("status") == "failed":
+                console.print(f"  [red]✗ {lib_name}: {update_info.get('error', 'Unknown error')}[/red]")
     else:
-        version = LATEST_TAG
+        console.print("[green]All libraries are up to date[/green]")
 
-    console.print(f"[bold cyan]Fetching Griptape Nodes libraries ({version})...[/bold cyan]")
+    console.print("[bold green]Libraries synced successfully.[/bold green]")
 
-    tar_url = NODES_TARBALL_URL.format(tag=version)
-    console.print(f"[green]Downloading from {tar_url}[/green]")
-    dest_nodes = Path(ENV_LIBRARIES_BASE_DIR)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tar_path = Path(tmp) / "nodes.tar.gz"
+@app.command()
+def download(  # noqa: PLR0913
+    git_url: str = typer.Argument(..., help="Git repository URL to download"),
+    branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit to checkout"),
+    target_dir: str | None = typer.Option(None, "--target-dir", help="Target directory name"),
+    download_dir: str | None = typer.Option(None, "--download-dir", help="Parent directory for library download"),
+    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
+    overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing library directory if it exists"),  # noqa: FBT001
+) -> None:
+    """Download a library from a git repository."""
+    asyncio.run(
+        _download_library(
+            git_url, branch, target_dir, download_dir, install_dependencies=not no_deps, overwrite_existing=overwrite
+        )
+    )
 
-        # Streaming download with a tiny progress bar
-        with httpx.stream("GET", tar_url, follow_redirects=True) as r, Progress() as progress:
-            task = progress.add_task("[green]Downloading...", total=int(r.headers.get("Content-Length", 0)))
-            progress.start()
-            try:
-                r.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                console.print(f"[red]Error fetching libraries: {e}[/red]")
-                return
-            with tar_path.open("wb") as f:
-                for chunk in r.iter_bytes():
-                    f.write(chunk)
-                    progress.update(task, advance=len(chunk))
 
-        console.print("[green]Extracting...[/green]")
-        # Extract and locate extracted directory
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(tmp, filter="data")
+async def _download_library(  # noqa: PLR0913
+    git_url: str,
+    branch_tag_commit: str | None,
+    target_directory_name: str | None,
+    download_directory: str | None,
+    *,
+    install_dependencies: bool,
+    overwrite_existing: bool,
+) -> None:
+    """Download a library from a git repository."""
+    # Normalize GitHub shorthand to full URL
+    git_url = normalize_github_url(git_url)
 
-        extracted_root = next(Path(tmp).glob("griptape-nodes-*"))
-        extracted_libs = extracted_root / "libraries"
+    console.print(f"[bold cyan]Downloading library from {git_url}...[/bold cyan]")
 
-        # Copy directories from synced libraries without removing existing content
-        console.print(f"[green]Syncing libraries to {dest_nodes.resolve()}...[/green]")
-        dest_nodes.mkdir(parents=True, exist_ok=True)
-        for library_dir in extracted_libs.iterdir():
-            if library_dir.is_dir():
-                dest_library_dir = dest_nodes / library_dir.name
-                if dest_library_dir.exists():
-                    # Use DeleteFileRequest for centralized deletion with Windows compatibility
-                    request = DeleteFileRequest(path=str(dest_library_dir), workspace_only=False)
-                    result = await GriptapeNodes.OSManager().on_delete_file_request(request)
-                    if not isinstance(result, DeleteFileResultSuccess):
-                        console.print(f"[yellow]Warning: Failed to delete existing library {library_dir.name}[/yellow]")
-                shutil.copytree(library_dir, dest_library_dir)
-                console.print(f"[green]Synced library: {library_dir.name}[/green]")
+    # Create the download request
+    request = DownloadLibraryRequest(
+        git_url=git_url,
+        branch_tag_commit=branch_tag_commit,
+        target_directory_name=target_directory_name,
+        download_directory=download_directory,
+        install_dependencies=install_dependencies,
+        overwrite_existing=overwrite_existing,
+    )
 
-    # Re-initialize all libraries from config
-    if load_libraries_from_config:
-        console.print("[bold cyan]Initializing libraries...[/bold cyan]")
-        try:
-            await GriptapeNodes.LibraryManager().load_all_libraries_from_config()
-            console.print("[bold green]Libraries Initialized successfully.[/bold green]")
-        except Exception as e:
-            console.print(f"[red]Error initializing libraries: {e}[/red]")
+    # Execute the download
+    result = await GriptapeNodes.ahandle_request(request)
 
-    console.print("[bold green]Libraries synced.[/bold green]")
+    # Display results - failure case first
+    if not isinstance(result, DownloadLibraryResultSuccess):
+        console.print(f"[red]Failed to download library: {result.result_details}[/red]")
+        return
+
+    # Success path
+    console.print(f"[bold green]Library '{result.library_name}' downloaded successfully![/bold green]")
+    console.print(f"[green]Downloaded to: {result.library_path}[/green]")

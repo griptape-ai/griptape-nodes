@@ -35,7 +35,7 @@ class ProgressBarComponent:
         self._current_step += steps
         if self._current_step > self._total_steps:
             logger.warning(
-                "Current step %i exceeds total steps %i. Progress will not exceed 100%.",
+                "Current step %i exceeds total steps %i. Progress will not exceed 100%%.",
                 self._current_step,
                 self._total_steps,
             )

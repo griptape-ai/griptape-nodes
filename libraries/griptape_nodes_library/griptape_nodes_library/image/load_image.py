@@ -1,4 +1,4 @@
-from typing import Any, ClassVar
+from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
 
@@ -12,6 +12,7 @@ from griptape_nodes_library.utils.artifact_path_tethering import (
 )
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
+    SUPPORTED_IMAGE_EXTENSIONS,
     dict_to_image_url_artifact,
     extract_channel_from_image,
     load_pil_from_url,
@@ -20,9 +21,6 @@ from griptape_nodes_library.utils.image_utils import (
 
 
 class LoadImage(SuccessFailureNode):
-    # Supported image file extensions
-    SUPPORTED_EXTENSIONS: ClassVar[set[str]] = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
-
     @staticmethod
     def _extract_url_from_image_value(image_value: Any) -> str | None:
         """Extract URL from image parameter value and strip query parameters."""
@@ -35,7 +33,7 @@ class LoadImage(SuccessFailureNode):
         self._tethering_config = ArtifactTetheringConfig(
             dict_to_artifact_func=dict_to_image_url_artifact,
             extract_url_func=self._extract_url_from_image_value,
-            supported_extensions=self.SUPPORTED_EXTENSIONS,
+            supported_extensions=SUPPORTED_IMAGE_EXTENSIONS,
             default_extension="png",
             url_content_type_prefix="image/",
         )
@@ -224,7 +222,7 @@ class LoadImage(SuccessFailureNode):
             file_path = Path(path_value)
             if file_path.exists() and file_path.is_file():
                 # Check extension is supported
-                if file_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
+                if file_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
                     msg = f"Unsupported file extension: {file_path.suffix}"
                     raise ValueError(msg)  # noqa: TRY301 - Direct raise is clearer than helper function
                 return ImageUrlArtifact(value=str(file_path.absolute()))

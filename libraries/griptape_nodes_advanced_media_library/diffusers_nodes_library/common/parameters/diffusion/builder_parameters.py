@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from diffusers_nodes_library.common.parameters.diffusion.allegro.pipeline_type_parameters import (
     AllegroPipelineTypeParameters,
@@ -14,6 +14,9 @@ from diffusers_nodes_library.common.parameters.diffusion.audioldm.pipeline_type_
 )
 from diffusers_nodes_library.common.parameters.diffusion.custom.pipeline_type_parameters import (
     CustomPipelineTypeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.depthcrafter.pipeline_type_parameters import (
+    DepthCrafterPipelineTypeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.flux.pipeline_type_parameters import (
     FluxPipelineTypeParameters,
@@ -43,18 +46,21 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 class DiffusionPipelineBuilderParameters:
+    PROVIDER_MAP: ClassVar = {
+        "Flux": FluxPipelineTypeParameters,
+        "Allegro": AllegroPipelineTypeParameters,
+        "Amused": AmusedPipelineTypeParameters,
+        "AudioLDM": AudioldmPipelineTypeParameters,
+        "DepthCrafter": DepthCrafterPipelineTypeParameters,
+        "Qwen": QwenPipelineTypeParameters,
+        "Stable Diffusion": StableDiffusionPipelineTypeParameters,
+        "WAN": WanPipelineTypeParameters,
+        "Wuerstchen": WuerstchenPipelineTypeParameters,
+        "Custom": CustomPipelineTypeParameters,
+    }
+
     def __init__(self, node: DiffusionPipelineBuilderNode):
-        self.provider_choices = [
-            "Flux",
-            "Allegro",
-            "Amused",
-            "AudioLDM",
-            "Qwen",
-            "Stable Diffusion",
-            "WAN",
-            "Wuerstchen",
-            "Custom",
-        ]
+        self.provider_choices = list(self.PROVIDER_MAP.keys())
         self._node = node
         self._pipeline_type_parameters: DiffusionPipelineTypeParameters
         self.did_provider_change = False
@@ -68,6 +74,7 @@ class DiffusionPipelineBuilderParameters:
                 traits={Options(choices=self.provider_choices)},
                 tooltip="AI model provider",
                 allowed_modes={ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "Select Provider"},
             )
         )
 
@@ -84,29 +91,13 @@ class DiffusionPipelineBuilderParameters:
         )
 
     def set_pipeline_type_parameters(self, provider: str) -> None:
-        match provider:
-            case "Flux":
-                self._pipeline_type_parameters = FluxPipelineTypeParameters(self._node)
-            case "Allegro":
-                self._pipeline_type_parameters = AllegroPipelineTypeParameters(self._node)
-            case "Amused":
-                self._pipeline_type_parameters = AmusedPipelineTypeParameters(self._node)
-            case "AudioLDM":
-                self._pipeline_type_parameters = AudioldmPipelineTypeParameters(self._node)
-            case "Qwen":
-                self._pipeline_type_parameters = QwenPipelineTypeParameters(self._node)
-            case "Stable Diffusion":
-                self._pipeline_type_parameters = StableDiffusionPipelineTypeParameters(self._node)
-            case "WAN":
-                self._pipeline_type_parameters = WanPipelineTypeParameters(self._node)
-            case "Wuerstchen":
-                self._pipeline_type_parameters = WuerstchenPipelineTypeParameters(self._node)
-            case "Custom":
-                self._pipeline_type_parameters = CustomPipelineTypeParameters(self._node)
-            case _:
-                msg = f"Unsupported pipeline provider: {provider}"
-                logger.error(msg)
-                raise ValueError(msg)
+        if provider not in self.PROVIDER_MAP:
+            msg = f"Unsupported pipeline provider: {provider}"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        provider_class = self.PROVIDER_MAP[provider]
+        self._pipeline_type_parameters = provider_class(self._node)
 
     def before_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "provider":

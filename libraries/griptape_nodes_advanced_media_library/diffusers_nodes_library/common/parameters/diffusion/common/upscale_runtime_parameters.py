@@ -38,14 +38,36 @@ OUTPUT_SCALE = 4
 class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
     def __init__(self, node: BaseNode):
         super().__init__(node)
+        self._refreshing_model_choices = False
         self._upscale_model_repo_parameter = HuggingFaceRepoFileParameter(
             self._node,
             repo_files=[
+                ("Kim2091/ClearRealityV1", "4x-ClearRealityV1.pth"),
+                ("Kim2091/UltraSharp", "4x-UltraSharp.pth"),
+                ("Kim2091/UltraSharpV2", "4x-UltraSharpV2.pth"),
+                ("Kim2091/AnimeSharp", "4x-AnimeSharp.pth"),
+            ],
+            deprecated_repo_files=[
                 ("skbhadra/ClearRealityV1", "4x-ClearRealityV1.pth"),
                 ("lokCX/4x-Ultrasharp", "4x-Ultrasharp.pth"),
             ],
             parameter_name="upscale_model",
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Prevent infinite recursion when refresh_parameters updates choices
+        if self._refreshing_model_choices:
+            return
+
+        if parameter.name == "upscale_model":
+            self._refreshing_model_choices = True
+            try:
+                # Pass the value being set so refresh can include it if deprecated
+                self._upscale_model_repo_parameter.refresh_parameters(value_being_set=value)
+            finally:
+                self._refreshing_model_choices = False
 
     def _add_input_parameters(self) -> None:
         self._upscale_model_repo_parameter.add_input_parameters()
@@ -198,6 +220,14 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         )
         self._node.add_parameter(
             Parameter(
+                name="true_cfg_scale",
+                default_value=1.0,
+                type="float",
+                tooltip="True classifier-free guidance (guidance scale) is enabled when true_cfg_scale > 1 and negative_prompt is provided.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
                 name="guidance_scale",
                 default_value=3.5,
                 type="float",
@@ -225,6 +255,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
         self._node.remove_parameter_element_by_name("prompt_2")
         self._node.remove_parameter_element_by_name("negative_prompt")
         self._node.remove_parameter_element_by_name("negative_prompt_2")
+        self._node.remove_parameter_element_by_name("true_cfg_scale")
         self._node.remove_parameter_element_by_name("guidance_scale")
         self._node.remove_parameter_element_by_name("image")
         self._node.remove_parameter_element_by_name("strength")
@@ -256,6 +287,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             "prompt_2": self._node.get_parameter_value("prompt_2"),
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
             "negative_prompt_2": self._node.get_parameter_value("negative_prompt_2"),
+            "true_cfg_scale": self._node.get_parameter_value("true_cfg_scale"),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
             "image": self.get_image_pil(),
             "strength": self._node.get_parameter_value("strength"),

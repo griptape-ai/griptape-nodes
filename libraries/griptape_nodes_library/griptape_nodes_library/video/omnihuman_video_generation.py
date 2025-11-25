@@ -14,6 +14,9 @@ from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -76,30 +79,34 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
+        self._public_image_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
                 name="image_url",
-                input_types=["str", "ImageUrlArtifact"],
-                type="str",
-                output_type="str",
+                input_types=["ImageUrlArtifact"],
+                type="ImageUrlArtifact",
                 default_value="",
-                tooltip="Source image URL. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
+                tooltip="Source image URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "https://example.com/image.jpg"},
-            )
+            ),
+            disclaimer_message="The OmniHuman service utilizes this URL to access the image for video generation.",
         )
-        self.add_parameter(
-            Parameter(
+        self._public_image_url_parameter.add_input_parameters()
+
+        self._public_audio_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
                 name="audio_url",
-                input_types=["str"],
-                type="str",
-                output_type="str",
+                input_types=["AudioUrlArtifact"],
+                type="AudioUrlArtifact",
                 default_value="",
-                tooltip="Audio file URL. Must be using the Griptape Cloud Backend Storage or be a publicly accessible URL.",
+                tooltip="Audio file URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "https://example.com/audio.mp3"},
-            )
+            ),
         )
+        self._public_audio_url_parameter.add_input_parameters()
 
         self.add_parameter(
             Parameter(
@@ -210,13 +217,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # Clear execution status at the start
         self._clear_execution_status()
 
-        # Get and validate parameters
-        params = self._get_parameters()
-
         # Validate API key
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        try:
+            # Get and validate parameters
+            params = self._get_parameters()
+        except ValueError as e:
+            self._public_image_url_parameter.delete_uploaded_artifact()
+            self._public_audio_url_parameter.delete_uploaded_artifact()
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
@@ -239,6 +254,10 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # Poll for result
         self._poll_for_result(generation_id, api_key)
 
+        # Cleanup
+        self._public_image_url_parameter.delete_uploaded_artifact()
+        self._public_audio_url_parameter.delete_uploaded_artifact()
+
     def _get_parameters(self) -> dict[str, Any]:
         """Get and normalize input parameters."""
         image_url = self.get_parameter_value("image_url")
@@ -254,12 +273,13 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         if not image_url:
             msg = "image_url parameter is required."
             raise ValueError(msg)
+        image_url = self._public_image_url_parameter.get_public_url_for_parameter()
         if not audio_url:
             msg = "audio_url parameter is required."
             raise ValueError(msg)
+        audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
+
         # Handle artifacts
-        if hasattr(image_url, "value"):
-            image_url = image_url.value
         if hasattr(mask_image_urls, "value"):
             mask_image_urls = mask_image_urls.value
 

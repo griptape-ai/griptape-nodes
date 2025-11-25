@@ -23,23 +23,49 @@ from griptape_nodes.retained_mode.events.connection_events import (
     DeleteConnectionRequest,
     ListConnectionsForNodeRequest,
 )
+from griptape_nodes.retained_mode.events.execution_events import (
+    ResolveNodeRequest,
+    StartFlowFromNodeRequest,
+    StartFlowRequest,
+)
 from griptape_nodes.retained_mode.events.flow_events import ListNodesInFlowRequest
+from griptape_nodes.retained_mode.events.library_events import (
+    ListCategoriesInLibraryRequest,
+    ListNodeTypesInLibraryRequest,
+    ListRegisteredLibrariesRequest,
+)
 from griptape_nodes.retained_mode.events.node_events import (
     CreateNodeRequest,
     DeleteNodeRequest,
     GetNodeMetadataRequest,
     GetNodeResolutionStateRequest,
     ListParametersOnNodeRequest,
+    ResetNodeToDefaultsRequest,
+    SetLockNodeStateRequest,
     SetNodeMetadataRequest,
 )
+from griptape_nodes.retained_mode.events.object_events import RenameObjectRequest
 from griptape_nodes.retained_mode.events.parameter_events import (
+    GetConnectionsForParameterRequest,
+    GetParameterDetailsRequest,
     GetParameterValueRequest,
     SetParameterValueRequest,
 )
+from griptape_nodes.retained_mode.events.workflow_events import RunWorkflowWithCurrentStateRequest
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 
 SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
+    # Workflows
+    "RunWorkflowWithCurrentStateRequest": RunWorkflowWithCurrentStateRequest,
+    # Libraries
+    "ListRegisteredLibrariesRequest": ListRegisteredLibrariesRequest,
+    "ListNodeTypesInLibraryRequest": ListNodeTypesInLibraryRequest,
+    "ListCategoriesInLibraryRequest": ListCategoriesInLibraryRequest,
+    # Execution
+    "ResolveNodeRequest": ResolveNodeRequest,
+    "StartFlowRequest": StartFlowRequest,
+    "StartFlowFromNodeRequest": StartFlowFromNodeRequest,
     # Nodes
     "CreateNodeRequest": CreateNodeRequest,
     "DeleteNodeRequest": DeleteNodeRequest,
@@ -47,6 +73,10 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "GetNodeResolutionStateRequest": GetNodeResolutionStateRequest,
     "GetNodeMetadataRequest": GetNodeMetadataRequest,
     "SetNodeMetadataRequest": SetNodeMetadataRequest,
+    "ResetNodeToDefaultsRequest": ResetNodeToDefaultsRequest,
+    "SetLockNodeStateRequest": SetLockNodeStateRequest,
+    # Objects
+    "RenameObjectRequest": RenameObjectRequest,
     # Connections
     "CreateConnectionRequest": CreateConnectionRequest,
     "DeleteConnectionRequest": DeleteConnectionRequest,
@@ -55,6 +85,8 @@ SUPPORTED_REQUEST_EVENTS: dict[str, type[RequestPayload]] = {
     "ListParametersOnNodeRequest": ListParametersOnNodeRequest,
     "GetParameterValueRequest": GetParameterValueRequest,
     "SetParameterValueRequest": SetParameterValueRequest,
+    "GetParameterDetailsRequest": GetParameterDetailsRequest,
+    "GetConnectionsForParameterRequest": GetConnectionsForParameterRequest,
 }
 
 GTN_MCP_SERVER_HOST = os.getenv("GTN_MCP_SERVER_HOST", "localhost")

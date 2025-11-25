@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import warnings
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
+    ControlParameter,
     ControlParameterInput,
     ControlParameterOutput,
     NodeMessageResult,
@@ -22,6 +23,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
+    Trait,
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -1628,22 +1630,10 @@ class EndNode(BaseNode):
             self.parameter_output_values[entry_parameter.name] = CONTROL_INPUT_PARAMETER
 
 
-class StartLoopNode(BaseNode):
-    end_node: EndLoopNode | None = None
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
-
-    @abstractmethod
-    def is_loop_finished(self) -> bool:
-        """Return True if the loop has finished executing.
-
-        This method must be implemented by subclasses to define when
-        the loop should terminate.
-        """
-
-
-class EndLoopNode(BaseNode):
-    start_node: StartLoopNode | None = None
-    """Creating class for Start Loop Node in order to implement loop functionality in execution."""
+# StartLoopNode and EndLoopNode have been moved to base_iterative_nodes.py
+# They are now BaseIterativeStartNode and BaseIterativeEndNode
+# Import them here if needed for backwards compatibility in this file
+# (they are imported elsewhere directly from base_iterative_nodes)
 
 
 class ErrorProxyNode(BaseNode):
@@ -1917,6 +1907,138 @@ class NodeGroupNode(BaseNode):
         self._proxy_param_to_node_param = {}
         self.stored_connections = NodeGroupStoredConnections()
 
+        # Add parameters from registered StartFlow nodes for each publishing library
+        self._add_start_flow_parameters()
+
+    def _add_start_flow_parameters(self) -> None:
+        """Add parameters from all registered StartFlow nodes to this NodeGroupNode.
+
+        For each library that has registered a PublishWorkflowRequest handler with
+        a StartFlow node, this method:
+        1. Creates a temporary instance of that StartFlow node
+        2. Extracts all its parameters
+        3. Adds them to this NodeGroupNode with a prefix based on the class name
+        4. Stores metadata mapping execution environments to their parameters
+        """
+        from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # Initialize metadata structure for execution environment mappings
+        if self.metadata is None:
+            self.metadata = {}
+        if "execution_environment" not in self.metadata:
+            self.metadata["execution_environment"] = {}
+
+        # Get all libraries that have registered PublishWorkflowRequest handlers
+        library_manager = GriptapeNodes.LibraryManager()
+        event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
+
+        # Process each registered library
+        for library_name, handler in event_handlers.items():
+            self._process_library_start_flow_parameters(library_name, handler)
+
+    def _process_library_start_flow_parameters(self, library_name: str, handler: Any) -> None:
+        """Process and add StartFlow parameters from a single library.
+
+        Args:
+            library_name: Name of the library
+            handler: The registered event handler containing event data
+        """
+        import logging
+
+        from griptape_nodes.node_library.library_registry import LibraryRegistry
+        from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRegisteredEventData
+
+        logger = logging.getLogger(__name__)
+
+        registered_event_data = handler.event_data
+
+        if registered_event_data is None:
+            return
+        if not isinstance(registered_event_data, PublishWorkflowRegisteredEventData):
+            return
+
+        # Get the StartFlow node information
+        start_flow_node_type = registered_event_data.start_flow_node_type
+        start_flow_library_name = registered_event_data.start_flow_node_library_name
+
+        try:
+            # Get the library that contains the StartFlow node
+            library = LibraryRegistry.get_library(name=start_flow_library_name)
+        except KeyError:
+            logger.debug(
+                "Library '%s' not found when adding StartFlow parameters for '%s'",
+                start_flow_library_name,
+                library_name,
+            )
+            return
+
+        try:
+            # Create a temporary instance of the StartFlow node to inspect its parameters
+            temp_start_flow_node = library.create_node(
+                node_type=start_flow_node_type,
+                name=f"temp_{start_flow_node_type}",
+            )
+        except Exception as e:
+            logger.debug(
+                "Failed to create temporary StartFlow node '%s' from library '%s': %s",
+                start_flow_node_type,
+                start_flow_library_name,
+                e,
+            )
+            return
+
+        # Get the class name for prefixing (convert to lowercase for parameter naming)
+        class_name_prefix = start_flow_node_type.lower()
+
+        # Store metadata for this execution environment
+        parameter_names = []
+
+        # Add each parameter from the StartFlow node to this NodeGroupNode
+        for param in temp_start_flow_node.parameters:
+            if isinstance(param, ControlParameter):
+                continue
+
+            # Create prefixed parameter name
+            prefixed_param_name = f"{class_name_prefix}_{param.name}"
+            parameter_names.append(prefixed_param_name)
+
+            # Clone and add the parameter
+            self._clone_and_add_parameter(param, prefixed_param_name)
+
+        # Store the mapping in metadata
+        self.metadata["execution_environment"][library_name] = {
+            "start_flow_node": start_flow_node_type,
+            "parameter_names": parameter_names,
+        }
+
+    def _clone_and_add_parameter(self, param: Parameter, new_name: str) -> None:
+        """Clone a parameter with a new name and add it to this node.
+
+        Args:
+            param: The parameter to clone
+            new_name: The new name for the cloned parameter
+        """
+        # Extract traits from parameter children (traits are stored as children of type Trait)
+        traits_set: set[type[Trait] | Trait] | None = {child for child in param.children if isinstance(child, Trait)}
+        if not traits_set:
+            traits_set = None
+
+        # Clone the parameter with the new name
+        cloned_param = Parameter(
+            name=new_name,
+            tooltip=param.tooltip,
+            type=param.type,
+            allowed_modes=param.allowed_modes,
+            default_value=param.default_value,
+            traits=traits_set,
+            parent_container_name=param.parent_container_name,
+            parent_element_name=param.parent_element_name,
+        )
+
+        # Add the parameter to this node
+        self.add_parameter(cloned_param)
+
     def get_all_nodes(self) -> dict[str, BaseNode]:
         all_nodes = {}
         for node_name, node in self.nodes.items():
@@ -1924,6 +2046,28 @@ class NodeGroupNode(BaseNode):
             if isinstance(node, NodeGroupNode):
                 all_nodes.update(node.nodes)
         return all_nodes
+
+    def get_next_control_output(self) -> tuple[BaseNode, Parameter] | None:
+        control_connection = self._find_external_control_output_connection()
+        if control_connection is None:
+            return None
+        return control_connection.source_node, control_connection.source_parameter
+
+    def _find_external_control_output_connection(self) -> Connection | None:
+        """Find control flow connection from external outgoing connections.
+
+        Searches through external outgoing connections to find the control flow connection.
+        A control connection is identified by having a source parameter with CONTROL_TYPE output.
+
+        Returns:
+            Connection object if found, None otherwise
+        """
+        from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+
+        for conn in self.stored_connections.external_connections.outgoing_connections:
+            if conn.source_parameter.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                return conn
+        return None
 
     def _find_intermediate_nodes(  # noqa: C901
         self, start_node: BaseNode, end_node: BaseNode

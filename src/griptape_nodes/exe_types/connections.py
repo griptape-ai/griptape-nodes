@@ -2,8 +2,9 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, Connection, EndLoopNode, NodeResolutionState, StartLoopNode
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -106,14 +107,14 @@ class Connections:
         return connection is None
 
     def _get_connected_node_for_end_loop_control(
-        self, end_loop_node: EndLoopNode, control_parameter: Parameter
+        self, end_loop_node: BaseIterativeEndNode, control_parameter: Parameter
     ) -> tuple[BaseNode, Parameter] | None:
-        """For an EndLoopNode and its control parameter, finds the connected node and parameter.
+        """For a BaseIterativeEndNode and its control parameter, finds the connected node and parameter.
 
-        It checks both outgoing connections (where EndLoopNode's parameter is a source)
-        and incoming connections (where EndLoopNode's parameter is a target).
+        It checks both outgoing connections (where BaseIterativeEndNode's parameter is a source)
+        and incoming connections (where BaseIterativeEndNode's parameter is a target).
         """
-        # Check if the EndLoopNode's control parameter is a source for an outgoing connection
+        # Check if the BaseIterativeEndNode's control parameter is a source for an outgoing connection
         if ParameterMode.OUTPUT in control_parameter.allowed_modes:
             outgoing_connections_for_node = self.outgoing_index.get(end_loop_node.name, {})
             connection_ids_as_source = outgoing_connections_for_node.get(control_parameter.name, [])
@@ -123,13 +124,13 @@ class Connections:
                 if connection:
                     return connection.target_node, connection.target_parameter
         elif ParameterMode.INPUT in control_parameter.allowed_modes:
-            # Check if the EndLoopNode's control parameter is a target for an incoming connection
+            # Check if the BaseIterativeEndNode's control parameter is a target for an incoming connection
             incoming_connections_for_node = self.incoming_index.get(end_loop_node.name, {})
             connection_ids_as_target = incoming_connections_for_node.get(control_parameter.name, [])
             if connection_ids_as_target:
                 for connection_id in connection_ids_as_target:
                     connection = self.connections.get(connection_id)
-                    if connection and isinstance(connection.source_node, StartLoopNode):
+                    if connection and isinstance(connection.source_node, BaseIterativeStartNode):
                         return connection.source_node, connection.source_parameter
         return None  # No connection found for this control parameter
 
@@ -137,7 +138,7 @@ class Connections:
         self, node: BaseNode, parameter: Parameter, direction: Direction | None = None
     ) -> tuple[BaseNode, Parameter] | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
-        # Override this method for EndLoopNodes - these might have to go backwards or forwards.
+        # Override this method for BaseIterativeEndNodes - these might have to go backwards or forwards.
         if direction is not None:
             # We've added direction as an override, since we sometimes need to get connections in a certain direction regardless of parameter types.
             if direction == Direction.UPSTREAM:
@@ -145,7 +146,10 @@ class Connections:
             elif direction == Direction.DOWNSTREAM:
                 connections = self.outgoing_index
         else:
-            if isinstance(node, EndLoopNode) and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+            if (
+                isinstance(node, BaseIterativeEndNode)
+                and ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type
+            ):
                 return self._get_connected_node_for_end_loop_control(node, parameter)
             if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
                 connections = self.outgoing_index

@@ -4,6 +4,10 @@ import pickle
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
+from griptape_nodes.exe_types.base_iterative_nodes import (
+    BaseIterativeEndNode,
+    BaseIterativeStartNode,
+)
 from griptape_nodes.exe_types.core_types import (
     BaseNodeElement,
     Parameter,
@@ -17,12 +21,10 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
-    EndLoopNode,
     ErrorProxyNode,
     NodeDependencies,
     NodeGroupNode,
     NodeResolutionState,
-    StartLoopNode,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -438,7 +440,7 @@ class NodeManager:
             details = f"{details}. WARNING: Had to rename from original node name requested '{request.node_name}' as an object with this name already existed."
 
         # Special handling for paired classes (e.g., create a Start node and it automatically creates a corresponding End node already connected).
-        if isinstance(node, StartLoopNode) and not request.initial_setup:
+        if isinstance(node, BaseIterativeStartNode) and not request.initial_setup:
             # If it's StartLoop, create an EndLoop and connect it to the StartLoop.
             # Get the class name of the node
             node_class_name = node.__class__.__name__
@@ -477,7 +479,7 @@ class NodeManager:
                         )
                     )
                     end_node = self.get_node_by_name(end_loop.node_name)
-                    if not isinstance(end_node, EndLoopNode):
+                    if not isinstance(end_node, BaseIterativeEndNode):
                         msg = f"Attempted to create a paried set of nodes for Node '{final_node_name}'. Failed because paired node '{end_loop.node_name}' was not a proper EndLoop instance. The corresponding node will have to be created by hand and attached manually."
                         logger.error(
                             msg
@@ -1912,6 +1914,14 @@ class NodeManager:
             details = f"Attempted to set parameter '{param_name}' value on node '{node_name}'. Failed because the Node was locked."
             return SetParameterValueResultFailure(result_details=details)
 
+        # Let versioning system potentially squelch removed parameters.
+        # This check must run BEFORE we validate parameter existence, since removed parameters won't exist.
+        version_compat_result = GriptapeNodes.VersionCompatibilityManager().check_set_parameter_version_compatibility(
+            node, param_name, request.value
+        )
+        if version_compat_result is not None:
+            return version_compat_result
+
         # Handle ErrorProxyNode parameter value requests
         if isinstance(node, ErrorProxyNode):
             if request.initial_setup:
@@ -1929,6 +1939,7 @@ class NodeManager:
 
         # Does the Parameter actually exist on the Node?
         parameter = node.get_parameter_by_name(param_name)
+
         if parameter is None:
             details = f"Attempted to set parameter value for '{node_name}.{param_name}'. Failed because no parameter with that name could be found."
 
@@ -2455,10 +2466,14 @@ class NodeManager:
 
             # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
             if isinstance(node, NodeGroupNode):
+                # Remove node_names_in_group from metadata - it's redundant and will be regenerated
+                metadata_copy = copy.deepcopy(node.metadata)
+                metadata_copy.pop("node_names_in_group", None)
+
                 create_node_request = CreateNodeGroupRequest(
                     node_group_name=node_name,
                     node_names_to_add=list(node.nodes),
-                    metadata=copy.deepcopy(node.metadata),
+                    metadata=metadata_copy,
                 )
             else:
                 # For non-NodeGroupNode, library_details should always be set

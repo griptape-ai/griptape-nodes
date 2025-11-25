@@ -5,11 +5,10 @@ import logging
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import Parameter, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import (
-    CONTROL_INPUT_PARAMETER,
-    LOCAL_EXECUTION,
     BaseNode,
     NodeResolutionState,
 )
@@ -128,6 +127,20 @@ class ExecuteDagState(State):
                 network_name,
             )
             return
+
+        # Special handling for BaseIterativeStartNode
+        # Remove it from the network so the end node can process control flow
+        if isinstance(current_node, BaseIterativeStartNode):
+            current_node.state = NodeResolutionState.RESOLVED
+
+            # Remove start node from the network
+            network = context.networks.get(network_name)
+            if network and current_node.name in network.nodes():
+                network.remove_node(current_node.name)
+                logger.debug("Removed start node '%s' from network '%s'", current_node.name, network_name)
+
+            return
+
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
         # Track this as the last resolved node
@@ -186,22 +199,6 @@ class ExecuteDagState(State):
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
 
     @staticmethod
-    def get_next_control_output_for_non_local_execution(node: BaseNode) -> Parameter | None:
-        for param_name, value in node.parameter_output_values.items():
-            parameter = node.get_parameter_by_name(param_name)
-            if (
-                parameter is not None
-                and parameter.type == ParameterTypeBuiltin.CONTROL_TYPE.value
-                and value == CONTROL_INPUT_PARAMETER
-            ):
-                # This is the parameter
-                logger.debug(
-                    "Parallel Resolution: Found control output parameter '%s' for non-local execution", param_name
-                )
-                return parameter
-        return None
-
-    @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
         """Get next control flow nodes and add them to the DAG graph."""
         flow_manager = GriptapeNodes.FlowManager()
@@ -211,13 +208,13 @@ class ExecuteDagState(State):
             return
         from griptape_nodes.exe_types.node_types import NodeGroupNode
 
-        if (
-            isinstance(node, NodeGroupNode)
-            and node.get_parameter_value(node.execution_environment.name) != LOCAL_EXECUTION
-        ):
-            next_output = ExecuteDagState.get_next_control_output_for_non_local_execution(node)
-        else:
-            next_output = node.get_next_control_output()
+        if isinstance(node, NodeGroupNode):
+            node_and_next_output = node.get_next_control_output()
+            if node_and_next_output is not None:
+                next_node, next_output = node_and_next_output
+                ExecuteDagState._process_next_control_node(context, next_node, next_output, network_name, flow_manager)
+            return
+        next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
 
@@ -369,12 +366,19 @@ class ExecuteDagState(State):
     def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str], set[str]]:
         networks = context.networks
         leaf_nodes = set()
-        for network in networks.values():
+        for network_name, network in networks.items():
             # Check and see if there are leaf nodes that are cancelled.
             # Reinitialize leaf nodes since maybe we changed things up.
             # We removed nodes from the network. There may be new leaf nodes.
             # Add all leaf nodes from all networks (using set union to avoid duplicates)
-            leaf_nodes.update([n for n in network.nodes() if network.in_degree(n) == 0])
+            network_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
+            if network_leaf_nodes:
+                logger.info(
+                    "Network '%s' leaf nodes (in_degree=0): %s",
+                    network_name,
+                    ", ".join(f"{n} (in_degree={network.in_degree(n)})" for n in network_leaf_nodes),
+                )
+            leaf_nodes.update(network_leaf_nodes)
         canceled_nodes = set()
         queued_nodes = set()
         for node in leaf_nodes:
@@ -443,7 +447,7 @@ class ExecuteDagState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911
+    async def on_update(context: ParallelResolutionContext) -> type[State] | None:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Check if execution is paused
         if context.paused:
             return None
@@ -466,7 +470,9 @@ class ExecuteDagState(State):
         for node in queued_nodes:
             # Process all queued nodes - the async semaphore will handle concurrency limits
             node_reference = context.node_to_reference[node]
-
+            # Skip BaseIterativeEndNode as it's handled by loop execution flow
+            if isinstance(node_reference.node_reference, BaseIterativeEndNode):
+                continue
             # Collect parameter values from upstream nodes before executing
             try:
                 await ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
@@ -486,6 +492,34 @@ class ExecuteDagState(State):
                 msg = f"Canceling flow run. Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
                 logger.error(msg)
                 return ErrorState
+
+            # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
+            # if False:
+            if isinstance(node_reference.node_reference, BaseIterativeStartNode):
+                # Call handle_done_state to clear it from everything
+                end_loop_node = node_reference.node_reference.end_node
+                # Set start node to DONE! even if it isn't truly done lolllll.
+                node_reference.node_state = NodeState.DONE
+                if end_loop_node is None:
+                    msg = (
+                        f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
+                    )
+                    logger.error(msg)
+                    return ErrorState
+                # We're going to skip straight to the end node here instead.
+                # Set end node to node reference
+                if context.dag_builder is not None:
+                    # Check if BaseIterativeEndNode is already in DAG (from pre-building phase)
+                    if end_loop_node.name in context.dag_builder.node_to_reference:
+                        # BaseIterativeEndNode already exists in DAG, just get reference and queue it
+                        end_node_reference = context.dag_builder.node_to_reference[end_loop_node.name]
+                        end_node_reference.node_state = NodeState.QUEUED
+                        node_reference = end_node_reference
+                    else:
+                        # BaseIterativeEndNode not in DAG yet (backwards compatibility), add it
+                        end_node_reference = context.dag_builder.add_node(end_loop_node)
+                        end_node_reference.node_state = NodeState.QUEUED
+                        node_reference = end_node_reference
 
             def on_task_done(task: asyncio.Task) -> None:
                 if task in context.task_to_node:

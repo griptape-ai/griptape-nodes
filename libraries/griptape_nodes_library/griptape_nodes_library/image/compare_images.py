@@ -16,7 +16,7 @@ class CompareImages(ControlNode):
                 tooltip="Image 1",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                type="hidden",
+                ui_options={"hide_property": True},
             )
         )
 
@@ -27,7 +27,7 @@ class CompareImages(ControlNode):
                 tooltip="Image 2",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                type="hidden",
+                ui_options={"hide_property": True},
             )
         )
 

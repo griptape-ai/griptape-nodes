@@ -278,6 +278,7 @@ class DeserializeFlowFromCommandsRequest(RequestPayload):
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     flow_name: str
+    node_name_mappings: dict[str, str] = field(default_factory=dict)  # original_name -> deserialized_name
 
 
 @dataclass
@@ -394,6 +395,7 @@ class SetFlowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 SanitizedParameterName = str  # What appears in the serialized flow
 OriginalNodeName = str  # Original node name (can have spaces, dots, etc.)
 OriginalParameterName = str  # Original parameter name
+PackagedNodeName = str  # Name of Start/End node in packaged flow
 
 
 class OriginalNodeParameter(NamedTuple):
@@ -401,6 +403,13 @@ class OriginalNodeParameter(NamedTuple):
 
     node_name: OriginalNodeName
     parameter_name: OriginalParameterName
+
+
+class PackagedNodeParameterMapping(NamedTuple):
+    """Parameter mappings for a packaged node (Start or End)."""
+
+    node_name: PackagedNodeName  # Name of the packaged node (e.g., "Start_Package_MultiNode")
+    parameter_mappings: dict[SanitizedParameterName, OriginalNodeParameter]  # Parameter name -> original node/param
 
 
 class ParameterNameMapping(NamedTuple):
@@ -446,6 +455,7 @@ class PackageNodesAsSerializedFlowRequest(RequestPayload):
     entry_control_node_name: str | None = None
     entry_control_parameter_name: str | None = None
     output_parameter_prefix: str = "packaged_node_"
+    node_group_name: str | None = None  # Name of the NodeGroupNode if packaging a group
 
 
 @dataclass
@@ -457,13 +467,15 @@ class PackageNodesAsSerializedFlowResultSuccess(WorkflowNotAlteredMixin, ResultP
         serialized_flow_commands: The complete serialized flow with StartFlow, selected nodes with preserved connections, and EndFlow
         workflow_shape: The workflow shape defining inputs and outputs for external callers
         packaged_node_names: List of node names that were included in the package
-        parameter_name_mappings: Dict mapping sanitized parameter names to original node and parameter names for O(1) lookup
+        parameter_name_mappings: List of parameter mappings for packaged nodes.
+            Index 0 = Start node mappings, Index 1 = End node mappings.
+            Each entry contains the node name and its parameter mappings.
     """
 
     serialized_flow_commands: SerializedFlowCommands
     workflow_shape: WorkflowShape
     packaged_node_names: list[str]
-    parameter_name_mappings: dict[SanitizedParameterName, OriginalNodeParameter]
+    parameter_name_mappings: list[PackagedNodeParameterMapping]
 
 
 @dataclass

@@ -180,6 +180,11 @@ class AgentManager:
                 self.prompt_driver = self._initialize_prompt_driver()
             for key, value in request.prompt_driver.items():
                 setattr(self.prompt_driver, key, value)
+
+            if self.image_tool is None:
+                self.image_tool = self._initialize_image_tool()
+            for key, value in request.image_generation_driver.items():
+                setattr(self.image_tool.image_generation_driver, key, value)
         except Exception as e:
             details = f"Error configuring agent: {e}"
             logger.error(details)
@@ -397,6 +402,33 @@ class AgentManager:
                         Rule("Only set generated_image_urls with images generated with your tools."),
                     ],
                 ),
+                # Note: Griptape's MCPTool automatically wraps arguments in a 'values' key, but our MCP server
+                # expects arguments directly. This ruleset instructs the agent to provide arguments without
+                # the 'values' wrapper to avoid validation errors. If MCPTool behavior changes in the future,
+                # this ruleset may need to be updated or removed.
+                Ruleset(
+                    name="mcp_tool_usage",
+                    rules=[
+                        Rule(
+                            "When calling MCP tools (mcpGriptapeNodes), provide arguments directly without wrapping them in a 'values' key. "
+                            "For example, use {'node_type': 'FluxImageGeneration', 'node_name': 'MyNode'} not {'values': {'node_type': 'FluxImageGeneration'}}."
+                        ),
+                    ],
+                ),
+                Ruleset(
+                    name="node_rulesets",
+                    rules=[
+                        Rule(
+                            "When asked to create a node, use ListNodeTypesInLibraryRequest or GetAllInfoForAllLibrariesRequest to check available node types and find the appropriate node."
+                        ),
+                        Rule(
+                            "When matching user requests to node types, account for variations: users may include spaces (e.g., 'Image Generation' vs 'ImageGeneration') or reorder words (e.g., 'Generate Image' vs 'Image Generation'). Match based on the words present, not exact spelling."
+                        ),
+                        Rule(
+                            "If you cannot determine the correct node type or node creation fails, ask the user for clarification."
+                        ),
+                    ],
+                ),
             ],
         )
 
@@ -453,7 +485,7 @@ class AgentManager:
             msg = f"Secret '{API_KEY_ENV_VAR}' not found"
             raise ValueError(msg)
         return NodesPromptImageGenerationTool(
-            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key, model="gpt-image-1"),
+            image_generation_driver=GriptapeCloudImageGenerationDriver(api_key=api_key),
             static_files_manager=self.static_files_manager,
         )
 

@@ -6,6 +6,7 @@ from griptape.loaders import PdfLoader, TextLoader
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.file_utils import SUPPORTED_TEXT_EXTENSIONS
 
 
 class LoadText(ControlNode):
@@ -15,23 +16,6 @@ class LoadText(ControlNode):
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
-
-        # Define supported file formats
-        self.supported_formats = (
-            ".data",
-            ".env",
-            ".info",
-            ".json",
-            ".log",
-            ".text",
-            ".txt",
-            ".yaml",
-            ".yml",
-            ".csv",
-            ".tsv",
-            ".md",
-            ".pdf",
-        )
 
         # Add output parameters
         self.path = Parameter(
@@ -47,21 +31,7 @@ class LoadText(ControlNode):
                 allow_files=True,
                 allow_directories=False,
                 multiple=False,
-                file_types=[
-                    ".txt",
-                    ".md",
-                    ".pdf",
-                    ".json",
-                    ".yaml",
-                    ".yml",
-                    ".csv",
-                    ".tsv",
-                    ".py",
-                    ".data",
-                    ".env",
-                    ".info",
-                    ".log",
-                ],
+                file_types=list(SUPPORTED_TEXT_EXTENSIONS),
             )
         )
 
