@@ -6,6 +6,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class BaseCreateListNode(ControlNode):
@@ -54,6 +56,13 @@ class BaseCreateListNode(ControlNode):
     def _update_output(self) -> None:
         """Gets items, sets output value, and publishes update."""
         list_values = self.get_parameter_value(self.items_list.name)
-        self.set_parameter_value(self.output.name, list_values)
         self.parameter_output_values[self.output.name] = list_values
-        self.publish_update_to_parameter(self.output.name, list_values)
+
+        # Force a propagation by issuing a set value request.
+        GriptapeNodes.handle_request(
+            SetParameterValueRequest(
+                parameter_name=self.output.name,
+                value=list_values,
+                node_name=self.name,
+            )
+        )
