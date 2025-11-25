@@ -1918,8 +1918,32 @@ class NodeGroupNode(BaseNode):
             "parameter_names": {},
         }
 
+        # Create subflow for this NodeGroup
+        self._create_subflow()
+
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
+
+    def _create_subflow(self) -> None:
+        """Create a dedicated subflow for this NodeGroup's nodes.
+
+        Note: This is called during __init__, so the node may not yet be added to a flow.
+        The subflow will be created without a parent initially, and can be reparented later.
+        """
+        from griptape_nodes.retained_mode.events.flow_events import (
+            CreateFlowRequest,
+            CreateFlowResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        subflow_name = f"{self.name}_subflow"
+        self.metadata["subflow_name"] = subflow_name
+
+        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=None)
+        result = GriptapeNodes.handle_request(request)
+
+        if not isinstance(result, CreateFlowResultSuccess):
+            logger.warning("%s failed to create subflow '%s': %s", self.name, subflow_name, result.result_details)
 
     def _add_start_flow_parameters(self) -> None:
         """Add parameters from all registered StartFlow nodes to this NodeGroupNode.
@@ -2381,10 +2405,26 @@ class NodeGroupNode(BaseNode):
         Args:
             nodes: List of nodes to add to the group
         """
+        from griptape_nodes.retained_mode.events.node_events import (
+            MoveNodeToNewFlowRequest,
+            MoveNodeToNewFlowResultSuccess,
+        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         self._remove_nodes_from_existing_parents(nodes)
         self._add_nodes_to_group_dict(nodes)
+
+        subflow_name = self.metadata.get("subflow_name")
+        if subflow_name is None:
+            logger.warning("%s has no subflow_name in metadata, cannot move nodes to subflow", self.name)
+        else:
+            for node in nodes:
+                move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=subflow_name)
+                move_result = GriptapeNodes.handle_request(move_request)
+                if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
+                    logger.warning(
+                        "%s failed to move node '%s' to subflow: %s", self.name, node.name, move_result.result_details
+                    )
 
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
@@ -2432,14 +2472,35 @@ class NodeGroupNode(BaseNode):
         Args:
             nodes: List of nodes to remove from the group
         """
+        from griptape_nodes.retained_mode.events.node_events import (
+            MoveNodeToNewFlowRequest,
+            MoveNodeToNewFlowResultSuccess,
+        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         self._validate_nodes_in_group(nodes)
+
+        parent_flow_name = None
+        try:
+            parent_flow_name = GriptapeNodes.NodeManager().get_node_parent_flow_by_name(self.name)
+        except KeyError:
+            logger.warning("%s has no parent flow, cannot move nodes back", self.name)
 
         connections = GriptapeNodes.FlowManager().get_connections()
         for node in nodes:
             node.parent_group = None
             self.nodes.pop(node.name)
+
+            if parent_flow_name is not None:
+                move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=parent_flow_name)
+                move_result = GriptapeNodes.handle_request(move_request)
+                if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
+                    logger.warning(
+                        "%s failed to move node '%s' back to parent flow: %s",
+                        self.name,
+                        node.name,
+                        move_result.result_details,
+                    )
 
         for node in nodes:
             self.unmap_node_connections(node, connections)
@@ -2458,6 +2519,50 @@ class NodeGroupNode(BaseNode):
         group concurrently using asyncio.gather and handles propagating input
         values from the proxy to the grouped nodes.
         """
+        from griptape_nodes.retained_mode.events.execution_events import StartLocalSubflowRequest
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        subflow = self.metadata.get("subflow_name")
+        if subflow is not None and isinstance(subflow, str):
+            await GriptapeNodes.FlowManager().on_start_local_subflow_request(
+                StartLocalSubflowRequest(flow_name=subflow)
+            )
+
+        # After subflow execution, collect output values from internal nodes
+        # and set them on the NodeGroup's output (right) proxy parameters
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Get all right parameters (output parameters)
+        right_params = self.metadata.get("right_parameters", [])
+        for proxy_param_name in right_params:
+            proxy_param = self.get_parameter_by_name(proxy_param_name)
+            if proxy_param is None:
+                continue
+
+            # Find the internal node connected to this proxy parameter
+            # The internal connection goes: InternalNode -> ProxyParameter
+            incoming_connections = connections.get_incoming_connections_to_parameter(self, proxy_param)
+            if not incoming_connections:
+                continue
+
+            # Get the first connection (there should only be one internal connection)
+            for connection in incoming_connections:
+                if not connection.is_node_group_internal:
+                    continue
+
+                # Get the value from the internal node's output parameter
+                internal_node = connection.source_node
+                internal_param = connection.source_parameter
+
+                if internal_param.name in internal_node.parameter_output_values:
+                    value = internal_node.parameter_output_values[internal_param.name]
+                else:
+                    value = internal_node.get_parameter_value(internal_param.name)
+
+                # Set the value on the NodeGroup's proxy parameter output
+                if value is not None:
+                    self.parameter_output_values[proxy_param_name] = value
+                break
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""

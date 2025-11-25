@@ -2579,31 +2579,150 @@ class FlowManager:
 
         return StartFlowFromNodeResultSuccess(result_details=details)
 
-    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
+    def get_start_nodes_in_flow(self, flow: ControlFlow) -> list[BaseNode]:  # noqa: C901, PLR0912, PLR0915
+        """Find start nodes in a specific flow.
+
+        A start node is defined as:
+        1. An explicit StartNode instance, OR
+        2. A control node with no incoming control connections, OR
+        3. A data node with no outgoing connections
+
+        Nodes that are children of NodeGroupNodes are excluded.
+
+        Args:
+            flow: The flow to search for start nodes
+
+        Returns:
+            List of start nodes, prioritized as: StartNodes, control nodes, data nodes
+        """
+        connections = self.get_connections()
+        all_nodes = list(flow.nodes.values())
+        if not all_nodes:
+            return []
+
+        start_nodes = []
+        control_nodes = []
+        data_nodes = []
+
+        for node in all_nodes:
+            if isinstance(node, StartNode):
+                start_nodes.append(node)
+                continue
+
+            has_control_param = False
+            for parameter in node.parameters:
+                if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                    incoming_control = (
+                        node.name in connections.incoming_index
+                        and parameter.name in connections.incoming_index[node.name]
+                    )
+                    outgoing_control = (
+                        node.name in connections.outgoing_index
+                        and parameter.name in connections.outgoing_index[node.name]
+                    )
+                    if incoming_control or outgoing_control:
+                        has_control_param = True
+                        break
+
+            if not has_control_param:
+                data_nodes.append(node)
+                continue
+
+            has_incoming_control = False
+            if node.name in connections.incoming_index:
+                for param_name in connections.incoming_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        connection_ids = connections.incoming_index[node.name][param_name]
+                        has_non_internal_control_connection = False
+                        for connection_id in connection_ids:
+                            connection = connections.connections[connection_id]
+                            # Skip internal NodeGroup connections
+                            if connection.is_node_group_internal:
+                                continue
+                            if isinstance(node, BaseIterativeStartNode):
+                                connected_node = connection.get_source_node()
+                                if connected_node == node.end_node:
+                                    continue
+                            has_non_internal_control_connection = True
+                            break
+                        if has_non_internal_control_connection:
+                            has_incoming_control = True
+                            break
+
+            if has_incoming_control:
+                continue
+
+            if node.name in connections.outgoing_index:
+                for param_name in connections.outgoing_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        control_nodes.append(node)
+                        break
+            else:
+                control_nodes.append(node)
+
+        valid_data_nodes = []
+        for node in data_nodes:
+            # Check if the node has any non-internal outgoing connections
+            has_non_internal_outgoing = False
+            if node.name in connections.outgoing_index:
+                for param_name in connections.outgoing_index[node.name]:
+                    connection_ids = connections.outgoing_index[node.name][param_name]
+                    for connection_id in connection_ids:
+                        connection = connections.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
+                        has_non_internal_outgoing = True
+                        break
+                    if has_non_internal_outgoing:
+                        break
+            # Only add nodes that have no non-internal outgoing connections
+            if not has_non_internal_outgoing:
+                valid_data_nodes.append(node)
+
+        return start_nodes + control_nodes + valid_data_nodes
+
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:  # noqa: PLR0911
         flow_name = request.flow_name
         if not flow_name:
             details = "Must provide flow name to start a flow."
-
             return StartFlowResultFailure(validation_exceptions=[], result_details=details)
-        # get the flow by ID
+
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
-        # Check to see if the flow is already running.
+
         if not self.check_for_existing_running_flow():
             msg = "There must be a flow going to start a Subflow"
             return StartLocalSubflowResultFailure(result_details=msg)
+
+        start_node_name = request.start_node
+        if start_node_name is None:
+            start_nodes = self.get_start_nodes_in_flow(flow)
+            if not start_nodes:
+                details = f"Cannot start subflow '{flow_name}'. No start nodes found in flow."
+                return StartLocalSubflowResultFailure(result_details=details)
+            if len(start_nodes) > 1:
+                node_names = [node.name for node in start_nodes]
+                details = f"Cannot start subflow '{flow_name}'. Multiple start nodes found: {node_names}. Please specify which one to use."
+                return StartLocalSubflowResultFailure(result_details=details)
+            start_node = start_nodes[0]
+        else:
+            try:
+                start_node = GriptapeNodes.NodeManager().get_node_by_name(start_node_name)
+            except ValueError as err:
+                details = f"Cannot start subflow '{flow_name}'. Start node '{start_node_name}' not found: {err}"
+                return StartLocalSubflowResultFailure(result_details=details)
 
         subflow_machine = ControlFlowMachine(
             flow.name,
             pickle_control_flow_result=request.pickle_control_flow_result,
             use_isolated_dag_builder=True,
         )
-
-        # Get the start node object from the node name string
-        start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
 
         await subflow_machine.start_flow(start_node)
 
@@ -3538,6 +3657,9 @@ class FlowManager:
                     connection_ids = connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:
                         connection = connections.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
                         return connection.get_source_node()
         return None
 
@@ -3597,17 +3719,26 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
-                        # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
-                        if isinstance(node, BaseIterativeStartNode):
-                            connection_id = cn_mgr.incoming_index[node.name][param_name][0]
+                        # Check each connection to see if it's an internal NodeGroup connection
+                        connection_ids = cn_mgr.incoming_index[node.name][param_name]
+                        has_non_internal_control_connection = False
+                        for connection_id in connection_ids:
                             connection = cn_mgr.connections[connection_id]
-                            connected_node = connection.get_source_node()
-                            # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
-                            # If it is, then this could still be the first node in the control flow.
-                            if connected_node == node.end_node:
+                            # Skip internal NodeGroup connections - they shouldn't disqualify a node from being a start node
+                            if connection.is_node_group_internal:
                                 continue
-                        has_control_connection = True
-                        break
+                            # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
+                            if isinstance(node, BaseIterativeStartNode):
+                                connected_node = connection.get_source_node()
+                                # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
+                                # If it is, then this could still be the first node in the control flow.
+                                if connected_node == node.end_node:
+                                    continue
+                            has_non_internal_control_connection = True
+                            break
+                        if has_non_internal_control_connection:
+                            has_control_connection = True
+                            break
             # if there is a connection coming in, isn't a start.
             if has_control_connection:
                 continue
@@ -3626,8 +3757,22 @@ class FlowManager:
         # Let's return a data node that has no OUTGOING data connections!
         for node in data_nodes:
             cn_mgr = self.get_connections()
-            # check if it has an outgoing connection. We don't want it to (that means we get the most resolution)
-            if node.name not in cn_mgr.outgoing_index:
+            # Check if the node has any non-internal outgoing connections
+            has_non_internal_outgoing = False
+            if node.name in cn_mgr.outgoing_index:
+                for param_name in cn_mgr.outgoing_index[node.name]:
+                    connection_ids = cn_mgr.outgoing_index[node.name][param_name]
+                    for connection_id in connection_ids:
+                        connection = cn_mgr.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
+                        has_non_internal_outgoing = True
+                        break
+                    if has_non_internal_outgoing:
+                        break
+            # Only add nodes that have no non-internal outgoing connections
+            if not has_non_internal_outgoing:
                 valid_data_nodes.append(node)
         # ok now - populate the global flow queue with node type information
         for node in start_nodes:

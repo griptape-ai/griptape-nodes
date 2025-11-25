@@ -107,6 +107,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    MoveNodeToNewFlowRequest,
     RemoveNodeFromNodeGroupRequest,
     RemoveNodeFromNodeGroupResultFailure,
     RemoveNodeFromNodeGroupResultSuccess,
@@ -223,6 +224,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DeleteNodeGroupRequest, self.on_delete_node_group_request)
         event_manager.assign_manager_to_request_type(DeleteNodeRequest, self.on_delete_node_request)
+        event_manager.assign_manager_to_request_type(MoveNodeToNewFlowRequest, self.on_move_node_to_new_flow_request)
         event_manager.assign_manager_to_request_type(
             GetNodeResolutionStateRequest, self.on_get_node_resolution_state_request
         )
@@ -919,6 +921,74 @@ class NodeManager:
 
         details = f"Successfully deleted Node '{node_name}'."
         return DeleteNodeResultSuccess(result_details=details)
+
+    def on_move_node_to_new_flow_request(self, request: MoveNodeToNewFlowRequest) -> ResultPayload:  # noqa: PLR0911
+        """Move a node from one flow to another flow.
+
+        Args:
+            request: MoveNodeToNewFlowRequest containing node_name, target_flow_name, source_flow_name
+
+        Returns:
+            MoveNodeToNewFlowResultSuccess or MoveNodeToNewFlowResultFailure
+        """
+        from griptape_nodes.retained_mode.events.node_events import (
+            MoveNodeToNewFlowResultFailure,
+            MoveNodeToNewFlowResultSuccess,
+        )
+
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to move a Node from the Current Context. Failed because the Current Context is empty."
+                )
+                return MoveNodeToNewFlowResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to move Node '{node_name}', but no such Node was found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        if not request.target_flow_name:
+            details = f"Attempted to move Node '{node_name}'. Failed because target_flow_name is required."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        source_flow_name = request.source_flow_name
+        if source_flow_name is None:
+            if node_name not in self._name_to_parent_flow_name:
+                details = f"Attempted to move Node '{node_name}'. Failed because Node has no parent flow."
+                return MoveNodeToNewFlowResultFailure(result_details=details)
+            source_flow_name = self._name_to_parent_flow_name[node_name]
+
+        try:
+            source_flow = GriptapeNodes.FlowManager().get_flow_by_name(source_flow_name)
+        except KeyError:
+            details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because source flow was not found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        try:
+            target_flow = GriptapeNodes.FlowManager().get_flow_by_name(request.target_flow_name)
+        except KeyError:
+            details = f"Attempted to move Node '{node_name}' to Flow '{request.target_flow_name}'. Failed because target flow was not found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        if node_name not in source_flow.nodes:
+            details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because Node is not in source flow."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        source_flow.remove_node(node_name)
+        target_flow.add_node(node)
+        self._name_to_parent_flow_name[node_name] = request.target_flow_name
+
+        details = f"Successfully moved Node '{node_name}' from Flow '{source_flow_name}' to Flow '{request.target_flow_name}'."
+        return MoveNodeToNewFlowResultSuccess(
+            node_name=node_name,
+            source_flow_name=source_flow_name,
+            target_flow_name=request.target_flow_name,
+            result_details=details,
+        )
 
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
         node_name = request.node_name

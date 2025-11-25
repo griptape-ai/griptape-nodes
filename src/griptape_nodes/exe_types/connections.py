@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeGroupNode, NodeResolutionState
+from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -188,8 +188,8 @@ class Connections:
         connection_id = connection_id[0]
         if connection_id in self.connections:
             connection = self.connections[connection_id]
-            # We don't traverse internal connections in NodeGroupNodes.
-            if isinstance(node, NodeGroupNode) and connection.is_node_group_internal and not include_internal:
+            # We don't traverse internal NodeGroup connections when include_internal is False.
+            if connection.is_node_group_internal and not include_internal:
                 return None
             if direction == Direction.DOWNSTREAM:
                 # Return the target (next place to go)
