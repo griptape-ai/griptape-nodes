@@ -167,7 +167,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
-            self._webrtc_manager = WebRTCManager(self._config_manager, self._event_manager)
+            self._webrtc_manager = WebRTCManager(self._config_manager, self._event_manager, self._static_files_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
