@@ -1968,6 +1968,7 @@ class ParameterList(ParameterContainer):
         user_defined: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
+        max_items: int | None = None,
         # UI convenience parameters
         collapsed: bool | None = None,
         child_prefix: str | None = None,
@@ -1979,6 +1980,7 @@ class ParameterList(ParameterContainer):
         else:
             self._original_traits = set()
 
+        self._max_items = max_items
         # Store the UI convenience parameters
         self._collapsed = collapsed
         self._child_prefix = child_prefix
@@ -2273,6 +2275,13 @@ class ParameterList(ParameterContainer):
         When a ParameterList gains a child parameter, the parent node needs to be
         marked as unresolved to trigger re-evaluation of the node's state and outputs.
         """
+        # Validate max_items before adding child
+        if self._max_items is not None:
+            current_count = len(self._children)
+            if current_count >= self._max_items:
+                msg = f"Cannot add more items to {self.name}. Maximum {self._max_items} items allowed."
+                raise ValueError(msg)
+
         super().add_child(child)
 
         # Mark the parent node as unresolved since the parameter structure changed
