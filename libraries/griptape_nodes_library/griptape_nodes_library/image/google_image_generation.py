@@ -218,7 +218,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Validate API key
         try:
-            self._validate_api_key()
+            api_key = self._validate_api_key()
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
@@ -226,7 +226,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             return
 
         params = await self._get_parameters()
-        headers = {"Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         try:
             await self._submit_request_and_process(params, headers)
         except RuntimeError as e:
