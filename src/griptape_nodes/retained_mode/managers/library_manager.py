@@ -954,7 +954,10 @@ class LibraryManager:
             # Assign them into the config space.
             for library_data_setting in library_data.settings:
                 # Does the category exist?
-                get_category_request = GetConfigCategoryRequest(category=library_data_setting.category)
+                get_category_request = GetConfigCategoryRequest(
+                    category=library_data_setting.category,
+                    failure_log_level=logging.DEBUG,  # Missing category is expected, suppress error toast
+                )
                 get_category_result = GriptapeNodes.handle_request(get_category_request)
                 if not isinstance(get_category_result, GetConfigCategoryResultSuccess):
                     # That's OK, we'll invent it. Or at least we'll try.

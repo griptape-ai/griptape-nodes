@@ -35,7 +35,6 @@ class ResultDetails:
         *result_details: ResultDetail,
         message: str | None = None,
         level: int | None = None,
-        logger: logging.Logger | str | None = "griptape_nodes",
     ):
         """Initialize with ResultDetail objects or create a single one from message/level.
 
@@ -43,7 +42,6 @@ class ResultDetails:
             *result_details: Variable number of ResultDetail objects
             message: If provided, creates a single ResultDetail with this message
             level: Logging level for the single ResultDetail (required if message is provided)
-            logger: Logger to use for auto-logging. String for logger name, Logger object, or None to skip
         """
         # Handle single message/level convenience
         if message is not None:
@@ -60,19 +58,6 @@ class ResultDetails:
                 raise ValueError(err_msg)
             self.result_details = list(result_details)
 
-        # Auto-log if logger is provided
-        if logger is not None:
-            try:
-                if isinstance(logger, str):
-                    logger = logging.getLogger(logger)
-
-                for detail in self.result_details:
-                    # Handle both string and int levels
-                    logger.log(detail.level, detail.message)
-            except Exception:  # noqa: S110
-                # If logging fails for any reason, don't let it break the ResultDetails creation
-                pass
-
 
 # The Payload class is a marker interface
 class Payload(ABC):  # noqa: B024
@@ -82,7 +67,17 @@ class Payload(ABC):  # noqa: B024
 # Request payload base class with optional request ID
 @dataclass(kw_only=True)
 class RequestPayload(Payload, ABC):
+    """Base class for all request payloads.
+
+    Args:
+        request_id: Optional request ID for tracking.
+        failure_log_level: If set, override the log level for failure results.
+                          Use logging.DEBUG (10) or logging.INFO (20) to suppress error toasts.
+                          Default: None (use handler's default, typically ERROR).
+    """
+
     request_id: int | None = None
+    failure_log_level: int | None = None
 
 
 # Result payload base class with abstract succeeded/failed methods, and indicator whether the current workflow was altered.
