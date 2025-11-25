@@ -2684,7 +2684,7 @@ class FlowManager:
 
         return start_nodes + control_nodes + valid_data_nodes
 
-    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:  # noqa: PLR0911
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
         flow_name = request.flow_name
         if not flow_name:
             details = "Must provide flow name to start a flow."
@@ -2705,10 +2705,6 @@ class FlowManager:
             start_nodes = self.get_start_nodes_in_flow(flow)
             if not start_nodes:
                 details = f"Cannot start subflow '{flow_name}'. No start nodes found in flow."
-                return StartLocalSubflowResultFailure(result_details=details)
-            if len(start_nodes) > 1:
-                node_names = [node.name for node in start_nodes]
-                details = f"Cannot start subflow '{flow_name}'. Multiple start nodes found: {node_names}. Please specify which one to use."
                 return StartLocalSubflowResultFailure(result_details=details)
             start_node = start_nodes[0]
         else:

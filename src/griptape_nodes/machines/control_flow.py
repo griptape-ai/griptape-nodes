@@ -94,7 +94,9 @@ class ControlFlowContext:
             if output_parameter is not None:
                 # Get connected node from control flow
                 node_connection = (
-                    GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, output_parameter)
+                    GriptapeNodes.FlowManager()
+                    .get_connections()
+                    .get_connected_node(current_node, output_parameter, include_internal=False)
                 )
                 if node_connection is not None:
                     node, entry_parameter = node_connection
@@ -110,7 +112,9 @@ class ControlFlowContext:
                         next_nodes.append(NextNodeInfo(node=current_node.end_node, entry_parameter=None))
                         continue
                     node_connection = (
-                        GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
+                        GriptapeNodes.FlowManager()
+                        .get_connections()
+                        .get_connected_node(current_node, next_output, include_internal=False)
                     )
                     if node_connection is not None:
                         node, entry_parameter = node_connection

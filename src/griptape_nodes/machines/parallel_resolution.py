@@ -241,7 +241,7 @@ class ExecuteDagState(State):
         flow_manager: FlowManager,
     ) -> None:
         """Process the next control node in the flow."""
-        node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
+        node_connection = flow_manager.get_connections().get_connected_node(node, next_output, include_internal=False)
         if node_connection is not None:
             next_node, next_parameter = node_connection
             # Set entry control parameter

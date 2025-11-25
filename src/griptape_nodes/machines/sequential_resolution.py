@@ -125,7 +125,7 @@ class EvaluateParameterState(State):
     @staticmethod
     def _get_next_node(current_node: BaseNode, current_parameter: Any, connections: Any) -> BaseNode | None:
         """Get the next node connected to the current parameter."""
-        next_node = connections.get_connected_node(current_node, current_parameter)
+        next_node = connections.get_connected_node(current_node, current_parameter, include_internal=False)
         if next_node:
             next_node, _ = next_node
         return next_node
@@ -183,7 +183,9 @@ class ExecuteNodeState(State):
 
         for parameter in current_node.parameters:
             # Get the connected upstream node for this parameter
-            upstream_connection = connections.get_connected_node(current_node, parameter, direction=Direction.UPSTREAM)
+            upstream_connection = connections.get_connected_node(
+                current_node, parameter, direction=Direction.UPSTREAM, include_internal=False
+            )
             if upstream_connection:
                 upstream_node, upstream_parameter = upstream_connection
 

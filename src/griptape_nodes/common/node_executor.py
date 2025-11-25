@@ -516,7 +516,54 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def _package_loop_body(  # noqa: C901, PLR0915
+    def _find_loop_entry_node(
+        self, start_node: BaseIterativeStartNode, node_group_name: str | None, connections: Any
+    ) -> tuple[str | None, str | None]:
+        """Find the entry control node and parameter for a loop body.
+
+        Args:
+            start_node: The loop start node
+            node_group_name: Name of NodeGroup if loop body is a NodeGroup, None otherwise
+            connections: Connections object from FlowManager
+
+        Returns:
+            Tuple of (entry_node_name, entry_parameter_name) or (None, None) if not found
+        """
+        entry_control_node_name = None
+        entry_control_parameter_name = None
+        exec_out_param_name = start_node.exec_out.name
+
+        if start_node.name not in connections.outgoing_index:
+            return None, None
+
+        exec_out_connections = connections.outgoing_index[start_node.name].get(exec_out_param_name, [])
+        if not exec_out_connections:
+            return None, None
+
+        first_conn_id = exec_out_connections[0]
+        first_conn = connections.connections[first_conn_id]
+
+        # If connecting to a NodeGroup, find the actual internal entry node
+        if node_group_name is not None and first_conn.target_node.name == node_group_name:
+            # The connection goes to a proxy parameter on the NodeGroup
+            # Find the internal connection from that proxy parameter to the actual entry node
+            proxy_param = first_conn.target_parameter
+            if node_group_name in connections.outgoing_index:
+                proxy_connections = connections.outgoing_index[node_group_name].get(proxy_param.name, [])
+                if proxy_connections:
+                    internal_conn_id = proxy_connections[0]
+                    internal_conn = connections.connections[internal_conn_id]
+                    if internal_conn.is_node_group_internal:
+                        entry_control_node_name = internal_conn.target_node.name
+                        entry_control_parameter_name = internal_conn.target_parameter.name
+        else:
+            # Direct connection to a regular node
+            entry_control_node_name = first_conn.target_node.name
+            entry_control_parameter_name = first_conn.target_parameter.name
+
+        return entry_control_node_name, entry_control_parameter_name
+
+    async def _package_loop_body(
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
@@ -556,11 +603,6 @@ class NodeExecutor:
         all_nodes.discard(start_node.name)
         all_nodes.discard(end_node.name)
 
-        # Handle empty loop body (no nodes between start and end)
-        if not all_nodes:
-            await self._handle_empty_loop_body(start_node, end_node)
-            return None
-
         # See if they're all in one NodeGroup
         execution_type = LOCAL_EXECUTION
         node_group_name = None
@@ -573,18 +615,15 @@ class NodeExecutor:
                 node_group_name = node_obj.name
             else:
                 all_nodes.add(node_inside)
+
+        # Handle empty loop body (no nodes between start and end)
+        if not all_nodes:
+            await self._handle_empty_loop_body(start_node, end_node)
+            return None
         # Find the first node in the loop body (where start_node.exec_out connects to)
-        entry_control_node_name = None
-        entry_control_parameter_name = None
-        if node_group_name is None:
-            exec_out_param_name = start_node.exec_out.name
-            if start_node.name in connections.outgoing_index:
-                exec_out_connections = connections.outgoing_index[start_node.name].get(exec_out_param_name, [])
-                if exec_out_connections:
-                    first_conn_id = exec_out_connections[0]
-                    first_conn = connections.connections[first_conn_id]
-                    entry_control_node_name = first_conn.target_node.name
-                    entry_control_parameter_name = first_conn.target_parameter.name
+        entry_control_node_name, entry_control_parameter_name = self._find_loop_entry_node(
+            start_node, node_group_name, connections
+        )
 
         # Determine library and node types based on execution_type
         library = None

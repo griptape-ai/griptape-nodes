@@ -769,6 +769,9 @@ class NodeManager:
                 details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to remove nodes from group: {err}"
                 return DeleteNodeGroupResultFailure(result_details=details)
 
+        # Get the subflow name before deleting the NodeGroup
+        subflow_name = node_group.metadata.get("subflow_name")
+
         # Now delete the NodeGroup node itself
         delete_node_request = DeleteNodeRequest(node_name=request.node_group_name)
         delete_result = self.on_delete_node_request(delete_node_request)
@@ -776,6 +779,17 @@ class NodeManager:
         if delete_result.failed():
             details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to delete the NodeGroup node: {delete_result.result_details}"
             return DeleteNodeGroupResultFailure(result_details=details)
+
+        # Delete the subflow last if it exists
+        if subflow_name is not None:
+            from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+
+            delete_flow_request = DeleteFlowRequest(flow_name=subflow_name)
+            delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
+
+            if delete_flow_result.failed():
+                details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to delete subflow '{subflow_name}': {delete_flow_result.result_details}"
+                return DeleteNodeGroupResultFailure(result_details=details)
 
         details = f"Successfully deleted NodeGroup '{request.node_group_name}'"
         return DeleteNodeGroupResultSuccess(result_details=ResultDetails(message=details, level=logging.DEBUG))

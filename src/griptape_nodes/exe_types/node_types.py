@@ -1918,8 +1918,8 @@ class NodeGroupNode(BaseNode):
             "parameter_names": {},
         }
 
-        # Create subflow for this NodeGroup
-        self._create_subflow()
+        # Don't create subflow in __init__ - it will be created on-demand when nodes are added
+        # or restored during deserialization
 
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
@@ -1939,7 +1939,11 @@ class NodeGroupNode(BaseNode):
         subflow_name = f"{self.name}_subflow"
         self.metadata["subflow_name"] = subflow_name
 
-        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=None)
+        # Get current flow to set as parent so subflow will be serialized with parent
+        current_flow = GriptapeNodes.ContextManager().get_current_flow()
+        parent_flow_name = current_flow.name if current_flow else None
+
+        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name)
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, CreateFlowResultSuccess):
@@ -2089,10 +2093,18 @@ class NodeGroupNode(BaseNode):
         # Clone the parameter with the new name
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
+        input_types = None
+        output_type = None
+        if is_incoming:
+            input_types = original_param.input_types
+        else:
+            output_type = original_param.output_type
+
         request = AddParameterToNodeRequest(
             node_name=self.name,
             parameter_name=original_param.name,
-            type=original_param.type,
+            input_types=input_types,
+            output_type=output_type,
             tooltip="",
             mode_allowed_input=True,
             mode_allowed_output=True,
@@ -2414,10 +2426,13 @@ class NodeGroupNode(BaseNode):
         self._remove_nodes_from_existing_parents(nodes)
         self._add_nodes_to_group_dict(nodes)
 
+        # Create subflow on-demand if it doesn't exist
         subflow_name = self.metadata.get("subflow_name")
         if subflow_name is None:
-            logger.warning("%s has no subflow_name in metadata, cannot move nodes to subflow", self.name)
-        else:
+            self._create_subflow()
+            subflow_name = self.metadata.get("subflow_name")
+
+        if subflow_name is not None:
             for node in nodes:
                 move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=subflow_name)
                 move_result = GriptapeNodes.handle_request(move_request)
