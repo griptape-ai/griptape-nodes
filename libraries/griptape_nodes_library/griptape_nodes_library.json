@@ -1661,7 +1661,7 @@
         "description": "Apply Gaussian-blurred alpha channel fade to image edges for smooth compositing with configurable fade distance, blur radius, edge shape (square/rounded), and selective edge control",
         "display_name": "Gaussian Edge Fade",
         "icon": "circle-dot-dashed",
-        "group": "effects"
+        "group": "mask"
       }
     },
     {
