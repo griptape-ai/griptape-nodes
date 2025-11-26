@@ -558,10 +558,15 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         button_variant: ButtonVariantType = "outline",
         button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
+        markdown: bool = False,
+        hide: bool = False,
         ui_options: dict | None = None,
         traits: set[Trait.__class__ | Trait] | None = None,
         **kwargs,
     ):
+        # Remove markdown and hide from kwargs to prevent passing them to parent class
+        kwargs.pop("markdown", None)
+        kwargs.pop("hide", None)
         super().__init__(element_type=ParameterMessage.__name__, **kwargs)
         self._variant = variant
         self._title = title
@@ -574,6 +579,9 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
+        if markdown:
+            self._ui_options["markdown"] = True
+        self._ui_options["hide"] = hide
 
         # Handle traits if provided
         if traits:
@@ -675,6 +683,44 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
     @BaseNodeElement.emits_update_on_write
     def button_align(self, value: ButtonAlignType) -> None:
         self._button_align = value
+
+    @property
+    def markdown(self) -> bool:
+        """Get whether markdown rendering is enabled.
+
+        Returns:
+            True if markdown rendering is enabled, False otherwise
+        """
+        return self.ui_options.get("markdown", False)
+
+    @markdown.setter
+    @BaseNodeElement.emits_update_on_write
+    def markdown(self, value: bool) -> None:
+        """Set whether to enable markdown rendering.
+
+        Args:
+            value: True to enable markdown rendering, False to disable it
+        """
+        self.update_ui_options_key("markdown", value)
+
+    @property
+    def hide(self) -> bool:
+        """Get whether the message is hidden in the UI.
+
+        Returns:
+            True if the message should be hidden, False otherwise
+        """
+        return self.ui_options.get("hide", False)
+
+    @hide.setter
+    @BaseNodeElement.emits_update_on_write
+    def hide(self, value: bool) -> None:
+        """Set whether to hide the message in the UI.
+
+        Args:
+            value: True to hide the message, False to show it
+        """
+        self.update_ui_options_key("hide", value)
 
     @property
     def ui_options(self) -> dict:

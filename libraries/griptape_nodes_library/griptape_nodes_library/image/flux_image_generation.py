@@ -15,7 +15,10 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
+    ApiKeyProviderParameter,
+    ApiKeyValidationResult,
+)
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
@@ -24,6 +27,9 @@ __all__ = ["FluxImageGeneration"]
 
 # Define constant for prompt truncation length
 PROMPT_TRUNCATE_LENGTH = 100
+
+# API timeout in seconds
+API_TIMEOUT = 60
 
 # Aspect ratio options
 ASPECT_RATIO_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:7", "7:3"]
@@ -43,9 +49,14 @@ STATUS_ERROR = "Error"
 STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
+# API Configuration for proxy API
+PROXY_URL_TEMPLATE = "{base}models/{model}"
+POLLING_URL_TEMPLATE = "{base}generations/{id}"
+RESPONSE_ID_KEY = "generation_id"
+
 
 class FluxImageGeneration(SuccessFailureNode):
-    """Generate images using Flux models via Griptape model proxy.
+    """Generate images using Flux models via API (supports user-provided API keys via proxy).
 
     Inputs:
         - model (str): Flux model to use (default: "flux-kontext-pro")
@@ -67,11 +78,14 @@ class FluxImageGeneration(SuccessFailureNode):
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
+    USER_API_KEY_NAME = "BFL_API_KEY"
+    USER_API_KEY_URL = "https://dashboard.bfl.ai/api/keys"
+    USER_API_KEY_PROVIDER_NAME = "BlackForest Labs"
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
-        self.description = "Generate images using Flux models via Griptape model proxy"
+        self.description = "Generate images using Flux models via API (supports user-provided API keys via proxy)"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
@@ -79,7 +93,14 @@ class FluxImageGeneration(SuccessFailureNode):
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/")
 
-        # Model selection
+        # Add API key provider component
+        self._api_key_provider = ApiKeyProviderParameter(
+            node=self,
+            api_key_name=self.USER_API_KEY_NAME,
+            provider_name=self.USER_API_KEY_PROVIDER_NAME,
+            api_key_url=self.USER_API_KEY_URL,
+        )
+        self._api_key_provider.add_parameters()
         self.add_parameter(
             Parameter(
                 name="model",
@@ -200,7 +221,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 name="provider_response",
                 output_type="dict",
                 type="dict",
-                tooltip="Verbatim response from Griptape model proxy",
+                tooltip="Verbatim response from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
             )
@@ -245,17 +266,26 @@ class FluxImageGeneration(SuccessFailureNode):
             return
 
         try:
-            api_key = self._validate_api_key()
+            validation_result = self._validate_api_key()
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        # Build headers: always use proxy API key, optionally add user API key
+        headers = {
+            "Authorization": f"Bearer {validation_result.proxy_api_key}",
+            "Content-Type": "application/json",
+        }
+        if validation_result.user_api_key:
+            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
 
         model = params["model"]
-        self._log(f"Generating image with {model}")
+        if validation_result.user_api_key:
+            self._log(f"Generating image with {model} using Griptape model proxy with user-provided API key")
+        else:
+            self._log(f"Generating image with {model} using Griptape model proxy")
 
         # Submit request to get generation ID
         try:
@@ -264,7 +294,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                    result_details="No generation ID returned from API. Cannot proceed with generation.",
                 )
                 return
         except RuntimeError as e:
@@ -314,24 +344,38 @@ class FluxImageGeneration(SuccessFailureNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
+    def _validate_api_key(self) -> ApiKeyValidationResult:
+        """Validate and return API key and whether to use user API.
+
+        Returns:
+            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
+        """
+        return self._api_key_provider.validate_api_key()
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        self._api_key_provider.after_value_set(parameter, value)
+        return super().after_value_set(parameter, value)
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
+        """Submit request to proxy API and return generation ID.
 
-        self._log(f"Submitting request to Griptape model proxy with {params['model']}")
+        Args:
+            params: Request parameters
+            headers: Request headers
+
+        Returns:
+            Generation ID string, or None if not found
+        """
+        payload = await self._build_payload(params)
+        model = params["model"]
+        url = PROXY_URL_TEMPLATE.format(base=self._proxy_base, model=model)
+
+        self._log(f"Submitting request to Griptape model proxy with {model}")
         self._log_request(payload)
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                response = await client.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
                 response.raise_for_status()
                 response_json = response.json()
                 self._log("Request submitted successfully")
@@ -345,18 +389,32 @@ class FluxImageGeneration(SuccessFailureNode):
             except Exception:
                 msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
+        except httpx.ConnectTimeout as e:
+            error_msg = (
+                f"{self.name}: Connection to API timed out after {API_TIMEOUT} seconds. "
+                f"This may indicate network connectivity issues or the API may be temporarily unavailable."
+            )
+            raise RuntimeError(error_msg) from e
+        except httpx.TimeoutException as e:
+            error_msg = (
+                f"{self.name}: Request to API timed out after {API_TIMEOUT} seconds. "
+                f"The API may be experiencing high load. Please try again later."
+            )
+            raise RuntimeError(error_msg) from e
         except Exception as e:
             self._log(f"Request failed: {e}")
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
+        # Extract generation ID from response
+        generation_id = response_json.get(RESPONSE_ID_KEY)
+
         if generation_id:
             self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
+            self._log(f"Submitted. {RESPONSE_ID_KEY}={generation_id}")
             return str(generation_id)
-        self._log("No generation_id returned from POST response")
+
+        self._log(f"No {RESPONSE_ID_KEY} returned from POST response")
         return None
 
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -458,8 +516,15 @@ class FluxImageGeneration(SuccessFailureNode):
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
+        """Poll the proxy API endpoint until ready.
+
+        Args:
+            generation_id: The generation/request ID to poll for
+            headers: Request headers
+        """
+        # Build polling URL for proxy API
+        get_url = POLLING_URL_TEMPLATE.format(base=self._proxy_base, id=generation_id)
+
         max_attempts = 120  # 10 minutes with 5s intervals
         poll_interval = 5
 
@@ -467,7 +532,7 @@ class FluxImageGeneration(SuccessFailureNode):
             for attempt in range(max_attempts):
                 try:
                     self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=60)
+                    response = await client.get(get_url, headers=headers, timeout=API_TIMEOUT)
                     response.raise_for_status()
                     result_json = response.json()
 
