@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import math
 import os
 import time
 from contextlib import suppress
@@ -246,8 +247,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         video_param = self.get_parameter_value("video_url")
         original_video_url = video_param.value if hasattr(video_param, "value") else str(video_param)
 
-        # Calculate duration from the original video
-        duration = get_video_duration(original_video_url)
+        # Calculate duration from the original video (ceiling to int)
+        duration = math.ceil(get_video_duration(original_video_url))
         logger.debug(f"Detected video duration: {duration}s")
 
         return {
