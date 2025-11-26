@@ -249,7 +249,7 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         # Calculate duration from the original video (ceiling to int)
         duration = math.ceil(get_video_duration(original_video_url))
-        logger.debug(f"Detected video duration: {duration}s")
+        logger.debug("Detected video duration: %ss", duration)
 
         return {
             "model": self.get_parameter_value("model"),
@@ -271,13 +271,16 @@ class WanAnimateGeneration(SuccessFailureNode):
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
         payload = self._build_payload(params)
 
-        logger.info(f"Submitting request to proxy model={params['model']}")
+        logger.info("Submitting request to proxy model=%s", params["model"])
 
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
             logger.info(
-                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+                "Proxy POST error status=%s headers=%s body=%s",
+                post_resp.status_code,
+                dict(post_resp.headers),
+                post_resp.text,
             )
             try:
                 error_json = post_resp.json()
@@ -295,7 +298,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = provider_response
 
         if generation_id:
-            logger.info(f"Submitted. generation_id={generation_id}")
+            logger.info("Submitted. generation_id=%s", generation_id)
         else:
             logger.info("No generation_id returned from POST response")
 
@@ -340,23 +343,23 @@ class WanAnimateGeneration(SuccessFailureNode):
                 last_json = get_resp.json()
                 self.parameter_output_values["provider_response"] = last_json
             except Exception as exc:
-                logger.info(f"GET generation failed: {exc}")
+                logger.info("GET generation failed: %s", exc)
                 error_msg = f"Failed to poll generation status: {exc}"
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(RuntimeError(error_msg))
                 return
 
             with suppress(Exception):
-                logger.info(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
+                logger.info("GET payload attempt #%s: %s", attempt + 1, _json.dumps(last_json, indent=2))
 
             status = self._extract_status(last_json) or "running"
             is_complete = self._is_complete(last_json)
             attempt += 1
-            logger.info(f"Polling attempt #{attempt} status={status}")
+            logger.info("Polling attempt #%s status=%s", attempt, status)
 
             # Check for explicit failure statuses
             if status.lower() in {"failed", "error"}:
-                logger.info(f"Generation failed with status: {status}")
+                logger.info("Generation failed with status: %s", status)
                 self.parameter_output_values["video"] = None
                 error_details = self._extract_error_details(last_json)
                 self._set_status_results(was_successful=False, result_details=error_details)
@@ -382,7 +385,7 @@ class WanAnimateGeneration(SuccessFailureNode):
             logger.info("Downloading video bytes from provider URL")
             video_bytes = self._download_bytes_from_url(extracted_url)
         except Exception as e:
-            logger.info(f"Failed to download video: {e}")
+            logger.info("Failed to download video: %s", e)
             video_bytes = None
 
         if video_bytes:
@@ -393,12 +396,12 @@ class WanAnimateGeneration(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info(f"Saved video to static storage as {filename}")
+                logger.info("Saved video to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
             except Exception as e:
-                logger.info(f"Failed to save to static storage: {e}, using provider URL")
+                logger.info("Failed to save to static storage: %s, using provider URL", e)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
                     was_successful=True,

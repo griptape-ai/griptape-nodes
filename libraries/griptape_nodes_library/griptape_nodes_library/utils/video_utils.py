@@ -10,10 +10,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
