@@ -260,7 +260,7 @@ class Agent(ControlNode):
         emit_change: bool = True,
         skip_before_value_set: bool = False,
     ) -> None:
-        if param_name == "model" and initial_setup and value == "gemini-2.5-flash-preview-05-20":
+        if param_name == "model" and value == "gemini-2.5-flash-preview-05-20":
             value = "gemini-2.5-flash"
             self.add_node_element(
                 ParameterMessage(
@@ -275,6 +275,7 @@ class Agent(ControlNode):
                         )
                     },
                     button_text="Dismiss",
+                    ui_options={"hide": False},
                 )
             )
             model_index = self.get_element_index("model")
