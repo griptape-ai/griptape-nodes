@@ -152,6 +152,22 @@ class Agent(ControlNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
+        self.add_node_element(
+            ParameterMessage(
+                name="model_deprecation_notice",
+                title="Model Deprecation Notice",
+                variant="info",
+                value="The 'gemini-2.5-flash-preview-05-20' model has been deprecated. The model has been updated to 'gemini-2.5-flash'. Please save your workflow to apply this change.",
+                traits={
+                    Button(
+                        full_width=True,
+                        on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
+                    )
+                },
+                button_text="Dismiss",
+                ui_options={"hide": True},
+            )
+        )
         # Selection for the Griptape Cloud model.
         self.add_parameter(
             Parameter(
@@ -251,46 +267,20 @@ class Agent(ControlNode):
 
         self.add_node_element(logs_group)
 
-    def set_parameter_value(
+    def before_value_set(
         self,
-        param_name: str,
+        parameter: Parameter,
         value: Any,
-        *,
-        initial_setup: bool = False,
-        emit_change: bool = True,
-        skip_before_value_set: bool = False,
     ) -> None:
-        if param_name == "model" and value == "gemini-2.5-flash-preview-05-20":
+        self.before_value_set
+        if parameter.name == "model" and value == "gemini-2.5-flash-preview-05-20":
             value = "gemini-2.5-flash"
-            self.add_node_element(
-                ParameterMessage(
-                    name="model_deprecation_notice",
-                    title="Model Deprecation Notice",
-                    variant="info",
-                    value="The 'gemini-2.5-flash-preview-05-20' model has been deprecated. The model has been updated to 'gemini-2.5-flash'. Please save your workflow to apply this change.",
-                    traits={
-                        Button(
-                            full_width=True,
-                            on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
-                        )
-                    },
-                    button_text="Dismiss",
-                    ui_options={"hide": False},
-                )
-            )
-            model_index = self.get_element_index("model")
-            self.move_element_to_position(
-                "model_deprecation_notice",
-                model_index,
-            )
+            self.show_message_by_name("model_deprecation_notice")
 
         # Call the parent implementation
-        super().set_parameter_value(
-            param_name,
+        super().before_value_set(
+            parameter,
             value,
-            initial_setup=initial_setup,
-            emit_change=emit_change,
-            skip_before_value_set=skip_before_value_set,
         )
 
     # --- Helper Methods ---
