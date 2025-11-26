@@ -99,7 +99,7 @@ MODEL_CHOICES_ARGS = [
 ]
 
 MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-4o"
 
 
 class Agent(ControlNode):
