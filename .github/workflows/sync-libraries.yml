@@ -15,10 +15,10 @@ jobs:
       matrix:
         library:
           - source_path: libraries/griptape_nodes_library
-            target_repo: griptape-ai/griptape-nodes-library-core
+            target_repo: griptape-ai/griptape-nodes-library-standard
             name: Core Library
           - source_path: libraries/griptape_nodes_advanced_media_library
-            target_repo: griptape-ai/griptape-nodes-library-advanced
+            target_repo: griptape-ai/griptape-nodes-library-advanced-media
             name: Advanced Media Library
           - source_path: libraries/griptape_cloud
             target_repo: griptape-ai/griptape-nodes-library-griptape-cloud

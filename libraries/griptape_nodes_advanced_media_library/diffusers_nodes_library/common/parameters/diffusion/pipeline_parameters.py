@@ -40,6 +40,9 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.runtime_parameters
 from diffusers_nodes_library.common.parameters.diffusion.flux.upscale_runtime_parameters import (
     FluxUpscalePipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.flux2.runtime_parameters import (
+    Flux2PipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.controlnet_runtime_parameters import (
     QwenImageControlNetPipelineRuntimeParameters,
 )
@@ -124,6 +127,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxImg2ImgPipelineRuntimeParameters(self._node)
             case "FluxUpscalePipeline":
                 self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
+            case "Flux2Pipeline":
+                self._runtime_parameters = Flux2PipelineRuntimeParameters(self._node)
             case "AllegroPipeline":
                 self._runtime_parameters = AllegroPipelineRuntimeParameters(self._node)
             case "AmusedPipeline":

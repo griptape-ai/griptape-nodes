@@ -21,6 +21,9 @@ from diffusers_nodes_library.common.parameters.diffusion.depthcrafter.pipeline_t
 from diffusers_nodes_library.common.parameters.diffusion.flux.pipeline_type_parameters import (
     FluxPipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.flux2.pipeline_type_parameters import (
+    Flux2PipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.pipeline_type_parameters import (
     QwenPipelineTypeParameters,
 )
@@ -48,6 +51,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 class DiffusionPipelineBuilderParameters:
     PROVIDER_MAP: ClassVar = {
         "Flux": FluxPipelineTypeParameters,
+        "Flux2": Flux2PipelineTypeParameters,
         "Allegro": AllegroPipelineTypeParameters,
         "Amused": AmusedPipelineTypeParameters,
         "AudioLDM": AudioldmPipelineTypeParameters,
