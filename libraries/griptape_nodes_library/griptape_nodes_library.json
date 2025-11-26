@@ -1372,6 +1372,17 @@
       }
     },
     {
+      "class_name": "Flux2ImageGeneration",
+      "file_path": "griptape_nodes_library/image/flux_2_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Flux-2 models via Griptape model proxy",
+        "display_name": "Flux 2 Image Generation",
+        "group": "create",
+        "icon": "Zap"
+      }
+    },
+    {
       "class_name": "QwenImageGeneration",
       "file_path": "griptape_nodes_library/image/qwen_image_generation.py",
       "metadata": {
