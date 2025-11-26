@@ -1,15 +1,17 @@
 # Using ApiKeyProviderParameter Component
 
-The `ApiKeyProviderParameter` component provides a reusable way to add API key switching functionality to nodes, allowing users to choose between using a Griptape Cloud proxy API key or their own direct API key.
+The `ApiKeyProviderParameter` component provides a reusable way to add user-provided API key support to nodes that use the Griptape Cloud proxy API. When users provide their own API key, it's automatically forwarded to the provider via the `X-GTC-PROXY-AUTH-API-KEY` header.
 
 ## Overview
 
 This component automatically adds:
 
-- A toggle parameter to switch between proxy (Griptape) and user API keys
+- A toggle parameter to enable user-provided API key (always uses proxy API)
 - A button on the toggle to open secrets settings (filtered to the relevant API key)
 - An informational message that shows/hides based on whether the user API key is set
 - Helper methods to validate and retrieve API keys
+
+**Key Simplification:** All requests go through the Griptape Cloud proxy API. When a user provides their own API key, it's simply forwarded via the `X-GTC-PROXY-AUTH-API-KEY` header - no need to switch between different API endpoints or configurations!
 
 ## Example: Flux Image Generation Node
 
@@ -83,14 +85,21 @@ def _process(self) -> None:
     # ... your setup code ...
     
     try:
-        api_key, use_user_api = self._api_key_provider.validate_api_key()
+        validation_result = self._api_key_provider.validate_api_key()
     except ValueError as e:
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
         return
     
-    # Use api_key and use_user_api in your API calls
-    # use_user_api is True if user selected their own API key, False for proxy
+    # Build headers: always use proxy API key, optionally add user API key
+    headers = {
+        "Authorization": f"Bearer {validation_result.proxy_api_key}",
+        "Content-Type": "application/json",
+    }
+    if validation_result.user_api_key:
+        headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
+    
+    # Use headers in your API calls - always goes through proxy API
     # ... rest of your processing ...
 ```
 
@@ -101,16 +110,23 @@ def _process(self) -> None:
 If you had an existing `_validate_api_key` method, you can simplify it to delegate to the component:
 
 ```python
-def _validate_api_key(self) -> tuple[str, bool]:
-    """Validate and return API key and whether to use user API.
+def _validate_api_key(self) -> ApiKeyValidationResult:
+    """Validate and return API keys for proxy API usage.
     
     Returns:
-        tuple: (api_key, use_user_api) where use_user_api is True if user API is enabled
+        ApiKeyValidationResult: Named tuple containing proxy_api_key and optional user_api_key
     """
     return self._api_key_provider.validate_api_key()
 ```
 
-**File location:** Replace your existing `_validate_api_key` method with this, or add it if you don't have one
+**File location:** Replace your existing `_validate_api_key` method with this, or add it if you don't have one. Don't forget to import `ApiKeyValidationResult`:
+
+```python
+from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
+    ApiKeyProviderParameter,
+    ApiKeyValidationResult,
+)
+```
 
 ## Complete Example
 
@@ -162,33 +178,32 @@ class ExampleNode(SuccessFailureNode):
         return super().after_value_set(parameter, value)
     
     def _process(self) -> None:
-        # Get API key and determine which API to use
+        # Get API keys for proxy API usage
         try:
-            api_key, use_user_api = self._api_key_provider.validate_api_key()
+            validation_result = self._api_key_provider.validate_api_key()
         except ValueError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
         
-        # Use api_key and use_user_api in your API logic
-        input_text = self.get_parameter_value("input_text")
+        # Build headers: always use proxy API key, optionally add user API key
+        headers = {
+            "Authorization": f"Bearer {validation_result.proxy_api_key}",
+            "Content-Type": "application/json",
+        }
+        if validation_result.user_api_key:
+            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
         
-        if use_user_api:
-            # Use direct API with user's key
-            result = self._call_user_api(api_key, input_text)
-        else:
-            # Use proxy API with Griptape Cloud key
-            result = self._call_proxy_api(api_key, input_text)
+        # Always use proxy API - user's key is forwarded via header if provided
+        input_text = self.get_parameter_value("input_text")
+        result = self._call_proxy_api(headers, input_text)
         
         # Process result...
         self._set_status_results(was_successful=True, result_details="Success")
     
-    def _call_user_api(self, api_key: str, input_text: str) -> dict:
-        # Your direct API call logic here
-        pass
-    
-    def _call_proxy_api(self, api_key: str, input_text: str) -> dict:
-        # Your proxy API call logic here
+    def _call_proxy_api(self, headers: dict[str, str], input_text: str) -> dict:
+        # Your proxy API call logic here - always uses proxy endpoint
+        # User's API key is automatically forwarded if provided
         pass
 ```
 
@@ -220,11 +235,13 @@ Adds the toggle parameter and message to the node. Call this once in `__init__`.
 
 Handles visibility updates when the toggle changes. Call this from your node's `after_value_set` method.
 
-#### `validate_api_key() -> tuple[str, bool]`
+#### `validate_api_key() -> ApiKeyValidationResult`
 
-Validates and returns the API key and whether to use user API. Returns `(api_key, use_user_api)`.
+Validates and returns API keys for proxy API usage. Returns a `ApiKeyValidationResult` named tuple with:
+- `proxy_api_key` (str): The Griptape Cloud API key for Authorization header (always required)
+- `user_api_key` (str | None): Optional user-provided API key for X-GTC-PROXY-AUTH-API-KEY header (None if not enabled)
 
-**Raises:** `ValueError` if the required API key is not set.
+**Raises:** `ValueError` if the proxy API key is not set, or if user API is enabled but user key is not set.
 
 #### `is_user_api_enabled() -> bool`
 
@@ -288,7 +305,10 @@ def _validate_api_key(self) -> tuple[str, bool]:
 ### After (Using Component)
 
 ```python
-from griptape_nodes.exe_types.param_components.api_key_provider_parameter import ApiKeyProviderParameter
+from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
+    ApiKeyProviderParameter,
+    ApiKeyValidationResult,
+)
 
 def __init__(self, **kwargs: Any) -> None:
     super().__init__(**kwargs)
@@ -306,53 +326,61 @@ def after_value_set(self, parameter: Parameter, value: Any) -> None:
     self._api_key_provider.after_value_set(parameter, value)
     return super().after_value_set(parameter, value)
 
-def _validate_api_key(self) -> tuple[str, bool]:
+def _validate_api_key(self) -> ApiKeyValidationResult:
     return self._api_key_provider.validate_api_key()
+
+def _process(self) -> None:
+    validation_result = self._validate_api_key()
+    
+    # Build headers - always use proxy API
+    headers = {
+        "Authorization": f"Bearer {validation_result.proxy_api_key}",
+        "Content-Type": "application/json",
+    }
+    if validation_result.user_api_key:
+        headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
+    
+    # Always use proxy endpoint
+    # ... make API call with headers ...
 ```
 
 ## Common Patterns
 
-### Pattern 1: Simple API Switching
+### Pattern 1: Simple Proxy API Usage
 
-If your node just needs to switch between two API endpoints with different keys:
+All requests go through the proxy API. User's API key is automatically forwarded if provided:
 
 ```python
-api_key, use_user_api = self._api_key_provider.validate_api_key()
+validation_result = self._api_key_provider.validate_api_key()
 
-if use_user_api:
-    base_url = "https://api.provider.com/v1"
-    headers = {"Authorization": f"Bearer {api_key}"}
-else:
-    base_url = self._proxy_base
-    headers = {"Authorization": f"Bearer {api_key}"}
+headers = {
+    "Authorization": f"Bearer {validation_result.proxy_api_key}",
+    "Content-Type": "application/json",
+}
+if validation_result.user_api_key:
+    headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
+
+# Always use proxy endpoint
+url = urljoin(self._proxy_base, "models/your-model")
+response = await client.post(url, json=payload, headers=headers)
 ```
 
-### Pattern 2: Different API Configurations
+### Pattern 2: Logging User API Key Usage
 
-If your proxy and user APIs have different configurations (like in Flux Image Generation):
-
-```python
-api_key, use_user_api = self._api_key_provider.validate_api_key()
-
-config_mode = "user" if use_user_api else "proxy"
-config = YOUR_API_CONFIG[config_mode]
-
-# Use config for URL, headers, etc.
-url = config["url_template"].format(base=config["base_url"])
-headers = config["headers"](api_key)
-```
-
-### Pattern 3: Conditional Logic Based on API Type
+You can log when a user-provided API key is being used:
 
 ```python
-api_key, use_user_api = self._api_key_provider.validate_api_key()
+validation_result = self._api_key_provider.validate_api_key()
 
-if use_user_api:
-    # User API specific logic
-    result = await self._call_user_api(api_key, params)
+headers = {
+    "Authorization": f"Bearer {validation_result.proxy_api_key}",
+    "Content-Type": "application/json",
+}
+if validation_result.user_api_key:
+    headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
+    self._log("Using user-provided API key via proxy")
 else:
-    # Proxy API specific logic
-    result = await self._call_proxy_api(api_key, params)
+    self._log("Using default proxy API key")
 ```
 
 ## Troubleshooting
