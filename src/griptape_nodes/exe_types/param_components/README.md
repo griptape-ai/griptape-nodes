@@ -238,6 +238,7 @@ Handles visibility updates when the toggle changes. Call this from your node's `
 #### `validate_api_key() -> ApiKeyValidationResult`
 
 Validates and returns API keys for proxy API usage. Returns a `ApiKeyValidationResult` named tuple with:
+
 - `proxy_api_key` (str): The Griptape Cloud API key for Authorization header (always required)
 - `user_api_key` (str | None): Optional user-provided API key for X-GTC-PROXY-AUTH-API-KEY header (None if not enabled)
 
