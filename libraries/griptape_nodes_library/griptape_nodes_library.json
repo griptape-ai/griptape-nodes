@@ -752,6 +752,17 @@
       }
     },
     {
+      "class_name": "WanAnimateGeneration",
+      "file_path": "griptape_nodes_library/video/wan_animate_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate animated videos from images using WAN Animate models via Griptape model proxy",
+        "display_name": "WAN Animate Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SeedVRVideoUpscale",
       "file_path": "griptape_nodes_library/video/seedvr_video_upscale.py",
       "metadata": {

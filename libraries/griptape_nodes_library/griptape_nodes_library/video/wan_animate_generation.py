@@ -1,0 +1,555 @@
+from __future__ import annotations
+
+import json as _json
+import logging
+import os
+import time
+from contextlib import suppress
+from time import monotonic, sleep
+from typing import Any
+from urllib.parse import urljoin
+
+import requests
+from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.options import Options
+
+logger = logging.getLogger("griptape_nodes")
+
+__all__ = ["WanAnimateGeneration"]
+
+# Model options
+MODEL_OPTIONS = [
+    "wan2.2-animate-mix",
+    "wan2.2-animate-move",
+]
+
+# Mode options
+MODE_OPTIONS = [
+    "wan-std",
+    "wan-pro",
+]
+
+# HTTP status code threshold for error responses
+HTTP_ERROR_STATUS = 400
+
+
+class WanAnimateGeneration(SuccessFailureNode):
+    """Generate animated videos from images using WAN Animate models via Griptape model proxy.
+
+    WAN Animate models combine a source image with a reference video to create animations.
+    - wan2.2-animate-mix: Combines image with reference video motion
+    - wan2.2-animate-move: Animates an image based on reference video motion
+
+    Both models support two service modes:
+    - wan-std (standard): Lower cost
+    - wan-pro (professional): Higher quality
+
+    Inputs:
+        - model (str): WAN Animate model to use (default: "wan2.2-animate-mix")
+        - mode (str): Service mode - "wan-std" (standard) or "wan-pro" (professional)
+        - image_url (ImageUrlArtifact): Source image to animate (required)
+            Format: JPG, JPEG, PNG, BMP, or WEBP
+            Dimensions: 200-4096 pixels (width and height), aspect ratio 1:3 to 3:1
+            Size: Max 5 MB
+            Content: Single person facing camera, complete face, not obstructed
+        - video_url (VideoUrlArtifact): Reference video for motion (required)
+            Format: MP4, AVI, or MOV
+            Duration: 2-30 seconds
+            Dimensions: 200-2048 pixels (width and height), aspect ratio 1:3 to 3:1
+            Size: Max 200 MB
+            Content: Single person facing camera, complete face, not obstructed
+
+    Outputs:
+        - generation_id (str): Generation ID from the API
+        - provider_response (dict): Verbatim provider response from the model proxy
+        - video (VideoUrlArtifact): Generated video as URL artifact
+        - was_successful (bool): Whether the generation succeeded
+        - result_details (str): Details about the generation result or error
+    """
+
+    SERVICE_NAME = "Griptape"
+    API_KEY_NAME = "GT_CLOUD_API_KEY"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.category = "API Nodes"
+        self.description = "Generate animated videos from images using WAN Animate models via Griptape model proxy"
+
+        # Compute API base once
+        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+        base_slash = base if base.endswith("/") else base + "/"
+        api_base = urljoin(base_slash, "api/")
+        self._proxy_base = urljoin(api_base, "proxy/")
+
+        # Model selection
+        self.add_parameter(
+            Parameter(
+                name="model",
+                input_types=["str"],
+                type="str",
+                default_value="wan2.2-animate-mix",
+                tooltip="Select the WAN Animate model to use",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=MODEL_OPTIONS)},
+            )
+        )
+
+        # Mode selection
+        self.add_parameter(
+            Parameter(
+                name="mode",
+                input_types=["str"],
+                type="str",
+                default_value="wan-std",
+                tooltip="Service mode: wan-std (standard, lower cost) or wan-pro (professional, higher quality)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=MODE_OPTIONS)},
+            )
+        )
+
+        # Input image URL using PublicArtifactUrlParameter
+        self._public_image_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="image_url",
+                input_types=["ImageUrlArtifact"],
+                type="ImageUrlArtifact",
+                default_value="",
+                tooltip="Source image to animate",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Image URL"},
+            ),
+            disclaimer_message="The WAN Animate service utilizes this URL to access the image for animation.",
+        )
+        self._public_image_url_parameter.add_input_parameters()
+
+        # Reference video URL using PublicArtifactUrlParameter
+        self._public_video_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="video_url",
+                input_types=["VideoUrlArtifact"],
+                type="VideoUrlArtifact",
+                default_value="",
+                tooltip="Reference video for motion transfer",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Video URL"},
+            ),
+            disclaimer_message="The WAN Animate service utilizes this URL to access the reference video for motion transfer.",
+        )
+        self._public_video_url_parameter.add_input_parameters()
+
+        # OUTPUTS
+        self.add_parameter(
+            Parameter(
+                name="generation_id",
+                output_type="str",
+                tooltip="Generation ID from the API",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="provider_response",
+                output_type="dict",
+                type="dict",
+                tooltip="Verbatim response from Griptape model proxy",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="video",
+                output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
+                tooltip="Generated video as URL artifact",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"is_full_width": True, "pulse_on_run": True},
+            )
+        )
+
+        # Create status parameters for success/failure tracking
+        self._create_status_parameters(
+            result_details_tooltip="Details about the video generation result or any errors",
+            result_details_placeholder="Generation status and details will appear here.",
+            parameter_group_initially_collapsed=False,
+        )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions = super().validate_before_node_run() or []
+        image_url = self.get_parameter_value("image_url")
+        if not image_url:
+            exceptions.append(ValueError("Image URL must be provided"))
+        video_url = self.get_parameter_value("video_url")
+        if not video_url:
+            exceptions.append(ValueError("Video URL must be provided"))
+        return exceptions if exceptions else None
+
+    def _log(self, message: str) -> None:
+        with suppress(Exception):
+            logger.info(message)
+
+    def process(self) -> AsyncResult[None]:
+        yield lambda: self._process()
+
+    def _process(self) -> None:
+        # Clear execution status at the start
+        self._clear_execution_status()
+
+        # Validate API key
+        try:
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        # Get parameters
+        params = self._get_parameters()
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+        # Build and submit request
+        try:
+            generation_id = self._submit_request(params, headers)
+            if not generation_id:
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                )
+                return
+        except RuntimeError as e:
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        # Poll for result
+        self._poll_for_result(generation_id, headers)
+
+        # Cleanup uploaded artifacts
+        self._public_image_url_parameter.delete_uploaded_artifact()
+        self._public_video_url_parameter.delete_uploaded_artifact()
+
+    def _get_parameters(self) -> dict[str, Any]:
+        return {
+            "model": self.get_parameter_value("model"),
+            "mode": self.get_parameter_value("mode"),
+            "image_url": self._public_image_url_parameter.get_public_url_for_parameter(),
+            "video_url": self._public_video_url_parameter.get_public_url_for_parameter(),
+        }
+
+    def _validate_api_key(self) -> str:
+        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
+        if not api_key:
+            self._set_safe_defaults()
+            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
+            raise ValueError(msg)
+        return api_key
+
+    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
+        post_url = urljoin(self._proxy_base, f"models/{params['model']}")
+        payload = self._build_payload(params)
+
+        self._log(f"Submitting request to proxy model={params['model']}")
+        self._log_request(post_url, headers, payload)
+
+        post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
+        if post_resp.status_code >= HTTP_ERROR_STATUS:
+            self._set_safe_defaults()
+            self._log(
+                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+            )
+            try:
+                error_json = post_resp.json()
+                error_details = self._extract_error_details(error_json)
+                msg = f"{error_details}"
+            except Exception:
+                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
+            raise RuntimeError(msg)
+
+        post_json = post_resp.json()
+        generation_id = str(post_json.get("generation_id") or "")
+        provider_response = post_json.get("provider_response")
+
+        self.parameter_output_values["generation_id"] = generation_id
+        self.parameter_output_values["provider_response"] = provider_response
+
+        if generation_id:
+            self._log(f"Submitted. generation_id={generation_id}")
+        else:
+            self._log("No generation_id returned from POST response")
+
+        return generation_id
+
+    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Build payload matching proxy expected format
+        payload = {
+            "input": {
+                "image_url": params["image_url"],
+                "video_url": params["video_url"],
+            },
+            "parameters": {
+                "mode": params["mode"],
+            },
+        }
+
+        return payload
+
+    def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
+        dbg_headers = {**headers, "Authorization": "Bearer ***"}
+        with suppress(Exception):
+            self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(payload, indent=2)}")
+
+    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
+        start_time = monotonic()
+        last_json = None
+        attempt = 0
+        poll_interval_s = 5.0
+        timeout_s = 600.0
+
+        while True:
+            if monotonic() - start_time > timeout_s:
+                self.parameter_output_values["video"] = self._extract_video_url(last_json)
+                self._log("Polling timed out waiting for result")
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                )
+                return
+
+            try:
+                get_resp = requests.get(get_url, headers=headers, timeout=60)
+                get_resp.raise_for_status()
+                last_json = get_resp.json()
+                self.parameter_output_values["provider_response"] = last_json
+            except Exception as exc:
+                self._log(f"GET generation failed: {exc}")
+                error_msg = f"Failed to poll generation status: {exc}"
+                self._set_status_results(was_successful=False, result_details=error_msg)
+                self._handle_failure_exception(RuntimeError(error_msg))
+                return
+
+            with suppress(Exception):
+                self._log(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
+
+            status = self._extract_status(last_json) or "running"
+            is_complete = self._is_complete(last_json)
+            attempt += 1
+            self._log(f"Polling attempt #{attempt} status={status}")
+
+            # Check for explicit failure statuses
+            if status.lower() in {"failed", "error"}:
+                self._log(f"Generation failed with status: {status}")
+                self.parameter_output_values["video"] = None
+                error_details = self._extract_error_details(last_json)
+                self._set_status_results(was_successful=False, result_details=error_details)
+                return
+
+            if status.lower() in {"succeeded", "success", "completed"} or is_complete:
+                self._handle_completion(last_json, generation_id)
+                return
+
+            sleep(poll_interval_s)
+
+    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+        extracted_url = self._extract_video_url(last_json)
+        if not extracted_url:
+            self.parameter_output_values["video"] = None
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no video URL was found in the response.",
+            )
+            return
+
+        try:
+            self._log("Downloading video bytes from provider URL")
+            video_bytes = self._download_bytes_from_url(extracted_url)
+        except Exception as e:
+            self._log(f"Failed to download video: {e}")
+            video_bytes = None
+
+        if video_bytes:
+            try:
+                filename = (
+                    f"wan_animate_{generation_id}.mp4" if generation_id else f"wan_animate_{int(time.time())}.mp4"
+                )
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved video to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                )
+            except Exception as e:
+                self._log(f"Failed to save to static storage: {e}, using provider URL")
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                )
+        else:
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+            )
+
+    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+        """Extract error details from API response."""
+        if not response_json:
+            return "Generation failed with no error details provided by API."
+
+        top_level_error = response_json.get("error")
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+
+        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+        if provider_error_msg:
+            return provider_error_msg
+
+        if top_level_error:
+            return self._format_top_level_error(top_level_error)
+
+        status = self._extract_status(response_json) or "unknown"
+        return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
+
+    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
+        """Parse provider_response if it's a JSON string."""
+        if isinstance(provider_response, str):
+            try:
+                return _json.loads(provider_response)
+            except Exception:
+                return None
+        if isinstance(provider_response, dict):
+            return provider_response
+        return None
+
+    def _format_provider_error(
+        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
+    ) -> str | None:
+        """Format error message from parsed provider response."""
+        if not parsed_provider_response:
+            return None
+
+        provider_error = parsed_provider_response.get("error")
+        if not provider_error:
+            return None
+
+        if isinstance(provider_error, dict):
+            error_message = provider_error.get("message", "")
+            details = f"{error_message}"
+
+            if error_code := provider_error.get("code"):
+                details += f"\nError Code: {error_code}"
+            if error_type := provider_error.get("type"):
+                details += f"\nError Type: {error_type}"
+            if top_level_error:
+                details = f"{top_level_error}\n\n{details}"
+            return details
+
+        error_msg = str(provider_error)
+        if top_level_error:
+            return f"{top_level_error}\n\nProvider error: {error_msg}"
+        return f"Generation failed. Provider error: {error_msg}"
+
+    def _format_top_level_error(self, top_level_error: Any) -> str:
+        """Format error message from top-level error field."""
+        if isinstance(top_level_error, dict):
+            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
+            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
+        return f"Generation failed with error: {top_level_error!s}"
+
+    def _set_safe_defaults(self) -> None:
+        """Set safe default values for outputs."""
+        self.parameter_output_values["generation_id"] = ""
+        self.parameter_output_values["provider_response"] = None
+        self.parameter_output_values["video"] = None
+
+    @staticmethod
+    def _extract_status(obj: dict[str, Any] | None) -> str | None:
+        if not obj:
+            return None
+        for key in ("status", "state", "phase", "task_status"):
+            val = obj.get(key)
+            if isinstance(val, str):
+                return val
+        data = obj.get("data") if isinstance(obj, dict) else None
+        if isinstance(data, dict):
+            for key in ("status", "state", "phase"):
+                val = data.get(key)
+                if isinstance(val, str):
+                    return val
+        return None
+
+    @staticmethod
+    def _is_complete(obj: dict[str, Any] | None) -> bool:
+        if not isinstance(obj, dict):
+            return False
+        if obj.get("result") not in (None, {}):
+            return True
+        if WanAnimateGeneration._is_provider_complete(obj):
+            return True
+        for key in ("finished_at", "completed_at", "end_time"):
+            if obj.get(key):
+                return True
+        return False
+
+    @staticmethod
+    def _is_provider_complete(prov: Any) -> bool:
+        if not isinstance(prov, dict):
+            return False
+        for key in ("output", "outputs", "data", "task_result"):
+            if prov.get(key) not in (None, {}):
+                return True
+        status = None
+        for key in ("status", "state", "phase", "task_status"):
+            val = prov.get(key)
+            if isinstance(val, str):
+                status = val.lower()
+                break
+        return status in {"succeeded", "success", "completed"}
+
+    @staticmethod
+    def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
+        if not obj:
+            return None
+        for key in ("url", "video_url", "output_url"):
+            val = obj.get(key) if isinstance(obj, dict) else None
+            if isinstance(val, str) and val.startswith("http"):
+                return val
+        for key in ("result", "data", "output", "outputs", "content", "task_result"):
+            nested = obj.get(key) if isinstance(obj, dict) else None
+            if isinstance(nested, dict):
+                url = WanAnimateGeneration._extract_video_url(nested)
+                if url:
+                    return url
+            elif isinstance(nested, list):
+                for item in nested:
+                    url = WanAnimateGeneration._extract_video_url(item if isinstance(item, dict) else None)
+                    if url:
+                        return url
+        return None
+
+    @staticmethod
+    def _download_bytes_from_url(url: str) -> bytes | None:
+        try:
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+        except Exception:
+            return None
+        else:
+            return resp.content
