@@ -19,6 +19,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.video_utils import get_video_duration
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -197,10 +198,6 @@ class WanAnimateGeneration(SuccessFailureNode):
             exceptions.append(ValueError("Video URL must be provided"))
         return exceptions if exceptions else None
 
-    def _log(self, message: str) -> None:
-        with suppress(Exception):
-            logger.info(message)
-
     def process(self) -> AsyncResult[None]:
         yield lambda: self._process()
 
@@ -245,11 +242,20 @@ class WanAnimateGeneration(SuccessFailureNode):
         self._public_video_url_parameter.delete_uploaded_artifact()
 
     def _get_parameters(self) -> dict[str, Any]:
+        # Get the original video URL before uploading to calculate duration
+        video_param = self.get_parameter_value("video_url")
+        original_video_url = video_param.value if hasattr(video_param, "value") else str(video_param)
+
+        # Calculate duration from the original video
+        duration = get_video_duration(original_video_url)
+        logger.debug(f"Detected video duration: {duration}s")
+
         return {
             "model": self.get_parameter_value("model"),
             "mode": self.get_parameter_value("mode"),
             "image_url": self._public_image_url_parameter.get_public_url_for_parameter(),
             "video_url": self._public_video_url_parameter.get_public_url_for_parameter(),
+            "duration": duration,
         }
 
     def _validate_api_key(self) -> str:
@@ -264,13 +270,12 @@ class WanAnimateGeneration(SuccessFailureNode):
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
         payload = self._build_payload(params)
 
-        self._log(f"Submitting request to proxy model={params['model']}")
-        self._log_request(post_url, headers, payload)
+        logger.info(f"Submitting request to proxy model={params['model']}")
 
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
-            self._log(
+            logger.info(
                 f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
             )
             try:
@@ -289,9 +294,9 @@ class WanAnimateGeneration(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = provider_response
 
         if generation_id:
-            self._log(f"Submitted. generation_id={generation_id}")
+            logger.info(f"Submitted. generation_id={generation_id}")
         else:
-            self._log("No generation_id returned from POST response")
+            logger.info("No generation_id returned from POST response")
 
         return generation_id
 
@@ -304,15 +309,11 @@ class WanAnimateGeneration(SuccessFailureNode):
             },
             "parameters": {
                 "mode": params["mode"],
+                "duration": params["duration"],
             },
         }
 
         return payload
-
-    def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
-        dbg_headers = {**headers, "Authorization": "Bearer ***"}
-        with suppress(Exception):
-            self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(payload, indent=2)}")
 
     def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
@@ -325,7 +326,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         while True:
             if monotonic() - start_time > timeout_s:
                 self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                self._log("Polling timed out waiting for result")
+                logger.info("Polling timed out waiting for result")
                 self._set_status_results(
                     was_successful=False,
                     result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
@@ -338,23 +339,23 @@ class WanAnimateGeneration(SuccessFailureNode):
                 last_json = get_resp.json()
                 self.parameter_output_values["provider_response"] = last_json
             except Exception as exc:
-                self._log(f"GET generation failed: {exc}")
+                logger.info(f"GET generation failed: {exc}")
                 error_msg = f"Failed to poll generation status: {exc}"
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(RuntimeError(error_msg))
                 return
 
             with suppress(Exception):
-                self._log(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
+                logger.info(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
 
             status = self._extract_status(last_json) or "running"
             is_complete = self._is_complete(last_json)
             attempt += 1
-            self._log(f"Polling attempt #{attempt} status={status}")
+            logger.info(f"Polling attempt #{attempt} status={status}")
 
             # Check for explicit failure statuses
             if status.lower() in {"failed", "error"}:
-                self._log(f"Generation failed with status: {status}")
+                logger.info(f"Generation failed with status: {status}")
                 self.parameter_output_values["video"] = None
                 error_details = self._extract_error_details(last_json)
                 self._set_status_results(was_successful=False, result_details=error_details)
@@ -377,10 +378,10 @@ class WanAnimateGeneration(SuccessFailureNode):
             return
 
         try:
-            self._log("Downloading video bytes from provider URL")
+            logger.info("Downloading video bytes from provider URL")
             video_bytes = self._download_bytes_from_url(extracted_url)
         except Exception as e:
-            self._log(f"Failed to download video: {e}")
+            logger.info(f"Failed to download video: {e}")
             video_bytes = None
 
         if video_bytes:
@@ -391,12 +392,12 @@ class WanAnimateGeneration(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
+                logger.info(f"Saved video to static storage as {filename}")
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
             except Exception as e:
-                self._log(f"Failed to save to static storage: {e}, using provider URL")
+                logger.info(f"Failed to save to static storage: {e}, using provider URL")
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
                     was_successful=True,

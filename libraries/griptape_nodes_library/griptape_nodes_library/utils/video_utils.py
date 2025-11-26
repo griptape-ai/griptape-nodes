@@ -1,5 +1,7 @@
 import base64
+import json
 import re
+import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -9,6 +11,9 @@ from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+
+# static_ffmpeg is dynamically installed by the library loader at runtime
+import static_ffmpeg.run  # type: ignore[import-untyped]
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -181,6 +186,59 @@ def validate_url(url: str) -> bool:
         return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
     except Exception:
         return False
+
+
+def get_video_duration(video_url: str) -> float:
+    """Get the duration of a video in seconds using ffprobe.
+
+    Args:
+        video_url: URL or file path to the video
+
+    Returns:
+        Duration in seconds, or 0.0 if duration cannot be determined
+
+    Raises:
+        ValueError: If the video cannot be parsed or ffprobe fails
+    """
+    try:
+        _ffmpeg_path, ffprobe_path = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
+    except Exception as e:
+        msg = f"FFprobe not available: {e}"
+        raise ValueError(msg) from e
+
+    cmd = [
+        ffprobe_path,
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-select_streams",
+        "v:0",
+        video_url,
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
+        streams_data = json.loads(result.stdout)
+
+        if streams_data.get("streams") and len(streams_data["streams"]) > 0:
+            video_stream = streams_data["streams"][0]
+            duration_str = video_stream.get("duration", "0")
+            if duration_str and duration_str != "N/A":
+                return float(duration_str)
+
+    except subprocess.TimeoutExpired as e:
+        msg = f"ffprobe timed out for {video_url}"
+        raise ValueError(msg) from e
+    except subprocess.CalledProcessError as e:
+        msg = f"ffprobe failed for {video_url}: {e.stderr}"
+        raise ValueError(msg) from e
+    except json.JSONDecodeError as e:
+        msg = f"ffprobe returned invalid JSON for {video_url}"
+        raise ValueError(msg) from e
+
+    return 0.0
 
 
 def smpte_to_seconds(tc: str, rate: float, *, drop_frame: bool | None = None) -> float:
