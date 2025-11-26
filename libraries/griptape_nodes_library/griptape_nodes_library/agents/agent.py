@@ -272,7 +272,6 @@ class Agent(ControlNode):
         parameter: Parameter,
         value: Any,
     ) -> None:
-        self.before_value_set
         if parameter.name == "model":
             if value == "gemini-2.5-flash-preview-05-20":
                 value = "gemini-2.5-flash"
