@@ -236,7 +236,7 @@ class WanAnimateGeneration(SuccessFailureNode):
             return
 
         # Poll for result
-        self._poll_for_result(generation_id, headers)
+        self._poll_for_result(generation_id, headers, params["duration"])
 
         # Cleanup uploaded artifacts
         self._public_image_url_parameter.delete_uploaded_artifact()
@@ -271,12 +271,12 @@ class WanAnimateGeneration(SuccessFailureNode):
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
         payload = self._build_payload(params)
 
-        logger.info("Submitting request to proxy model=%s", params["model"])
+        logger.debug("Submitting request to proxy model=%s", params["model"])
 
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
-            logger.info(
+            logger.debug(
                 "Proxy POST error status=%s headers=%s body=%s",
                 post_resp.status_code,
                 dict(post_resp.headers),
@@ -298,9 +298,9 @@ class WanAnimateGeneration(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = provider_response
 
         if generation_id:
-            logger.info("Submitted. generation_id=%s", generation_id)
+            logger.debug("Submitted. generation_id=%s", generation_id)
         else:
-            logger.info("No generation_id returned from POST response")
+            logger.debug("No generation_id returned from POST response")
 
         return generation_id
 
@@ -319,18 +319,18 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         return payload
 
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+    def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         start_time = monotonic()
         last_json = None
         attempt = 0
         poll_interval_s = 5.0
-        timeout_s = 600.0
+        timeout_s = video_duration * 20.0
 
         while True:
             if monotonic() - start_time > timeout_s:
                 self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                logger.info("Polling timed out waiting for result")
+                logger.debug("Polling timed out waiting for result")
                 self._set_status_results(
                     was_successful=False,
                     result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
@@ -343,14 +343,14 @@ class WanAnimateGeneration(SuccessFailureNode):
                 last_json = get_resp.json()
                 self.parameter_output_values["provider_response"] = last_json
             except Exception as exc:
-                logger.info("GET generation failed: %s", exc)
+                logger.debug("GET generation failed: %s", exc)
                 error_msg = f"Failed to poll generation status: {exc}"
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(RuntimeError(error_msg))
                 return
 
             with suppress(Exception):
-                logger.info("GET payload attempt #%s: %s", attempt + 1, _json.dumps(last_json, indent=2))
+                logger.debug("GET payload attempt #%s: %s", attempt + 1, _json.dumps(last_json, indent=2))
 
             status = self._extract_status(last_json) or "running"
             is_complete = self._is_complete(last_json)
@@ -359,7 +359,7 @@ class WanAnimateGeneration(SuccessFailureNode):
 
             # Check for explicit failure statuses
             if status.lower() in {"failed", "error"}:
-                logger.info("Generation failed with status: %s", status)
+                logger.debug("Generation failed with status: %s", status)
                 self.parameter_output_values["video"] = None
                 error_details = self._extract_error_details(last_json)
                 self._set_status_results(was_successful=False, result_details=error_details)
@@ -382,10 +382,10 @@ class WanAnimateGeneration(SuccessFailureNode):
             return
 
         try:
-            logger.info("Downloading video bytes from provider URL")
+            logger.debug("Downloading video bytes from provider URL")
             video_bytes = self._download_bytes_from_url(extracted_url)
         except Exception as e:
-            logger.info("Failed to download video: %s", e)
+            logger.debug("Failed to download video: %s", e)
             video_bytes = None
 
         if video_bytes:
@@ -396,12 +396,12 @@ class WanAnimateGeneration(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("Saved video to static storage as %s", filename)
+                logger.debug("Saved video to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
             except Exception as e:
-                logger.info("Failed to save to static storage: %s, using provider URL", e)
+                logger.debug("Failed to save to static storage: %s, using provider URL", e)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
                     was_successful=True,
@@ -532,21 +532,11 @@ class WanAnimateGeneration(SuccessFailureNode):
     def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
         if not obj:
             return None
-        for key in ("url", "video_url", "output_url"):
-            val = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(val, str) and val.startswith("http"):
-                return val
-        for key in ("result", "data", "output", "outputs", "content", "task_result"):
-            nested = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(nested, dict):
-                url = WanAnimateGeneration._extract_video_url(nested)
-                if url:
-                    return url
-            elif isinstance(nested, list):
-                for item in nested:
-                    url = WanAnimateGeneration._extract_video_url(item if isinstance(item, dict) else None)
-                    if url:
-                        return url
+        results = obj.get("results")
+        if isinstance(results, dict):
+            video_url = results.get("video_url")
+            if isinstance(video_url, str) and video_url.startswith("http"):
+                return video_url
         return None
 
     @staticmethod

@@ -92,6 +92,7 @@ class BaseStorageDriver(ABC):
                 upload_response["url"],
                 content=file_content,
                 headers=upload_response["headers"],
+                timeout=30.0,
             )
             response.raise_for_status()
 
