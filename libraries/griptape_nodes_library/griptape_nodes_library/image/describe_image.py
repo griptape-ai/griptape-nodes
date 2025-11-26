@@ -23,6 +23,7 @@ MODEL_CHOICES = [
     "o1",
     "o1-mini",
     "o3-mini",
+    "gemini-3-pro-preview",
 ]
 DEFAULT_MODEL = MODEL_CHOICES[0]
 
