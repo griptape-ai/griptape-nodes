@@ -19,6 +19,9 @@ from griptape_nodes.exe_types.param_components.api_key_provider_parameter import
     ApiKeyProviderParameter,
     ApiKeyValidationResult,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
@@ -102,28 +105,24 @@ class FluxImageGeneration(SuccessFailureNode):
         )
         self._api_key_provider.add_parameters()
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="flux-kontext-pro",
                 tooltip="Select the Flux model to use",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
                 traits={Options(choices=MODEL_OPTIONS)},
             )
         )
 
         # Core parameters
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 tooltip="Text description of the desired image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Describe the image you want to generate...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the image you want to generate...",
                     "display_name": "Prompt",
                 },
             )
@@ -144,74 +143,65 @@ class FluxImageGeneration(SuccessFailureNode):
 
         # Aspect ratio parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="aspect_ratio",
-                input_types=["str"],
-                type="str",
                 default_value="1:1",
                 tooltip="Desired aspect ratio (e.g., '16:9'). All outputs are ~1MP total.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
                 traits={Options(choices=ASPECT_RATIO_OPTIONS)},
             )
         )
 
         # Seed parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="seed",
-                input_types=["int"],
-                type="int",
                 default_value=-1,
                 tooltip="Random seed for reproducible results (-1 for random)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
             )
         )
 
         # Prompt upsampling parameter
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="prompt_upsampling",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="If true, performs upsampling on the prompt",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
             )
         )
 
         # Output format parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output_format",
-                input_types=["str"],
-                type="str",
                 default_value="jpeg",
                 tooltip="Desired format of the output image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
                 traits={Options(choices=OUTPUT_FORMAT_OPTIONS)},
             )
         )
 
         # Safety tolerance parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="safety_tolerance",
-                input_types=["str"],
-                type="str",
                 default_value=SAFETY_TOLERANCE_OPTIONS[0],
                 tooltip="Content moderation level",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                allow_output=False,
                 traits={Options(choices=SAFETY_TOLERANCE_OPTIONS)},
             )
         )
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
-                allowed_modes={ParameterMode.OUTPUT},
+                allow_input=False,
+                allow_property=False,
+                allow_output=True,
                 ui_options={"hide_property": True},
             )
         )
