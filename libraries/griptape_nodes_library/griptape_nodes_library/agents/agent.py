@@ -17,11 +17,19 @@ from griptape.tasks import PromptTask
 from jinja2 import Template
 from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
+from griptape_nodes.exe_types.core_types import (
+    Parameter,
+    ParameterGroup,
+    ParameterList,
+    ParameterMessage,
+    ParameterMode,
+    ParameterType,
+)
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -46,11 +54,6 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
     },
     {
-        "name": "gemini-2.5-flash-preview-05-20",
-        "icon": "logos/google.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
-    },
-    {
         "name": "gemini-2.0-flash",
         "icon": "logos/google.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
@@ -67,6 +70,11 @@ MODEL_CHOICES_ARGS = [
     },
     {
         "name": "gemini-2.5-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-3-pro",
         "icon": "logos/google.svg",
         "args": {"stream": True},
     },
@@ -242,6 +250,47 @@ class Agent(ControlNode):
         logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
 
         self.add_node_element(logs_group)
+
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        if param_name == "model" and initial_setup and value == "gemini-2.5-flash-preview-05-20":
+            value = "gemini-2.5-flash"
+            self.add_node_element(
+                ParameterMessage(
+                    name="model_deprecation_notice",
+                    title="Model Deprecation Notice",
+                    variant="info",
+                    value="The 'gemini-2.5-flash-preview-05-20' model has been deprecated. The model has been updated to 'gemini-2.5-flash'. Please save your workflow to apply this change.",
+                    traits={
+                        Button(
+                            full_width=True,
+                            on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
+                        )
+                    },
+                    button_text="Dismiss",
+                )
+            )
+            model_index = self.get_element_index("model")
+            self.move_element_to_position(
+                "model_deprecation_notice",
+                model_index,
+            )
+
+        # Call the parent implementation
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
 
     # --- Helper Methods ---
 
