@@ -4,19 +4,31 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Parame
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 
 
-def contains_any_case_insensitive(types: set[str]) -> bool:
-    """Check if set contains 'any' or 'all' (case-insensitive).
+def contains_any(types: set[str]) -> bool:
+    """Check if set of type strings contains the built in any type.
 
     Args:
         types: Set of type strings to check.
 
     Returns:
-        True if set contains 'any' or 'all' (case-insensitive), False otherwise.
+        True if set contains the built in any type, False otherwise.
     """
     for t in types:
-        if t.lower() == "any":
+        if t.lower() == ParameterTypeBuiltin.ANY.value:
             return True
     return False
+
+
+def has_control_type(param: Parameter) -> bool:
+    """Check if a parameter has a control type.
+
+    Args:
+        param: The parameter to check for control type.
+
+    Returns:
+        True if the parameter has a control type, False otherwise.
+    """
+    return param.type == ParameterTypeBuiltin.CONTROL_TYPE.value
 
 
 class Reroute(DataNode):
@@ -29,11 +41,12 @@ class Reroute(DataNode):
 
         self.pass_thru = Parameter(
             name="passThru",
-            input_types=["Any"],
+            input_types=[ParameterTypeBuiltin.ANY.value],
             output_type=ParameterTypeBuiltin.ALL.value,
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
+            ui_options={"hide_property": True},
         )
         self.add_parameter(self.pass_thru)
 
@@ -44,39 +57,51 @@ class Reroute(DataNode):
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection has been established TO this Node."""
+        if has_control_type(source_parameter) or has_control_type(target_parameter):
+            # No custom reroute logic for control parameters.
+            return
         self.incoming_source_parameter = source_parameter
         self._propagate_forwards()
 
     def after_incoming_connection_removed(
         self,
         source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        source_parameter: Parameter,
+        target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
+        if has_control_type(source_parameter) or has_control_type(target_parameter):
+            # No custom reroute logic for control parameters.
+            return
         self.incoming_source_parameter = None
         self._propagate_forwards()
 
     def after_outgoing_connection(
         self,
-        source_parameter: Parameter,  # noqa: ARG002
+        source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection has been established OUT of this Node."""
+        if has_control_type(source_parameter) or has_control_type(target_parameter):
+            # No custom reroute logic for control parameters.
+            return
         self._add_outgoing_target_parameter(target_node, target_parameter)
         self._propagate_backwards()
 
     def after_outgoing_connection_removed(
         self,
-        source_parameter: Parameter,  # noqa: ARG002
+        source_parameter: Parameter,
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
+        if has_control_type(source_parameter) or has_control_type(target_parameter):
+            # No custom reroute logic for control parameters.
+            return
         self._remove_outgoing_target_parameter(target_node, target_parameter)
         self._propagate_backwards()
 
@@ -128,15 +153,15 @@ class Reroute(DataNode):
             node = param.get_node()
             if node and isinstance(node, self.__class__):
                 # Outgoing connections also need values to propagate.
-                value = self.get_parameter_value(node.pass_thru.name)
-                node.set_parameter_value(self.pass_thru.name, value)
+                value = self.get_parameter_value(self.pass_thru.name)
+                node.set_parameter_value(node.pass_thru.name, value)
                 node._propagate_forwards()
 
     def _use_incoming_source_parameter_types(self) -> None:
         if self.incoming_source_parameter is None:
             msg = "Invalid state: self.incoming_source_parameter must not be None"
             raise ValueError(msg)
-        self.pass_thru.input_types = ["Any"]
+        self.pass_thru.input_types = [ParameterTypeBuiltin.ANY.value]
         self.pass_thru.type = self.incoming_source_parameter.output_type
         self.pass_thru.output_type = self.incoming_source_parameter.output_type
 
@@ -160,7 +185,7 @@ class Reroute(DataNode):
         del self.outgoing_target_parameters[key]
 
     def _reset_parameter_types(self) -> None:
-        self.pass_thru.input_types = ["Any"]
+        self.pass_thru.input_types = [ParameterTypeBuiltin.ANY.value]
         self.pass_thru.type = None
         self.pass_thru.output_type = ParameterTypeBuiltin.ALL.value
 
@@ -182,13 +207,13 @@ class Reroute(DataNode):
         # A better solution would actually be to check subtype relationships, but
         # I feel like such a solution is out of scope of this PR and really should be
         # done everywhere.
-        input_type_sets = [s for s in input_type_sets if not contains_any_case_insensitive(s)]
+        input_type_sets = [s for s in input_type_sets if not contains_any(s)]
 
         if input_type_sets:
             input_types = list(set.intersection(*input_type_sets))
         else:
-            # If we removed everything, then they could have only contained 'any'
-            input_types = ["Any"]
+            # If we removed everything, then they could have only contained the builtin any type.
+            input_types = [ParameterTypeBuiltin.ANY.value]
         self.pass_thru.input_types = input_types
 
         # Determine the type. The one selected must be compatible with all
@@ -199,5 +224,5 @@ class Reroute(DataNode):
 
     def _ensure_output_uses_all_instead_of_any(self) -> None:
         # Output types use a special ALL value instead of "Any".
-        if self.pass_thru.output_type.lower() == "any":
+        if self.pass_thru.output_type.lower() == ParameterTypeBuiltin.ANY.value:
             self.pass_thru.output_type = ParameterTypeBuiltin.ALL.value
