@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeGroupNode,
     NodeResolutionState,
+    TransformedParameterValue,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -1976,15 +1977,30 @@ class NodeManager:
                     result = SetParameterValueResultFailure(result_details=details)
                     return result
 
+        # Store original values in temp vars before calling before_value_set
+        parameter_value = request.value
+        parameter_value_type = request.data_type
+
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, request.value)
+            modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
-                request.value = modified_value
+                # Check if it's a TransformedParameterValue (value + type)
+                if isinstance(modified_value, TransformedParameterValue):
+                    parameter_value = modified_value.value
+                    parameter_value_type = modified_value.parameter_type
+                else:
+                    # Just a value, no type change
+                    parameter_value = modified_value
         except Exception as err:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because before_value_set hook raised exception: {err}"
             result = SetParameterValueResultFailure(result_details=details)
             return result
+
+        # Update request with potentially transformed values
+        request.value = parameter_value
+        if parameter_value_type is not None:
+            request.data_type = parameter_value_type
 
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
         # We skip this if it's a passthru from a connection or if we're on initial setup; those always trump settable.
@@ -1993,7 +2009,7 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
-        object_type = request.data_type if request.data_type else parameter.type
+        object_type = parameter_value_type if parameter_value_type else parameter.type
         # If the parameter is control type, we shouldn't check the value being set, since it's just a marker for which path to take, not a real value, and will likely be a string, which doesn't match ControlType.
         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
             object_type

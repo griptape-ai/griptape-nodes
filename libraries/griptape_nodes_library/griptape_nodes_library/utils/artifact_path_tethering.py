@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
@@ -256,35 +256,26 @@ class ArtifactPathTethering:
             self.artifact_parameter.settable = True
             self.path_parameter.settable = True
 
-    def on_before_value_set(self, parameter: Parameter, value: Any) -> Any:
+    def on_before_value_set(self, parameter: Parameter, value: Any) -> Any | TransformedParameterValue:
         """Handle parameter value setting for tethered parameters.
 
-        This allows legitimate upstream values and internal synchronization
-        to be set by temporarily making parameters settable when the artifact
-        parameter has connections.
+        This transforms string inputs to artifacts BEFORE propagation to downstream nodes.
 
         Args:
             parameter: The parameter being set
             value: The value being set
 
         Returns:
-            The value to actually set (unchanged in this case)
+            The value to actually set (may be transformed from str to artifact).
+            Returns TransformedParameterValue when transforming type to ensure proper validation.
         """
-        if parameter in (self.artifact_parameter, self.path_parameter):
-            # Check if the artifact parameter has incoming connections
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-            connections = GriptapeNodes.FlowManager().get_connections()
-            target_connections = connections.incoming_index.get(self.node.name)
-
-            has_artifact_connection = target_connections and target_connections.get(self.artifact_parameter.name)
-
-            if has_artifact_connection:
-                # Always allow internal synchronization (when _updating_from_parameter is set)
-                # or legitimate upstream value propagation
-                # Temporarily make both parameters settable
-                self.artifact_parameter.settable = True
-                self.path_parameter.settable = True
+        # Transform string inputs to artifacts for the artifact parameter BEFORE propagation
+        # This ensures downstream nodes receive the correct artifact type immediately
+        # Skip transformation if we're already in an update cycle to prevent infinite loops
+        if parameter == self.artifact_parameter and isinstance(value, str) and self._updating_from_parameter is None:
+            artifact = self._process_path_string(value)
+            # Return both the transformed value and its type for proper validation
+            return TransformedParameterValue(value=artifact, parameter_type=self.artifact_parameter.output_type)
 
         return value
 
@@ -350,68 +341,74 @@ class ArtifactPathTethering:
             self.path_parameter.settable = False
 
     def _handle_artifact_change(self, value: Any) -> None:
-        """Handle changes to the artifact parameter."""
+        """Handle changes to the artifact parameter.
+
+        After transformation in before_value_set, this only handles artifact objects
+        and syncs the path parameter with the artifact's URL.
+        """
         if isinstance(value, str):
-            # String input - route to path parameter logic
-            self._handle_string_input_to_artifact(value)
-        else:
-            # Artifact input - handle as normal
-            self._handle_artifact_input(value)
+            error_msg = f"Unexpected string value in _handle_artifact_change for artifact parameter '{self.artifact_parameter.name}'. Strings should have been transformed to artifacts in on_before_value_set."
+            raise TypeError(error_msg)
+
+        # Artifact input - sync path parameter with URL from artifact
+        self._handle_artifact_input(value)
+
+    def _process_path_string(self, path_value: str) -> Any | None:
+        """Process a path string (URL or file path) and return an artifact.
+
+        This is the core transformation logic extracted for reuse. Returns None if
+        the path is empty or processing fails.
+
+        Args:
+            path_value: The path or URL string to process
+
+        Returns:
+            The artifact object, or None if processing failed
+        """
+        path_value = OSManager.strip_surrounding_quotes(path_value.strip()) if path_value else ""
+
+        if not path_value:
+            return None
+
+        try:
+            # Process the path (URL or file) - reuse existing path logic
+            if self._is_url(path_value):
+                download_url = self._download_and_upload_url(path_value)
+            else:
+                # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
+                sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_value)
+                download_url = self._upload_file_to_static_storage(sanitized_path)
+
+            # Create artifact dict and convert to artifact
+            artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
+            return self._to_artifact(artifact_dict)
+        except Exception:
+            # If processing fails, return None (let the node continue with None value)
+            return None
 
     def _handle_string_input_to_artifact(self, path_value: str) -> None:
         """Handle string input to artifact parameter by processing it as a path."""
-        path_value = OSManager.strip_surrounding_quotes(path_value.strip()) if path_value else ""
+        artifact = self._process_path_string(path_value)
 
-        if path_value:
-            try:
-                # Process the path (URL or file) - reuse existing path logic
-                if self._is_url(path_value):
-                    download_url = self._download_and_upload_url(path_value)
-                else:
-                    download_url = self._upload_file_to_static_storage(path_value)
+        # Store artifact using sync helper (sets parameter value and publishes update)
+        self._sync_parameter_value(
+            source_param_name=self.artifact_parameter.name,
+            target_param_name=self.artifact_parameter.name,
+            target_value=artifact,
+        )
 
-                # Create artifact dict and convert to artifact
-                artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
-                artifact = self._to_artifact(artifact_dict)
-
-                # Store artifact using sync helper (sets parameter value and publishes update)
-                self._sync_parameter_value(
-                    source_param_name=self.artifact_parameter.name,
-                    target_param_name=self.artifact_parameter.name,
-                    target_value=artifact,
-                )
-
-                # Update path parameter
-                self._sync_parameter_value(
-                    source_param_name=self.artifact_parameter.name,
-                    target_param_name=self.path_parameter.name,
-                    target_value=download_url,
-                )
-            except Exception:
-                # If processing fails, treat as invalid input - reset parameters
-                self._sync_parameter_value(
-                    source_param_name=self.artifact_parameter.name,
-                    target_param_name=self.artifact_parameter.name,
-                    target_value=None,
-                )
-                self._sync_parameter_value(
-                    source_param_name=self.artifact_parameter.name,
-                    target_param_name=self.path_parameter.name,
-                    target_value="",
-                )
-                # Don't re-raise - let the node continue with None value
+        # Update path parameter with the URL from the artifact (or empty string if None)
+        if artifact:
+            download_url = self.config.extract_url_func(artifact)
+            path_value_to_set = download_url if download_url else ""
         else:
-            # Empty string - reset both parameters
-            self._sync_parameter_value(
-                source_param_name=self.artifact_parameter.name,
-                target_param_name=self.artifact_parameter.name,
-                target_value=None,
-            )
-            self._sync_parameter_value(
-                source_param_name=self.artifact_parameter.name,
-                target_param_name=self.path_parameter.name,
-                target_value="",
-            )
+            path_value_to_set = ""
+
+        self._sync_parameter_value(
+            source_param_name=self.artifact_parameter.name,
+            target_param_name=self.path_parameter.name,
+            target_value=path_value_to_set,
+        )
 
     def _handle_artifact_input(self, value: Any) -> None:
         """Handle artifact input to artifact parameter."""
@@ -447,18 +444,16 @@ class ArtifactPathTethering:
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
-        path_value = OSManager.strip_surrounding_quotes(str(value).strip()) if value else ""
+        path_value = str(value).strip() if value else ""
 
-        if path_value:
-            # Process the path (URL or file)
-            if self._is_url(path_value):
-                download_url = self._download_and_upload_url(path_value)
-            else:
-                download_url = self._upload_file_to_static_storage(path_value)
+        # Reuse _process_path_string for consistent path handling (includes sanitization)
+        artifact = self._process_path_string(path_value)
 
-            # Update both parameters with the processed URL
-            artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
-            artifact = self._to_artifact(artifact_dict)
+        if artifact:
+            # Extract URL from the artifact
+            download_url = self.config.extract_url_func(artifact)
+
+            # Update both parameters with the processed artifact and URL
             self._sync_parameter_value(
                 source_param_name=self.path_parameter.name,
                 target_param_name=self.artifact_parameter.name,
@@ -467,10 +462,10 @@ class ArtifactPathTethering:
             self._sync_parameter_value(
                 source_param_name=self.path_parameter.name,
                 target_param_name=self.path_parameter.name,
-                target_value=download_url,
+                target_value=download_url if download_url else "",
             )
         else:
-            # Empty path - reset both parameters
+            # Empty path or processing failed - reset both parameters
             self._sync_parameter_value(
                 source_param_name=self.path_parameter.name,
                 target_param_name=self.artifact_parameter.name,
