@@ -41,6 +41,12 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.file_download_manager import (
+        FileDownloadManager,
+    )
+    from griptape_nodes.retained_mode.managers.file_upload_manager import (
+        FileUploadManager,
+    )
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
     from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
@@ -88,6 +94,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
     _operation_depth_manager: OperationDepthManager
     _static_files_manager: StaticFilesManager
+    _file_upload_manager: FileUploadManager
+    _file_download_manager: FileDownloadManager
     _agent_manager: AgentManager
     _version_compatibility_manager: VersionCompatibilityManager
     _session_manager: SessionManager
@@ -107,6 +115,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
+        from griptape_nodes.retained_mode.managers.file_download_manager import (
+            FileDownloadManager,
+        )
+        from griptape_nodes.retained_mode.managers.file_upload_manager import (
+            FileUploadManager,
+        )
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
         from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
@@ -155,6 +169,12 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
             self._static_files_manager = StaticFilesManager(
                 self._config_manager, self._secrets_manager, self._event_manager
+            )
+            self._file_upload_manager = FileUploadManager(
+                self._config_manager, self._static_files_manager, self._event_manager
+            )
+            self._file_download_manager = FileDownloadManager(
+                self._config_manager, self._static_files_manager, self._event_manager
             )
             self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
             self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
@@ -341,6 +361,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ProjectManager(cls) -> ProjectManager:
         return GriptapeNodes.get_instance()._project_manager
+
+    @classmethod
+    def FileUploadManager(cls) -> FileUploadManager:
+        return GriptapeNodes.get_instance()._file_upload_manager
+
+    @classmethod
+    def FileDownloadManager(cls) -> FileDownloadManager:
+        return GriptapeNodes.get_instance()._file_download_manager
 
     @classmethod
     def clear_data(cls) -> None:
