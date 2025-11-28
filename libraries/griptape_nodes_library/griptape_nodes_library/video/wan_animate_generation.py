@@ -284,8 +284,10 @@ class WanAnimateGeneration(SuccessFailureNode):
             )
             try:
                 error_json = post_resp.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
+                error_msg = error_json.get("error", "")
+                provider_response = error_json.get("provider_response", "")
+                msg_parts = [p for p in [error_msg, provider_response] if p]
+                msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
             except Exception:
                 msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
             raise RuntimeError(msg)
@@ -359,7 +361,11 @@ class WanAnimateGeneration(SuccessFailureNode):
 
             # Check for explicit failure statuses
             if status.lower() in {"failed", "error"}:
-                logger.debug("Generation failed with status: %s", status)
+                provider_resp = last_json.get("provider_response") if last_json else {}
+                error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None
+                error_message = provider_resp.get("message") if isinstance(provider_resp, dict) else None
+                log_parts = [p for p in [error_code, error_message] if p]
+                logger.error("Generation failed: %s", " - ".join(log_parts) or status)
                 self.parameter_output_values["video"] = None
                 error_details = self._extract_error_details(last_json)
                 self._set_status_results(was_successful=False, result_details=error_details)
