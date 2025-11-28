@@ -344,6 +344,36 @@ class ArtifactPathTethering:
             self.artifact_parameter.settable = False
             self.path_parameter.settable = False
 
+    def _sync_both_parameters(self, artifact: Any, source_param_name: str) -> None:
+        """Sync both artifact and path parameters from an artifact value.
+
+        Unified sync logic for bidirectional tethering. Extracts URL from artifact
+        and updates both parameters consistently.
+
+        Args:
+            artifact: The artifact object (or None to reset both parameters)
+            source_param_name: Name of the parameter that triggered the sync
+        """
+        if artifact:
+            download_url = self.config.extract_url_func(artifact)
+            artifact_value = artifact
+            path_value = download_url if download_url else ""
+        else:
+            # No artifact, so clear both.
+            artifact_value = None
+            path_value = ""
+
+        self._sync_parameter_value(
+            source_param_name=source_param_name,
+            target_param_name=self.artifact_parameter.name,
+            target_value=artifact_value,
+        )
+        self._sync_parameter_value(
+            source_param_name=source_param_name,
+            target_param_name=self.path_parameter.name,
+            target_value=path_value,
+        )
+
     def _handle_artifact_change(self, value: Any) -> None:
         """Handle changes to the artifact parameter.
 
@@ -354,8 +384,9 @@ class ArtifactPathTethering:
             error_msg = f"Unexpected string value in _handle_artifact_change for artifact parameter '{self.artifact_parameter.name}'. Strings should have been transformed to artifacts in on_before_value_set."
             raise TypeError(error_msg)
 
-        # Artifact input - sync path parameter with URL from artifact
-        self._handle_artifact_input(value)
+        # Convert to artifact and sync both parameters
+        artifact = self._to_artifact(value) if value else None
+        self._sync_both_parameters(artifact, self.artifact_parameter.name)
 
     def _process_path_string(self, path_value: str) -> Any | None:
         """Process a path string (URL or file path) and return an artifact.
@@ -390,94 +421,19 @@ class ArtifactPathTethering:
             # If processing fails, return None (let the node continue with None value)
             return None
 
-    def _handle_string_input_to_artifact(self, path_value: str) -> None:
-        """Handle string input to artifact parameter by processing it as a path."""
-        artifact = self._process_path_string(path_value)
-
-        # Store artifact using sync helper (sets parameter value and publishes update)
-        self._sync_parameter_value(
-            source_param_name=self.artifact_parameter.name,
-            target_param_name=self.artifact_parameter.name,
-            target_value=artifact,
-        )
-
-        # Update path parameter with the URL from the artifact (or empty string if None)
-        if artifact:
-            download_url = self.config.extract_url_func(artifact)
-            path_value_to_set = download_url if download_url else ""
-        else:
-            path_value_to_set = ""
-
-        self._sync_parameter_value(
-            source_param_name=self.artifact_parameter.name,
-            target_param_name=self.path_parameter.name,
-            target_value=path_value_to_set,
-        )
-
     def _handle_artifact_input(self, value: Any) -> None:
         """Handle artifact input to artifact parameter."""
-        if value:
-            # Convert to artifact and update artifact parameter
-            artifact = self._to_artifact(value)
-            self._sync_parameter_value(
-                source_param_name=self.artifact_parameter.name,
-                target_param_name=self.artifact_parameter.name,
-                target_value=artifact,
-            )
-
-            # Extract URL and update path parameter
-            extracted_url = self.config.extract_url_func(value)
-            if extracted_url:
-                self._sync_parameter_value(
-                    source_param_name=self.artifact_parameter.name,
-                    target_param_name=self.path_parameter.name,
-                    target_value=extracted_url,
-                )
-        else:
-            # No value - reset both parameters
-            self._sync_parameter_value(
-                source_param_name=self.artifact_parameter.name,
-                target_param_name=self.artifact_parameter.name,
-                target_value=None,
-            )
-            self._sync_parameter_value(
-                source_param_name=self.artifact_parameter.name,
-                target_param_name=self.path_parameter.name,
-                target_value="",
-            )
+        # Convert to artifact and sync both parameters
+        artifact = self._to_artifact(value) if value else None
+        self._sync_both_parameters(artifact, self.artifact_parameter.name)
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
         path_value = str(value).strip() if value else ""
 
-        # Reuse _process_path_string for consistent path handling (includes sanitization)
+        # Process path string and sync both parameters
         artifact = self._process_path_string(path_value)
-
-        if artifact:
-            # Extract URL from the artifact
-            download_url = self.config.extract_url_func(artifact)
-
-            # Update both parameters with the processed artifact and URL
-            self._sync_parameter_value(
-                source_param_name=self.path_parameter.name,
-                target_param_name=self.artifact_parameter.name,
-                target_value=artifact,
-            )
-            self._sync_parameter_value(
-                source_param_name=self.path_parameter.name,
-                target_param_name=self.path_parameter.name,
-                target_value=download_url if download_url else "",
-            )
-        else:
-            # Empty path or processing failed - reset both parameters
-            self._sync_parameter_value(
-                source_param_name=self.path_parameter.name,
-                target_param_name=self.artifact_parameter.name,
-                target_value=None,
-            )
-            self._sync_parameter_value(
-                source_param_name=self.path_parameter.name, target_param_name=self.path_parameter.name, target_value=""
-            )
+        self._sync_both_parameters(artifact, self.path_parameter.name)
 
     def _sync_parameter_value(self, source_param_name: str, target_param_name: str, target_value: Any) -> None:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
@@ -703,19 +659,10 @@ class ArtifactPathTethering:
             # No extension found, add default
             filename = f"{filename}.{self.config.default_extension}"
 
-        # Upload to static storage
-        upload_request = CreateStaticFileUploadUrlRequest(file_name=filename)
-        upload_result = GriptapeNodes.handle_request(upload_request)
+        # Request presigned upload URL from static storage API
+        upload_result = self._create_upload_url(filename)
 
-        if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL for file '{filename}': {upload_result.error}"
-            raise TypeError(error_msg)
-
-        if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{filename}')"
-            raise TypeError(error_msg)
-
-        # Upload the downloaded artifact data
+        # Upload the downloaded artifact data to the presigned URL
         try:
             upload_response = httpx.request(
                 upload_result.method,
@@ -729,18 +676,8 @@ class ArtifactPathTethering:
             error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
-        # Get download URL
-        download_request = CreateStaticFileDownloadUrlRequest(file_name=filename)
-        download_result = GriptapeNodes.handle_request(download_request)
-
-        if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL for file '{filename}': {download_result.error}"
-            raise TypeError(error_msg)
-
-        if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{filename}')"
-            raise TypeError(error_msg)
-
+        # Request download URL from static storage API
+        download_result = self._create_download_url(filename)
         return download_result.url
 
     @staticmethod
