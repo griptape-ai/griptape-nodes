@@ -111,15 +111,6 @@ class ArtifactPathValidator(Trait):
     def get_trait_keys(cls) -> list[str]:
         return ["artifact_path_validator"]
 
-    def ui_options_for_trait(self) -> dict:
-        return {}
-
-    def display_options_for_trait(self) -> dict:
-        return {}
-
-    def converters_for_trait(self) -> list:
-        return []
-
     def validators_for_trait(self) -> list:
         def validate_path(param: Parameter, value: Any) -> None:  # noqa: ARG001
             if not value or not str(value).strip():
@@ -188,13 +179,14 @@ class ArtifactPathTethering:
     Usage:
         1. Node creates and owns both artifact and path parameters
         2. Node creates ArtifactPathTethering helper with those parameters and config
-        3. Node calls helper.on_after_value_set() in after_value_set()
-        4. Node calls helper.get_artifact_output() and get_path_output() in process()
+        3. Node calls helper.on_before_value_set() in before_value_set()
+        4. Node calls helper.on_after_value_set() in after_value_set()
+        5. Node calls helper.on_incoming_connection() in after_incoming_connection()
+        6. Node calls helper.on_incoming_connection_removed() in after_incoming_connection_removed()
     """
 
     # Timeout constants - shared across all artifact types
-    URL_VALIDATION_TIMEOUT: ClassVar[int] = 10  # seconds
-    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 90  # seconds
+    URL_DOWNLOAD_TIMEOUT: ClassVar[int] = 900  # seconds (15 minutes)
 
     # Regex pattern for safe filename characters (alphanumeric, dots, hyphens, underscores)
     SAFE_FILENAME_PATTERN: ClassVar[str] = r"[^a-zA-Z0-9._-]"
@@ -219,15 +211,6 @@ class ArtifactPathTethering:
         # when path changes trigger artifact updates and vice versa
         # This lock is critical: artifact change -> path update -> artifact change -> ...
         self._updating_from_parameter = None
-
-    def get_artifact_output(self) -> Any:
-        """Get the processed artifact for node output."""
-        return self.node.get_parameter_value(self.artifact_parameter.name)
-
-    def get_path_output(self) -> str:
-        """Get the path value for node output."""
-        result = self.node.get_parameter_value(self.path_parameter.name) or ""
-        return result
 
     def on_incoming_connection(self, target_parameter: Parameter) -> None:
         """Handle incoming connection establishment to the artifact parameter.
@@ -420,12 +403,6 @@ class ArtifactPathTethering:
         except Exception:
             # If processing fails, return None (let the node continue with None value)
             return None
-
-    def _handle_artifact_input(self, value: Any) -> None:
-        """Handle artifact input to artifact parameter."""
-        # Convert to artifact and sync both parameters
-        artifact = self._to_artifact(value) if value else None
-        self._sync_both_parameters(artifact, self.artifact_parameter.name)
 
     def _handle_path_change(self, value: Any) -> None:
         """Handle changes to the path parameter."""
