@@ -161,6 +161,11 @@ async def _serve_external_file(file_path: str) -> FileResponse:
     return FileResponse(absolute_path)
 
 
+async def _ping() -> dict:
+    """Ping endpoint to check if the static server is accessible."""
+    return {"status": "ok", "message": "Static server is accessible", "server": "griptape-nodes-static"}
+
+
 def start_static_server() -> None:
     """Run uvicorn server synchronously using uvicorn.run."""
     logger.debug("Starting static server...")
@@ -175,6 +180,7 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
     app.add_api_route("/external/{file_path:path}", _serve_external_file, methods=["GET"])
+    app.add_api_route("/ping", _ping, methods=["GET"])
 
     # Build CORS allowed origins list
     allowed_origins = [
