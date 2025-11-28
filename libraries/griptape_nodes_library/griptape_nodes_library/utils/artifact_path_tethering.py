@@ -128,36 +128,40 @@ class ArtifactPathValidator(Trait):
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
             # Check if it's a URL
-            if path_str.startswith(("http://", "https://")):
+            if ArtifactPathTethering._is_url(path_str):
                 valid = validate_url(path_str)
                 if not valid:
                     error_msg = f"Invalid URL: '{path_str}'"
                     raise ValueError(error_msg)
             else:
-                self._validate_file_path(path_str)
+                # Sanitize file paths before validation to handle shell escapes from macOS Finder
+                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+                sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_str)
+
+                # Validate file path exists and has supported extension
+                path = Path(sanitized_path)
+
+                if not path.is_absolute():
+                    path = GriptapeNodes.ConfigManager().workspace_path / path
+
+                if not path.exists():
+                    error_msg = f"File not found: '{sanitized_path}'"
+                    raise FileNotFoundError(error_msg)
+
+                if not path.is_file():
+                    path_type = "directory" if path.is_dir() else "special file" if path.exists() else "unknown"
+                    error_msg = f"Path exists but is not a file: '{sanitized_path}' (found: {path_type})"
+                    raise ValueError(error_msg)
+
+                if path.suffix.lower() not in self.supported_extensions:
+                    supported = ", ".join(self.supported_extensions)
+                    error_msg = (
+                        f"Unsupported file format '{path.suffix}' for file '{sanitized_path}'. Supported: {supported}"
+                    )
+                    raise ValueError(error_msg)
 
         return [validate_path]
-
-    def _validate_file_path(self, file_path: str) -> None:
-        """Validate that the file path exists and has a supported extension."""
-        path = Path(file_path)
-
-        if not path.is_absolute():
-            path = GriptapeNodes.ConfigManager().workspace_path / path
-
-        if not path.exists():
-            error_msg = f"File not found: '{file_path}'"
-            raise FileNotFoundError(error_msg)
-
-        if not path.is_file():
-            path_type = "directory" if path.is_dir() else "special file" if path.exists() else "unknown"
-            error_msg = f"Path exists but is not a file: '{file_path}' (found: {path_type})"
-            raise ValueError(error_msg)
-
-        if path.suffix.lower() not in self.supported_extensions:
-            supported = ", ".join(self.supported_extensions)
-            error_msg = f"Unsupported file format '{path.suffix}' for file '{file_path}'. Supported: {supported}"
-            raise ValueError(error_msg)
 
 
 @dataclass
@@ -507,7 +511,8 @@ class ArtifactPathTethering:
             return artifact
         return value
 
-    def _is_url(self, path: str) -> bool:
+    @staticmethod
+    def _is_url(path: str) -> bool:
         """Check if the path is a URL."""
         return path.startswith(("http://", "https://"))
 
@@ -517,10 +522,13 @@ class ArtifactPathTethering:
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
 
         if path.is_absolute():
+            # User may have specified an absolute path,
+            # but see if that is actually relative to the workspace.
             if path.is_relative_to(workspace_path):
                 path = path.relative_to(workspace_path)
                 path = workspace_path / path
         else:
+            # Relative path
             path = workspace_path / path
 
         return path
