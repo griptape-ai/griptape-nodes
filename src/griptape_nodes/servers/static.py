@@ -150,6 +150,7 @@ def start_static_server() -> None:
     allowed_origins = [
         os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
         "https://app.nodes-staging.griptape.ai",
+        "https://app-nightly.nodes.griptape.ai",
         "http://localhost:5173",
         GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
     ]

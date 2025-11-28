@@ -17,11 +17,19 @@ from griptape.tasks import PromptTask
 from jinja2 import Template
 from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode, ParameterType
+from griptape_nodes.exe_types.core_types import (
+    Parameter,
+    ParameterGroup,
+    ParameterList,
+    ParameterMessage,
+    ParameterMode,
+    ParameterType,
+)
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -46,14 +54,29 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
     },
     {
-        "name": "gemini-2.5-flash-preview-05-20",
+        "name": "gemini-2.0-flash",
         "icon": "logos/google.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
     {
-        "name": "gemini-2.0-flash",
+        "name": "gemini-2.5-flash",
         "icon": "logos/google.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-2.5-flash-lite",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-2.5-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
+    },
+    {
+        "name": "gemini-3-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True},
     },
     {
         "name": "llama3-3-70b-instruct-v1",
@@ -76,7 +99,7 @@ MODEL_CHOICES_ARGS = [
 ]
 
 MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
-DEFAULT_MODEL = MODEL_CHOICES[8]
+DEFAULT_MODEL = "gpt-4o"
 
 
 class Agent(ControlNode):
@@ -127,6 +150,22 @@ class Agent(ControlNode):
                 tooltip="Create a new agent, or continue a chat with an existing agent.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
+            )
+        )
+        self.add_node_element(
+            ParameterMessage(
+                name="model_deprecation_notice",
+                title="Model Deprecation Notice",
+                variant="info",
+                value="The 'gemini-2.5-flash-preview-05-20' model has been deprecated. The model has been updated to 'gemini-2.5-flash'. Please save your workflow to apply this change.",
+                traits={
+                    Button(
+                        full_width=True,
+                        on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
+                    )
+                },
+                button_text="Dismiss",
+                ui_options={"hide": True},
             )
         )
         # Selection for the Griptape Cloud model.
@@ -227,6 +266,24 @@ class Agent(ControlNode):
         logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
 
         self.add_node_element(logs_group)
+
+    def before_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        if parameter.name == "model":
+            if value == "gemini-2.5-flash-preview-05-20":
+                value = "gemini-2.5-flash"
+                self.show_message_by_name("model_deprecation_notice")
+            else:
+                self.hide_message_by_name("model_deprecation_notice")
+
+        # Call the parent implementation
+        super().before_value_set(
+            parameter,
+            value,
+        )
 
     # --- Helper Methods ---
 
