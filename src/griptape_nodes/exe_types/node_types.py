@@ -2196,7 +2196,7 @@ class NodeGroupNode(BaseNode):
         GriptapeNodes.handle_request(create_first_connection)
         GriptapeNodes.handle_request(create_second_connection)
 
-    def unmap_node_connections(self, node: BaseNode, connections: Connections) -> None:
+    def unmap_node_connections(self, node: BaseNode, connections: Connections) -> None:  # noqa: C901
         """Remove tracking of an external connection, restore original connection, and clean up proxy parameter.
 
         Args:
@@ -2217,7 +2217,7 @@ class NodeGroupNode(BaseNode):
                 # get old connections first, since this will delete the proxy
                 remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
                 # Delete the internal connection
-                GriptapeNodes.FlowManager().on_delete_connection_request(
+                delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=parameter_name,
                         target_parameter_name=proxy_parameter.name,
@@ -2225,9 +2225,13 @@ class NodeGroupNode(BaseNode):
                         target_node_name=self.name,
                     )
                 )
+                if delete_result.failed():
+                    msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
+                    raise RuntimeError(msg)
+
                 # Now create the new connection! We need to get the connections from the proxy parameter
                 for connection in remap_connections:
-                    GriptapeNodes.FlowManager().on_create_connection_request(
+                    create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=parameter_name,
                             target_parameter_name=connection.target_parameter.name,
@@ -2235,6 +2239,9 @@ class NodeGroupNode(BaseNode):
                             target_node_name=connection.target_node.name,
                         )
                     )
+                    if create_result.failed():
+                        msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
+                        raise RuntimeError(msg)
 
         # Get all incoming connections
         incoming_connections = connections.get_incoming_connections_from_node(node, from_node=self)
@@ -2245,7 +2252,7 @@ class NodeGroupNode(BaseNode):
                 # Get the incoming connections to the proxy parameter
                 remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
                 # Delete the internal connection
-                GriptapeNodes.FlowManager().on_delete_connection_request(
+                delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=proxy_parameter.name,
                         target_parameter_name=parameter_name,
@@ -2253,9 +2260,13 @@ class NodeGroupNode(BaseNode):
                         target_node_name=node.name,
                     )
                 )
+                if delete_result.failed():
+                    msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
+                    raise RuntimeError(msg)
+
                 # Now create the new connection! We need to get the connections to the proxy parameter
                 for connection in remap_connections:
-                    GriptapeNodes.FlowManager().on_create_connection_request(
+                    create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=connection.source_parameter.name,
                             target_parameter_name=parameter_name,
@@ -2263,6 +2274,9 @@ class NodeGroupNode(BaseNode):
                             target_node_name=node.name,
                         )
                     )
+                    if create_result.failed():
+                        msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
+                        raise RuntimeError(msg)
 
     def _remove_nodes_from_existing_parents(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from their existing parent groups."""
@@ -2316,7 +2330,7 @@ class NodeGroupNode(BaseNode):
             for outgoing_connection in outgoing_connection_list:
                 proxy_parameter = outgoing_connection.target_parameter
                 remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
-                GriptapeNodes.FlowManager().on_delete_connection_request(
+                delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=parameter_name,
                         target_parameter_name=proxy_parameter.name,
@@ -2324,8 +2338,12 @@ class NodeGroupNode(BaseNode):
                         target_node_name=self.name,
                     )
                 )
+                if delete_result.failed():
+                    msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
+                    raise RuntimeError(msg)
+
                 for connection in remap_connections:
-                    GriptapeNodes.FlowManager().on_delete_connection_request(
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                         DeleteConnectionRequest(
                             source_parameter_name=connection.source_parameter.name,
                             target_parameter_name=connection.target_parameter.name,
@@ -2333,7 +2351,11 @@ class NodeGroupNode(BaseNode):
                             target_node_name=connection.target_node.name,
                         )
                     )
-                    GriptapeNodes.FlowManager().on_create_connection_request(
+                    if delete_result.failed():
+                        msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
+                        raise RuntimeError(msg)
+
+                    create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=parameter_name,
                             target_parameter_name=connection.target_parameter.name,
@@ -2341,6 +2363,10 @@ class NodeGroupNode(BaseNode):
                             target_node_name=connection.target_node.name,
                         )
                     )
+                    if create_result.failed():
+                        msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
+                        raise RuntimeError(msg)
+
                 self._cleanup_proxy_parameter(proxy_parameter, "right_parameters")
 
     def _remap_incoming_connections(self, node: BaseNode, connections: Connections) -> None:
@@ -2357,7 +2383,7 @@ class NodeGroupNode(BaseNode):
             for incoming_connection in incoming_connection_list:
                 proxy_parameter = incoming_connection.source_parameter
                 remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
-                GriptapeNodes.FlowManager().on_delete_connection_request(
+                delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=proxy_parameter.name,
                         target_parameter_name=parameter_name,
@@ -2365,8 +2391,12 @@ class NodeGroupNode(BaseNode):
                         target_node_name=node.name,
                     )
                 )
+                if delete_result.failed():
+                    msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
+                    raise RuntimeError(msg)
+
                 for connection in remap_connections:
-                    GriptapeNodes.FlowManager().on_delete_connection_request(
+                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                         DeleteConnectionRequest(
                             source_parameter_name=connection.source_parameter.name,
                             target_parameter_name=proxy_parameter.name,
@@ -2374,7 +2404,11 @@ class NodeGroupNode(BaseNode):
                             target_node_name=self.name,
                         )
                     )
-                    GriptapeNodes.FlowManager().on_create_connection_request(
+                    if delete_result.failed():
+                        msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
+                        raise RuntimeError(msg)
+
+                    create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=connection.source_parameter.name,
                             target_parameter_name=parameter_name,
@@ -2382,6 +2416,10 @@ class NodeGroupNode(BaseNode):
                             target_node_name=node.name,
                         )
                     )
+                    if create_result.failed():
+                        msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
+                        raise RuntimeError(msg)
+
                 self._cleanup_proxy_parameter(proxy_parameter, "left_parameters")
 
     def remap_to_internal(self, nodes: list[BaseNode], connections: Connections) -> None:
@@ -2437,9 +2475,9 @@ class NodeGroupNode(BaseNode):
                 move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=subflow_name)
                 move_result = GriptapeNodes.handle_request(move_request)
                 if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
-                    logger.warning(
-                        "%s failed to move node '%s' to subflow: %s", self.name, node.name, move_result.result_details
-                    )
+                    msg = "%s failed to move node '%s' to subflow: %s", self.name, node.name, move_result.result_details
+                    logger.error(msg)
+                    raise RuntimeError(msg)  # noqa: TRY004
 
         connections = GriptapeNodes.FlowManager().get_connections()
         node_names_in_group = set(self.nodes.keys())
@@ -2510,12 +2548,14 @@ class NodeGroupNode(BaseNode):
                 move_request = MoveNodeToNewFlowRequest(node_name=node.name, target_flow_name=parent_flow_name)
                 move_result = GriptapeNodes.handle_request(move_request)
                 if not isinstance(move_result, MoveNodeToNewFlowResultSuccess):
-                    logger.warning(
+                    msg = (
                         "%s failed to move node '%s' back to parent flow: %s",
                         self.name,
                         node.name,
                         move_result.result_details,
                     )
+                    logger.warning(msg)
+                    raise RuntimeError(msg)
 
         for node in nodes:
             self.unmap_node_connections(node, connections)

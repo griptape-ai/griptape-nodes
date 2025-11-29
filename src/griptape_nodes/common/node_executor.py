@@ -1260,22 +1260,22 @@ class NodeExecutor:
                 flow_manager = GriptapeNodes.FlowManager()
                 try:
                     target_node = node_manager.get_node_by_name(target_node_name)
-                    if isinstance(target_node, NodeGroupNode):
-                        # Get connections from this proxy parameter to find the actual internal target
-                        connections = flow_manager.get_connections()
-                        proxy_param = target_node.get_parameter_by_name(target_param_name)
-                        if proxy_param:
-                            internal_connections = connections.get_all_outgoing_connections(target_node)
-                            for internal_conn in internal_connections:
-                                if (
-                                    internal_conn.source_parameter.name == target_param_name
-                                    and internal_conn.is_node_group_internal
-                                ):
-                                    target_node_name = internal_conn.target_node.name
-                                    target_param_name = internal_conn.target_parameter.name
-                                    break
                 except ValueError:
-                    pass
+                    continue
+                if isinstance(target_node, NodeGroupNode):
+                    # Get connections from this proxy parameter to find the actual internal target
+                    connections = flow_manager.get_connections()
+                    proxy_param = target_node.get_parameter_by_name(target_param_name)
+                    if proxy_param:
+                        internal_connections = connections.get_all_outgoing_connections(target_node)
+                        for internal_conn in internal_connections:
+                            if (
+                                internal_conn.source_parameter.name == target_param_name
+                                and internal_conn.is_node_group_internal
+                            ):
+                                target_node_name = internal_conn.target_node.name
+                                target_param_name = internal_conn.target_parameter.name
+                                break
 
                 # Find the target parameter that corresponds to this target
                 for startflow_param_name, original_node_param in start_node_param_mappings.items():
@@ -1438,22 +1438,22 @@ class NodeExecutor:
                 flow_manager = GriptapeNodes.FlowManager()
                 try:
                     source_node = node_manager.get_node_by_name(source_node_name)
-                    if isinstance(source_node, NodeGroupNode):
-                        # Get connections to this proxy parameter to find the actual internal source
-                        connections = flow_manager.get_connections()
-                        proxy_param = source_node.get_parameter_by_name(source_param_name)
-                        if proxy_param:
-                            internal_connections = connections.get_all_incoming_connections(source_node)
-                            for internal_conn in internal_connections:
-                                if (
-                                    internal_conn.target_parameter.name == source_param_name
-                                    and internal_conn.is_node_group_internal
-                                ):
-                                    source_node_name = internal_conn.source_node.name
-                                    source_param_name = internal_conn.source_parameter.name
-                                    break
                 except ValueError:
-                    pass
+                    continue
+                if isinstance(source_node, NodeGroupNode):
+                    # Get connections to this proxy parameter to find the actual internal source
+                    connections = flow_manager.get_connections()
+                    proxy_param = source_node.get_parameter_by_name(source_param_name)
+                    if proxy_param:
+                        internal_connections = connections.get_all_incoming_connections(source_node)
+                        for internal_conn in internal_connections:
+                            if (
+                                internal_conn.target_parameter.name == source_param_name
+                                and internal_conn.is_node_group_internal
+                            ):
+                                source_node_name = internal_conn.source_node.name
+                                source_param_name = internal_conn.source_parameter.name
+                                break
 
                 # Find the EndFlow parameter that corresponds to this source
                 for sanitized_param_name, original_node_param in end_node_param_mappings.items():

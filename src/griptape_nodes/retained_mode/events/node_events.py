@@ -1077,8 +1077,8 @@ class MoveNodeToNewFlowRequest(RequestPayload):
     Results: MoveNodeToNewFlowResultSuccess | MoveNodeToNewFlowResultFailure (node not found, flow not found, node not in source flow)
     """
 
+    target_flow_name: str
     node_name: str | None = None
-    target_flow_name: str = field(default="")
     source_flow_name: str | None = None
 
 

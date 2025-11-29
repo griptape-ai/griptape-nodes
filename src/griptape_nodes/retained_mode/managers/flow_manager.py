@@ -899,8 +899,11 @@ class FlowManager:
             if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (
                 isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node
             ):
+                # Here we're checking if it's an internal connection. (from the NodeGroup to a node within it.)
+                # If that's true, we set that automatically.
                 is_node_group_internal = True
             else:
+                # If not true, we default to the request
                 is_node_group_internal = request.is_node_group_internal
             conn = self._connections.add_connection(
                 source_node=source_node,
@@ -2634,7 +2637,7 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         connection_ids = connections.incoming_index[node.name][param_name]
-                        has_non_internal_control_connection = False
+                        has_external_control_connection = False
                         for connection_id in connection_ids:
                             connection = connections.connections[connection_id]
                             # Skip internal NodeGroup connections
@@ -2644,9 +2647,9 @@ class FlowManager:
                                 connected_node = connection.get_source_node()
                                 if connected_node == node.end_node:
                                     continue
-                            has_non_internal_control_connection = True
+                            has_external_control_connection = True
                             break
-                        if has_non_internal_control_connection:
+                        if has_external_control_connection:
                             has_incoming_control = True
                             break
 
@@ -2665,7 +2668,7 @@ class FlowManager:
         valid_data_nodes = []
         for node in data_nodes:
             # Check if the node has any non-internal outgoing connections
-            has_non_internal_outgoing = False
+            has_external_outgoing = False
             if node.name in connections.outgoing_index:
                 for param_name in connections.outgoing_index[node.name]:
                     connection_ids = connections.outgoing_index[node.name][param_name]
@@ -2674,12 +2677,12 @@ class FlowManager:
                         # Skip internal NodeGroup connections
                         if connection.is_node_group_internal:
                             continue
-                        has_non_internal_outgoing = True
+                        has_external_outgoing = True
                         break
-                    if has_non_internal_outgoing:
+                    if has_external_outgoing:
                         break
             # Only add nodes that have no non-internal outgoing connections
-            if not has_non_internal_outgoing:
+            if not has_external_outgoing:
                 valid_data_nodes.append(node)
 
         return start_nodes + control_nodes + valid_data_nodes
@@ -2970,6 +2973,56 @@ class FlowManager:
 
         return node_types_used
 
+    def _aggregate_unique_parameter_values(
+        self,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]:
+        """Aggregate unique parameter values from this flow and all sub-flows.
+
+        Args:
+            unique_parameter_uuid_to_values: Unique parameter values from current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Dictionary with all unique parameter values merged
+        """
+        aggregated_values = dict(unique_parameter_uuid_to_values)
+
+        # Merge unique values from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            aggregated_values.update(sub_flow_cmd.unique_parameter_uuid_to_values)
+
+        return aggregated_values
+
+    def _aggregate_set_parameter_value_commands(
+        self,
+        set_parameter_value_commands: dict[
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]:
+        """Aggregate set parameter value commands from this flow and all sub-flows.
+
+        Args:
+            set_parameter_value_commands: Set parameter value commands from current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Dictionary with all set parameter value commands merged
+        """
+        aggregated_commands = dict(set_parameter_value_commands)
+
+        # Merge commands from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            for node_uuid, commands in sub_flow_cmd.set_parameter_value_commands.items():
+                if node_uuid in aggregated_commands:
+                    aggregated_commands[node_uuid].extend(commands)
+                else:
+                    aggregated_commands[node_uuid] = list(commands)
+
+        return aggregated_commands
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -3009,8 +3062,13 @@ class FlowManager:
                 else:
                     # Always set set_as_new_context=False during serialization - let the workflow manager
                     # that loads this serialized flow decide whether to push it to context or not
+                    # Get parent flow name from the flow manager's tracking
+                    parent_name = self.get_parent_flow(flow_name)
                     create_flow_request = CreateFlowRequest(
-                        parent_flow_name=None, set_as_new_context=False, metadata=flow.metadata
+                        flow_name=flow_name,
+                        parent_flow_name=parent_name,
+                        set_as_new_context=False,
+                        metadata=flow.metadata,
                     )
             else:
                 create_flow_request = None
@@ -3142,16 +3200,34 @@ class FlowManager:
 
         # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
+        # Build a complete node name to UUID map including nodes from all subflows
+        complete_node_name_to_uuid = dict(node_name_to_uuid)  # Start with current flow's nodes
+
+        def collect_subflow_node_uuids(subflow_commands_list: list[SerializedFlowCommands]) -> None:
+            """Recursively collect node name-to-UUID mappings from subflows."""
+            for subflow_cmd in subflow_commands_list:
+                for node_cmd in subflow_cmd.serialized_node_commands:
+                    # Extract node name from the create command
+                    create_cmd = node_cmd.create_node_command
+                    if isinstance(create_cmd, CreateNodeRequest) and create_cmd.node_name:
+                        complete_node_name_to_uuid[create_cmd.node_name] = node_cmd.node_uuid
+                    elif isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_group_name:
+                        complete_node_name_to_uuid[create_cmd.node_group_name] = node_cmd.node_uuid
+                # Recursively process nested subflows
+                if subflow_cmd.sub_flows_commands:
+                    collect_subflow_node_uuids(subflow_cmd.sub_flows_commands)
+
+        collect_subflow_node_uuids(sub_flow_commands)
 
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
             if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
-                # Convert node names to UUIDs
+                # Convert node names to UUIDs using the complete map (including subflows)
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
-                    if child_node_name in node_name_to_uuid:
-                        uuid = node_name_to_uuid[child_node_name]
+                    if child_node_name in complete_node_name_to_uuid:
+                        uuid = complete_node_name_to_uuid[child_node_name]
                         node_uuids.append(uuid)
                 # Replace the list with UUIDs (as strings since that's what the field expects)
                 create_cmd.node_names_to_add = node_uuids
@@ -3166,16 +3242,27 @@ class FlowManager:
             details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
             return SerializeFlowToCommandsResultFailure(result_details=details)
 
+        # Aggregate unique parameter values from this flow and all sub-flows
+        aggregated_unique_values = self._aggregate_unique_parameter_values(
+            unique_parameter_uuid_to_values, sub_flow_commands
+        )
+
+        # Extract flow name from initialization command if available
+        extracted_flow_name = None
+        if create_flow_request is not None and hasattr(create_flow_request, "flow_name"):
+            extracted_flow_name = create_flow_request.flow_name
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
             serialized_connections=create_connection_commands,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            unique_parameter_uuid_to_values=aggregated_unique_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
+            flow_name=extracted_flow_name,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3717,7 +3804,7 @@ class FlowManager:
                         # there is a control connection coming in
                         # Check each connection to see if it's an internal NodeGroup connection
                         connection_ids = cn_mgr.incoming_index[node.name][param_name]
-                        has_non_internal_control_connection = False
+                        has_external_control_connection = False
                         for connection_id in connection_ids:
                             connection = cn_mgr.connections[connection_id]
                             # Skip internal NodeGroup connections - they shouldn't disqualify a node from being a start node
@@ -3730,9 +3817,9 @@ class FlowManager:
                                 # If it is, then this could still be the first node in the control flow.
                                 if connected_node == node.end_node:
                                     continue
-                            has_non_internal_control_connection = True
+                            has_external_control_connection = True
                             break
-                        if has_non_internal_control_connection:
+                        if has_external_control_connection:
                             has_control_connection = True
                             break
             # if there is a connection coming in, isn't a start.
@@ -3754,7 +3841,7 @@ class FlowManager:
         for node in data_nodes:
             cn_mgr = self.get_connections()
             # Check if the node has any non-internal outgoing connections
-            has_non_internal_outgoing = False
+            has_external_outgoing = False
             if node.name in cn_mgr.outgoing_index:
                 for param_name in cn_mgr.outgoing_index[node.name]:
                     connection_ids = cn_mgr.outgoing_index[node.name][param_name]
@@ -3763,12 +3850,12 @@ class FlowManager:
                         # Skip internal NodeGroup connections
                         if connection.is_node_group_internal:
                             continue
-                        has_non_internal_outgoing = True
+                        has_external_outgoing = True
                         break
-                    if has_non_internal_outgoing:
+                    if has_external_outgoing:
                         break
             # Only add nodes that have no non-internal outgoing connections
-            if not has_non_internal_outgoing:
+            if not has_external_outgoing:
                 valid_data_nodes.append(node)
         # ok now - populate the global flow queue with node type information
         for node in start_nodes:
