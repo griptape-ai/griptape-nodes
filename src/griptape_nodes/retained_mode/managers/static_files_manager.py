@@ -22,6 +22,9 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
+    GetStaticServerPingInfoRequest,
+    GetStaticServerPingInfoResultFailure,
+    GetStaticServerPingInfoResultSuccess,
     ResolveStaticFilePathRequest,
     ResolveStaticFilePathResultFailure,
     ResolveStaticFilePathResultSuccess,
@@ -100,6 +103,9 @@ class StaticFilesManager:
             )
             event_manager.assign_manager_to_request_type(
                 ResolveStaticFilePathRequest, self.on_handle_resolve_static_file_path_request
+            )
+            event_manager.assign_manager_to_request_type(
+                GetStaticServerPingInfoRequest, self.on_handle_get_static_server_ping_info_request
             )
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
@@ -313,6 +319,46 @@ class StaticFilesManager:
         return ResolveStaticFilePathResultSuccess(
             file_uri=file_uri, result_details=f"Successfully resolved URL to file URI: {file_uri}"
         )
+
+    def on_handle_get_static_server_ping_info_request(
+        self,
+        _request: GetStaticServerPingInfoRequest,
+    ) -> GetStaticServerPingInfoResultSuccess | GetStaticServerPingInfoResultFailure:
+        """Handle the request to get static server ping URL and server code.
+
+        Args:
+            _request: The request object (no parameters needed).
+
+        Returns:
+            A result object indicating success (with ping info) or failure.
+        """
+        # Only local storage driver supports static server
+        if not isinstance(self.storage_driver, LocalStorageDriver):
+            msg = f"Static server not available for storage backend: {self.storage_backend}"
+            return GetStaticServerPingInfoResultFailure(error=msg, result_details=msg)
+
+        try:
+            # Import here to get current server code
+            from griptape_nodes.servers.static import STATIC_SERVER_ENABLED, _server_code
+
+            if not STATIC_SERVER_ENABLED:
+                msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+                return GetStaticServerPingInfoResultFailure(error=msg, result_details=msg)
+
+            # Build ping URL from configured base URL
+            base_url_config = self.config_manager.get_config_value("static_server_base_url")
+            ping_url = f"{base_url_config}/ping"
+
+            return GetStaticServerPingInfoResultSuccess(
+                ping_url=ping_url,
+                server_code=_server_code,
+                server_status="ok",
+                result_details="Successfully retrieved static server ping information",
+            )
+
+        except Exception as e:
+            msg = f"Failed to retrieve static server ping information: {e}"
+            return GetStaticServerPingInfoResultFailure(error=msg, result_details=msg)
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Start static server in daemon thread if enabled

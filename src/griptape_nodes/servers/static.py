@@ -3,6 +3,7 @@ from __future__ import annotations
 import binascii
 import logging
 import os
+import uuid
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -25,6 +26,10 @@ STATIC_SERVER_PORT = int(os.getenv("STATIC_SERVER_PORT", "8124"))
 STATIC_SERVER_URL = os.getenv("STATIC_SERVER_URL", "/workspace")
 # Log level for the static server
 STATIC_SERVER_LOG_LEVEL = os.getenv("STATIC_SERVER_LOG_LEVEL", "ERROR").lower()
+
+# Generate a random server code when the module is loaded
+# This code will be used to identify this specific server instance
+_server_code = str(uuid.uuid4())
 
 logger = logging.getLogger("griptape_nodes_api")
 logging.getLogger("uvicorn").addHandler(RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True))
@@ -161,9 +166,53 @@ async def _serve_external_file(file_path: str) -> FileResponse:
     return FileResponse(absolute_path)
 
 
-async def _ping() -> dict:
-    """Ping endpoint to check if the static server is accessible."""
-    return {"status": "ok", "message": "Static server is accessible", "server": "griptape-nodes-static"}
+async def _ping(request: Request) -> dict:
+    """POST ping endpoint to verify server code and check accessibility."""
+    try:
+        body = await request.json()
+        provided_code = body.get("server_code")
+
+        if not provided_code:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "error",
+                    "message": "Missing server_code in request body",
+                    "server": "griptape-nodes-static",
+                    "verified": False,
+                }
+            )
+
+        if provided_code != _server_code:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "status": "error",
+                    "message": "Invalid server_code provided",
+                    "server": "griptape-nodes-static",
+                    "verified": False,
+                }
+            )
+
+        return {
+            "status": "ok",
+            "message": "Static server is accessible and server code verified",
+            "server": "griptape-nodes-static",
+            "verified": True,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "status": "error",
+                "message": f"Failed to process ping request: {e}",
+                "server": "griptape-nodes-static",
+                "verified": False,
+            }
+        )
 
 
 def start_static_server() -> None:
@@ -180,7 +229,7 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
     app.add_api_route("/external/{file_path:path}", _serve_external_file, methods=["GET"])
-    app.add_api_route("/ping", _ping, methods=["GET"])
+    app.add_api_route("/ping", _ping, methods=["POST"])
 
     # Build CORS allowed origins list
     allowed_origins = [

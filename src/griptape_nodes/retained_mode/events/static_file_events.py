@@ -179,3 +179,45 @@ class ResolveStaticFilePathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
 @PayloadRegistry.register
 class ResolveStaticFilePathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Static file path resolution failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStaticServerPingInfoRequest(RequestPayload):
+    """Get static server ping URL and server code for frontend verification.
+
+    Use when: Verifying static server connectivity, implementing health checks,
+    validating backend-frontend communication, establishing server identity.
+
+    Results: GetStaticServerPingInfoResultSuccess | GetStaticServerPingInfoResultFailure
+
+    Args: None required - this request fetches current server information
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStaticServerPingInfoResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Static server ping information retrieved successfully.
+
+    Args:
+        ping_url: Full URL to the ping endpoint
+        server_code: Unique server instance identifier (UUID)
+        server_status: Current server status ('ok' if healthy)
+    """
+
+    ping_url: str
+    server_code: str
+    server_status: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetStaticServerPingInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Static server ping information retrieval failed.
+
+    Args:
+        error: Detailed error message describing the failure
+    """
+
+    error: str
