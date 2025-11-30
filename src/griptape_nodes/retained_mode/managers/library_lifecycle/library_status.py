@@ -10,3 +10,4 @@ class LibraryStatus(StrEnum):
     FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.
     UNUSABLE = "UNUSABLE"  # Errors detected and not recoverable. Not registered.
     MISSING = "MISSING"  # File not found. Not registered.
+    NOT_EVALUATED = "NOT_EVALUATED"  # Library has not been evaluated yet.

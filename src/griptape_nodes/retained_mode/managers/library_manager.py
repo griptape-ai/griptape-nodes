@@ -11,6 +11,7 @@ import sys
 import sysconfig
 from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
@@ -212,6 +213,17 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
+class LibraryLifecycleState(StrEnum):
+    """Lifecycle states for library loading."""
+
+    FAILURE = "failure"
+    DISCOVERED = "discovered"
+    INSPECTED = "inspected"
+    EVALUATED = "evaluated"
+    DEPENDENCIES_INSTALLED = "dependencies_installed"
+    LOADED = "loaded"
+
+
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
@@ -221,9 +233,11 @@ class LibraryManager:
     class LibraryInfo:
         """Information about a library that was attempted to be loaded.
 
-        Includes the status of the library, the file path, and any problems encountered during loading.
+        Tracks the lifecycle state (where we are in the loading process) and status (health/quality).
+        Includes the file path and any problems encountered during loading.
         """
 
+        lifecycle_state: LibraryLifecycleState
         status: LibraryStatus
         library_path: str
         library_name: str | None = None
@@ -820,6 +834,7 @@ class LibraryManager:
         # Check if the file exists
         if not json_path.exists():
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=None,
                 status=LibraryStatus.MISSING,
@@ -837,6 +852,7 @@ class LibraryManager:
             failure_result = cast("LoadLibraryMetadataFromFileResultFailure", metadata_result)
 
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=failure_result.library_name,
                 status=failure_result.status,
@@ -851,6 +867,7 @@ class LibraryManager:
         library_version = library_data.metadata.library_version
         if library_version is None:
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=library_data.name,
                 status=LibraryStatus.UNUSABLE,
@@ -907,6 +924,7 @@ class LibraryManager:
                 )
             except Exception as err:
                 self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                    lifecycle_state=LibraryLifecycleState.FAILURE,
                     library_path=file_path,
                     library_name=library_data.name,
                     library_version=library_version,
@@ -932,6 +950,7 @@ class LibraryManager:
         except KeyError as err:
             # Library already exists
             self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
@@ -1605,6 +1624,7 @@ class LibraryManager:
             # Record all failed libraries in our tracking immediately
             for failed_library in metadata_result.failed_libraries:
                 self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                    lifecycle_state=LibraryLifecycleState.FAILURE,
                     library_path=failed_library.library_path,
                     library_name=failed_library.library_name,
                     status=failed_library.status,
@@ -2011,6 +2031,7 @@ class LibraryManager:
         # Early exit if any version issues are disqualifying
         if has_disqualifying_issues:
             return LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=library_file_path,
                 library_name=library_data.name,
                 library_version=library_version,
@@ -2101,6 +2122,7 @@ class LibraryManager:
 
         # Create a LibraryInfo object based on load successes and problem count.
         return LibraryManager.LibraryInfo(
+            lifecycle_state=LibraryLifecycleState.LOADED,
             library_path=library_file_path,
             library_name=library_data.name,
             library_version=library_version,
@@ -2194,6 +2216,7 @@ class LibraryManager:
         except KeyError as err:
             # Library already exists
             self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
                 library_version=library_data.metadata.library_version,

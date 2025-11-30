@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -515,6 +516,35 @@ class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
     """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesRequest(RequestPayload):
+    """Discover all libraries from configuration.
+
+    Scans configured library paths and creates LibraryInfo entries in 'discovered' state.
+    This does not load any library contents - just identifies what's available.
+
+    Use when: Refreshing library catalog, checking for new libraries, initializing
+    library tracking before selective loading.
+
+    Results: DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Libraries discovered successfully."""
+
+    libraries_discovered: set[Path]  # Library file paths
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library discovery failed."""
 
 
 @dataclass
