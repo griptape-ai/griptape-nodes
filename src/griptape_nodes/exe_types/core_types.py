@@ -479,6 +479,14 @@ class BaseNodeElement:
         # No child handled it, return None (indicating no handler)
         return None
 
+    def get_node(self) -> BaseNode | None:
+        """Get the node context associated with this element.
+
+        Returns:
+            BaseNode | None: The parent node that owns this element, or None if no node context is set.
+        """
+        return self._node_context
+
 
 class UIOptionsMixin:
     """Mixin providing UI options update functionality for classes with ui_options."""
