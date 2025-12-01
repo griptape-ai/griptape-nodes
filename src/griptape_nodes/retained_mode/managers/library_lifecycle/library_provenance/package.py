@@ -16,7 +16,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
@@ -45,7 +45,7 @@ class LibraryProvenancePackage(LibraryProvenance):
             issues=[
                 LifecycleIssue(
                     message=f"Package inspection not yet implemented for {self.requirement_specifier}",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             ],
         )
@@ -56,7 +56,7 @@ class LibraryProvenancePackage(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="Package evaluation not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
         return EvaluationResult(issues=issues)
@@ -67,7 +67,7 @@ class LibraryProvenancePackage(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="Package installation not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
 
@@ -89,7 +89,7 @@ class LibraryProvenancePackage(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="Package loading not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
 

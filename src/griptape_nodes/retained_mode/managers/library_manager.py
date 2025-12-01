@@ -11,7 +11,6 @@ import sys
 import sysconfig
 from collections import defaultdict
 from dataclasses import dataclass, field
-from enum import StrEnum
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
@@ -59,6 +58,8 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
+    DiscoverLibrariesRequest,
+    DiscoverLibrariesResultSuccess,
     DownloadLibraryRequest,
     DownloadLibraryResultFailure,
     DownloadLibraryResultSuccess,
@@ -74,6 +75,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
+    InspectLibraryContentsRequest,
+    InspectLibraryContentsResultFailure,
+    InspectLibraryContentsResultSuccess,
     InspectLibraryRepoRequest,
     InspectLibraryRepoResultFailure,
     InspectLibraryRepoResultSuccess,
@@ -148,7 +152,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory i
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
     LibraryProvenanceLocalFile,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness, LibraryLifecycleState
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
@@ -213,17 +217,6 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
-class LibraryLifecycleState(StrEnum):
-    """Lifecycle states for library loading."""
-
-    FAILURE = "failure"
-    DISCOVERED = "discovered"
-    INSPECTED = "inspected"
-    EVALUATED = "evaluated"
-    DEPENDENCIES_INSTALLED = "dependencies_installed"
-    LOADED = "loaded"
-
-
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
@@ -233,12 +226,12 @@ class LibraryManager:
     class LibraryInfo:
         """Information about a library that was attempted to be loaded.
 
-        Tracks the lifecycle state (where we are in the loading process) and status (health/quality).
+        Tracks the lifecycle state (where we are in the loading process) and fitness (health/quality).
         Includes the file path and any problems encountered during loading.
         """
 
         lifecycle_state: LibraryLifecycleState
-        status: LibraryStatus
+        fitness: LibraryFitness
         library_path: str
         library_name: str | None = None
         library_version: str | None = None
@@ -372,25 +365,25 @@ class LibraryManager:
 
         # Status emojis mapping
         status_emoji = {
-            LibraryStatus.GOOD: "[green]OK[/green]",
-            LibraryStatus.FLAWED: "[yellow]![/yellow]",
-            LibraryStatus.UNUSABLE: "[red]X[/red]",
-            LibraryStatus.MISSING: "[red]?[/red]",
+            LibraryFitness.GOOD: "[green]OK[/green]",
+            LibraryFitness.FLAWED: "[yellow]![/yellow]",
+            LibraryFitness.UNUSABLE: "[red]X[/red]",
+            LibraryFitness.MISSING: "[red]?[/red]",
         }
 
         # Status text mapping (colored)
         status_text = {
-            LibraryStatus.GOOD: "[green](GOOD)[/green]",
-            LibraryStatus.FLAWED: "[yellow](FLAWED)[/yellow]",
-            LibraryStatus.UNUSABLE: "[red](UNUSABLE)[/red]",
-            LibraryStatus.MISSING: "[red](MISSING)[/red]",
+            LibraryFitness.GOOD: "[green](GOOD)[/green]",
+            LibraryFitness.FLAWED: "[yellow](FLAWED)[/yellow]",
+            LibraryFitness.UNUSABLE: "[red](UNUSABLE)[/red]",
+            LibraryFitness.MISSING: "[red](MISSING)[/red]",
         }
 
         # Add rows for each library info
         for lib_info in library_infos:
             # Library column with emoji, name, version, colored status, and file path underneath
-            emoji = status_emoji.get(lib_info.status, "ERROR: Unknown/Unexpected Library Status")
-            colored_status = status_text.get(lib_info.status, "(UNKNOWN)")
+            emoji = status_emoji.get(lib_info.fitness, "ERROR: Unknown/Unexpected Library Status")
+            colored_status = status_text.get(lib_info.fitness, "(UNKNOWN)")
             name = lib_info.library_name if lib_info.library_name else "*UNKNOWN*"
 
             library_version = lib_info.library_version
@@ -554,7 +547,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryStatus.MISSING,
+                status=LibraryFitness.MISSING,
                 problems=[LibraryNotFoundProblem(library_path=str(json_path))],
                 result_details=details,
             )
@@ -568,7 +561,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryStatus.UNUSABLE,
+                status=LibraryFitness.UNUSABLE,
                 problems=[LibraryJsonDecodeProblem()],
                 result_details=details,
             )
@@ -577,7 +570,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=None,
-                status=LibraryStatus.UNUSABLE,
+                status=LibraryFitness.UNUSABLE,
                 problems=[LibraryLoadExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
@@ -601,7 +594,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryStatus.UNUSABLE,
+                status=LibraryFitness.UNUSABLE,
                 problems=problems,
                 result_details=details,
             )
@@ -610,7 +603,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=file_path,
                 library_name=library_name,
-                status=LibraryStatus.UNUSABLE,
+                status=LibraryFitness.UNUSABLE,
                 problems=[LibrarySchemaExceptionProblem(error_message=str(err))],
                 result_details=details,
             )
@@ -690,7 +683,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryStatus.MISSING,
+                status=LibraryFitness.MISSING,
                 problems=[SandboxDirectoryMissingProblem()],
                 result_details=ResultDetails(message=details, level=logging.INFO),
             )
@@ -747,7 +740,7 @@ class LibraryManager:
             return LoadLibraryMetadataFromFileResultFailure(
                 library_path=sandbox_library_dir_as_posix,
                 library_name=LibraryManager.SANDBOX_LIBRARY_NAME,
-                status=LibraryStatus.UNUSABLE,
+                status=LibraryFitness.UNUSABLE,
                 problems=[EngineVersionErrorProblem()],
                 result_details=details,
             )
@@ -837,7 +830,7 @@ class LibraryManager:
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=None,
-                status=LibraryStatus.MISSING,
+                fitness=LibraryFitness.MISSING,
                 problems=[LibraryNotFoundProblem(library_path=file_path)],
             )
             details = f"Attempted to load Library JSON file. Failed because no file could be found at the specified path: {json_path}"
@@ -855,7 +848,7 @@ class LibraryManager:
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=failure_result.library_name,
-                status=failure_result.status,
+                fitness=failure_result.status,
                 problems=failure_result.problems,
             )
             return RegisterLibraryFromFileResultFailure(result_details=str(failure_result.result_details))
@@ -870,7 +863,7 @@ class LibraryManager:
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=library_data.name,
-                status=LibraryStatus.UNUSABLE,
+                fitness=LibraryFitness.UNUSABLE,
                 problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
             )
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
@@ -928,7 +921,7 @@ class LibraryManager:
                     library_path=file_path,
                     library_name=library_data.name,
                     library_version=library_version,
-                    status=LibraryStatus.UNUSABLE,
+                    fitness=LibraryFitness.UNUSABLE,
                     problems=[
                         AdvancedLibraryLoadFailureProblem(
                             advanced_library_path=library_data.advanced_library_path, error_message=str(err)
@@ -954,7 +947,7 @@ class LibraryManager:
                 library_path=file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryStatus.UNUSABLE,
+                fitness=LibraryFitness.UNUSABLE,
                 problems=[DuplicateLibraryProblem()],
             )
 
@@ -1010,22 +1003,22 @@ class LibraryManager:
         )
         self._library_file_path_to_info[file_path] = library_load_results
 
-        match library_load_results.status:
-            case LibraryStatus.GOOD:
+        match library_load_results.fitness:
+            case LibraryFitness.GOOD:
                 details = f"Successfully loaded Library '{library_data.name}' from JSON file at {json_path}"
                 return RegisterLibraryFromFileResultSuccess(
                     library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.INFO)
                 )
-            case LibraryStatus.FLAWED:
+            case LibraryFitness.FLAWED:
                 details = f"Successfully loaded Library JSON file from '{json_path}', but one or more nodes failed to load. Check the log for more details."
                 return RegisterLibraryFromFileResultSuccess(
                     library_name=library_data.name, result_details=ResultDetails(message=details, level=logging.WARNING)
                 )
-            case LibraryStatus.UNUSABLE:
+            case LibraryFitness.UNUSABLE:
                 details = f"Attempted to load Library JSON file from '{json_path}'. Failed because no nodes were loaded. Check the log for more details."
                 return RegisterLibraryFromFileResultFailure(result_details=details)
             case _:
-                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected status '{library_load_results.status}' was returned."
+                details = f"Attempted to load Library JSON file from '{json_path}'. Failed because an unknown/unexpected fitness '{library_load_results.fitness}' was returned."
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
     async def register_library_from_requirement_specifier_request(
@@ -1627,7 +1620,7 @@ class LibraryManager:
                     lifecycle_state=LibraryLifecycleState.FAILURE,
                     library_path=failed_library.library_path,
                     library_name=failed_library.library_name,
-                    status=failed_library.status,
+                    fitness=failed_library.status,
                     problems=failed_library.problems,
                 )
 
@@ -2025,7 +2018,7 @@ class LibraryManager:
         has_disqualifying_issues = False
         for issue in version_issues:
             problems.append(issue.problem)
-            if issue.severity == LibraryStatus.UNUSABLE:
+            if issue.severity == LibraryFitness.UNUSABLE:
                 has_disqualifying_issues = True
 
         # Early exit if any version issues are disqualifying
@@ -2035,7 +2028,7 @@ class LibraryManager:
                 library_path=library_file_path,
                 library_name=library_data.name,
                 library_version=library_version,
-                status=LibraryStatus.UNUSABLE,
+                fitness=LibraryFitness.UNUSABLE,
                 problems=problems,
             )
 
@@ -2112,13 +2105,13 @@ class LibraryManager:
 
         # Create a LibraryInfo object based on load successes and problem count.
         if not any_nodes_loaded_successfully:
-            status = LibraryStatus.UNUSABLE
+            status = LibraryFitness.UNUSABLE
         elif problems:
             # Success, but errors.
-            status = LibraryStatus.FLAWED
+            status = LibraryFitness.FLAWED
         else:
             # Flawless victory.
-            status = LibraryStatus.GOOD
+            status = LibraryFitness.GOOD
 
         # Create a LibraryInfo object based on load successes and problem count.
         return LibraryManager.LibraryInfo(
@@ -2126,7 +2119,7 @@ class LibraryManager:
             library_path=library_file_path,
             library_name=library_data.name,
             library_version=library_version,
-            status=status,
+            fitness=status,
             problems=problems,
         )
 
@@ -2220,7 +2213,7 @@ class LibraryManager:
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
                 library_version=library_data.metadata.library_version,
-                status=LibraryStatus.UNUSABLE,
+                fitness=LibraryFitness.UNUSABLE,
                 problems=[DuplicateLibraryProblem()],
             )
 
@@ -2256,7 +2249,7 @@ class LibraryManager:
 
         paths_to_remove = set()
         for library_path, library_info in self._library_file_path_to_info.items():
-            if library_info.status == LibraryStatus.MISSING:
+            if library_info.fitness == LibraryFitness.MISSING:
                 # Remove this file path from the config.
                 paths_to_remove.add(library_path.lower())
 
@@ -2297,6 +2290,74 @@ class LibraryManager:
             "Successfully reloaded all libraries. All object state was cleared and previous libraries were unloaded."
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
+
+    def discover_libraries_request(self, request: DiscoverLibrariesRequest) -> ResultPayload:  # noqa: ARG002
+        """Discover libraries from config and track them in discovered state."""
+        discovered_paths = set(self._discover_library_files())
+
+        # Create minimal LibraryInfo entries for libraries not yet tracked
+        for file_path in discovered_paths:
+            file_path_str = str(file_path)
+
+            # Skip if already tracked (regardless of lifecycle state)
+            if file_path_str in self._library_file_path_to_info:
+                continue
+
+            # Create minimal LibraryInfo entry in discovered state
+            self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+                lifecycle_state=LibraryLifecycleState.DISCOVERED,
+                fitness=LibraryFitness.NOT_EVALUATED,
+                library_path=file_path_str,
+                library_name=None,
+                library_version=None,
+            )
+
+        # Success path at the end
+        return DiscoverLibrariesResultSuccess(
+            result_details=ResultDetails(message=f"Discovered {len(discovered_paths)} libraries"),
+            libraries_discovered=discovered_paths,
+        )
+
+    def inspect_library_contents_request(self, request: InspectLibraryContentsRequest) -> ResultPayload:
+        """Inspect a library's JSON schema and validate its contents."""
+        library_path_str = str(request.library_path)
+
+        # Find library info by path
+        if library_path_str not in self._library_file_path_to_info:
+            return InspectLibraryContentsResultFailure(
+                result_details=f"Library at path '{library_path_str}' not found in discovered libraries"
+            )
+
+        library_info = self._library_file_path_to_info[library_path_str]
+
+        if library_info.lifecycle_state != LibraryLifecycleState.DISCOVERED:
+            return InspectLibraryContentsResultFailure(
+                result_details=f"Library at '{library_path_str}' is in state '{library_info.lifecycle_state}', expected DISCOVERED"
+            )
+
+        # Load metadata using existing method
+        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_path_str)
+        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
+
+        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            # Update library info to FAILURE state
+            library_info.lifecycle_state = LibraryLifecycleState.FAILURE
+            library_info.fitness = LibraryFitness.UNUSABLE
+            return InspectLibraryContentsResultFailure(
+                result_details=f"Failed to inspect library at '{library_path_str}': {metadata_result.result_details}"
+            )
+
+        # Update library info with inspection results
+        library_schema = metadata_result.library_schema
+        library_info.lifecycle_state = LibraryLifecycleState.INSPECTED
+        library_info.library_name = library_schema.name
+        library_info.library_version = library_schema.metadata.library_version
+
+        # Success path at the end
+        return InspectLibraryContentsResultSuccess(
+            result_details=ResultDetails(message=f"Successfully inspected library '{library_schema.name}'"),
+            library_metadata=library_schema.metadata,
+        )
 
     async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Check if there are any new libraries in config that haven't been loaded yet

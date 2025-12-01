@@ -19,7 +19,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
@@ -52,7 +52,7 @@ class LibraryProvenanceSandbox(LibraryProvenance):
                 issues=[
                     LifecycleIssue(
                         message=f"Sandbox directory does not exist or is not readable: {self.sandbox_path}",
-                        severity=LibraryStatus.UNUSABLE,
+                        severity=LibraryFitness.UNUSABLE,
                     )
                 ],
             )
@@ -97,7 +97,7 @@ class LibraryProvenanceSandbox(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message=f"Sandbox directory is no longer accessible: {self.sandbox_path}",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             )
             return EvaluationResult(issues=issues)
@@ -133,7 +133,7 @@ class LibraryProvenanceSandbox(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message="No metadata available for loading",
-                    severity=LibraryStatus.FLAWED,
+                    severity=LibraryFitness.FLAWED,
                 )
             )
 

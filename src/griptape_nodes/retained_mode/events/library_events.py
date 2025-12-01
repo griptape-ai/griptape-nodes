@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -14,9 +13,11 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 
 @dataclass
@@ -205,7 +206,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
         library_path: Path to the library file that failed to load.
         library_name: Name of the library if it could be extracted from the JSON,
                      None if the name couldn't be determined.
-        status: The LibraryStatus enum indicating the type of failure
+        status: The LibraryFitness enum indicating the type of failure
                (MISSING, UNUSABLE, etc.).
         problems: List of specific problems encountered during loading
                  (file not found, JSON parse errors, validation failures, etc.).
@@ -213,7 +214,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     library_path: str
     library_name: str | None
-    status: LibraryStatus
+    status: LibraryFitness
     problems: list[LibraryProblem]
 
 
@@ -545,6 +546,37 @@ class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucce
 @PayloadRegistry.register
 class DiscoverLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Library discovery failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryContentsRequest(RequestPayload):
+    """Inspect a library's JSON schema and validate its contents.
+
+    Loads and validates the library JSON file, extracting node types,
+    features, and metadata. Does not load Python modules or dependencies.
+
+    Args:
+        library_path: Path to library JSON file to inspect (must be in discovered state)
+
+    Results: InspectLibraryContentsResultSuccess | InspectLibraryContentsResultFailure
+    """
+
+    library_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryContentsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library inspection successful."""
+
+    library_metadata: LibraryMetadata
+
+
+@dataclass
+@PayloadRegistry.register
+class InspectLibraryContentsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library inspection failed."""
 
 
 @dataclass

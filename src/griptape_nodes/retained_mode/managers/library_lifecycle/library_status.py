@@ -1,10 +1,21 @@
-"""Library status enumeration."""
+"""Library lifecycle and fitness enumerations."""
 
 from enum import StrEnum
 
 
-class LibraryStatus(StrEnum):
-    """Status of the library that was attempted to be loaded."""
+class LibraryLifecycleState(StrEnum):
+    """Lifecycle states for library loading."""
+
+    FAILURE = "failure"
+    DISCOVERED = "discovered"
+    INSPECTED = "inspected"
+    EVALUATED = "evaluated"
+    DEPENDENCIES_INSTALLED = "dependencies_installed"
+    LOADED = "loaded"
+
+
+class LibraryFitness(StrEnum):
+    """Fitness of the library that was attempted to be loaded."""
 
     GOOD = "GOOD"  # No errors detected during loading. Registered.
     FLAWED = "FLAWED"  # Some errors detected, but recoverable. Registered.

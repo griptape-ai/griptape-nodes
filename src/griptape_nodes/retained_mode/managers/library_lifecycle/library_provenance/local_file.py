@@ -30,7 +30,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 
@@ -66,7 +66,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message=f"Library file does not exist or is not readable: {self.file_path}",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             )
             return InspectionResult(schema=None, issues=issues)
@@ -76,10 +76,12 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             with Path(self.file_path).open(encoding="utf-8") as f:
                 raw_data = json.load(f)
         except json.JSONDecodeError as e:
-            issues.append(LifecycleIssue(message=f"Invalid JSON in library file: {e}", severity=LibraryStatus.UNUSABLE))
+            issues.append(
+                LifecycleIssue(message=f"Invalid JSON in library file: {e}", severity=LibraryFitness.UNUSABLE)
+            )
             return InspectionResult(schema=None, issues=issues)
         except Exception as e:
-            issues.append(LifecycleIssue(message=f"Failed to read library file: {e}", severity=LibraryStatus.UNUSABLE))
+            issues.append(LifecycleIssue(message=f"Failed to read library file: {e}", severity=LibraryFitness.UNUSABLE))
             return InspectionResult(schema=None, issues=issues)
 
         # Validate library schema structure
@@ -91,7 +93,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                 msg = error["msg"]
                 error_type = error["type"]
                 problem = f"Error in section '{loc}': {error_type}, {msg}"
-                issues.append(LifecycleIssue(message=problem, severity=LibraryStatus.UNUSABLE))
+                issues.append(LifecycleIssue(message=problem, severity=LibraryFitness.UNUSABLE))
             return InspectionResult(schema=None, issues=issues)
 
         return InspectionResult(schema=schema, issues=issues)
@@ -108,7 +110,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         # Version compatibility validation
         version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(schema)
         for issue in version_issues:
-            lifecycle_severity = LibraryStatus(issue.severity.value)
+            lifecycle_severity = LibraryFitness(issue.severity.value)
             # Collate the problem to get the display message
             problem_message = type(issue.problem).collate_problems_for_display([issue.problem])
             issues.append(LifecycleIssue(message=problem_message, severity=lifecycle_severity))
@@ -159,7 +161,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             problems.append(
                 LifecycleIssue(
                     message=str(e),
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             )
             # Return early for blocking issues
@@ -178,7 +180,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                 problems.append(
                     LifecycleIssue(
                         message=f"Insufficient disk space for dependencies (requires {min_space_gb} GB): {error_msg}",
-                        severity=LibraryStatus.UNUSABLE,
+                        severity=LibraryFitness.UNUSABLE,
                     )
                 )
                 # Return early for blocking issues
@@ -212,7 +214,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                 problems.append(
                     LifecycleIssue(
                         message=f"Dependency installation failed: {error_details}",
-                        severity=LibraryStatus.FLAWED,
+                        severity=LibraryFitness.FLAWED,
                     )
                 )
         elif library_venv_python_path:
@@ -256,7 +258,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                 issues.append(
                     LifecycleIssue(
                         message=f"Failed to load Advanced Library module from '{library_data.advanced_library_path}': {err}",
-                        severity=LibraryStatus.UNUSABLE,
+                        severity=LibraryFitness.UNUSABLE,
                     )
                 )
                 return LibraryLoadedResult(issues=issues)
@@ -275,7 +277,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message="Failed because a library with this name was already registered. Check the Settings to ensure duplicate libraries are not being loaded.",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             )
             return LibraryLoadedResult(issues=issues)
@@ -297,7 +299,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                         issues.append(
                             LifecycleIssue(
                                 message=f"Failed to create new config category '{library_data_setting.category}'.",
-                                severity=LibraryStatus.FLAWED,
+                                severity=LibraryFitness.FLAWED,
                             )
                         )
                         continue  # SKIP IT
@@ -313,7 +315,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
                         issues.append(
                             LifecycleIssue(
                                 message=f"Failed to update config category '{library_data_setting.category}'.",
-                                severity=LibraryStatus.FLAWED,
+                                severity=LibraryFitness.FLAWED,
                             )
                         )
                         continue  # SKIP IT
@@ -351,7 +353,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message=collated_problems,
-                    severity=library_load_results.status,
+                    severity=library_load_results.fitness,
                 )
             )
 

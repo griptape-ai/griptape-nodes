@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import LibraryCandidate, LifecycleIssue
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import EvaluatedState, LibraryLifecycleFSM
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import LibraryEntry
@@ -165,7 +165,7 @@ class LibraryDirectory:
         fsm = self._provenance_to_fsm.get(provenance)
 
         if not fsm:
-            blockers.append(LifecycleIssue(message="No FSM found for library", severity=LibraryStatus.MISSING))
+            blockers.append(LifecycleIssue(message="No FSM found for library", severity=LibraryFitness.MISSING))
             return blockers
 
         # Check if library is in evaluated state
@@ -173,7 +173,7 @@ class LibraryDirectory:
             blockers.append(
                 LifecycleIssue(
                     message=f"Library not in evaluated state: {fsm.get_current_state_name()}",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             )
             return blockers
@@ -182,12 +182,12 @@ class LibraryDirectory:
 
         # Check if inspection result is usable
         if not context.inspection_result or not context.inspection_result.is_usable():
-            blockers.append(LifecycleIssue(message="Library has inspection issues", severity=LibraryStatus.UNUSABLE))
+            blockers.append(LifecycleIssue(message="Library has inspection issues", severity=LibraryFitness.UNUSABLE))
             return blockers
 
         # Check if schema is available
         if not context.inspection_result.schema:
-            blockers.append(LifecycleIssue(message="Library schema not available", severity=LibraryStatus.UNUSABLE))
+            blockers.append(LifecycleIssue(message="Library schema not available", severity=LibraryFitness.UNUSABLE))
             return blockers
 
         # Check for name conflicts
@@ -196,7 +196,7 @@ class LibraryDirectory:
             conflicting_libraries = self.get_conflicting_library_display_names(library_name, provenance)
             blockers.append(
                 LifecycleIssue(
-                    message=f"Library has name conflicts with: {conflicting_libraries}", severity=LibraryStatus.FLAWED
+                    message=f"Library has name conflicts with: {conflicting_libraries}", severity=LibraryFitness.FLAWED
                 )
             )
 

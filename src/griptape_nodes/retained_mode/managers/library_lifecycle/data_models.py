@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, NamedTuple
 
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
@@ -31,7 +31,7 @@ class LifecycleIssue:
     """Represents an issue found during library lifecycle with severity level."""
 
     message: str
-    severity: LibraryStatus
+    severity: LibraryFitness
 
 
 @dataclass
@@ -40,17 +40,17 @@ class Result:
 
     issues: list[LifecycleIssue] = field(default_factory=list)
 
-    def get_status(self) -> LibraryStatus:
+    def get_status(self) -> LibraryFitness:
         """Determine overall status based on issues."""
-        if any(issue.severity == LibraryStatus.UNUSABLE for issue in self.issues):
-            return LibraryStatus.UNUSABLE
-        if any(issue.severity == LibraryStatus.FLAWED for issue in self.issues):
-            return LibraryStatus.FLAWED
-        return LibraryStatus.GOOD
+        if any(issue.severity == LibraryFitness.UNUSABLE for issue in self.issues):
+            return LibraryFitness.UNUSABLE
+        if any(issue.severity == LibraryFitness.FLAWED for issue in self.issues):
+            return LibraryFitness.FLAWED
+        return LibraryFitness.GOOD
 
     def is_usable(self) -> bool:
         """Check if result is usable despite issues."""
-        return self.get_status() in [LibraryStatus.GOOD, LibraryStatus.FLAWED]
+        return self.get_status() in [LibraryFitness.GOOD, LibraryFitness.FLAWED]
 
 
 @dataclass
@@ -63,10 +63,10 @@ class InspectionResult(Result):
         super().__init__(issues=issues or [])
         self.schema = schema
 
-    def get_status(self) -> LibraryStatus:
+    def get_status(self) -> LibraryFitness:
         """Determine overall status based on issues and schema availability."""
         if not self.schema:
-            return LibraryStatus.UNUSABLE
+            return LibraryFitness.UNUSABLE
         return super().get_status()
 
 
