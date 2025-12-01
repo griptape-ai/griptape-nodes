@@ -32,8 +32,9 @@ class OldXdgLocationWarningProblem(LibraryProblem):
             )
 
         return (
-            "WARNING: This library is in an outdated location and will not receive updates "
-            "because it is not tracked by the library manager. "
-            "Please run 'gtn init' to migrate libraries to your workspace. "
+            "WARNING: Starting with version 0.65.0, libraries are now managed in your workspace directory "
+            "instead of the old XDG data home location. This library is in the old location and will not "
+            "receive updates because it is not tracked by the library manager. "
+            "To migrate: run 'gtn init' (CLI) or go to App Settings and click 'Re-run Setup Wizard' (desktop app). "
             "The library will continue to function normally until migrated."
         )

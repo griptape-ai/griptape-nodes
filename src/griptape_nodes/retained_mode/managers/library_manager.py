@@ -2024,7 +2024,8 @@ class LibraryManager:
                 problems.append(OldXdgLocationWarningProblem(old_path=str(library_path_obj)))
                 logger.warning(
                     "Library '%s' is located in old XDG data directory: %s. "
-                    "Run 'gtn init' to migrate to the new location.",
+                    "Starting with version 0.65.0, libraries are managed in your workspace directory. "
+                    "To migrate: run 'gtn init' (CLI) or go to App Settings and click 'Re-run Setup Wizard' (desktop app).",
                     library_data.name,
                     library_file_path,
                 )
