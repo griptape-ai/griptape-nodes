@@ -13,6 +13,7 @@ from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -133,6 +134,20 @@ class GoogleImageGeneration(SuccessFailureNode):
             )
         )
 
+        # Temperature
+        self.add_parameter(
+            ParameterFloat(
+                name="temperature",
+                tooltip="Temperature for controlling generation randomness (0.0-2.0)",
+                default_value=0.7,
+                slider=True,
+                min_val=0.0,
+                max_val=2.0,
+                step=0.1,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
         # Google Search
         self.add_parameter(
             Parameter(
@@ -241,6 +256,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         prompt = self.get_parameter_value("prompt")
         aspect_ratio = self.get_parameter_value("aspect_ratio")
         image_size = self.get_parameter_value("image_size")
+        temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
         object_images = self.get_parameter_list_value("object_images") or []
         human_images = self.get_parameter_list_value("human_images") or []
@@ -271,6 +287,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"],
+                "temperature": temperature,
                 "imageConfig": {"aspectRatio": aspect_ratio, "imageSize": image_size},
             },
         }
