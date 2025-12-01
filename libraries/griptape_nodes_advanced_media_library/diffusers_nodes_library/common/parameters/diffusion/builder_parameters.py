@@ -36,6 +36,9 @@ from diffusers_nodes_library.common.parameters.diffusion.wan.pipeline_type_param
 from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.pipeline_type_parameters import (
     WuerstchenPipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.z_image.pipeline_type_parameters import (
+    ZImagePipelineTypeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.traits.options import Options
 
@@ -60,6 +63,7 @@ class DiffusionPipelineBuilderParameters:
         "Stable Diffusion": StableDiffusionPipelineTypeParameters,
         "WAN": WanPipelineTypeParameters,
         "Wuerstchen": WuerstchenPipelineTypeParameters,
+        "Z-Image": ZImagePipelineTypeParameters,
         "Custom": CustomPipelineTypeParameters,
     }
 
