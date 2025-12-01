@@ -183,6 +183,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 console = Console()
 
+# Directories to exclude when scanning for Python source files (in addition to any directory starting with '.')
+EXCLUDED_SCAN_DIRECTORIES = frozenset({"venv", "__pycache__"})
+
 TRegisteredEventData = TypeVar("TRegisteredEventData")
 
 
@@ -2218,8 +2221,13 @@ class LibraryManager:
         self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_load_results
 
     def _find_files_in_dir(self, directory: Path, extension: str) -> list[Path]:
+        """Find all files with given extension in directory, excluding common non-source directories."""
         ret_val = []
-        for root, _, files_found in os.walk(directory):
+        for root, dirs, files_found in os.walk(directory):
+            # Modify dirs in-place to skip excluded directories
+            # Also skip any directory starting with '.'
+            dirs[:] = [d for d in dirs if d not in EXCLUDED_SCAN_DIRECTORIES and not d.startswith(".")]
+
             for file in files_found:
                 if file.endswith(extension):
                     file_path = Path(root) / file
