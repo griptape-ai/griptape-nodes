@@ -2554,7 +2554,7 @@ class NodeGroupNode(BaseNode):
                         node.name,
                         move_result.result_details,
                     )
-                    logger.warning(msg)
+                    logger.error(msg)
                     raise RuntimeError(msg)
 
         for node in nodes:

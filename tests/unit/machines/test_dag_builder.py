@@ -205,7 +205,13 @@ class TestDagBuilder:
             mock_connections = MagicMock()
             call_count = {"count": 0}  # Track calls to prevent infinite recursion in test
 
-            def mock_get_connected_node(current_node: Any, param: Any) -> Any:  # noqa: ARG001
+            def mock_get_connected_node(
+                current_node: Any,
+                param: Any,  # noqa: ARG001
+                direction: Any = None,  # noqa: ARG001
+                *,
+                include_internal: bool = True,  # noqa: ARG001
+            ) -> Any:
                 call_count["count"] += 1
                 # Safety limit to prevent infinite recursion in test environment
                 if call_count["count"] > 10:

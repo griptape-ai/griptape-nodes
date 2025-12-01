@@ -2973,6 +2973,28 @@ class FlowManager:
 
         return node_types_used
 
+    def _aggregate_connections(
+        self,
+        flow_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
+        """Aggregate connections from this flow and all sub-flows into a single list.
+
+        Args:
+            flow_connections: List of connections from the current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            List of all connections from this flow and all sub-flows combined
+        """
+        aggregated_connections = list(flow_connections)
+
+        # Aggregate connections from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            aggregated_connections.extend(sub_flow_cmd.serialized_connections)
+
+        return aggregated_connections
+
     def _aggregate_unique_parameter_values(
         self,
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
@@ -3247,6 +3269,9 @@ class FlowManager:
             unique_parameter_uuid_to_values, sub_flow_commands
         )
 
+        # Aggregate all connections from this flow and all sub-flows
+        aggregated_connections = self._aggregate_connections(create_connection_commands, sub_flow_commands)
+
         # Extract flow name from initialization command if available
         extracted_flow_name = None
         if create_flow_request is not None and hasattr(create_flow_request, "flow_name"):
@@ -3255,7 +3280,7 @@ class FlowManager:
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
-            serialized_connections=create_connection_commands,
+            serialized_connections=aggregated_connections,
             unique_parameter_uuid_to_values=aggregated_unique_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             set_lock_commands_per_node=set_lock_commands_per_node,

@@ -163,6 +163,13 @@ class PublishLocalWorkflowResult(NamedTuple):
     package_result: PackageNodesAsSerializedFlowResultSuccess
 
 
+class EntryNodeParameter(NamedTuple):
+    """Entry node and Entry Parameter."""
+
+    entry_node: str | None
+    entry_parameter: str | None
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -518,7 +525,7 @@ class NodeExecutor:
 
     def _find_loop_entry_node(
         self, start_node: BaseIterativeStartNode, node_group_name: str | None, connections: Any
-    ) -> tuple[str | None, str | None]:
+    ) -> EntryNodeParameter:
         """Find the entry control node and parameter for a loop body.
 
         Args:
@@ -534,11 +541,11 @@ class NodeExecutor:
         exec_out_param_name = start_node.exec_out.name
 
         if start_node.name not in connections.outgoing_index:
-            return None, None
+            return EntryNodeParameter(None, None)
 
         exec_out_connections = connections.outgoing_index[start_node.name].get(exec_out_param_name, [])
         if not exec_out_connections:
-            return None, None
+            return EntryNodeParameter(None, None)
 
         first_conn_id = exec_out_connections[0]
         first_conn = connections.connections[first_conn_id]
@@ -561,7 +568,7 @@ class NodeExecutor:
             entry_control_node_name = first_conn.target_node.name
             entry_control_parameter_name = first_conn.target_parameter.name
 
-        return entry_control_node_name, entry_control_parameter_name
+        return EntryNodeParameter(entry_node=entry_control_node_name, entry_parameter=entry_control_parameter_name)
 
     async def _package_loop_body(
         self,
@@ -621,10 +628,9 @@ class NodeExecutor:
             await self._handle_empty_loop_body(start_node, end_node)
             return None
         # Find the first node in the loop body (where start_node.exec_out connects to)
-        entry_control_node_name, entry_control_parameter_name = self._find_loop_entry_node(
-            start_node, node_group_name, connections
-        )
-
+        entry_node_parameter = self._find_loop_entry_node(start_node, node_group_name, connections)
+        entry_control_node_name = entry_node_parameter.entry_node
+        entry_control_parameter_name = entry_node_parameter.entry_parameter
         # Determine library and node types based on execution_type
         library = None
         if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
@@ -1261,7 +1267,9 @@ class NodeExecutor:
                 try:
                     target_node = node_manager.get_node_by_name(target_node_name)
                 except ValueError:
-                    continue
+                    msg = f"Failed to get node {target_node_name} for connection {conn} from start node {start_node.name}. Can't get parameter value iterations."
+                    logger.error(msg)
+                    raise RuntimeError(msg)  # noqa: B904
                 if isinstance(target_node, NodeGroupNode):
                     # Get connections from this proxy parameter to find the actual internal target
                     connections = flow_manager.get_connections()

@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import NamedTuple
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
@@ -12,6 +13,11 @@ logger = logging.getLogger("griptape_nodes")
 class Direction(StrEnum):
     UPSTREAM = "upstream"
     DOWNSTREAM = "downstream"
+
+
+class ConnectionData(NamedTuple):
+    node: BaseNode
+    parameter: Parameter
 
 
 @dataclass
@@ -116,7 +122,7 @@ class Connections:
 
     def _get_connected_node_for_end_loop_control(
         self, end_loop_node: BaseIterativeEndNode, control_parameter: Parameter
-    ) -> tuple[BaseNode, Parameter] | None:
+    ) -> ConnectionData | None:
         """For a BaseIterativeEndNode and its control parameter, finds the connected node and parameter.
 
         It checks both outgoing connections (where BaseIterativeEndNode's parameter is a source)
@@ -130,7 +136,7 @@ class Connections:
                 connection_id = connection_ids_as_source[0]
                 connection = self.connections.get(connection_id)
                 if connection:
-                    return connection.target_node, connection.target_parameter
+                    return ConnectionData(connection.target_node, connection.target_parameter)
         elif ParameterMode.INPUT in control_parameter.allowed_modes:
             # Check if the BaseIterativeEndNode's control parameter is a target for an incoming connection
             incoming_connections_for_node = self.incoming_index.get(end_loop_node.name, {})
@@ -139,12 +145,12 @@ class Connections:
                 for connection_id in connection_ids_as_target:
                     connection = self.connections.get(connection_id)
                     if connection and isinstance(connection.source_node, BaseIterativeStartNode):
-                        return connection.source_node, connection.source_parameter
+                        return ConnectionData(connection.source_node, connection.source_parameter)
         return None  # No connection found for this control parameter
 
     def get_connected_node(  # noqa: C901, Need if checks.
         self, node: BaseNode, parameter: Parameter, direction: Direction | None = None, *, include_internal: bool = True
-    ) -> tuple[BaseNode, Parameter] | None:
+    ) -> ConnectionData | None:
         # Check to see if we should be getting the next connection or the previous connection based on the parameter.
         # Override this method for BaseIterativeEndNodes - these might have to go backwards or forwards.
         if direction is not None:
@@ -193,9 +199,9 @@ class Connections:
                 return None
             if direction == Direction.DOWNSTREAM:
                 # Return the target (next place to go)
-                return connection.target_node, connection.target_parameter
+                return ConnectionData(connection.target_node, connection.target_parameter)
             # Return the source (next place to chain back to)
-            return connection.source_node, connection.source_parameter
+            return ConnectionData(connection.source_node, connection.source_parameter)
         return None
 
     def remove_connection_by_object(self, conn: Connection) -> bool:
