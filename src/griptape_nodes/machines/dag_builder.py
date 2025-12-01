@@ -150,7 +150,8 @@ class DagBuilder:
         connections = GriptapeNodes.FlowManager().get_connections()
 
         control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
-        if control_connections <= 1:
+        # If no control connections, we can queue this! Don't worry about this.
+        if control_connections == 0:
             return True
 
         for graph in self.graphs.values():

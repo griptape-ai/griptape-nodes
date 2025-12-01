@@ -430,7 +430,9 @@ class ExecuteDagState(State):
         for node in context.node_to_reference.values():
             # Only queue nodes that are waiting - preserve state of already processed nodes.
             if node.node_state == NodeState.WAITING:
-                node.node_state = NodeState.QUEUED
+                # Use proper queueing method that checks can_queue_control_node()
+                # This prevents premature queueing of nodes with multiple control connections
+                ExecuteDagState._try_queue_waiting_node(context, node.node_reference.name)
 
         context.workflow_state = WorkflowState.NO_ERROR
 
