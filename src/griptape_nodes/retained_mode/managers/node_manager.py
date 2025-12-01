@@ -20,6 +20,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import (
+    LOCAL_EXECUTION,
+    PRIVATE_EXECUTION,
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
@@ -2515,38 +2517,37 @@ class NodeManager:
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
             # Handle NodeGroupNode specially - skip library lookup entirely
+            library_used = ""
             if isinstance(node, NodeGroupNode):
                 # NodeGroupNode doesn't have a library dependency
-                library_details = None
+                execution_env = node.get_parameter_value(node.execution_environment.name)
+                if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+                    library_used = execution_env
             else:
                 # Get the library and version details for regular nodes
                 library_used = node.metadata["library"]
-                # Get the library metadata so we can get the version.
-                library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-                # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
-                # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
-                library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                    library_metadata_request
-                )
+            # Get the library metadata so we can get the version.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
 
-                if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                    if isinstance(node, ErrorProxyNode):
-                        # For ErrorProxyNode, use descriptive message when original library unavailable
-                        library_version = (
-                            "<version unavailable; workflow was saved when library was unable to be loaded>"
-                        )
-                        library_details = LibraryNameAndVersion(
-                            library_name=library_used, library_version=library_version
-                        )
-                        details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
-                        logger.warning(details)
-                    else:
-                        # For regular nodes, this is still an error
-                        details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                        return SerializeNodeToCommandsResultFailure(result_details=details)
-                else:
-                    library_version = library_metadata_result.metadata.library_version
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                if isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, use descriptive message when original library unavailable
+                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
                     library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                    logger.warning(details)
+                else:
+                    # For regular nodes, this is still an error
+                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+            else:
+                library_version = library_metadata_result.metadata.library_version
+                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
             if isinstance(node, NodeGroupNode):
