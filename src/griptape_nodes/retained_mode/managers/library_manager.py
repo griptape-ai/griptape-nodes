@@ -2782,18 +2782,6 @@ class LibraryManager:
                     install_deps_result.result_details,
                 )
 
-        # Automatically register the downloaded library
-        register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
-        register_result = await GriptapeNodes.ahandle_request(register_request)
-        if not register_result.succeeded():
-            logger.warning(
-                "Library '%s' was downloaded but registration failed: %s",
-                library_name,
-                register_result.result_details,
-            )
-        else:
-            logger.info("Library '%s' registered successfully", library_name)
-
         # Add library JSON file path to config so it's registered on future startups
         libraries_to_register = config_mgr.get_config_value(
             "app_events.on_app_initialization_complete.libraries_to_register", default=[]
