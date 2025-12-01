@@ -56,6 +56,39 @@ logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
+
+class TransformedParameterValue(NamedTuple):
+    """Return type for BaseNode.before_value_set() to transform both value and type.
+
+    When before_value_set() needs to transform a parameter value to a different type
+    (e.g., converting a string path to an artifact object), it can return this NamedTuple
+    to inform the node manager of both the new value AND its type. This ensures proper
+    type validation during parameter setting.
+
+    If before_value_set() only transforms the value without changing its type, it can
+    return the value directly without using this NamedTuple.
+
+    Example:
+        def before_value_set(self, parameter: Parameter, value: Any) -> Any:
+            if parameter == self.artifact_param and isinstance(value, str):
+                # Transform string to artifact
+                artifact = self._create_artifact(value)
+                # Return both transformed value and its type
+                return TransformedParameterValue(
+                    value=artifact,
+                    parameter_type=self.artifact_param.output_type
+                )
+            return value
+
+    Attributes:
+        value: The transformed parameter value
+        parameter_type: The type string of the transformed value (e.g., "ImageArtifact")
+    """
+
+    value: Any
+    parameter_type: str
+
+
 AsyncResult = Generator[Callable[[], T], T]
 
 LOCAL_EXECUTION = "Local Execution"
@@ -353,7 +386,7 @@ class BaseNode(ABC):
         self,
         parameter: Parameter,  # noqa: ARG002
         value: Any,
-    ) -> Any:
+    ) -> Any | TransformedParameterValue:
         """Callback when a Parameter's value is ABOUT to be set.
 
         Custom nodes may elect to override the default behavior by implementing this function in their node code.
@@ -371,7 +404,10 @@ class BaseNode(ABC):
 
         Returns:
             The final value to set for the Parameter. This gives the Node logic one last opportunity to mutate the value
-            before it is assigned.
+            before it is assigned. Can return either:
+              * The transformed value directly (if type doesn't change)
+              * TransformedParameterValue(value=..., parameter_type=...) to specify both value and type
+                when transforming to a different type (e.g., string to artifact)
         """
         # Default behavior is to do nothing to the supplied value, and indicate no other modified Parameters.
         return value
