@@ -38,7 +38,7 @@ class StartWebSocketFileUploadResultSuccess(WorkflowNotAlteredMixin, ResultPaylo
     Args:
         session_id: Unique identifier for this upload session
         total_chunks: Total number of chunks expected for this upload
-        file_path: Server-side path where the file will be stored
+        file_path: Server-side file:// URI where the file will be stored (consistent with static file APIs)
         chunk_size: Size of each chunk in bytes (except possibly the last one)
     """
 
@@ -141,8 +141,8 @@ class CompleteFileUploadResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 
     Args:
         session_id: Upload session identifier
-        file_path: Final server-side path of the uploaded file
-        file_url: URL where the uploaded file can be accessed
+        file_path: Final server-side file:// URI of the uploaded file (consistent with static file APIs)
+        file_url: URL where the uploaded file can be accessed (same as file_path for consistency)
         total_bytes: Total number of bytes in the completed file
     """
 

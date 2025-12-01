@@ -39,7 +39,7 @@ class DownloadSession:
 
     session_id: str
     file_path: str
-    file_name: str
+    file_url: str
     file_size: int
     total_chunks: int
     chunk_size: int
@@ -107,17 +107,12 @@ class FileDownloadManager:
         try:
             # Determine file path to load
             if request.file_name is not None:
-                # Legacy file_name parameter
-                workspace_dir = Path(self.config_manager.get_config_value("workspace_directory"))
-                static_files_dir = workspace_dir / self.config_manager.get_config_value(
-                    "static_files_directory", default="staticfiles"
-                )
-                file_path = static_files_dir / request.file_name
-                file_name = request.file_name
+                # Legacy file_name parameter - use workflow-aware directory resolution
+                resolved_directory = self.static_files_manager._get_static_files_directory()
+                file_path = self.config_manager.workspace_path / Path(resolved_directory) / request.file_name
             else:
                 # Use file_path parameter
                 file_path = Path(request.file_path)
-                file_name = file_path.name
 
                 # Resolve relative paths
                 if not file_path.is_absolute():
@@ -148,12 +143,15 @@ class FileDownloadManager:
             # Generate unique session ID
             session_id = str(uuid.uuid4())
 
+            # Construct full file:// URL
+            file_url = f"file://{file_path.resolve()}"
+
             # Create download session
             current_time = time.time()
             session = DownloadSession(
                 session_id=session_id,
                 file_path=str(file_path),
-                file_name=file_name,
+                file_url=file_url,
                 file_size=file_size,
                 total_chunks=total_chunks,
                 chunk_size=self.chunk_size,
@@ -172,7 +170,7 @@ class FileDownloadManager:
             logger.info(
                 "Started WebSocket file download session %s for %s (%s bytes, %s chunks)",
                 session_id,
-                file_name,
+                file_url,
                 file_size,
                 total_chunks,
             )
@@ -181,10 +179,10 @@ class FileDownloadManager:
                 session_id=session_id,
                 total_size=file_size,
                 total_chunks=total_chunks,
-                file_name=file_name,
+                file_url=file_url,
                 content_type=content_type,
                 chunk_size=self.chunk_size,
-                result_details=f"Download session started for {file_name}",
+                result_details=f"Download session started for {file_url}",
             )
 
         except Exception as e:
@@ -222,8 +220,8 @@ class FileDownloadManager:
                 session_id=request.session_id,
                 total_bytes_sent=session.file_size,
                 total_chunks_sent=session.chunks_sent,
-                file_name=session.file_name,
-                result_details=f"Download completed for {session.file_name}",
+                file_url=session.file_url,
+                result_details=f"Download completed for {session.file_url}",
             )
 
             # Cleanup session
@@ -319,7 +317,7 @@ class FileDownloadManager:
         with self._downloads_lock:
             session = self._active_downloads.pop(session_id, None)
             if session:
-                logger.debug("Cleaned up download session %s for %s", session_id, session.file_name)
+                logger.debug("Cleaned up download session %s for %s", session_id, session.file_url)
 
     def _cleanup_expired_sessions(self) -> None:
         """Clean up expired download sessions."""

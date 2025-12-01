@@ -118,12 +118,12 @@ class FileUploadManager:
             with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{request.file_name}") as temp_file:
                 temp_file_path = temp_file.name
 
-            # Generate file path (similar to static files)
-            workspace_dir = Path(self.config_manager.get_config_value("workspace_directory"))
-            static_files_dir = workspace_dir / self.config_manager.get_config_value(
-                "static_files_directory", default="staticfiles"
-            )
-            file_path = str(static_files_dir / request.file_name)
+            # Generate file path using workflow-aware directory resolution (like static files)
+            resolved_directory = self.static_files_manager._get_static_files_directory()
+            full_file_path = (
+                self.config_manager.workspace_path / Path(resolved_directory) / request.file_name
+            ).resolve()
+            file_path = full_file_path.as_uri()
 
             # Create upload session
             current_time = time.time()
@@ -330,7 +330,7 @@ class FileUploadManager:
 
             return CompleteFileUploadResultSuccess(
                 session_id=request.session_id,
-                file_path=session.file_name,
+                file_path=file_url,
                 file_url=file_url,
                 total_bytes=total_bytes,
                 result_details=f"File upload completed: {file_url}",

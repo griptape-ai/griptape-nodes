@@ -41,7 +41,7 @@ class StartWebSocketFileDownloadResultSuccess(WorkflowNotAlteredMixin, ResultPay
         session_id: Unique identifier for this download session
         total_size: Total size of the file in bytes
         total_chunks: Total number of chunks that will be sent
-        file_name: Name of the file being downloaded
+        file_url: Full file:// URL to the file being downloaded
         content_type: MIME type of the file (if available)
         chunk_size: Size of each chunk in bytes (except possibly the last one)
     """
@@ -49,7 +49,7 @@ class StartWebSocketFileDownloadResultSuccess(WorkflowNotAlteredMixin, ResultPay
     session_id: str
     total_size: int
     total_chunks: int
-    file_name: str
+    file_url: str
     chunk_size: int
     content_type: str | None = None
 
@@ -134,13 +134,13 @@ class CompleteFileDownloadEvent(WorkflowNotAlteredMixin, ResultPayloadSuccess):
         session_id: Download session identifier
         total_bytes_sent: Total number of bytes that were sent
         total_chunks_sent: Total number of chunks that were sent
-        file_name: Name of the downloaded file
+        file_url: Full file:// URL to the downloaded file
     """
 
     session_id: str
     total_bytes_sent: int
     total_chunks_sent: int
-    file_name: str
+    file_url: str
 
 
 @dataclass

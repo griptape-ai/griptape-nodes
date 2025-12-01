@@ -180,7 +180,7 @@ async def _ping(request: Request) -> dict:
                     "message": "Missing server_code in request body",
                     "server": "griptape-nodes-static",
                     "verified": False,
-                }
+                },
             )
 
         if provided_code != _server_code:
@@ -191,7 +191,7 @@ async def _ping(request: Request) -> dict:
                     "message": "Invalid server_code provided",
                     "server": "griptape-nodes-static",
                     "verified": False,
-                }
+                },
             )
 
         return {
@@ -211,7 +211,7 @@ async def _ping(request: Request) -> dict:
                 "message": f"Failed to process ping request: {e}",
                 "server": "griptape-nodes-static",
                 "verified": False,
-            }
+            },
         )
 
 
