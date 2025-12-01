@@ -143,8 +143,8 @@ class FileDownloadManager:
             # Generate unique session ID
             session_id = str(uuid.uuid4())
 
-            # Construct full file:// URL
-            file_url = f"file://{file_path.resolve()}"
+            # Construct full file:// URL using Path.as_uri() for consistency and proper encoding
+            file_url = file_path.resolve().as_uri()
 
             # Create download session
             current_time = time.time()
