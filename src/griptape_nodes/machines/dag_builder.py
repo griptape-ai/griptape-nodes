@@ -52,7 +52,7 @@ class DagBuilder:
         self.graph_to_nodes = {}
 
     # Complex with the inner recursive method, but it needs connections and added_nodes.
-    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
+    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -67,14 +67,18 @@ class DagBuilder:
         def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
             # Skip if already visited or already in DAG
             if current_node.name in visited:
+                logger.info("DAG: Skipping node '%s' - already visited in this traversal", current_node.name)
                 return
             visited.add(current_node.name)
 
             if current_node.name in self.node_to_reference:
+                logger.info("DAG: Skipping node '%s' - already in DAG", current_node.name)
                 return
 
             # Check if we should ignore dependencies (for special nodes like output_selector)
             ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
+            if ignore_data_dependencies:
+                logger.info("DAG: Node '%s' ignores dependencies", current_node.name)
 
             # Process all upstream dependencies first (depth-first traversal)
             for param in current_node.parameters:
@@ -94,9 +98,17 @@ class DagBuilder:
 
                 # Skip already resolved nodes
                 if upstream_node.state == NodeResolutionState.RESOLVED:
+                    logger.info(
+                        "DAG: Skipping resolved upstream node '%s' for node '%s'",
+                        upstream_node.name,
+                        current_node.name,
+                    )
                     continue
 
                 # Recursively add upstream node
+                logger.info(
+                    "DAG: Processing upstream dependency '%s' for node '%s'", upstream_node.name, current_node.name
+                )
                 _add_node_recursive(upstream_node, visited, graph)
 
                 # Add edge from upstream to current
@@ -111,6 +123,8 @@ class DagBuilder:
             graph.add_node(node_for_adding=current_node.name)
             self.graph_to_nodes[graph_name].add(current_node.name)
 
+            logger.info("DAG: Added node '%s' to graph '%s' with dependencies", current_node.name, graph_name)
+
         _add_node_recursive(node, set(), graph)
 
         return added_nodes
@@ -118,6 +132,7 @@ class DagBuilder:
     def add_node(self, node: BaseNode, graph_name: str = "default") -> DagNode:
         """Add just one node to DAG without dependencies (assumes dependencies already exist)."""
         if node.name in self.node_to_reference:
+            logger.info("DAG: Node '%s' already exists in graph '%s', returning existing", node.name, graph_name)
             return self.node_to_reference[node.name]
 
         dag_node = DagNode(node_reference=node, node_state=NodeState.WAITING)
@@ -133,6 +148,7 @@ class DagBuilder:
             self.graph_to_nodes[graph_name] = set()
         self.graph_to_nodes[graph_name].add(node.name)
 
+        logger.info("DAG: Added node '%s' to graph '%s' without dependencies", node.name, graph_name)
         return dag_node
 
     def clear(self) -> None:
@@ -141,8 +157,9 @@ class DagBuilder:
         self.node_to_reference.clear()
         self.graph_to_nodes.clear()
 
-    def can_queue_control_node(self, node: DagNode) -> bool:
+    def can_queue_control_node(self, node: DagNode) -> bool:  # noqa: C901, PLR0912
         if len(self.graphs) == 1:
+            logger.info("DAG: Node '%s' can queue - only one graph exists", node.node_reference.name)
             return True
 
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -150,8 +167,40 @@ class DagBuilder:
         connections = GriptapeNodes.FlowManager().get_connections()
 
         control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
-        if control_connections <= 1:
+        if control_connections == 0:
+            logger.info("DAG: Node '%s' can queue - has no incoming control connections", node.node_reference.name)
             return True
+
+        if control_connections == 1:
+            # Check if the single incoming control connection node has been resolved
+            if node.node_reference.name in connections.incoming_index:
+                for param_name, connection_ids in connections.incoming_index[node.node_reference.name].items():
+                    param = node.node_reference.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value in param.input_types:
+                        # Found the control connection - check if source node is resolved
+                        for connection_id in connection_ids:
+                            if connection_id in connections.connections:
+                                connection = connections.connections[connection_id]
+                                source_node = connection.source_node
+                                if source_node.state != NodeResolutionState.RESOLVED:
+                                    logger.info(
+                                        "DAG: Node '%s' CANNOT queue - incoming control node '%s' not resolved yet",
+                                        node.node_reference.name,
+                                        source_node.name,
+                                    )
+                                    return False
+            logger.info(
+                "DAG: Node '%s' can queue - has 1 incoming control connection and source is resolved",
+                node.node_reference.name,
+            )
+            return True
+
+        logger.info(
+            "DAG: Checking if node '%s' can queue (has %d incoming control connections, %d graphs)",
+            node.node_reference.name,
+            control_connections,
+            len(self.graphs),
+        )
 
         for graph in self.graphs.values():
             # If the length of the graph is 0, skip it. it's either reached it or it's a dead end.
@@ -170,9 +219,15 @@ class DagBuilder:
 
                     # Check if the target node is in the forward path from this root
                     if self._is_node_in_forward_path(root_node, node.node_reference, connections):
+                        logger.info(
+                            "DAG: Node '%s' CANNOT queue - still reachable from root node '%s'",
+                            node.node_reference.name,
+                            root_node.name,
+                        )
                         return False  # This graph could still reach the target node
 
         # Otherwise, return true at the end of the function
+        logger.info("DAG: Node '%s' CAN queue - not reachable from any remaining graph roots", node.node_reference.name)
         return True
 
     def get_number_incoming_control_connections(self, node: BaseNode, connections: Connections) -> int:
