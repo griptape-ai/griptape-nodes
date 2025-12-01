@@ -58,3 +58,11 @@ class ZImagePipelineParameters(DiffusionPipelineTypePipelineParameters):
             low_cpu_mem_usage=False,
             local_files_only=True,
         )
+
+    def supports_layerwise_casting(self) -> bool:
+        """ZImage's TimestepEmbedder checks weight dtype before calling the module.
+
+        This is incompatible with layerwise casting hooks that cast weights during
+        the forward pass.
+        """
+        return False
