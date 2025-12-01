@@ -12,15 +12,15 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-Z_IMAGE_TURBO_REPO_IDS = ["Tongyi-MAI/Z-Image-Turbo"]
+Z_IMAGE_REPO_IDS = ["Tongyi-MAI/Z-Image-Turbo"]
 
 
-class ZImageTurboPipelineParameters(DiffusionPipelineTypePipelineParameters):
+class ZImagePipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
-            repo_ids=Z_IMAGE_TURBO_REPO_IDS,
+            repo_ids=Z_IMAGE_REPO_IDS,
             parameter_name="model",
             list_all_models=list_all_models,
         )

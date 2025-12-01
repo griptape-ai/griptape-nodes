@@ -6,15 +6,15 @@ from diffusers_nodes_library.common.parameters.diffusion.diffusion_pipeline_type
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
-from diffusers_nodes_library.common.parameters.diffusion.z_image.z_image_turbo_parameters import (
-    ZImageTurboPipelineParameters,
+from diffusers_nodes_library.common.parameters.diffusion.z_image.z_image_parameters import (
+    ZImagePipelineParameters,
 )
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
 ZImagePipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
-    "ZImageTurboPipeline": ZImageTurboPipelineParameters,
+    "ZImagePipeline": ZImagePipelineParameters,
 }
 
 

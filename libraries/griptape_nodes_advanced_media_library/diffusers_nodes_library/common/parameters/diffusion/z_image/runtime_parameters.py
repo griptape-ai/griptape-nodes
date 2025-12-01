@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class ZImageTurboPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
+class ZImagePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 
