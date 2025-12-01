@@ -20,6 +20,8 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import (
+    LOCAL_EXECUTION,
+    PRIVATE_EXECUTION,
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
@@ -107,6 +109,7 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeRequest,
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
+    MoveNodeToNewFlowRequest,
     RemoveNodeFromNodeGroupRequest,
     RemoveNodeFromNodeGroupResultFailure,
     RemoveNodeFromNodeGroupResultSuccess,
@@ -223,6 +226,7 @@ class NodeManager:
         )
         event_manager.assign_manager_to_request_type(DeleteNodeGroupRequest, self.on_delete_node_group_request)
         event_manager.assign_manager_to_request_type(DeleteNodeRequest, self.on_delete_node_request)
+        event_manager.assign_manager_to_request_type(MoveNodeToNewFlowRequest, self.on_move_node_to_new_flow_request)
         event_manager.assign_manager_to_request_type(
             GetNodeResolutionStateRequest, self.on_get_node_resolution_state_request
         )
@@ -535,25 +539,25 @@ class NodeManager:
         except Exception as err:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)
-
+        # Add node to the flow so it is discoverable.
+        flow.add_node(node_group)
+        obj_mgr.add_object_by_name(node_group.name, node_group)
+        self._name_to_parent_flow_name[node_group.name] = flow_name
         if request.node_names_to_add:
             nodes_to_add = []
             for node_name in request.node_names_to_add:
                 try:
                     node = self.get_node_by_name(node_name)
+                    nodes_to_add.append(node)
                 except KeyError:
                     details = f"Attempted to add node '{node_name}' to NodeGroup '{final_node_group_name}'. Failed because node was not found."
-                    return CreateNodeGroupResultFailure(result_details=details)
-                nodes_to_add.append(node)
+                    logger.warning(details)
             # Add Nodes manually here, so we don't have to add the NodeGroup and remove it if it fails.
             try:
                 node_group.add_nodes_to_group(nodes_to_add)
-            except Exception:
-                details = f"Failed to add nodes to NodeGroup '{final_node_group_name}'."
-                return CreateNodeGroupResultFailure(result_details=details)
-        flow.add_node(node_group)
-        obj_mgr.add_object_by_name(node_group.name, node_group)
-        self._name_to_parent_flow_name[node_group.name] = flow_name
+            except Exception as err:
+                msg = f"Failed to add nodes to NodeGroup '{final_node_group_name}': {err}"
+                logger.warning(msg)
         if request.flow_name is None:
             details = (
                 f"Successfully created NodeGroup '{final_node_group_name}' in the Current Context (Flow '{flow_name}')"
@@ -768,6 +772,9 @@ class NodeManager:
                 details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to remove nodes from group: {err}"
                 return DeleteNodeGroupResultFailure(result_details=details)
 
+        # Get the subflow name before deleting the NodeGroup
+        subflow_name = node_group.metadata.get("subflow_name")
+
         # Now delete the NodeGroup node itself
         delete_node_request = DeleteNodeRequest(node_name=request.node_group_name)
         delete_result = self.on_delete_node_request(delete_node_request)
@@ -775,6 +782,17 @@ class NodeManager:
         if delete_result.failed():
             details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to delete the NodeGroup node: {delete_result.result_details}"
             return DeleteNodeGroupResultFailure(result_details=details)
+
+        # Delete the subflow last if it exists
+        if subflow_name is not None:
+            from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+
+            delete_flow_request = DeleteFlowRequest(flow_name=subflow_name)
+            delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
+
+            if delete_flow_result.failed():
+                details = f"Attempted to delete NodeGroup '{request.node_group_name}'. Failed to delete subflow '{subflow_name}': {delete_flow_result.result_details}"
+                return DeleteNodeGroupResultFailure(result_details=details)
 
         details = f"Successfully deleted NodeGroup '{request.node_group_name}'"
         return DeleteNodeGroupResultSuccess(result_details=ResultDetails(message=details, level=logging.DEBUG))
@@ -920,6 +938,74 @@ class NodeManager:
 
         details = f"Successfully deleted Node '{node_name}'."
         return DeleteNodeResultSuccess(result_details=details)
+
+    def on_move_node_to_new_flow_request(self, request: MoveNodeToNewFlowRequest) -> ResultPayload:  # noqa: PLR0911
+        """Move a node from one flow to another flow.
+
+        Args:
+            request: MoveNodeToNewFlowRequest containing node_name, target_flow_name, source_flow_name
+
+        Returns:
+            MoveNodeToNewFlowResultSuccess or MoveNodeToNewFlowResultFailure
+        """
+        from griptape_nodes.retained_mode.events.node_events import (
+            MoveNodeToNewFlowResultFailure,
+            MoveNodeToNewFlowResultSuccess,
+        )
+
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = (
+                    "Attempted to move a Node from the Current Context. Failed because the Current Context is empty."
+                )
+                return MoveNodeToNewFlowResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+        if node is None:
+            details = f"Attempted to move Node '{node_name}', but no such Node was found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        if not request.target_flow_name:
+            details = f"Attempted to move Node '{node_name}'. Failed because target_flow_name is required."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        source_flow_name = request.source_flow_name
+        if source_flow_name is None:
+            if node_name not in self._name_to_parent_flow_name:
+                details = f"Attempted to move Node '{node_name}'. Failed because Node has no parent flow."
+                return MoveNodeToNewFlowResultFailure(result_details=details)
+            source_flow_name = self._name_to_parent_flow_name[node_name]
+
+        try:
+            source_flow = GriptapeNodes.FlowManager().get_flow_by_name(source_flow_name)
+        except KeyError:
+            details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because source flow was not found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        try:
+            target_flow = GriptapeNodes.FlowManager().get_flow_by_name(request.target_flow_name)
+        except KeyError:
+            details = f"Attempted to move Node '{node_name}' to Flow '{request.target_flow_name}'. Failed because target flow was not found."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        if node_name not in source_flow.nodes:
+            details = f"Attempted to move Node '{node_name}' from Flow '{source_flow_name}'. Failed because Node is not in source flow."
+            return MoveNodeToNewFlowResultFailure(result_details=details)
+
+        source_flow.remove_node(node_name)
+        target_flow.add_node(node)
+        self._name_to_parent_flow_name[node_name] = request.target_flow_name
+
+        details = f"Successfully moved Node '{node_name}' from Flow '{source_flow_name}' to Flow '{request.target_flow_name}'."
+        return MoveNodeToNewFlowResultSuccess(
+            node_name=node_name,
+            source_flow_name=source_flow_name,
+            target_flow_name=request.target_flow_name,
+            result_details=details,
+        )
 
     def on_get_node_resolution_state_request(self, request: GetNodeResolutionStateRequest) -> ResultPayload:
         node_name = request.node_name
@@ -2432,38 +2518,37 @@ class NodeManager:
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
             # Handle NodeGroupNode specially - skip library lookup entirely
+            library_used = ""
             if isinstance(node, NodeGroupNode):
                 # NodeGroupNode doesn't have a library dependency
-                library_details = None
+                execution_env = node.get_parameter_value(node.execution_environment.name)
+                if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+                    library_used = execution_env
             else:
                 # Get the library and version details for regular nodes
                 library_used = node.metadata["library"]
-                # Get the library metadata so we can get the version.
-                library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-                # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
-                # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
-                library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                    library_metadata_request
-                )
+            # Get the library metadata so we can get the version.
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
 
-                if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                    if isinstance(node, ErrorProxyNode):
-                        # For ErrorProxyNode, use descriptive message when original library unavailable
-                        library_version = (
-                            "<version unavailable; workflow was saved when library was unable to be loaded>"
-                        )
-                        library_details = LibraryNameAndVersion(
-                            library_name=library_used, library_version=library_version
-                        )
-                        details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
-                        logger.warning(details)
-                    else:
-                        # For regular nodes, this is still an error
-                        details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                        return SerializeNodeToCommandsResultFailure(result_details=details)
-                else:
-                    library_version = library_metadata_result.metadata.library_version
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                if isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, use descriptive message when original library unavailable
+                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
                     library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                    logger.warning(details)
+                else:
+                    # For regular nodes, this is still an error
+                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+            else:
+                library_version = library_metadata_result.metadata.library_version
+                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
             if isinstance(node, NodeGroupNode):

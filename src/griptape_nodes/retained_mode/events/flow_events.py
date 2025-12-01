@@ -238,6 +238,7 @@ class SerializedFlowCommands:
     sub_flows_commands: list[SerializedFlowCommands]
     node_dependencies: NodeDependencies
     node_types_used: set[LibraryNameAndNodeType]
+    flow_name: str | None = None
 
 
 @dataclass
