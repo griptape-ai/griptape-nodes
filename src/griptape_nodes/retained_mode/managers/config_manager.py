@@ -288,7 +288,7 @@ class ConfigManager:
 
         if value is None:
             msg = f"Config key '{key}' not found in config file."
-            logger.warning(msg)
+            logger.debug(msg)
             return None
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):

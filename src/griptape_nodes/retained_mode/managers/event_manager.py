@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import threading
 from collections import defaultdict
 from dataclasses import fields
@@ -18,6 +19,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     EventResultSuccess,
     ProgressEvent,
     RequestPayload,
+    ResultDetails,
     ResultPayload,
 )
 from griptape_nodes.utils.async_utils import call_function
@@ -176,6 +178,28 @@ class EventManager:
         if request_type in self._request_type_to_manager:
             del self._request_type_to_manager[request_type]
 
+    def _override_result_log_level(self, result: ResultPayload, level: int) -> None:
+        """Override the log level on all result details.
+
+        Args:
+            result: The result payload to modify
+            level: The new log level to set
+        """
+        if isinstance(result.result_details, ResultDetails):
+            for detail in result.result_details.result_details:
+                detail.level = level
+
+    def _log_result_details(self, result: ResultPayload) -> None:
+        """Log the result details at their specified levels.
+
+        Args:
+            result: The result payload containing details to log
+        """
+        if isinstance(result.result_details, ResultDetails):
+            logger = logging.getLogger("griptape_nodes")
+            for detail in result.result_details.result_details:
+                logger.log(detail.level, detail.message)
+
     def _handle_request_core(
         self,
         request: RP,
@@ -195,6 +219,13 @@ class EventManager:
             # from coming in and immediately being flagged as being dirty.
             if workflow_mgr.should_squelch_workflow_altered():
                 callback_result.altered_workflow_state = False
+
+            # Override failure log level if requested
+            if callback_result.failed() and request.failure_log_level is not None:
+                self._override_result_log_level(callback_result, request.failure_log_level)
+
+            # Log result details (after potential level override)
+            self._log_result_details(callback_result)
 
             retained_mode_str = None
             # If request_id exists, that means it's a direct request from the GUI (not internal), and should be echoed by retained mode.
