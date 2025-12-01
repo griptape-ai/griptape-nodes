@@ -1979,7 +1979,7 @@ class NodeGroupNode(BaseNode):
         current_flow = GriptapeNodes.ContextManager().get_current_flow()
         parent_flow_name = current_flow.name if current_flow else None
 
-        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name)
+        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name, set_as_new_context=False)
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, CreateFlowResultSuccess):
