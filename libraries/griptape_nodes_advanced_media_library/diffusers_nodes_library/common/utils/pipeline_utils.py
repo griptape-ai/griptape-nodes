@@ -113,6 +113,7 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
     device: torch.device,
     *,
     is_prequantized: bool = False,
+    supports_layerwise_casting: bool = True,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
     if device.type == "cuda":
@@ -134,7 +135,11 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
             pipe.to(device)
             return
 
-        if not is_prequantized:
+        if is_prequantized:
+            logger.info("Pipeline is pre-quantized; skipping fp8 layerwise casting for transformer")
+        elif not supports_layerwise_casting:
+            logger.info("Pipeline does not support layerwise casting; skipping fp8 layerwise casting for transformer")
+        else:
             logger.warning("Insufficient memory. Enabling fp8 layerwise caching for transformer")
             pipe.transformer.enable_layerwise_casting(
                 storage_dtype=torch.float8_e4m3fn,
@@ -211,6 +216,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     cpu_offload_strategy: str,
     quantization_mode: str,
     is_prequantized: bool = False,
+    supports_layerwise_casting: bool = True,
 ) -> None:
     if quantization_mode != "None":
         if is_prequantized:
@@ -232,6 +238,8 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     if transformer_layerwise_casting and hasattr(pipe, "transformer"):
         if is_prequantized:
             logger.info("Pipeline is pre-quantized; skipping fp8 layerwise casting for transformer")
+        elif not supports_layerwise_casting:
+            logger.info("Pipeline does not support layerwise casting; skipping fp8 layerwise casting for transformer")
         else:
             logger.info("Enabling fp8 layerwise casting for transformer")
             pipe.transformer.enable_layerwise_casting(
@@ -264,12 +272,15 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
     cpu_offload_strategy: str = "None",
     quantization_mode: str = "None",
     is_prequantized: bool = False,
+    supports_layerwise_casting: bool = True,
 ) -> None:
     """Optimize pipeline performance and memory."""
     device = get_best_device()
 
     if memory_optimization_strategy == "Automatic":
-        _automatic_optimize_diffusion_pipeline(pipe, device, is_prequantized=is_prequantized)
+        _automatic_optimize_diffusion_pipeline(
+            pipe, device, is_prequantized=is_prequantized, supports_layerwise_casting=supports_layerwise_casting
+        )
     else:
         _manual_optimize_diffusion_pipeline(
             pipe=pipe,
@@ -280,6 +291,7 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
             cpu_offload_strategy=cpu_offload_strategy,
             quantization_mode=quantization_mode,
             is_prequantized=is_prequantized,
+            supports_layerwise_casting=supports_layerwise_casting,
         )
 
     try:

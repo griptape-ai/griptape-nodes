@@ -49,3 +49,12 @@ class DiffusionPipelineTypePipelineParameters(ABC):
         quantization applied.
         """
         return False
+
+    def supports_layerwise_casting(self) -> bool:
+        """Return True if the pipeline's transformer supports layerwise casting.
+
+        Some transformers (e.g., ZImage) check weight dtype before calling modules,
+        which is incompatible with layerwise casting hooks that cast weights during
+        the forward pass.
+        """
+        return True

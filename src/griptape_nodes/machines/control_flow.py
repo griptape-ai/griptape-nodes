@@ -83,7 +83,7 @@ class ControlFlowContext:
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
 
-    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:  # noqa: C901, PLR0912
+    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
 
         Returns:
@@ -94,22 +94,14 @@ class ControlFlowContext:
             if output_parameter is not None:
                 # Get connected node from control flow
                 node_connection = (
-                    GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, output_parameter)
+                    GriptapeNodes.FlowManager()
+                    .get_connections()
+                    .get_connected_node(current_node, output_parameter, include_internal=False)
                 )
                 if node_connection is not None:
                     node, entry_parameter = node_connection
                     next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             # Get next control output for this node
-            elif isinstance(current_node, NodeGroupNode):
-                next_output = current_node.get_next_control_output()
-                if next_output is not None:
-                    next_node, next_output = next_output
-                    node_connection = (
-                        GriptapeNodes.FlowManager().get_connections().get_connected_node(next_node, next_output)
-                    )
-                    if node_connection is not None:
-                        node, entry_parameter = node_connection
-                        next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
             else:
                 next_output = current_node.get_next_control_output()
                 if next_output is not None:
@@ -120,7 +112,9 @@ class ControlFlowContext:
                         next_nodes.append(NextNodeInfo(node=current_node.end_node, entry_parameter=None))
                         continue
                     node_connection = (
-                        GriptapeNodes.FlowManager().get_connections().get_connected_node(current_node, next_output)
+                        GriptapeNodes.FlowManager()
+                        .get_connections()
+                        .get_connected_node(current_node, next_output, include_internal=False)
                     )
                     if node_connection is not None:
                         node, entry_parameter = node_connection
@@ -415,7 +409,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -455,10 +449,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Find data_nodes and remove them from queue
         for item in queue_items:
-            # NodeGroupNodes should not be added of their own accord here.
-            if isinstance(item.node, NodeGroupNode) and item.node.has_external_control_input():
-                flow_manager.global_flow_queue.queue.remove(item)
-                continue
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
