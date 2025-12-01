@@ -141,7 +141,7 @@ class DagBuilder:
         self.node_to_reference.clear()
         self.graph_to_nodes.clear()
 
-    def can_queue_control_node(self, node: DagNode) -> bool:  # noqa: C901, PLR0912
+    def can_queue_control_node(self, node: DagNode) -> bool:
         if len(self.graphs) == 1:
             return True
 
@@ -150,22 +150,8 @@ class DagBuilder:
         connections = GriptapeNodes.FlowManager().get_connections()
 
         control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
+        # If no control connections, we can queue this! Don't worry about this.
         if control_connections == 0:
-            return True
-
-        if control_connections == 1:
-            # Check if the single incoming control connection node has been resolved
-            if node.node_reference.name in connections.incoming_index:
-                for param_name, connection_ids in connections.incoming_index[node.node_reference.name].items():
-                    param = node.node_reference.get_parameter_by_name(param_name)
-                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value in param.input_types:
-                        # Found the control connection - check if source node is resolved
-                        for connection_id in connection_ids:
-                            if connection_id in connections.connections:
-                                connection = connections.connections[connection_id]
-                                source_node = connection.source_node
-                                if source_node.state != NodeResolutionState.RESOLVED:
-                                    return False
             return True
 
         for graph in self.graphs.values():
