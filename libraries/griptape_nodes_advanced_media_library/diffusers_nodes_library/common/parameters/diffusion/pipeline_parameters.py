@@ -91,6 +91,9 @@ from diffusers_nodes_library.common.parameters.diffusion.wan.vid2vid_runtime_par
 from diffusers_nodes_library.common.parameters.diffusion.wuerstchen.runtime_parameters import (
     WuerstchenCombinedPipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.z_image.runtime_parameters import (
+    ZImagePipelineRuntimeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 
@@ -173,6 +176,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = WanVideoToVideoPipelineRuntimeParameters(self._node)
             case "WuerstchenCombinedPipeline":
                 self._runtime_parameters = WuerstchenCombinedPipelineRuntimeParameters(self._node)
+            case "ZImagePipeline":
+                self._runtime_parameters = ZImagePipelineRuntimeParameters(self._node)
             case _:
                 msg = f"Unsupported pipeline class: {pipeline_class}"
                 logger.error(msg)
