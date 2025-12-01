@@ -330,14 +330,35 @@ class FlowManager:
         return connections
 
     def _get_connections_for_flow(self, flow: ControlFlow) -> list:
-        """Get connections where both nodes are in the specified flow."""
+        """Get connections where both nodes are in the specified flow or its child flows.
+
+        For parent flows, this includes cross-flow connections between the parent and its children.
+        For child flows, this only includes connections within that specific flow.
+        """
         flow_connections = []
+        flow_name = flow.name
+
+        # Get all child flow names for this flow
+        child_flow_names = set()
+        for child_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == flow_name:
+                child_flow_names.add(child_name)
+
+        # Build set of all node names in this flow and its direct children
+        all_node_names = set(flow.nodes.keys())
+        for child_flow_name in child_flow_names:
+            child_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
+            if child_flow is not None:
+                all_node_names.update(child_flow.nodes.keys())
+
+        # Include connections where both nodes are in this flow hierarchy
         for connection in self._connections.connections.values():
-            source_in_flow = connection.source_node.name in flow.nodes
-            target_in_flow = connection.target_node.name in flow.nodes
-            # Only include connection if BOTH nodes are in this flow (for serialization)
-            if source_in_flow and target_in_flow:
+            source_in_hierarchy = connection.source_node.name in all_node_names
+            target_in_hierarchy = connection.target_node.name in all_node_names
+
+            if source_in_hierarchy and target_in_hierarchy:
                 flow_connections.append(connection)
+
         return flow_connections
 
     def get_parent_flow(self, flow_name: str) -> str | None:
@@ -3148,22 +3169,8 @@ class FlowManager:
                         )
                     set_parameter_value_commands_per_node[serialized_node.node_uuid] = set_value_commands_list
 
-            # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
-            # when we're restored.
-            # Create all of the connections
-            create_connection_commands = []
-            for connection in self._get_connections_for_flow(flow):
-                source_node_uuid = node_name_to_uuid[connection.source_node.name]
-                target_node_uuid = node_name_to_uuid[connection.target_node.name]
-                create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
-                    source_node_uuid=source_node_uuid,
-                    source_parameter_name=connection.source_parameter.name,
-                    target_node_uuid=target_node_uuid,
-                    target_parameter_name=connection.target_parameter.name,
-                )
-                create_connection_commands.append(create_connection_command)
-
-            # Now sub-flows.
+            # Serialize sub-flows first, before creating connections.
+            # We need the complete UUID map from all flows to handle cross-flow connections.
             parent_flow = GriptapeNodes.ContextManager().get_current_flow()
             parent_flow_name = parent_flow.name
             flows_in_flow_request = ListFlowsInFlowRequest(parent_flow_name=parent_flow_name)
@@ -3174,18 +3181,20 @@ class FlowManager:
 
             sub_flow_commands = []
             for child_flow in flows_in_flow_result.flow_names:
-                flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow, ControlFlow)
-                if flow is None:
+                child_flow_obj = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(
+                    child_flow, ControlFlow
+                )
+                if child_flow_obj is None:
                     details = f"Attempted to serialize Flow '{flow_name}', but no Flow with that name could be found."
                     return SerializeFlowToCommandsResultFailure(result_details=details)
 
                 # Check if this is a referenced workflow
-                if self.is_referenced_workflow(flow):
+                if self.is_referenced_workflow(child_flow_obj):
                     # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
-                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
+                    referenced_workflow_name = self.get_referenced_workflow_name(child_flow_obj)
                     import_command = ImportWorkflowAsReferencedSubFlowRequest(
                         workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
-                        imported_flow_metadata=flow.metadata,
+                        imported_flow_metadata=child_flow_obj.metadata,
                     )
 
                     # Create NodeDependencies with just the referenced workflow
@@ -3207,7 +3216,7 @@ class FlowManager:
                     sub_flow_commands.append(serialized_flow)
                 else:
                     # For standalone sub-flows, use the existing recursive serialization
-                    with GriptapeNodes.ContextManager().flow(flow=flow):
+                    with GriptapeNodes.ContextManager().flow(flow=child_flow_obj):
                         child_flow_request = SerializeFlowToCommandsRequest()
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
                         if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
@@ -3253,6 +3262,31 @@ class FlowManager:
                         node_uuids.append(uuid)
                 # Replace the list with UUIDs (as strings since that's what the field expects)
                 create_cmd.node_names_to_add = node_uuids
+
+        # Now create the connections using the complete UUID map (includes all flows).
+        # This must happen after subflows are serialized so we have all UUIDs available.
+        create_connection_commands = []
+        for connection in self._get_connections_for_flow(flow):
+            source_node_name = connection.source_node.name
+            target_node_name = connection.target_node.name
+
+            # Use the complete UUID map that includes nodes from all subflows
+            if source_node_name not in complete_node_name_to_uuid:
+                details = f"Attempted to serialize Flow '{flow_name}'. Connection source node '{source_node_name}' not found in UUID map."
+                return SerializeFlowToCommandsResultFailure(result_details=details)
+            if target_node_name not in complete_node_name_to_uuid:
+                details = f"Attempted to serialize Flow '{flow_name}'. Connection target node '{target_node_name}' not found in UUID map."
+                return SerializeFlowToCommandsResultFailure(result_details=details)
+
+            source_node_uuid = complete_node_name_to_uuid[source_node_name]
+            target_node_uuid = complete_node_name_to_uuid[target_node_name]
+            create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=source_node_uuid,
+                source_parameter_name=connection.source_parameter.name,
+                target_node_uuid=target_node_uuid,
+                target_parameter_name=connection.target_parameter.name,
+            )
+            create_connection_commands.append(create_connection_command)
 
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
