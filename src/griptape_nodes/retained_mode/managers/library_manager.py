@@ -2406,7 +2406,6 @@ class LibraryManager:
             git_remote = await asyncio.to_thread(get_git_remote, library_dir)
             if git_remote is None:
                 details = f"Library '{library_name}' is not a git repository or has no remote configured."
-                logger.warning(details)
                 return CheckLibraryUpdateResultFailure(result_details=details)
         except GitRemoteError as e:
             details = f"Failed to get git remote for Library '{library_name}': {e}"
@@ -2994,7 +2993,9 @@ class LibraryManager:
         async def check_library_for_update(library_name: str) -> tuple[str, ResultPayload]:
             """Check a single library for updates."""
             logger.info("Checking library '%s' for updates", library_name)
-            check_result = await GriptapeNodes.ahandle_request(CheckLibraryUpdateRequest(library_name=library_name))
+            check_result = await GriptapeNodes.ahandle_request(
+                CheckLibraryUpdateRequest(library_name=library_name, failure_log_level=logging.DEBUG)
+            )
             return library_name, check_result
 
         # Gather all check results concurrently
@@ -3015,7 +3016,9 @@ class LibraryManager:
         for library_name, check_result in check_results.items():
             if not isinstance(check_result, CheckLibraryUpdateResultSuccess):
                 logger.warning(
-                    "Failed to check for updates for library '%s': %s", library_name, check_result.result_details
+                    "Failed to check for updates for library '%s', skipping: %s",
+                    library_name,
+                    str(check_result.result_details),
                 )
                 continue
 
