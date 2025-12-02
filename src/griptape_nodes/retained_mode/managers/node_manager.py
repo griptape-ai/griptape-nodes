@@ -849,7 +849,7 @@ class NodeManager:
             parent_flow.clear_execution_queue()
         return None
 
-    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912 (complex logic, lots of edge cases)
+    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (Complex logic, lots of edge cases)
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -926,6 +926,13 @@ class NodeManager:
                         )
                         return DeleteNodeResultFailure(result_details=details)
 
+        # Check if it's in a node group
+        if isinstance(node.parent_group, NodeGroupNode):
+            try:
+                node.parent_group.delete_nodes_from_group([node])
+            except ValueError as e:
+                details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
+                return DeleteNodeResultFailure(result_details=details)
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)
 

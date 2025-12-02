@@ -2481,7 +2481,7 @@ class NodeGroupNode(BaseNode):
             metadata_key = "left_parameters"
         else:
             metadata_key = "right_parameters"
-        self._cleanup_proxy_parameter(target_parameter, metadata_key)
+        self._cleanup_proxy_parameter(source_parameter, metadata_key)
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
     def after_incoming_connection_removed(
@@ -2564,6 +2564,16 @@ class NodeGroupNode(BaseNode):
             if node.name not in self.nodes:
                 msg = f"Node {node.name} is not in node group {self.name}"
                 raise ValueError(msg)
+
+    def delete_nodes_from_group(self, nodes: list[BaseNode]) -> None:
+        """Delete nodes from the group and untrack their connections.
+
+        Args:
+            nodes: List of nodes to delete from the group
+        """
+        for node in nodes:
+            self.nodes.pop(node.name)
+        self.metadata["node_names_in_group"] = list(self.nodes.keys())
 
     def remove_nodes_from_group(self, nodes: list[BaseNode]) -> None:
         """Remove nodes from the group and untrack their connections.
