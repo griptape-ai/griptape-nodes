@@ -294,3 +294,33 @@ class SearchModelsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class SearchModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Model search failed. Common causes: network error, invalid parameters, API limits."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelDownloadLocationRequest(RequestPayload):
+    """Get the HuggingFace Hub cache directory location.
+
+    Use when: Checking where models are downloaded, viewing cache location,
+    understanding local storage paths for models.
+
+    Results: GetModelDownloadLocationResultSuccess (with cache path) | GetModelDownloadLocationResultFailure (access error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelDownloadLocationResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Model download location retrieved successfully.
+
+    Args:
+        cache_directory: Absolute path to the HuggingFace Hub cache directory
+    """
+
+    cache_directory: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetModelDownloadLocationResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Model download location retrieval failed. Common causes: filesystem error, permission denied, environment variable issues."""

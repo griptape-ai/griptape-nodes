@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
+from huggingface_hub.constants import HF_HUB_CACHE
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
@@ -27,6 +28,9 @@ from griptape_nodes.retained_mode.events.model_events import (
     DownloadModelRequest,
     DownloadModelResultFailure,
     DownloadModelResultSuccess,
+    GetModelDownloadLocationRequest,
+    GetModelDownloadLocationResultFailure,
+    GetModelDownloadLocationResultSuccess,
     ListModelDownloadsRequest,
     ListModelDownloadsResultFailure,
     ListModelDownloadsResultSuccess,
@@ -286,6 +290,9 @@ class ModelManager:
             event_manager.assign_manager_to_request_type(
                 DeleteModelDownloadRequest, self.on_handle_delete_model_download_request
             )
+            event_manager.assign_manager_to_request_type(
+                GetModelDownloadLocationRequest, self.on_handle_get_model_download_location_request
+            )
 
             event_manager.add_listener_to_app_event(AppInitializationComplete, self.on_app_initialization_complete)
 
@@ -421,8 +428,6 @@ class ModelManager:
             return params.local_dir
 
         # Otherwise, use the HuggingFace cache directory
-        from huggingface_hub import snapshot_download
-
         try:
             # Get the path without actually downloading (since it's already downloaded)
             return snapshot_download(
@@ -433,8 +438,6 @@ class ModelManager:
             )
         except Exception:
             # Fallback: construct the expected cache path
-            from huggingface_hub.constants import HF_HUB_CACHE
-
             cache_path = Path(HF_HUB_CACHE)
             return str(cache_path / f"models--{params.model_id.replace('/', '--')}")
 
@@ -509,6 +512,47 @@ class ModelManager:
             return ListModelsResultFailure(
                 result_details=error_msg,
                 exception=e,
+            )
+
+    async def on_handle_get_model_download_location_request(
+        self,
+        request: GetModelDownloadLocationRequest,  # noqa: ARG002
+    ) -> ResultPayload:
+        """Handle model download location requests asynchronously.
+
+        This method returns the HuggingFace Hub cache directory location where
+        models are downloaded. This is a read-only operation that queries the
+        HF_HUB_CACHE constant from huggingface_hub.
+
+        Args:
+            request: The get location request (no parameters needed)
+
+        Returns:
+            ResultPayload: Success result with cache directory path or failure with error details
+        """
+        try:
+            # Get cache directory in a thread to avoid blocking the event loop
+            cache_directory = await asyncio.to_thread(self._get_model_download_location)
+
+        except PermissionError as e:
+            error_msg = f"Permission denied accessing cache directory: {e}"
+            return GetModelDownloadLocationResultFailure(
+                result_details=error_msg,
+                exception=e,
+            )
+
+        except Exception as e:
+            error_msg = f"Failed to get model download location: {e}"
+            return GetModelDownloadLocationResultFailure(
+                result_details=error_msg,
+                exception=e,
+            )
+        else:
+            result_details = f"HuggingFace Hub cache directory: {cache_directory}"
+
+            return GetModelDownloadLocationResultSuccess(
+                cache_directory=cache_directory,
+                result_details=result_details,
             )
 
     async def on_handle_delete_model_request(self, request: DeleteModelRequest) -> ResultPayload:
@@ -908,6 +952,31 @@ class ModelManager:
             return []
         else:
             return models
+
+    def _get_model_download_location(self) -> str:
+        """Synchronous implementation to get the model download location.
+
+        Returns:
+            str: Absolute path to the HuggingFace Hub cache directory
+
+        Raises:
+            PermissionError: If cache directory cannot be accessed
+            Exception: For other filesystem errors
+        """
+        cache_path = Path(HF_HUB_CACHE)
+
+        # Validate the path exists and is accessible
+        if not cache_path.exists():
+            # Try to create it if it doesn't exist (HF does this automatically)
+            cache_path.mkdir(parents=True, exist_ok=True)
+
+        # Verify we can access it
+        if not cache_path.is_dir():
+            error_msg = f"Cache path exists but is not a directory: {cache_path}"
+            raise ValueError(error_msg)
+
+        # Return absolute path as string
+        return str(cache_path.resolve())
 
     def _delete_model(self, model_id: str) -> str:
         """Synchronous model deletion implementation using HuggingFace Hub SDK.
