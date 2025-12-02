@@ -604,8 +604,8 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         button_variant: ButtonVariantType = "outline",
         button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
-        markdown: bool = False,
-        hide: bool = False,
+        markdown: bool | None = None,
+        hide: bool | None = None,
         ui_options: dict | None = None,
         traits: set[Trait.__class__ | Trait] | None = None,
         **kwargs,
@@ -626,15 +626,19 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._full_width = full_width
         self._ui_options = ui_options or {}
 
-        # Validate that explicit parameters don't conflict with ui_options
-        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="markdown", param_value=markdown)
-        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+        # Validate that explicit parameters don't conflict with ui_options (only if not None)
+        if markdown is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="markdown", param_value=markdown
+            )
+        if hide is not None:
+            self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
 
-        # Add common UI options if they have non-default values and are NOT already in ui_options
+        # Add common UI options if explicitly provided (not None) and NOT already in ui_options
         # (ui_options always wins in case of conflict)
-        if markdown and "markdown" not in self._ui_options:
-            self._ui_options["markdown"] = True
-        if hide and "hide" not in self._ui_options:
+        if markdown is not None and "markdown" not in self._ui_options:
+            self._ui_options["markdown"] = markdown
+        if hide is not None and "hide" not in self._ui_options:
             self._ui_options["hide"] = hide
 
         # Handle traits if provided
@@ -1209,9 +1213,9 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
-        hide: bool = False,
-        hide_label: bool = False,
-        hide_property: bool = False,
+        hide: bool | None = None,
+        hide_label: bool | None = None,
+        hide_property: bool | None = None,
         allow_input: bool = True,
         allow_property: bool = True,
         allow_output: bool = True,
@@ -1289,22 +1293,25 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         else:
             self._ui_options = ui_options.copy()
 
-        # Validate that explicit parameters don't conflict with ui_options
-        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
-        self._validate_ui_option_conflict(
-            ui_options_dict=self._ui_options, param_name="hide_label", param_value=hide_label
-        )
-        self._validate_ui_option_conflict(
-            ui_options_dict=self._ui_options, param_name="hide_property", param_value=hide_property
-        )
+        # Validate that explicit parameters don't conflict with ui_options (only if not None)
+        if hide is not None:
+            self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+        if hide_label is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="hide_label", param_value=hide_label
+            )
+        if hide_property is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="hide_property", param_value=hide_property
+            )
 
-        # Add common UI options if they have truthy values and are NOT already in ui_options
+        # Add common UI options if explicitly provided (not None) and NOT already in ui_options
         # (ui_options always wins in case of conflict)
-        if hide and "hide" not in self._ui_options:
+        if hide is not None and "hide" not in self._ui_options:
             self._ui_options["hide"] = hide
-        if hide_label and "hide_label" not in self._ui_options:
+        if hide_label is not None and "hide_label" not in self._ui_options:
             self._ui_options["hide_label"] = hide_label
-        if hide_property and "hide_property" not in self._ui_options:
+        if hide_property is not None and "hide_property" not in self._ui_options:
             self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
