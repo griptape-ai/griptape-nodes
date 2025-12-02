@@ -15,7 +15,6 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
-import aioshutil
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -121,6 +120,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     UpdateLibraryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.os_events import (
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+)
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
@@ -1707,14 +1710,14 @@ class LibraryManager:
         finally:
             self._libraries_loading_complete.set()
 
-    async def _download_missing_libraries_from_config(self) -> None:
-        """Download missing libraries from git URLs specified in config.
+    async def _ensure_libraries_from_config(self) -> None:
+        """Ensure libraries from git URLs specified in config are downloaded and registered.
 
-        Similar to model_manager's automatic download pattern, this method:
+        This method processes all libraries in the config, ensuring they are properly set up:
         1. Reads libraries_to_download from config
-        2. Checks which libraries are missing locally
-        3. Downloads missing libraries concurrently
-        4. Logs summary of successful/failed downloads
+        2. For each library: downloads if missing, or validates/registers if already present
+        3. Processes all libraries concurrently
+        4. Logs summary of successful/failed operations
 
         Supports URL format with @ref suffix (e.g., "https://github.com/user/repo@stable").
         """
@@ -1728,16 +1731,8 @@ class LibraryManager:
             logger.debug("Cannot download libraries: libraries_directory setting is not configured")
             return
 
-        libraries_path = config_mgr.workspace_path / libraries_dir_setting
-
         # Check which git URLs are missing locally
-        git_urls_to_download = []
-        for entry in config_libraries:
-            target_directory_name = extract_repo_name_from_url(entry)
-            target_path = libraries_path / target_directory_name
-
-            if not target_path.exists():
-                git_urls_to_download.append(entry)
+        git_urls_to_download = config_libraries
 
         # Early exit if nothing to download
         if not git_urls_to_download:
@@ -1781,8 +1776,8 @@ class LibraryManager:
         )
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. First download any missing libraries from git URLs.
-        await self._download_missing_libraries_from_config()
+        # App just got init'd. First ensure all libraries from git URLs are downloaded and registered.
+        await self._ensure_libraries_from_config()
 
         # Now load all libraries from config (including newly downloaded ones)
         await self.load_all_libraries_from_config()
@@ -2761,28 +2756,35 @@ class LibraryManager:
         target_path = libraries_path / target_directory_name
 
         # Check if target directory already exists
+        skip_clone = False
         if target_path.exists():
             if not request.overwrite_existing:
-                details = f"Cannot download library: target directory already exists at {target_path}"
-                return DownloadLibraryResultFailure(result_details=details, retryable=True)
+                # Skip cloning since directory already exists, but continue with registration
+                skip_clone = True
+                logger.info(
+                    "Library directory already exists at %s, skipping download but will proceed with registration",
+                    target_path,
+                )
+            else:
+                # Delete existing directory before cloning
+                delete_request = DeleteFileRequest(path=str(target_path), workspace_only=False)
+                delete_result = await GriptapeNodes.ahandle_request(delete_request)
 
-            # Delete existing directory before cloning
-            try:
-                await aioshutil.rmtree(target_path, onexc=OSManager.remove_readonly)
+                if isinstance(delete_result, DeleteFileResultFailure):
+                    details = f"Cannot delete existing directory at {target_path}: {delete_result.result_details}"
+                    return DownloadLibraryResultFailure(result_details=details)
+
                 logger.info("Deleted existing directory at %s for overwrite", target_path)
-            except PermissionError as e:
-                details = f"Cannot delete existing directory at {target_path}: permission denied - {e}"
-                return DownloadLibraryResultFailure(result_details=details)
-            except OSError as e:
-                details = f"Cannot delete existing directory at {target_path}: I/O error - {e}"
-                return DownloadLibraryResultFailure(result_details=details)
 
-        # Clone the repository
-        try:
-            await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
-        except GitCloneError as e:
-            details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
-            return DownloadLibraryResultFailure(result_details=details)
+        # Clone the repository (unless skipping because it already exists)
+        if not skip_clone:
+            try:
+                await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
+            except GitCloneError as e:
+                details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
+                return DownloadLibraryResultFailure(result_details=details)
+        else:
+            logger.info("Using existing library directory at %s", target_path)
 
         # Recursively search for griptape_nodes_library.json file
         library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
@@ -2840,7 +2842,10 @@ class LibraryManager:
             )
             logger.info("Added library '%s' to config for auto-registration on startup", library_name)
 
-        details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
+        if skip_clone:
+            details = f"Library '{library_name}' already exists at {target_path} and has been registered"
+        else:
+            details = f"Successfully downloaded library '{library_name}' from {git_url} to {target_path}"
         return DownloadLibraryResultSuccess(
             library_name=library_name,
             library_path=str(library_json_path),
