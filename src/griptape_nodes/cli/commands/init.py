@@ -530,7 +530,7 @@ def _build_libraries_list(
     new_register = current_register.copy()
 
     # Remove old XDG data home library paths from libraries_to_register
-    xdg_libraries_base = str(xdg_data_home() / "griptape_nodes" / "libraries")
+    xdg_libraries_base = xdg_data_home() / "griptape_nodes" / "libraries"
     old_library_names = [
         "griptape_nodes_library",
         "griptape_nodes_advanced_media_library",
@@ -538,7 +538,7 @@ def _build_libraries_list(
     ]
 
     for lib_name in old_library_names:
-        old_path_prefix = f"{xdg_libraries_base}/{lib_name}/"
+        old_path_prefix = str(xdg_libraries_base / lib_name)
         new_register = [path for path in new_register if not path.startswith(old_path_prefix)]
 
     # Create a set of current download identifiers for fast lookup
