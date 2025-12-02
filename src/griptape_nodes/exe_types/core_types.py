@@ -499,7 +499,7 @@ class UIOptionsMixin:
     ) -> None:
         """Validate that explicit parameter doesn't conflict with ui_options dict.
 
-        Logs an error if there's a conflict and the ui_options value will be used.
+        Logs a warning if there's a conflict and the ui_options value will be used.
 
         Args:
             ui_options_dict: The ui_options dictionary to check
@@ -512,16 +512,22 @@ class UIOptionsMixin:
         dict_value = ui_options_dict[param_name]
 
         if param_value != dict_value:
-            class_name = self.__class__.__name__
-            # Get name from self if it exists - all classes using this mixin should have a name attribute
+            # Get element name for better error messages
             element_name = getattr(self, "name", None)
-            name_part = f" '{element_name}'" if element_name else ""
+            class_name = self.__class__.__name__
+
+            # Build element part
+            if element_name:
+                element_part = f"{class_name} '{element_name}'"
+            else:
+                element_part = class_name
+
             msg = (
-                f"{class_name}{name_part}: Conflicting values for '{param_name}'. "
+                f"{element_part}: Conflicting values for '{param_name}'. "
                 f'Explicit parameter {param_name}={param_value!r} conflicts with ui_options["{param_name}"]={dict_value!r}. '
-                f"The value from ui_options will be used. Either use the explicit parameter and remove from ui_options or ensure the two match."
+                f"The value from ui_options will be used. Please contact the library author to fix this issue."
             )
-            logger.error(msg)
+            logger.warning(msg)
 
     def update_ui_options_key(self, key: str, value: Any) -> None:
         """Update a single UI option key."""
