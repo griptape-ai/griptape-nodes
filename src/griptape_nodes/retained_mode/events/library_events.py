@@ -711,6 +711,8 @@ class DownloadLibraryRequest(RequestPayload):
         install_dependencies: If True, automatically install dependencies after downloading (default: True)
         overwrite_existing: If True, delete existing directory before cloning (default: False)
         auto_register: If True, automatically register library after download (default: True)
+        fail_on_exists: If True, fail with retryable error when directory exists and overwrite_existing=False.
+                       If False, skip clone and register existing library (idempotent). (default: True)
 
     Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
     """
@@ -722,6 +724,7 @@ class DownloadLibraryRequest(RequestPayload):
     install_dependencies: bool = True
     overwrite_existing: bool = False
     auto_register: bool = True
+    fail_on_exists: bool = True
 
 
 @dataclass
