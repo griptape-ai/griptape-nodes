@@ -1759,6 +1759,8 @@ class LibraryManager:
                         branch_tag_commit=ref,
                         target_directory_name=None,
                         install_dependencies=True,
+                        # Skip auto-registration during startup to prevent double-registration.
+                        # All libraries will be registered uniformly in load_all_libraries_from_config().
                         auto_register=False,
                     )
                 )
