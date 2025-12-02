@@ -1762,6 +1762,8 @@ class LibraryManager:
                         # Skip auto-registration during startup to prevent double-registration.
                         # All libraries will be registered uniformly in load_all_libraries_from_config().
                         auto_register=False,
+                        # Idempotent behavior - skip clone and register if already exists
+                        fail_on_exists=False,
                     )
                 )
             )
@@ -2860,6 +2862,12 @@ class LibraryManager:
 
                 logger.info("Deleted existing directory at %s for overwrite", target_path)
             else:
+                # Check fail_on_exists flag
+                if request.fail_on_exists:
+                    # Fail with retryable error for interactive CLI
+                    details = f"Cannot download library: target directory already exists at {target_path}"
+                    return DownloadLibraryResultFailure(result_details=details, retryable=True)
+
                 # Skip cloning since directory already exists, but continue with registration
                 skip_clone = True
                 logger.debug(
@@ -3056,7 +3064,11 @@ class LibraryManager:
 
             logger.info("Downloading library from '%s' to '%s'", git_url, target_path)
             download_result = await GriptapeNodes.ahandle_request(
-                DownloadLibraryRequest(git_url=git_url, install_dependencies=install_dependencies)
+                DownloadLibraryRequest(
+                    git_url=git_url,
+                    install_dependencies=install_dependencies,
+                    fail_on_exists=False,  # Idempotent behavior (though existence is already checked above)
+                )
             )
 
             if isinstance(download_result, DownloadLibraryResultSuccess):
