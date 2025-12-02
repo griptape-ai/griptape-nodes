@@ -928,7 +928,7 @@ class RetainedMode:
         )
         result = GriptapeNodes().handle_request(request)
 
-        if not result.succeeded():
+        if result.failed():
             return False, result
 
         # Navigate through indices
@@ -983,7 +983,7 @@ class RetainedMode:
         )
         result = GriptapeNodes().handle_request(request)
 
-        if not result.succeeded():
+        if result.failed():
             return result
 
         # Navigate to the proper location and set the value
@@ -1169,7 +1169,7 @@ class RetainedMode:
             )
             result = GriptapeNodes().handle_request(request)
 
-            if not result.succeeded():
+            if result.failed():
                 logger.error(
                     'set_value failed for "%s.%s", failed to get value for container "%s".',
                     node,

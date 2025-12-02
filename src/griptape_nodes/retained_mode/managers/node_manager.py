@@ -833,7 +833,7 @@ class NodeManager:
                     if control_node in connected_nodes:
                         result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
                         cancelled = True
-                        if not result.succeeded():
+                        if result.failed():
                             details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                             return DeleteNodeResultFailure(result_details=details)
             if resolving_node_names is not None and not cancelled:
@@ -841,7 +841,7 @@ class NodeManager:
                     resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
                     if resolving_node in connected_nodes:
                         result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                        if not result.succeeded():
+                        if result.failed():
                             details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                             return DeleteNodeResultFailure(result_details=details)
                         break  # Only need to cancel once
@@ -2468,7 +2468,7 @@ class NodeManager:
         # Validate here.
         result = self.on_validate_node_dependencies_request(ValidateNodeDependenciesRequest(node_name=node_name))
         try:
-            if not result.succeeded():
+            if result.failed():
                 details = f"Failed to resolve node '{node_name}'. Flow Validation Failed"
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
             result = cast("ValidateNodeDependenciesResultSuccess", result)
@@ -3018,7 +3018,7 @@ class NodeManager:
                 target_parameter_name=connection_command.target_parameter_name,
             )
             result = GriptapeNodes.handle_request(connection_request)
-            if not result.succeeded():
+            if result.failed():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
         return DeserializeSelectedNodesFromCommandsResultSuccess(
@@ -3030,7 +3030,7 @@ class NodeManager:
         result = GriptapeNodes.handle_request(
             SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
         )
-        if not result.succeeded():
+        if result.failed():
             details = "Failed to serialized selected nodes."
             return DuplicateSelectedNodesResultFailure(result_details=details)
         result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=request.positions))

@@ -384,7 +384,7 @@ class EngineNode(SuccessFailureNode):
         for param_name in plan.to_remove:
             remove_request = RemoveParameterFromNodeRequest(parameter_name=param_name, node_name=self.name)
             result = GriptapeNodes.handle_request(remove_request)
-            if not result.succeeded():
+            if result.failed():
                 logger.error("Failed to remove parameter %s: %s", param_name, result.result_details)
 
         # Add new parameters for this group
@@ -460,7 +460,7 @@ class EngineNode(SuccessFailureNode):
             if self.get_parameter_by_name(param.name) is not None:
                 remove_request = RemoveParameterFromNodeRequest(parameter_name=param.name, node_name=self.name)
                 result = GriptapeNodes.handle_request(remove_request)
-                if not result.succeeded():
+                if result.failed():
                     logger.error("Failed to remove parameter %s: %s", param.name, result.result_details)
 
         # Reset static UI elements to explanatory content
@@ -644,7 +644,7 @@ class EngineNode(SuccessFailureNode):
         )
 
         result = GriptapeNodes.handle_request(add_request)
-        if not result.succeeded():
+        if result.failed():
             logger.error(
                 "Failed to create input parameter %s: %s",
                 param_name,
@@ -783,7 +783,7 @@ class EngineNode(SuccessFailureNode):
         )
 
         result = GriptapeNodes.handle_request(add_request)
-        if not result.succeeded():
+        if result.failed():
             logger.error(
                 "Failed to create output parameter %s: %s",
                 param_name,
