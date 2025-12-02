@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, NamedTuple
+from pathlib import Path
+from typing import NamedTuple
 
 from xdg_base_dirs import xdg_data_home
 
@@ -12,9 +13,6 @@ from griptape_nodes.utils.git_utils import (
     get_git_repository_root,
     sparse_checkout_library_json,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +106,11 @@ def filter_old_xdg_library_paths(library_paths: list[str]) -> tuple[list[str], s
 
     for library in library_paths:
         is_old_path = False
+        # Normalize library path for cross-platform comparison
+        normalized_library = str(Path(library))
+
         for lib_name, prefix in old_path_prefixes.items():
-            if library.startswith(prefix):
+            if normalized_library.startswith(prefix):
                 is_old_path = True
                 removed_library_names.add(lib_name)
                 break
