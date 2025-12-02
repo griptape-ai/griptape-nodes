@@ -1,5 +1,7 @@
 """Self command for Griptape Nodes CLI."""
 
+import json
+import platform
 import shutil
 import sys
 
@@ -7,6 +9,7 @@ import typer
 
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
+    CONFIG_FILE,
     DATA_DIR,
     GITHUB_UPDATE_URL,
     LATEST_TAG,
@@ -18,6 +21,7 @@ from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import (
     get_complete_version_string,
     get_current_version,
+    get_install_source,
     get_latest_version_git,
     get_latest_version_pypi,
 )
@@ -45,6 +49,12 @@ def uninstall() -> None:
 def version() -> None:
     """Print the CLI version."""
     _print_current_version()
+
+
+@app.command()
+def info() -> None:
+    """Display system information for debugging."""
+    _print_system_info()
 
 
 def _get_latest_version(package: str, install_source: str) -> str:
@@ -118,3 +128,64 @@ def _uninstall_self() -> None:
     # Remove the tool using UV
     uv_path = find_uv_bin()
     os_manager.replace_process([uv_path, "tool", "uninstall", "griptape-nodes"])
+
+
+def _print_system_info() -> None:
+    """Print comprehensive system information."""
+    console.print("\n[bold cyan]Griptape Nodes System Information[/bold cyan]\n")
+
+    _print_engine_info()
+    _print_platform_info()
+    _print_paths_info()
+    _print_configuration()
+
+
+def _print_engine_info() -> None:
+    """Print engine version information."""
+    version_string = get_complete_version_string()
+    install_source, commit_id = get_install_source()
+
+    console.print("[bold]Engine:[/bold]")
+    console.print(f"  Version: {version_string}")
+    console.print(f"  Install Source: {install_source}")
+    if commit_id:
+        console.print(f"  Commit ID: {commit_id}")
+    console.print()
+
+
+def _print_platform_info() -> None:
+    """Print platform information."""
+    console.print("[bold]Platform:[/bold]")
+    console.print(f"  OS: {platform.system()}")
+    console.print(f"  OS Version: {platform.version()}")
+    console.print(f"  OS Release: {platform.release()}")
+    console.print(f"  Architecture: {platform.machine()}")
+    console.print(f"  Python Version: {platform.python_version()}")
+    console.print(f"  Python Implementation: {platform.python_implementation()}")
+    console.print(f"  Python Executable: {sys.executable}")
+    console.print()
+
+
+def _print_paths_info() -> None:
+    """Print configuration paths."""
+    console.print("[bold]Paths:[/bold]")
+    console.print(f"  Config Directory: {CONFIG_DIR}")
+    console.print(f"  Config File: {CONFIG_FILE}")
+    console.print(f"  Data Directory: {DATA_DIR}")
+
+    workspace_dir = config_manager.get_config_value("file_system.directories.workspace_directory")
+    if workspace_dir:
+        console.print(f"  Workspace Directory: {workspace_dir}")
+    console.print()
+
+
+def _print_configuration() -> None:
+    """Print full configuration."""
+    console.print("[bold]Configuration:[/bold]")
+    try:
+        full_config = config_manager.merged_config
+        config_json = json.dumps(full_config, indent=2, default=str)
+        console.print(f"[dim]{config_json}[/dim]")
+    except Exception as e:
+        console.print(f"  [red]Error retrieving configuration: {e}[/red]")
+    console.print()
