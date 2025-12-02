@@ -23,7 +23,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.settings import SECRETS_TO_REGISTER
+from griptape_nodes.retained_mode.managers.settings import SECRETS_TO_REGISTER_KEY
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -61,7 +61,7 @@ class SecretsManager:
         """
         secret_names = set()
 
-        secrets_to_register = self.config_manager.get_config_value(SECRETS_TO_REGISTER, default=[])
+        secrets_to_register = self.config_manager.get_config_value(SECRETS_TO_REGISTER_KEY, default=[])
 
         secret_names.update(secrets_to_register)
 

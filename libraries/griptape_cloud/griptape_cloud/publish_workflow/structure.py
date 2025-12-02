@@ -26,7 +26,7 @@ os.environ["GTN_ENABLE_WORKSPACE_FILE_WATCHING"] = "false"
 
 def _set_libraries(libraries: list[str]) -> None:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-    from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER
+    from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
 
     config_manager = GriptapeNodes.ConfigManager()
     config_manager.set_config_value(
@@ -34,7 +34,7 @@ def _set_libraries(libraries: list[str]) -> None:
         value=False,
     )
     config_manager.set_config_value(
-        key=LIBRARIES_TO_REGISTER,
+        key=LIBRARIES_TO_REGISTER_KEY,
         value=libraries,
     )
     config_manager.set_config_value(
