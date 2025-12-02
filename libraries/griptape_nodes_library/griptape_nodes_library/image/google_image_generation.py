@@ -690,7 +690,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Try to shrink the image
-        logger.info(f"{self.name} image is {size_mb:.2f}MB, attempting to shrink...")
+        logger.info("%s image is %.2fMB, attempting to shrink...", self.name, size_mb)
         shrunk_bytes = self._shrink_image(image_bytes)
 
         if len(shrunk_bytes) <= MAX_IMAGE_SIZE_BYTES:
@@ -699,7 +699,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             return ("image/webp", new_base64)
 
         # Couldn't shrink enough, return original
-        logger.warning(f"{self.name} could not shrink image below {max_mb:.0f}MB limit, using original")
+        logger.warning("%s could not shrink image below %.0fMB limit, using original", self.name, max_mb)
         return (mime_type, base64_data)
 
     def _extract_image_value(self, image_input: Any) -> str | None:
