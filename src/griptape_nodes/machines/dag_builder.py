@@ -72,6 +72,14 @@ class DagBuilder:
 
             if current_node.name in self.node_to_reference:
                 return
+            # Add current node to tracking
+            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+            self.node_to_reference[current_node.name] = dag_node
+            added_nodes.append(current_node)
+
+            # Add to graph
+            graph.add_node(node_for_adding=current_node.name)
+            self.graph_to_nodes[graph_name].add(current_node.name)
 
             # Check if we should ignore dependencies (for special nodes like output_selector)
             ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
@@ -101,15 +109,6 @@ class DagBuilder:
 
                 # Add edge from upstream to current
                 graph.add_edge(upstream_node.name, current_node.name)
-
-            # Add current node to tracking
-            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
-            self.node_to_reference[current_node.name] = dag_node
-            added_nodes.append(current_node)
-
-            # Add to graph
-            graph.add_node(node_for_adding=current_node.name)
-            self.graph_to_nodes[graph_name].add(current_node.name)
 
         _add_node_recursive(node, set(), graph)
 

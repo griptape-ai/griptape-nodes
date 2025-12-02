@@ -592,22 +592,22 @@ class NodeExecutor:
         nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
 
         # Filter out nodes already in the current DAG and collect data dependencies
-        dag_builder = flow_manager.global_dag_builder
+        #dag_builder = flow_manager.global_dag_builder
         all_nodes: set[str] = set()
         visited_deps: set[str] = set()
 
         node_manager = GriptapeNodes.NodeManager()
-        for node_name in nodes_in_control_flow:
-            if node_name not in dag_builder.node_to_reference:
-                all_nodes.add(node_name)
-                node_obj = node_manager.get_node_by_name(node_name)
-                deps = DagBuilder.collect_data_dependencies_for_node(
-                    node_obj, connections, nodes_in_control_flow, visited_deps
-                )
-                all_nodes.update(deps)
-
-        # Exclude the start and end loop nodes from packaging
+        # Exclude the start node from packaging. And, we don't want their dependencies.
         all_nodes.discard(start_node.name)
+        for node_name in nodes_in_control_flow:
+            #if node_name not in dag_builder.node_to_reference:
+            all_nodes.add(node_name)
+            node_obj = node_manager.get_node_by_name(node_name)
+            deps = DagBuilder.collect_data_dependencies_for_node(
+                node_obj, connections, nodes_in_control_flow, visited_deps
+            )
+            all_nodes.update(deps)
+        # Discard the end node from packaging.
         all_nodes.discard(end_node.name)
 
         # See if they're all in one NodeGroup
