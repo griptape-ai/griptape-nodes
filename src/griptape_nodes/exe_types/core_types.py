@@ -491,6 +491,44 @@ class BaseNodeElement:
 class UIOptionsMixin:
     """Mixin providing UI options update functionality for classes with ui_options."""
 
+    def _validate_ui_option_conflict(
+        self,
+        ui_options_dict: dict,
+        param_name: str,
+        param_value: Any,
+    ) -> None:
+        """Validate that explicit parameter doesn't conflict with ui_options dict.
+
+        Logs a warning if there's a conflict and the ui_options value will be used.
+
+        Args:
+            ui_options_dict: The ui_options dictionary to check
+            param_name: Name of the parameter (e.g., "hide", "markdown")
+            param_value: Value of the explicit parameter
+        """
+        if param_name not in ui_options_dict:
+            return
+
+        dict_value = ui_options_dict[param_name]
+
+        if param_value != dict_value:
+            # Get element name for better error messages
+            element_name = getattr(self, "name", None)
+            class_name = self.__class__.__name__
+
+            # Build element part
+            if element_name:
+                element_part = f"{class_name} '{element_name}'"
+            else:
+                element_part = class_name
+
+            msg = (
+                f"{element_part}: Conflicting values for '{param_name}'. "
+                f'Explicit parameter {param_name}={param_value!r} conflicts with ui_options["{param_name}"]={dict_value!r}. '
+                f"The value from ui_options will be used. Please contact the library author to fix this issue."
+            )
+            logger.warning(msg)
+
     def update_ui_options_key(self, key: str, value: Any) -> None:
         """Update a single UI option key."""
         ui_options = self.ui_options
@@ -587,9 +625,17 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
-        if markdown:
+
+        # Validate that explicit parameters don't conflict with ui_options
+        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="markdown", param_value=markdown)
+        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+
+        # Add common UI options if they have non-default values and are NOT already in ui_options
+        # (ui_options always wins in case of conflict)
+        if markdown and "markdown" not in self._ui_options:
             self._ui_options["markdown"] = True
-        self._ui_options["hide"] = hide
+        if hide and "hide" not in self._ui_options:
+            self._ui_options["hide"] = hide
 
         # Handle traits if provided
         if traits:
@@ -1243,12 +1289,22 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         else:
             self._ui_options = ui_options.copy()
 
-        # Add common UI options if they have truthy values
-        if hide:
+        # Validate that explicit parameters don't conflict with ui_options
+        self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+        self._validate_ui_option_conflict(
+            ui_options_dict=self._ui_options, param_name="hide_label", param_value=hide_label
+        )
+        self._validate_ui_option_conflict(
+            ui_options_dict=self._ui_options, param_name="hide_property", param_value=hide_property
+        )
+
+        # Add common UI options if they have truthy values and are NOT already in ui_options
+        # (ui_options always wins in case of conflict)
+        if hide and "hide" not in self._ui_options:
             self._ui_options["hide"] = hide
-        if hide_label:
+        if hide_label and "hide_label" not in self._ui_options:
             self._ui_options["hide_label"] = hide_label
-        if hide_property:
+        if hide_property and "hide_property" not in self._ui_options:
             self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
