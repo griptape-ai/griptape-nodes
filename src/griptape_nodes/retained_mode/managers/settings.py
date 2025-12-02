@@ -6,6 +6,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic import Field as PydanticField
 
+LIBRARIES_TO_REGISTER = "app_events.on_app_initialization_complete.libraries_to_register"
+LIBRARIES_TO_DOWNLOAD = "app_events.on_app_initialization_complete.libraries_to_download"
+WORKFLOWS_TO_REGISTER = "app_events.on_app_initialization_complete.workflows_to_register"
+SECRETS_TO_REGISTER = "app_events.on_app_initialization_complete.secrets_to_register"
+MODELS_TO_DOWNLOAD = "app_events.on_app_initialization_complete.models_to_download"
+PROJECTS_TO_REGISTER = "app_events.on_app_initialization_complete.projects_to_register"
+EVENTS_TO_ECHO = "app_events.events_to_echo_as_retained_mode"
+
 
 class Category(BaseModel):
     """A category with name and optional description."""

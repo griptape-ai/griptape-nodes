@@ -33,7 +33,7 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.settings import Settings
+from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER, Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
 
 logger = logging.getLogger("griptape_nodes")
@@ -210,7 +210,7 @@ class ConfigManager:
         An exception is made for `workflows_to_register` since resetting it gives the appearance of the user losing their workflows.
         """
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1241 need a better way to annotate fields to ignore.
-        workflows_to_register = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
+        workflows_to_register = self.get_config_value(WORKFLOWS_TO_REGISTER)
         USER_CONFIG_PATH.write_text(
             json.dumps(
                 {
@@ -226,7 +226,7 @@ class ConfigManager:
         self.load_configs()
 
     def save_user_workflow_json(self, workflow_file_name: str) -> None:
-        config_loc = "app_events.on_app_initialization_complete.workflows_to_register"
+        config_loc = WORKFLOWS_TO_REGISTER
         existing_workflows = self.get_config_value(config_loc)
         if not existing_workflows:
             existing_workflows = []
@@ -234,14 +234,14 @@ class ConfigManager:
         self.set_config_value(config_loc, existing_workflows)
 
     def delete_user_workflow(self, workflow_file_name: str) -> None:
-        default_workflows = self.get_config_value("app_events.on_app_initialization_complete.workflows_to_register")
+        default_workflows = self.get_config_value(WORKFLOWS_TO_REGISTER)
         if default_workflows:
             default_workflows = [
                 saved_workflow
                 for saved_workflow in default_workflows
                 if (saved_workflow.lower() != workflow_file_name.lower())
             ]
-            self.set_config_value("app_events.on_app_initialization_complete.workflows_to_register", default_workflows)
+            self.set_config_value(WORKFLOWS_TO_REGISTER, default_workflows)
 
     def get_full_path(self, relative_path: str) -> Path:
         """Get a full path by combining the base path with a relative path.

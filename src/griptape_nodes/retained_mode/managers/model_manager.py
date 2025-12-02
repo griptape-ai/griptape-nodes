@@ -41,6 +41,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import MODELS_TO_DOWNLOAD
 from griptape_nodes.utils.async_utils import cancel_subprocess
 
 if TYPE_CHECKING:
@@ -675,9 +676,7 @@ class ModelManager:
         """
         # Get models to download from configuration
         config_manager = GriptapeNodes.ConfigManager()
-        models_to_download = config_manager.get_config_value(
-            "app_events.on_app_initialization_complete.models_to_download", default=[]
-        )
+        models_to_download = config_manager.get_config_value(MODELS_TO_DOWNLOAD, default=[])
 
         # Find unfinished downloads to resume
         unfinished_models = await asyncio.to_thread(self._find_unfinished_downloads)
