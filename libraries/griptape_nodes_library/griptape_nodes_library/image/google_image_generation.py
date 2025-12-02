@@ -654,7 +654,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                     if len(data) <= MAX_IMAGE_SIZE_BYTES:
                         return data
         except Exception as e:
-            logger.warning(f"{self.name} downscale failed: {e}")
+            logger.warning("%s downscale failed: %s", self.name, e)
         return image_bytes
 
     def _validate_image_size(self, base64_data: str, mime_type: str, *, strict: bool = False) -> tuple[str, str] | None:
