@@ -2476,13 +2476,23 @@ class NodeGroupNode(BaseNode):
     def after_outgoing_connection_removed(
         self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> None:
-        self._cleanup_proxy_parameter(source_parameter, "right_parameters")
+        # Instead of right_parameters, we should check the internal connections
+        if target_node.parent_group == self:
+            metadata_key = "left_parameters"
+        else:
+            metadata_key = "right_parameters"
+        self._cleanup_proxy_parameter(target_parameter, metadata_key)
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
     def after_incoming_connection_removed(
         self, source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter
     ) -> None:
-        self._cleanup_proxy_parameter(target_parameter, "left_parameters")
+        # Instead of left_parameters, we should check the internal connections.
+        if source_node.parent_group == self:
+            metadata_key = "right_parameters"
+        else:
+            metadata_key = "left_parameters"
+        self._cleanup_proxy_parameter(target_parameter, metadata_key)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
