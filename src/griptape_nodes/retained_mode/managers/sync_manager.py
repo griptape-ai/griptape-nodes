@@ -25,6 +25,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RegisterWorkflowsFromConfigResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -490,9 +491,7 @@ class SyncManager:
         if synced_workflows:
             logger.info("Registering %d synced workflows from configuration", len(synced_workflows))
             try:
-                register_request = RegisterWorkflowsFromConfigRequest(
-                    config_section="app_events.on_app_initialization_complete.workflows_to_register"
-                )
+                register_request = RegisterWorkflowsFromConfigRequest(config_section=WORKFLOWS_TO_REGISTER_KEY)
                 register_result = GriptapeNodes.handle_request(register_request)
 
                 if isinstance(register_result, RegisterWorkflowsFromConfigResultSuccess):

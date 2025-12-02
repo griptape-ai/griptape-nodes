@@ -153,6 +153,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.file_utils import find_file_in_directory
@@ -1710,7 +1711,7 @@ class LibraryManager:
             self.print_library_load_status()
 
             # Remove any missing libraries AFTER we've printed them for the user.
-            user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+            user_libraries_section = LIBRARIES_TO_REGISTER_KEY
             self._remove_missing_libraries_from_config(config_category=user_libraries_section)
         finally:
             self._libraries_loading_complete.set()
@@ -1727,7 +1728,7 @@ class LibraryManager:
         Supports URL format with @ref suffix (e.g., "https://github.com/user/repo@stable").
         """
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_download"
+        user_libraries_section = LIBRARIES_TO_DOWNLOAD_KEY
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
 
         # Get libraries directory
@@ -1869,7 +1870,7 @@ class LibraryManager:
         config_mgr = GriptapeNodes.ConfigManager()
 
         # Get the current libraries_to_register list
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = LIBRARIES_TO_REGISTER_KEY
         libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
 
         # Filter out empty or whitespace-only entries
@@ -2295,8 +2296,8 @@ class LibraryManager:
         config_mgr = GriptapeNodes.ConfigManager()
 
         # Get both config lists
-        register_key = "app_events.on_app_initialization_complete.libraries_to_register"
-        download_key = "app_events.on_app_initialization_complete.libraries_to_download"
+        register_key = LIBRARIES_TO_REGISTER_KEY
+        download_key = LIBRARIES_TO_DOWNLOAD_KEY
 
         libraries_to_register = config_mgr.get_config_value(register_key)
         libraries_to_download = config_mgr.get_config_value(download_key) or []
@@ -2423,7 +2424,7 @@ class LibraryManager:
             List of library file paths found
         """
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = LIBRARIES_TO_REGISTER_KEY
 
         discovered_libraries = set()
 
@@ -2930,15 +2931,11 @@ class LibraryManager:
                 logger.info("Library '%s' registered successfully", library_name)
 
         # Add library JSON file path to config so it's registered on future startups
-        libraries_to_register = config_mgr.get_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_register", default=[]
-        )
+        libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
         library_json_str = str(library_json_path)
         if library_json_str not in libraries_to_register:
             libraries_to_register.append(library_json_str)
-            config_mgr.set_config_value(
-                "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
-            )
+            config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
             logger.info("Added library '%s' to config for auto-registration on startup", library_name)
 
         if skip_clone:
@@ -3036,7 +3033,7 @@ class LibraryManager:
 
         # Phase 1: Download missing libraries from config
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = LIBRARIES_TO_REGISTER_KEY
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
 
         libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
