@@ -140,6 +140,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     NodeClassNotBaseNodeProblem,
     NodeClassNotFoundProblem,
     NodeModuleImportProblem,
+    OldXdgLocationWarningProblem,
     SandboxDirectoryMissingProblem,
     UpdateConfigCategoryProblem,
 )
@@ -2013,6 +2014,25 @@ class LibraryManager:
             problems.append(issue.problem)
             if issue.severity == LibraryStatus.UNUSABLE:
                 has_disqualifying_issues = True
+
+        # Check if library is in old XDG location
+        old_xdg_libraries_path = xdg_data_home() / "griptape_nodes" / "libraries"
+        library_path_obj = Path(library_file_path)
+        try:
+            # Check if the library path is relative to the old XDG location
+            if library_path_obj.is_relative_to(old_xdg_libraries_path):
+                problems.append(OldXdgLocationWarningProblem(old_path=str(library_path_obj)))
+                logger.warning(
+                    "Library '%s' is located in old XDG data directory: %s. "
+                    "Starting with version 0.65.0, libraries are managed in your workspace directory. "
+                    "To migrate: run 'gtn init' (CLI) or go to App Settings and click 'Re-run Setup Wizard' (desktop app).",
+                    library_data.name,
+                    library_file_path,
+                )
+        except ValueError:
+            # is_relative_to() raises ValueError if paths are on different drives
+            # In this case, library is definitely not in the old XDG location
+            pass
 
         # Early exit if any version issues are disqualifying
         if has_disqualifying_issues:
