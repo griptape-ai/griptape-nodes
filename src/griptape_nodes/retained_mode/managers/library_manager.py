@@ -2849,14 +2849,7 @@ class LibraryManager:
         # Check if target directory already exists
         skip_clone = False
         if target_path.exists():
-            if not request.overwrite_existing:
-                # Skip cloning since directory already exists, but continue with registration
-                skip_clone = True
-                logger.info(
-                    "Library directory already exists at %s, skipping download but will proceed with registration",
-                    target_path,
-                )
-            else:
+            if request.overwrite_existing:
                 # Delete existing directory before cloning
                 delete_request = DeleteFileRequest(path=str(target_path), workspace_only=False)
                 delete_result = await GriptapeNodes.ahandle_request(delete_request)
@@ -2866,16 +2859,23 @@ class LibraryManager:
                     return DownloadLibraryResultFailure(result_details=details)
 
                 logger.info("Deleted existing directory at %s for overwrite", target_path)
+            else:
+                # Skip cloning since directory already exists, but continue with registration
+                skip_clone = True
+                logger.debug(
+                    "Library directory already exists at %s, skipping download but will proceed with registration",
+                    target_path,
+                )
 
         # Clone the repository (unless skipping because it already exists)
-        if not skip_clone:
+        if skip_clone:
+            logger.debug("Using existing library directory at %s", target_path)
+        else:
             try:
                 await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
             except GitCloneError as e:
                 details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
                 return DownloadLibraryResultFailure(result_details=details)
-        else:
-            logger.info("Using existing library directory at %s", target_path)
 
         # Recursively search for griptape_nodes_library.json file
         library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
@@ -2897,7 +2897,7 @@ class LibraryManager:
             return DownloadLibraryResultFailure(result_details=details)
 
         # Install dependencies if requested
-        if request.install_dependencies:
+        if request.install_dependencies and not skip_clone:
             install_deps_result = await GriptapeNodes.ahandle_request(
                 InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
             )
