@@ -38,6 +38,6 @@ class OldXdgLocationWarningProblem(LibraryProblem):
             f"WARNING: Starting with version 0.65.0, libraries are now managed in your workspace directory. "
             f"This library is located in {old_libraries_path} and will not receive updates because it is not tracked "
             f"by the library manager. "
-            f"To migrate: run 'gtn init' (CLI) or go to App Settings and click 'Re-run Setup Wizard' (desktop app). "
+            f"To migrate: run 'gtn init'. "
             f"The library will continue to function normally until migrated."
         )
