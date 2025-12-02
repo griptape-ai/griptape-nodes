@@ -710,6 +710,7 @@ class DownloadLibraryRequest(RequestPayload):
         download_directory: Optional parent directory path for download (defaults to workspace/libraries)
         install_dependencies: If True, automatically install dependencies after downloading (default: True)
         overwrite_existing: If True, delete existing directory before cloning (default: False)
+        auto_register: If True, automatically register library after download (default: True)
 
     Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
     """
@@ -720,6 +721,7 @@ class DownloadLibraryRequest(RequestPayload):
     download_directory: str | None = None
     install_dependencies: bool = True
     overwrite_existing: bool = False
+    auto_register: bool = True
 
 
 @dataclass
