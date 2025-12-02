@@ -17,7 +17,11 @@ if TYPE_CHECKING:
 
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import (
+        LibraryFitness,
+        LibraryLifecycleState,
+    )
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
 @dataclass
@@ -588,6 +592,47 @@ class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
     fitness: LibraryFitness
     problems: list[LibraryProblem]
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryRequest(RequestPayload):
+    """Load a single library by name, progressing it through all lifecycle phases.
+
+    This request will:
+    1. Check if library is already loaded (in LibraryRegistry) → immediate success
+    2. Check if library is discovered (in LibraryInfo tracking)
+    3. If not found and perform_discovery_if_not_found=True, issue DiscoverLibrariesRequest and retry
+    4. Progress library through lifecycle phases: Discovered → Metadata Loaded → Evaluated → Dependencies Installed → Loaded
+    5. Return success once library is in LibraryRegistry, or failure with detailed error
+
+    Args:
+        library_name: Name of library to load (must match library JSON 'name' field)
+        perform_discovery_if_not_found: If True and library not found, trigger discovery first (default: False)
+
+    Results: LoadLibraryResultSuccess | LoadLibraryResultFailure
+    """
+
+    library_name: str
+    perform_discovery_if_not_found: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library loaded successfully."""
+
+    library_info: LibraryManager.LibraryInfo
+    was_already_loaded: bool = False  # True if library was already in registry
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library loading failed."""
+
+    failure_phase: LibraryLifecycleState  # Which lifecycle phase failed
+    library_info: LibraryManager.LibraryInfo | None = None  # May be None if discovery failed
 
 
 @dataclass

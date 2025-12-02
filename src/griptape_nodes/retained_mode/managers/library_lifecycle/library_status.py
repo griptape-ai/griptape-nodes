@@ -1,4 +1,4 @@
-"""Library lifecycle and fitness enumerations and data structures."""
+"""Library lifecycle and fitness enumerations."""
 
 from __future__ import annotations
 
