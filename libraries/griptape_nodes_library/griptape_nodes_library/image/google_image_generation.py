@@ -5,13 +5,12 @@ import io as _io
 import json as _json
 import logging
 import os
-
-import PIL.Image
 from time import time
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 import httpx
+import PIL.Image
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
@@ -125,7 +124,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 max_items=MAX_HUMAN_IMAGES,
             )
         )
-        
+
         # Strict image size validation
         self.add_parameter(
             Parameter(
@@ -249,9 +248,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         total_images = len(input_images) + len(object_images) + len(human_images)
         if total_images > MAX_INPUT_IMAGES:
             exceptions.append(
-                ValueError(
-                    f"{self.name} total input images cannot exceed {MAX_INPUT_IMAGES}, got {total_images}"
-                )
+                ValueError(f"{self.name} total input images cannot exceed {MAX_INPUT_IMAGES}, got {total_images}")
             )
 
         return exceptions if exceptions else None
@@ -550,9 +547,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
 
-    async def _process_input_image(
-        self, image_input: Any, *, strict: bool = False
-    ) -> tuple[str, str] | None:
+    async def _process_input_image(self, image_input: Any, *, strict: bool = False) -> tuple[str, str] | None:
         """Process input image and convert to base64 with mime type.
 
         Args:
@@ -578,9 +573,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return self._extract_mime_and_base64_from_data_uri(data_uri, strict=strict)
 
-    def _extract_mime_and_base64_from_data_uri(
-        self, data_uri: str, *, strict: bool = False
-    ) -> tuple[str, str] | None:  # noqa: PLR0911
+    def _extract_mime_and_base64_from_data_uri(self, data_uri: str, *, strict: bool = False) -> tuple[str, str] | None:
         """Extract mime type and base64 data from data URI.
 
         Args:
@@ -627,7 +620,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             return mime_part.split(":")[1].split(";")[0]
         except IndexError:
             return None
-        
+
     def _shrink_image(self, image_bytes: bytes) -> bytes:
         """Best-effort shrink using Pillow to ensure <= byte_limit.
 
@@ -664,9 +657,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             logger.warning(f"{self.name} downscale failed: {e}")
         return image_bytes
 
-    def _validate_image_size(
-        self, base64_data: str, mime_type: str, *, strict: bool = False
-    ) -> tuple[str, str] | None:
+    def _validate_image_size(self, base64_data: str, mime_type: str, *, strict: bool = False) -> tuple[str, str] | None:
         """Validate image size and optionally shrink if too large.
 
         Args:
