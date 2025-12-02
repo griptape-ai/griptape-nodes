@@ -271,7 +271,7 @@ class Agent(ControlNode):
         self,
         parameter: Parameter,
         value: Any,
-    ) -> None:
+    ) -> Any:
         if parameter.name == "model":
             if value == "gemini-2.5-flash-preview-05-20":
                 value = "gemini-2.5-flash"
@@ -279,8 +279,8 @@ class Agent(ControlNode):
             else:
                 self.hide_message_by_name("model_deprecation_notice")
 
-        # Call the parent implementation
-        super().before_value_set(
+        # Call the parent implementation and return the result
+        return super().before_value_set(
             parameter,
             value,
         )
