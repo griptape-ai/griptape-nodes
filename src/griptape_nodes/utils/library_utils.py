@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, NamedTuple
 
+from xdg_base_dirs import xdg_data_home
+
 from griptape_nodes.utils.file_utils import find_all_files_in_directory
 from griptape_nodes.utils.git_utils import (
     get_git_repository_root,
@@ -22,6 +24,14 @@ class LibraryVersionInfo(NamedTuple):
 
     library_version: str
     commit_sha: str
+
+
+# Mapping of old XDG library names to their git URLs
+LIBRARY_GIT_URLS = {
+    "griptape_nodes_library": "https://github.com/griptape-ai/griptape-nodes-library-standard@stable",
+    "griptape_nodes_advanced_media_library": "https://github.com/griptape-ai/griptape-nodes-library-advanced-media@stable",
+    "griptape_cloud": "https://github.com/griptape-ai/griptape-nodes-library-griptape-cloud@stable",
+}
 
 
 def is_monorepo(library_path: Path) -> bool:
@@ -62,3 +72,49 @@ def clone_and_get_library_version(remote_url: str) -> LibraryVersionInfo:
     """
     library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url)
     return LibraryVersionInfo(library_version=library_version, commit_sha=commit_sha)
+
+
+def filter_old_xdg_library_paths(library_paths: list[str]) -> tuple[list[str], set[str]]:
+    """Filter out old XDG library paths from a list of library paths.
+
+    Removes library paths that were stored in the deprecated XDG data home location
+    (~/.local/share/griptape_nodes/libraries/) for the following libraries:
+    - griptape_nodes_library
+    - griptape_nodes_advanced_media_library
+    - griptape_cloud
+
+    Args:
+        library_paths: List of library paths to filter.
+
+    Returns:
+        Tuple of (filtered_list, set of removed library names).
+    """
+    if not library_paths:
+        return library_paths, set()
+
+    # Build list of old XDG path prefixes to remove
+    xdg_libraries_base = xdg_data_home() / "griptape_nodes" / "libraries"
+    old_library_names = [
+        "griptape_nodes_library",
+        "griptape_nodes_advanced_media_library",
+        "griptape_cloud",
+    ]
+
+    old_path_prefixes = {lib_name: str(xdg_libraries_base / lib_name) for lib_name in old_library_names}
+
+    # Filter and track which libraries were removed
+    filtered_libraries = []
+    removed_library_names = set()
+
+    for library in library_paths:
+        is_old_path = False
+        for lib_name, prefix in old_path_prefixes.items():
+            if library.startswith(prefix):
+                is_old_path = True
+                removed_library_names.add(lib_name)
+                break
+
+        if not is_old_path:
+            filtered_libraries.append(library)
+
+    return filtered_libraries, removed_library_names

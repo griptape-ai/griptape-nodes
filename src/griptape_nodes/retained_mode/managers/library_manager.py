@@ -172,7 +172,12 @@ from griptape_nodes.utils.git_utils import (
     switch_branch_or_tag,
     update_library_git,
 )
-from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
+from griptape_nodes.utils.library_utils import (
+    LIBRARY_GIT_URLS,
+    clone_and_get_library_version,
+    filter_old_xdg_library_paths,
+    is_monorepo,
+)
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -1776,7 +1781,11 @@ class LibraryManager:
         )
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        # App just got init'd. First ensure all libraries from git URLs are downloaded and registered.
+        # Automatically migrate old XDG library paths from config
+        # TODO: Remove https://github.com/griptape-ai/griptape-nodes/issues/3348
+        self._migrate_old_xdg_library_paths()
+
+        # App just got init'd. First download any missing libraries from git URLs.
         await self._ensure_libraries_from_config()
 
         # Now load all libraries from config (including newly downloaded ones)
@@ -2271,6 +2280,88 @@ class LibraryManager:
                 library for library in libraries_to_register_category if library.lower() not in paths_to_remove
             ]
             config_mgr.set_config_value(config_category, libraries_to_register_category)
+
+    def _migrate_old_xdg_library_paths(self) -> None:
+        """Automatically removes old XDG library paths and adds git URLs to download list.
+
+        This method removes library paths that were stored in the old XDG data home location
+        (~/.local/share/griptape_nodes/libraries/) from the libraries_to_register configuration,
+        and automatically adds the corresponding git URLs to libraries_to_download to ensure
+        the libraries are re-downloaded. This migration happens automatically on app startup,
+        so users don't need to run gtn init.
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+
+        # Get both config lists
+        register_key = "app_events.on_app_initialization_complete.libraries_to_register"
+        download_key = "app_events.on_app_initialization_complete.libraries_to_download"
+
+        libraries_to_register = config_mgr.get_config_value(register_key)
+        libraries_to_download = config_mgr.get_config_value(download_key) or []
+
+        if not libraries_to_register:
+            return
+
+        # Filter and get which libraries were removed
+        filtered_libraries, removed_library_names = filter_old_xdg_library_paths(libraries_to_register)
+
+        # If any paths were removed
+        paths_removed = len(libraries_to_register) - len(filtered_libraries)
+        if paths_removed > 0:
+            # Update libraries_to_register
+            config_mgr.set_config_value(register_key, filtered_libraries)
+
+            # Add corresponding git URLs to libraries_to_download
+            updated_downloads = self._add_git_urls_for_removed_libraries(
+                libraries_to_download,
+                removed_library_names,
+            )
+
+            urls_added = len(updated_downloads) - len(libraries_to_download)
+            if urls_added > 0:
+                config_mgr.set_config_value(download_key, updated_downloads)
+
+            logger.info(
+                "Automatically migrated library configuration: removed %d old XDG path(s), added %d git URL(s) to download",
+                paths_removed,
+                urls_added,
+            )
+
+    def _add_git_urls_for_removed_libraries(
+        self,
+        current_downloads: list[str],
+        removed_library_names: set[str],
+    ) -> list[str]:
+        """Add git URLs for removed libraries if not already present.
+
+        Args:
+            current_downloads: Current list of git URLs in libraries_to_download
+            removed_library_names: Set of library names that were removed (e.g., "griptape_nodes_library")
+
+        Returns:
+            Updated list with new git URLs added (deduplicated)
+        """
+        if not removed_library_names:
+            return current_downloads
+
+        # Get current repository names for deduplication
+        current_repo_names = {extract_repo_name_from_url(url) for url in current_downloads}
+
+        new_downloads = current_downloads.copy()
+
+        for lib_name in removed_library_names:
+            if lib_name not in LIBRARY_GIT_URLS:
+                continue
+
+            git_url = LIBRARY_GIT_URLS[lib_name]
+            repo_name = extract_repo_name_from_url(git_url)
+
+            # Only add if not already present
+            if repo_name not in current_repo_names:
+                new_downloads.append(git_url)
+                current_repo_names.add(repo_name)
+
+        return new_downloads
 
     async def reload_libraries_request(self, request: ReloadAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
         # Start with a clean slate.

@@ -9,7 +9,6 @@ from rich.box import HEAVY_EDGE
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
-from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
@@ -24,6 +23,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.git_utils import extract_repo_name_from_url
+from griptape_nodes.utils.library_utils import filter_old_xdg_library_paths
 
 config_manager = GriptapeNodes.ConfigManager()
 secrets_manager = GriptapeNodes.SecretsManager()
@@ -530,16 +530,7 @@ def _build_libraries_list(
     new_register = current_register.copy()
 
     # Remove old XDG data home library paths from libraries_to_register
-    xdg_libraries_base = xdg_data_home() / "griptape_nodes" / "libraries"
-    old_library_names = [
-        "griptape_nodes_library",
-        "griptape_nodes_advanced_media_library",
-        "griptape_cloud",
-    ]
-
-    for lib_name in old_library_names:
-        old_path_prefix = str(xdg_libraries_base / lib_name)
-        new_register = [path for path in new_register if not path.startswith(old_path_prefix)]
+    new_register, _ = filter_old_xdg_library_paths(new_register)
 
     # Create a set of current download identifiers for fast lookup
     current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
