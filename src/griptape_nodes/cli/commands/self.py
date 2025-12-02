@@ -76,7 +76,6 @@ def _auto_update_self() -> None:
 
     current_version = result.current_version
     latest_version = result.latest_version
-    install_source = result.install_source
 
     # Handle "on" mode - auto-update without prompting
     if auto_update_mode == AutoUpdateMode.ON:
@@ -87,10 +86,9 @@ def _auto_update_self() -> None:
         return
 
     # Handle "prompt" mode - ask the user
-    if install_source == "git":
-        update_message = f"Your current engine version, {current_version} ({install_source}), doesn't match the latest release, {latest_version}. Update now?"
-    else:
-        update_message = f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+    update_message = (
+        f"Your current engine version, {current_version}, is behind the latest release, {latest_version}. Update now?"
+    )
 
     update = Confirm.ask(update_message, default=True)
 
