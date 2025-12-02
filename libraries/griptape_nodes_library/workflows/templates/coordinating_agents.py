@@ -3,9 +3,9 @@
 #
 # [tool.griptape-nodes]
 # name = "coordinating_agents"
-# schema_version = "0.11.0"
-# engine_version_created_with = "0.60.0"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.50.0"]]
+# schema_version = "0.13.0"
+# engine_version_created_with = "0.64.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.51.1"]]
 # node_types_used = [["Griptape Nodes Library", "Agent"], ["Griptape Nodes Library", "DisplayText"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"]]
 # description = "Multiple agents with different jobs."
 # image = "https://raw.githubusercontent.com/griptape-ai/griptape-nodes/refs/heads/main/libraries/griptape_nodes_library/workflows/templates/thumbnail_coordinating_agents.webp"

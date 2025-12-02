@@ -165,9 +165,10 @@ class Agent(ControlNode):
                     )
                 },
                 button_text="Dismiss",
-                ui_options={"hide": True},
+                hide=True,
             )
         )
+
         # Selection for the Griptape Cloud model.
         self.add_parameter(
             Parameter(
@@ -236,7 +237,6 @@ class Agent(ControlNode):
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide_property": True},
             )
         )
 
@@ -271,7 +271,7 @@ class Agent(ControlNode):
         self,
         parameter: Parameter,
         value: Any,
-    ) -> None:
+    ) -> Any:
         if parameter.name == "model":
             if value == "gemini-2.5-flash-preview-05-20":
                 value = "gemini-2.5-flash"
@@ -279,8 +279,8 @@ class Agent(ControlNode):
             else:
                 self.hide_message_by_name("model_deprecation_notice")
 
-        # Call the parent implementation
-        super().before_value_set(
+        # Call the parent implementation and return the result
+        return super().before_value_set(
             parameter,
             value,
         )

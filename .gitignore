@@ -196,3 +196,5 @@ profiles/
 .vscode/settings.json
 .vscode/griptape-nodes.code-workspace
 mcp_server_readme.md
+
+.workmux.yaml

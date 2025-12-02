@@ -3,9 +3,9 @@
 # 
 # [tool.griptape-nodes]
 # name = "fill_in_the_story"
-# schema_version = "0.11.0"
-# engine_version_created_with = "0.60.2"
-# node_libraries_referenced = [["Griptape Nodes Library", "0.50.0"]]
+# schema_version = "0.13.0"
+# engine_version_created_with = "0.64.1"
+# node_libraries_referenced = [["Griptape Nodes Library", "0.51.1"]]
 # node_types_used = [["Griptape Nodes Library", "Agent"], ["Griptape Nodes Library", "AudioDetails"], ["Griptape Nodes Library", "CombineAudio"], ["Griptape Nodes Library", "DisplayText"], ["Griptape Nodes Library", "ElevenLabsMusicGeneration"], ["Griptape Nodes Library", "ElevenLabsTextToSpeechGeneration"], ["Griptape Nodes Library", "EndFlow"], ["Griptape Nodes Library", "ExecutePython"], ["Griptape Nodes Library", "KeyValuePair"], ["Griptape Nodes Library", "ListToDictKeys"], ["Griptape Nodes Library", "Math"], ["Griptape Nodes Library", "MergeKeyValuePairs"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "Ruleset"], ["Griptape Nodes Library", "SeedreamImageGeneration"], ["Griptape Nodes Library", "SplitText"], ["Griptape Nodes Library", "StartFlow"], ["Griptape Nodes Library", "TextInput"], ["Griptape Nodes Library", "ToText"]]
 # is_griptape_provided = true
 # description = "Create vocal and music tracks with a fill-in-the-blank story workflow."

@@ -491,6 +491,44 @@ class BaseNodeElement:
 class UIOptionsMixin:
     """Mixin providing UI options update functionality for classes with ui_options."""
 
+    def _validate_ui_option_conflict(
+        self,
+        ui_options_dict: dict,
+        param_name: str,
+        param_value: Any,
+    ) -> None:
+        """Validate that explicit parameter doesn't conflict with ui_options dict.
+
+        Logs a warning if there's a conflict and the ui_options value will be used.
+
+        Args:
+            ui_options_dict: The ui_options dictionary to check
+            param_name: Name of the parameter (e.g., "hide", "markdown")
+            param_value: Value of the explicit parameter
+        """
+        if param_name not in ui_options_dict:
+            return
+
+        dict_value = ui_options_dict[param_name]
+
+        if param_value != dict_value:
+            # Get element name for better error messages
+            element_name = getattr(self, "name", None)
+            class_name = self.__class__.__name__
+
+            # Build element part
+            if element_name:
+                element_part = f"{class_name} '{element_name}'"
+            else:
+                element_part = class_name
+
+            msg = (
+                f"{element_part}: Conflicting values for '{param_name}'. "
+                f'Explicit parameter {param_name}={param_value!r} conflicts with ui_options["{param_name}"]={dict_value!r}. '
+                f"The value from ui_options will be used. Please contact the library author to fix this issue."
+            )
+            logger.warning(msg)
+
     def update_ui_options_key(self, key: str, value: Any) -> None:
         """Update a single UI option key."""
         ui_options = self.ui_options
@@ -566,8 +604,8 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         button_variant: ButtonVariantType = "outline",
         button_align: ButtonAlignType = "full-width",
         full_width: bool = False,
-        markdown: bool = False,
-        hide: bool = False,
+        markdown: bool | None = None,
+        hide: bool | None = None,
         ui_options: dict | None = None,
         traits: set[Trait.__class__ | Trait] | None = None,
         **kwargs,
@@ -587,9 +625,21 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         self._button_align = button_align
         self._full_width = full_width
         self._ui_options = ui_options or {}
-        if markdown:
-            self._ui_options["markdown"] = True
-        self._ui_options["hide"] = hide
+
+        # Validate that explicit parameters don't conflict with ui_options (only if not None)
+        if markdown is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="markdown", param_value=markdown
+            )
+        if hide is not None:
+            self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+
+        # Add common UI options if explicitly provided (not None) and NOT already in ui_options
+        # (ui_options always wins in case of conflict)
+        if markdown is not None and "markdown" not in self._ui_options:
+            self._ui_options["markdown"] = markdown
+        if hide is not None and "hide" not in self._ui_options:
+            self._ui_options["hide"] = hide
 
         # Handle traits if provided
         if traits:
@@ -1163,9 +1213,9 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         traits: set[Trait.__class__ | Trait] | None = None,  # We are going to make these children.
         ui_options: dict | None = None,
         *,
-        hide: bool = False,
-        hide_label: bool = False,
-        hide_property: bool = False,
+        hide: bool | None = None,
+        hide_label: bool | None = None,
+        hide_property: bool | None = None,
         allow_input: bool = True,
         allow_property: bool = True,
         allow_output: bool = True,
@@ -1243,12 +1293,25 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         else:
             self._ui_options = ui_options.copy()
 
-        # Add common UI options if they have truthy values
-        if hide:
+        # Validate that explicit parameters don't conflict with ui_options (only if not None)
+        if hide is not None:
+            self._validate_ui_option_conflict(ui_options_dict=self._ui_options, param_name="hide", param_value=hide)
+        if hide_label is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="hide_label", param_value=hide_label
+            )
+        if hide_property is not None:
+            self._validate_ui_option_conflict(
+                ui_options_dict=self._ui_options, param_name="hide_property", param_value=hide_property
+            )
+
+        # Add common UI options if explicitly provided (not None) and NOT already in ui_options
+        # (ui_options always wins in case of conflict)
+        if hide is not None and "hide" not in self._ui_options:
             self._ui_options["hide"] = hide
-        if hide_label:
+        if hide_label is not None and "hide_label" not in self._ui_options:
             self._ui_options["hide_label"] = hide_label
-        if hide_property:
+        if hide_property is not None and "hide_property" not in self._ui_options:
             self._ui_options["hide_property"] = hide_property
         if traits:
             for trait in traits:
@@ -1904,6 +1967,7 @@ class ParameterContainer(Parameter, ABC):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        hide: bool = False,
         settable: bool = True,
         user_defined: bool = False,
         element_id: str | None = None,
@@ -1924,6 +1988,7 @@ class ParameterContainer(Parameter, ABC):
             traits=traits,
             converters=converters,
             validators=validators,
+            hide=hide,
             settable=settable,
             user_defined=user_defined,
             element_id=element_id,
@@ -1972,6 +2037,7 @@ class ParameterList(ParameterContainer):
         converters: list[Callable[[Any], Any]] | None = None,
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
+        hide: bool = False,
         settable: bool = True,
         user_defined: bool = False,
         element_id: str | None = None,
@@ -2011,6 +2077,7 @@ class ParameterList(ParameterContainer):
             traits=traits,
             converters=converters,
             validators=validators,
+            hide=hide,
             settable=settable,
             user_defined=user_defined,
             element_id=element_id,

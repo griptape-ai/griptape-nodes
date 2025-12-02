@@ -22,6 +22,7 @@ from .modified_parameters_set_removed_problem import ModifiedParametersSetRemove
 from .node_class_not_base_node_problem import NodeClassNotBaseNodeProblem
 from .node_class_not_found_problem import NodeClassNotFoundProblem
 from .node_module_import_problem import NodeModuleImportProblem
+from .old_xdg_location_warning_problem import OldXdgLocationWarningProblem
 from .sandbox_directory_missing_problem import SandboxDirectoryMissingProblem
 from .ui_options_field_modified_incompatible_problem import UiOptionsFieldModifiedIncompatibleProblem
 from .ui_options_field_modified_warning_problem import UiOptionsFieldModifiedWarningProblem
@@ -51,6 +52,7 @@ __all__ = [
     "NodeClassNotBaseNodeProblem",
     "NodeClassNotFoundProblem",
     "NodeModuleImportProblem",
+    "OldXdgLocationWarningProblem",
     "SandboxDirectoryMissingProblem",
     "UiOptionsFieldModifiedIncompatibleProblem",
     "UiOptionsFieldModifiedWarningProblem",

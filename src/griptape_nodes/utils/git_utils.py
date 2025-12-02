@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,6 +12,13 @@ from typing import NamedTuple
 import pygit2
 
 from griptape_nodes.utils.file_utils import find_file_in_directory
+
+# Common SSH key paths to try when SSH agent doesn't have keys loaded
+_SSH_KEY_PATHS = [
+    Path.home() / ".ssh" / "id_ed25519",
+    Path.home() / ".ssh" / "id_rsa",
+    Path.home() / ".ssh" / "id_ecdsa",
+]
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -456,16 +462,16 @@ def has_uncommitted_changes(library_path: Path) -> bool:
         raise GitRepositoryError(msg)
 
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return bool(result.stdout.strip())
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            msg = f"Cannot check status: {library_path} is not a git repository"
+            raise GitRepositoryError(msg)
 
-    except subprocess.SubprocessError as e:
+        repo = pygit2.Repository(repo_path)
+        status = repo.status()
+        return len(status) > 0
+
+    except pygit2.GitError as e:
         msg = f"Failed to check git status at {library_path}: {e}"
         raise GitRepositoryError(msg) from e
 
@@ -540,46 +546,40 @@ def git_update_from_remote(library_path: Path, *, overwrite_existing: bool = Fal
         logger.warning("Discarding uncommitted changes at %s", library_path)
 
     try:
-        fetch_result = subprocess.run(
-            ["git", "fetch", "origin"],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if fetch_result.returncode != 0:
-            msg = f"Git fetch failed at {library_path}: {fetch_result.stderr}"
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            msg = f"Cannot update: {library_path} is not a git repository"
             raise GitPullError(msg)
 
+        repo = pygit2.Repository(repo_path)
+
+        # Get remote and fetch
+        remote = repo.remotes["origin"]
+        remote.fetch()
+
+        # Get upstream branch reference
         try:
-            repo_path = pygit2.discover_repository(str(library_path))
-            repo = pygit2.Repository(repo_path)
             upstream_name = repo.branches.get(repo.head.shorthand).upstream.branch_name
+            upstream_ref = repo.references.get(f"refs/remotes/{upstream_name}")
+            if upstream_ref is None:
+                msg = f"Failed to find upstream reference {upstream_name} at {library_path}"
+                raise GitPullError(msg)
+            upstream_oid = upstream_ref.target
         except (pygit2.GitError, AttributeError) as e:
             msg = f"Failed to determine upstream branch at {library_path}: {e}"
             raise GitPullError(msg) from e
 
-        reset_result = subprocess.run(  # noqa: S603
-            ["git", "reset", "--hard", upstream_name],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if reset_result.returncode != 0:
-            msg = f"Git reset --hard failed at {library_path}: {reset_result.stderr}"
-            raise GitPullError(msg)
+        # Hard reset to upstream
+        repo.reset(upstream_oid, pygit2.enums.ResetMode.HARD)
 
         logger.debug("Successfully updated library at %s to match remote %s", library_path, upstream_name)
 
-    except subprocess.SubprocessError as e:
-        msg = f"Subprocess error during update at {library_path}: {e}"
+    except pygit2.GitError as e:
+        msg = f"Git error during update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
 
-def update_to_moving_tag(library_path: Path, tag_name: str, *, overwrite_existing: bool = False) -> None:  # noqa: C901
+def update_to_moving_tag(library_path: Path, tag_name: str, *, overwrite_existing: bool = False) -> None:
     """Update library to the latest version of a moving tag.
 
     This function is designed for tags that are force-pushed to point to new commits
@@ -627,43 +627,25 @@ def update_to_moving_tag(library_path: Path, tag_name: str, *, overwrite_existin
 
         logger.warning("Discarding uncommitted changes at %s", library_path)
 
-    # Use subprocess to fetch tags and checkout
+    # Use pygit2 to fetch tags and checkout
     try:
         # Step 1: Fetch all tags, force update existing ones
-        fetch_result = subprocess.run(
-            ["git", "fetch", "--tags", "--force", "origin"],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if fetch_result.returncode != 0:
-            msg = f"Git fetch --tags --force failed at {library_path}: {fetch_result.stderr}"
-            raise GitPullError(msg)
+        remote = repo.remotes["origin"]
+        remote.fetch(refspecs=["+refs/tags/*:refs/tags/*"])
 
         # Step 2: Checkout the tag with force to discard local changes
-        checkout_args = ["git", "checkout"]
-        if overwrite_existing:
-            checkout_args.append("--force")
-        checkout_args.append(f"tags/{tag_name}")
-
-        checkout_result = subprocess.run(  # noqa: S603
-            checkout_args,
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if checkout_result.returncode != 0:
-            msg = f"Git checkout tags/{tag_name} failed at {library_path}: {checkout_result.stderr}"
+        tag_ref = f"refs/tags/{tag_name}"
+        if tag_ref not in repo.references:
+            msg = f"Tag {tag_name} not found at {library_path}"
             raise GitPullError(msg)
+
+        strategy = pygit2.enums.CheckoutStrategy.FORCE if overwrite_existing else pygit2.enums.CheckoutStrategy.SAFE
+        repo.checkout(tag_ref, strategy=strategy)
 
         logger.debug("Successfully updated library at %s to tag %s", library_path, tag_name)
 
-    except subprocess.SubprocessError as e:
-        msg = f"Subprocess error during tag update at {library_path}: {e}"
+    except pygit2.GitError as e:
+        msg = f"Git error during tag update at {library_path}: {e}"
         raise GitPullError(msg) from e
 
 
@@ -809,125 +791,82 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
         raise GitRepositoryError(msg)
 
     try:
-        # Use subprocess for fetching to get both branches and tags
-        fetch_result = subprocess.run(
-            ["git", "fetch", "--tags", "origin"],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if fetch_result.returncode != 0:
-            msg = f"Git fetch failed at {library_path}: {fetch_result.stderr}"
+        repo_path = pygit2.discover_repository(str(library_path))
+        if repo_path is None:
+            msg = f"Cannot switch ref: {library_path} is not a git repository"
             raise GitRefError(msg)
 
-        # Try to checkout the ref (works for both branches and tags)
-        checkout_result = subprocess.run(  # noqa: S603
-            ["git", "checkout", ref_name],  # noqa: S607
-            cwd=str(library_path),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        repo = pygit2.Repository(repo_path)
 
-        if checkout_result.returncode != 0:
-            msg = f"Git checkout {ref_name} failed at {library_path}: {checkout_result.stderr}"
+        # Fetch both branches and tags from remote
+        remote = repo.remotes["origin"]
+        remote.fetch(refspecs=["+refs/tags/*:refs/tags/*"])
+        remote.fetch()
+
+        # Try to checkout the ref (works for both branches and tags)
+        # First check if it's a tag
+        tag_ref = f"refs/tags/{ref_name}"
+        branch_ref = f"refs/remotes/origin/{ref_name}"
+
+        if tag_ref in repo.references:
+            repo.checkout(tag_ref)
+        elif branch_ref in repo.references:
+            # For remote branches, create/update local branch and checkout
+            repo.checkout(branch_ref)
+        elif ref_name in repo.branches:
+            # Local branch
+            repo.checkout(repo.branches[ref_name])
+        else:
+            msg = f"Ref {ref_name} not found at {library_path}"
             raise GitRefError(msg)
 
         logger.debug("Checked out %s at %s", ref_name, library_path)
 
-    except subprocess.SubprocessError as e:
-        msg = f"Subprocess error during ref switch at {library_path}: {e}"
+    except pygit2.GitError as e:
+        msg = f"Git error during ref switch at {library_path}: {e}"
         raise GitRefError(msg) from e
 
 
-def _is_ssh_url(url: str) -> bool:
-    """Check if a URL is an SSH URL format.
+def _get_ssh_callbacks() -> pygit2.RemoteCallbacks | None:
+    """Get SSH callbacks for pygit2 operations.
 
-    Args:
-        url: The URL to check.
-
-    Returns:
-        bool: True if the URL is SSH format, False otherwise.
-    """
-    return url.startswith(("git@", "ssh://"))
-
-
-def _convert_ssh_to_https(ssh_url: str) -> str:
-    """Convert SSH URL to HTTPS URL.
-
-    Args:
-        ssh_url: The SSH URL to convert.
+    Tries multiple SSH authentication methods:
+    1. SSH agent (KeypairFromAgent) - works if ssh-agent has keys loaded
+    2. SSH key files (Keypair) - reads keys directly from common paths
 
     Returns:
-        str: The HTTPS URL, or original URL if not SSH format.
-
-    Examples:
-        git@github.com:user/repo.git -> https://github.com/user/repo.git
-        ssh://git@github.com/user/repo.git -> https://github.com/user/repo.git
+        pygit2.RemoteCallbacks configured with SSH credentials, or None if no keys found.
     """
-    # Handle ssh:// format
-    if ssh_url.startswith("ssh://"):
-        return re.sub(r"^ssh://(?:git@)?([^/]+)/", r"https://\1/", ssh_url)
+    # First, try to find an SSH key file
+    for key_path in _SSH_KEY_PATHS:
+        if key_path.exists():
+            pub_key_path = key_path.with_suffix(key_path.suffix + ".pub")
+            if pub_key_path.exists():
+                logger.debug("Using SSH key from %s", key_path)
+                credentials = pygit2.Keypair("git", str(pub_key_path), str(key_path), "")
+                return pygit2.RemoteCallbacks(credentials=credentials)
 
-    # Handle git@ format
-    if ssh_url.startswith("git@"):
-        return re.sub(r"^git@([^:]+):", r"https://\1/", ssh_url)
-
-    # Not an SSH URL, return unchanged
-    return ssh_url
+    # Fall back to SSH agent (may work if user has ssh-agent configured)
+    logger.debug("No SSH key files found, falling back to SSH agent")
+    return pygit2.RemoteCallbacks(credentials=pygit2.KeypairFromAgent("git"))
 
 
-def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
-    """Clone a git repository to a target directory.
+def _is_git_available() -> bool:
+    """Check if git CLI is available on PATH.
 
-    Args:
-        git_url: The git repository URL to clone (HTTPS or SSH).
-        target_path: The target directory path to clone into.
-        branch_tag_commit: Optional branch, tag, or commit to checkout after cloning.
-
-    Raises:
-        GitCloneError: If cloning fails or target path already exists.
+    Returns:
+        bool: True if git CLI is available, False otherwise.
     """
-    if target_path.exists():
-        msg = f"Cannot clone: target path {target_path} already exists"
-        raise GitCloneError(msg)
-
-    # Convert SSH URLs to HTTPS for compatibility
-    original_url = git_url
-    if _is_ssh_url(git_url):
-        git_url = _convert_ssh_to_https(git_url)
-        logger.debug("Converted SSH URL to HTTPS: %s -> %s", original_url, git_url)
-
     try:
-        # Clone the repository
-        repo = pygit2.clone_repository(git_url, str(target_path))
-        if repo is None:
-            msg = f"Failed to clone repository from {git_url}"
-            raise GitCloneError(msg)
-
-        # Checkout specific branch/tag/commit if provided
-        if branch_tag_commit:
-            # Try to resolve as a branch first
-            try:
-                branch = repo.branches[branch_tag_commit]
-                repo.checkout(branch)
-                logger.debug("Checked out branch %s", branch_tag_commit)
-            except (pygit2.GitError, KeyError, IndexError):
-                # Try to resolve as a tag or commit
-                try:
-                    commit_obj = repo.revparse_single(branch_tag_commit)
-                    repo.checkout_tree(commit_obj)
-                    repo.set_head(commit_obj.id)
-                    logger.debug("Checked out %s", branch_tag_commit)
-                except pygit2.GitError as e:
-                    msg = f"Failed to checkout {branch_tag_commit}: {e}"
-                    raise GitCloneError(msg) from e
-
-    except pygit2.GitError as e:
-        msg = f"Git error while cloning {git_url} to {target_path}: {e}"
-        raise GitCloneError(msg) from e
+        subprocess.run(
+            ["git", "--version"],  # noqa: S607
+            capture_output=True,
+            check=True,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+    else:
+        return True
 
 
 def _run_git_command(args: list[str], cwd: str, error_msg: str) -> subprocess.CompletedProcess[str]:
@@ -956,6 +895,56 @@ def _run_git_command(args: list[str], cwd: str, error_msg: str) -> subprocess.Co
         raise GitCloneError(msg)
 
     return result
+
+
+def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
+    """Clone a git repository to a target directory.
+
+    Args:
+        git_url: The git repository URL to clone (HTTPS or SSH).
+        target_path: The target directory path to clone into.
+        branch_tag_commit: Optional branch, tag, or commit to checkout after cloning.
+
+    Raises:
+        GitCloneError: If cloning fails or target path already exists.
+    """
+    if target_path.exists():
+        msg = f"Cannot clone: target path {target_path} already exists"
+        raise GitCloneError(msg)
+
+    # Use SSH callbacks for SSH URLs
+    callbacks = None
+    if git_url.startswith(("git@", "ssh://")):
+        callbacks = _get_ssh_callbacks()
+
+    try:
+        # Clone the repository
+        repo = pygit2.clone_repository(git_url, str(target_path), callbacks=callbacks)
+        if repo is None:
+            msg = f"Failed to clone repository from {git_url}"
+            raise GitCloneError(msg)
+
+        # Checkout specific branch/tag/commit if provided
+        if branch_tag_commit:
+            # Try to resolve as a branch first
+            try:
+                branch = repo.branches[branch_tag_commit]
+                repo.checkout(branch)
+                logger.debug("Checked out branch %s", branch_tag_commit)
+            except (pygit2.GitError, KeyError, IndexError):
+                # Try to resolve as a tag or commit
+                try:
+                    commit_obj = repo.revparse_single(branch_tag_commit)
+                    repo.checkout_tree(commit_obj)
+                    repo.set_head(commit_obj.id)
+                    logger.debug("Checked out %s", branch_tag_commit)
+                except pygit2.GitError as e:
+                    msg = f"Failed to checkout {branch_tag_commit}: {e}"
+                    raise GitCloneError(msg) from e
+
+    except pygit2.GitError as e:
+        msg = f"Git error while cloning {git_url} to {target_path}: {e}"
+        raise GitCloneError(msg) from e
 
 
 def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
@@ -991,16 +980,15 @@ def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
     return library_data["metadata"]["library_version"]
 
 
-def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, dict]:
-    """Perform sparse checkout to fetch only library JSON file from a git repository.
+def _sparse_checkout_with_git_cli(remote_url: str, ref: str) -> tuple[str, str, dict]:
+    """Perform sparse checkout using git CLI to fetch only library JSON file.
 
-    This is optimized for checking library updates without downloading the entire repository.
-    Only fetches files matching the patterns **/griptape_nodes_library.json or
-    **/griptape-nodes-library.json with depth 1.
+    This is the most efficient method as it only downloads files matching the sparse
+    checkout patterns, not the entire repository.
 
     Args:
         remote_url: The git repository URL (HTTPS or SSH).
-        ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
+        ref: The git reference (branch, tag, or commit) to checkout.
 
     Returns:
         tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
@@ -1008,12 +996,6 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    # Convert SSH URLs to HTTPS for compatibility
-    original_url = remote_url
-    if _is_ssh_url(remote_url):
-        remote_url = _convert_ssh_to_https(remote_url)
-        logger.debug("Converted SSH URL to HTTPS: %s -> %s", original_url, remote_url)
-
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
@@ -1022,11 +1004,17 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
             _run_git_command(["git", "init"], temp_dir, "Git init failed")
 
             # Add remote
-            _run_git_command(["git", "remote", "add", "origin", remote_url], temp_dir, "Git remote add failed")
+            _run_git_command(
+                ["git", "remote", "add", "origin", remote_url],
+                temp_dir,
+                "Git remote add failed",
+            )
 
             # Enable sparse checkout
             _run_git_command(
-                ["git", "config", "core.sparseCheckout", "true"], temp_dir, "Git sparse checkout config failed"
+                ["git", "config", "core.sparseCheckout", "true"],
+                temp_dir,
+                "Git sparse checkout config failed",
             )
 
             # Configure sparse-checkout patterns
@@ -1043,7 +1031,11 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
             sparse_checkout_file.write_text("\n".join(patterns))
 
             # Fetch with depth 1 (shallow clone)
-            _run_git_command(["git", "fetch", "--depth=1", "origin", ref], temp_dir, f"Git fetch failed for {ref}")
+            _run_git_command(
+                ["git", "fetch", "--depth=1", "origin", ref],
+                temp_dir,
+                f"Git fetch failed for {ref}",
+            )
 
             # Checkout the ref
             _run_git_command(["git", "checkout", "FETCH_HEAD"], temp_dir, "Git checkout failed")
@@ -1058,7 +1050,11 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
             library_version = _extract_library_version_from_json(library_json_path, remote_url)
 
             # Get commit SHA
-            rev_parse_result = _run_git_command(["git", "rev-parse", "HEAD"], temp_dir, "Git rev-parse failed")
+            rev_parse_result = _run_git_command(
+                ["git", "rev-parse", "HEAD"],
+                temp_dir,
+                "Git rev-parse failed",
+            )
             commit_sha = rev_parse_result.stdout.strip()
 
             # Read the JSON data before temp directory is deleted
@@ -1072,5 +1068,96 @@ def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[st
         except subprocess.SubprocessError as e:
             msg = f"Subprocess error during sparse checkout from {remote_url}: {e}"
             raise GitCloneError(msg) from e
-        else:
-            return (library_version, commit_sha, library_data)
+
+        return (library_version, commit_sha, library_data)
+
+
+def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dict]:
+    """Perform shallow clone using pygit2 to fetch library JSON file.
+
+    This is a fallback method when git CLI is not available. It downloads all files
+    but with limited history (depth=1).
+
+    Args:
+        remote_url: The git repository URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit) to checkout.
+
+    Returns:
+        tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
+
+    Raises:
+        GitCloneError: If clone fails or library metadata is invalid.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        try:
+            # Use SSH callbacks for SSH URLs
+            callbacks = None
+            if remote_url.startswith(("git@", "ssh://")):
+                callbacks = _get_ssh_callbacks()
+
+            # Shallow clone with depth=1
+            checkout_branch = ref if ref != "HEAD" else None
+            repo = pygit2.clone_repository(
+                remote_url,
+                str(temp_path),
+                callbacks=callbacks,
+                depth=1,
+                checkout_branch=checkout_branch,
+            )
+
+            if repo is None:
+                msg = f"Failed to clone repository from {remote_url}"
+                raise GitCloneError(msg)
+
+            # Find the library JSON file
+            library_json_path = find_file_in_directory(temp_path, "griptape[-_]nodes[-_]library.json")
+            if library_json_path is None:
+                msg = f"No library JSON file found in clone from {remote_url}"
+                raise GitCloneError(msg)
+
+            # Extract version from JSON
+            library_version = _extract_library_version_from_json(library_json_path, remote_url)
+
+            # Get commit SHA
+            commit_sha = str(repo.head.target)
+
+            # Read the JSON data before temp directory is deleted
+            try:
+                with library_json_path.open() as f:
+                    library_data = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                msg = f"Failed to read library file from {remote_url}: {e}"
+                raise GitCloneError(msg) from e
+
+        except pygit2.GitError as e:
+            msg = f"Git error during clone from {remote_url}: {e}"
+            raise GitCloneError(msg) from e
+
+        return (library_version, commit_sha, library_data)
+
+
+def sparse_checkout_library_json(remote_url: str, ref: str = "HEAD") -> tuple[str, str, dict]:
+    """Fetch library JSON file from a git repository.
+
+    This function uses the most efficient method available:
+    - If git CLI is available: uses sparse checkout (only downloads needed files)
+    - Otherwise: falls back to pygit2 shallow clone (downloads all files with depth=1)
+
+    Args:
+        remote_url: The git repository URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit) to checkout. Defaults to HEAD.
+
+    Returns:
+        tuple[str, str, dict]: A tuple of (library_version, commit_sha, library_data).
+
+    Raises:
+        GitCloneError: If the operation fails or library metadata is invalid.
+    """
+    if _is_git_available():
+        logger.debug("Using git CLI for sparse checkout from %s", remote_url)
+        return _sparse_checkout_with_git_cli(remote_url, ref)
+
+    logger.debug("Git CLI not available, using pygit2 shallow clone from %s", remote_url)
+    return _shallow_clone_with_pygit2(remote_url, ref)
