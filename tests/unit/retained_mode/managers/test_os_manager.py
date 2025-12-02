@@ -341,6 +341,47 @@ class TestCreateFileRequest:
         assert isinstance(result, CreateFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
 
+    def test_create_file_path_normalization_new_file(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that returned path is normalized for newly created files."""
+        os_manager = griptape_nodes.OSManager()
+        # Use directory_path + name to test get_full_path() path construction
+        subdir = temp_dir / "subdir"
+        subdir.mkdir()
+        request = CreateFileRequest(
+            directory_path=str(subdir),
+            name="test.txt",
+            workspace_only=False,
+        )
+
+        result = os_manager.on_create_file_request(request)
+
+        assert isinstance(result, CreateFileResultSuccess)
+        # Verify file was created
+        assert (subdir / "test.txt").exists()
+        # Verify returned path uses platform-native separators
+        # On Windows, should use backslashes; on Unix, forward slashes
+        assert result.created_path == os_manager.normalize_path_for_platform(subdir / "test.txt")
+
+    def test_create_file_path_normalization_existing_file(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that returned path is normalized for existing files."""
+        os_manager = griptape_nodes.OSManager()
+        # Create file first
+        file_path = temp_dir / "existing.txt"
+        file_path.write_text("Existing")
+
+        # Use directory_path + name to test get_full_path() path construction
+        request = CreateFileRequest(
+            directory_path=str(temp_dir),
+            name="existing.txt",
+            workspace_only=False,
+        )
+
+        result = os_manager.on_create_file_request(request)
+
+        assert isinstance(result, CreateFileResultSuccess)
+        # Verify returned path uses platform-native separators
+        assert result.created_path == os_manager.normalize_path_for_platform(file_path)
+
 
 class TestRenameFileRequest:
     """Test RenameFileRequest with failure_reason support."""
