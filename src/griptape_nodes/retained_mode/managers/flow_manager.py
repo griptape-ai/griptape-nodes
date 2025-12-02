@@ -588,7 +588,7 @@ class FlowManager:
             and self._global_control_flow_machine.context.flow_name == flow.name
         ):
             result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=flow.name))
-            if not result.succeeded():
+            if result.failed():
                 details = f"Attempted to delete flow '{flow_name}'. Failed because running flow could not cancel."
                 return DeleteFlowResultFailure(result_details=details)
 
@@ -2514,7 +2514,7 @@ class FlowManager:
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
         )
         try:
-            if not result.succeeded():
+            if result.failed():
                 details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
             result = cast("ValidateFlowDependenciesResultSuccess", result)
@@ -2573,7 +2573,7 @@ class FlowManager:
             ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
         )
         try:
-            if not result.succeeded():
+            if result.failed():
                 details = f"Couldn't start flow with name {flow_name}. Flow Validation Failed"
                 return StartFlowFromNodeResultFailure(validation_exceptions=[], result_details=details)
             result = cast("ValidateFlowDependenciesResultSuccess", result)
