@@ -15,7 +15,6 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
-import aioshutil
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -121,6 +120,10 @@ from griptape_nodes.retained_mode.events.library_events import (
     UpdateLibraryResultSuccess,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
+from griptape_nodes.retained_mode.events.os_events import (
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+)
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
@@ -2761,15 +2764,14 @@ class LibraryManager:
                 )
             else:
                 # Delete existing directory before cloning
-                try:
-                    await aioshutil.rmtree(target_path, onexc=OSManager.remove_readonly)
-                    logger.info("Deleted existing directory at %s for overwrite", target_path)
-                except PermissionError as e:
-                    details = f"Cannot delete existing directory at {target_path}: permission denied - {e}"
+                delete_request = DeleteFileRequest(path=str(target_path), workspace_only=False)
+                delete_result = await GriptapeNodes.ahandle_request(delete_request)
+
+                if isinstance(delete_result, DeleteFileResultFailure):
+                    details = f"Cannot delete existing directory at {target_path}: {delete_result.result_details}"
                     return DownloadLibraryResultFailure(result_details=details)
-                except OSError as e:
-                    details = f"Cannot delete existing directory at {target_path}: I/O error - {e}"
-                    return DownloadLibraryResultFailure(result_details=details)
+
+                logger.info("Deleted existing directory at %s for overwrite", target_path)
 
         # Clone the repository (unless skipping because it already exists)
         if not skip_clone:
