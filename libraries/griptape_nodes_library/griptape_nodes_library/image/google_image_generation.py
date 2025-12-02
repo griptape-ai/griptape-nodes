@@ -22,6 +22,8 @@ logger = logging.getLogger("griptape_nodes")
 __all__ = ["GoogleImageGeneration"]
 
 # Maximum image counts for reference images
+MAX_INPUT_IMAGES = 14
+# Deprecated constants - kept for backwards compatibility
 MAX_OBJECT_IMAGES = 6
 MAX_HUMAN_IMAGES = 5
 
@@ -82,28 +84,41 @@ class GoogleImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Object images (optional, max 6)
+        # Input images (optional, max 14)
+        self.add_parameter(
+            ParameterList(
+                name="input_images",
+                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                default_value=[],
+                tooltip="Optional reference images for the generation",
+                allowed_modes={ParameterMode.INPUT},
+                ui_options={"display_name": "Input Images", "expander": True},
+                max_items=MAX_INPUT_IMAGES,
+            )
+        )
+
+        # Object images (deprecated, hidden - use input_images instead)
         self.add_parameter(
             ParameterList(
                 name="object_images",
                 input_types=["ImageUrlArtifact", "ImageArtifact"],
                 default_value=[],
-                tooltip="Optional reference images for high-fidelity objects",
+                tooltip="Deprecated: Use input_images instead",
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"display_name": "Object Images", "expander": True},
+                ui_options={"display_name": "Object Images", "expander": True, "hide": True},
                 max_items=MAX_OBJECT_IMAGES,
             )
         )
 
-        # Human images (optional, max 5)
+        # Human images (deprecated, hidden - use input_images instead)
         self.add_parameter(
             ParameterList(
                 name="human_images",
                 input_types=["ImageUrlArtifact", "ImageArtifact"],
                 default_value=[],
-                tooltip="Optional reference images for character consistency",
+                tooltip="Deprecated: Use input_images instead",
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"display_name": "Human Images", "expander": True},
+                ui_options={"display_name": "Human Images", "expander": True, "hide": True},
                 max_items=MAX_HUMAN_IMAGES,
             )
         )
@@ -139,7 +154,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             ParameterFloat(
                 name="temperature",
                 tooltip="Temperature for controlling generation randomness (0.0-2.0)",
-                default_value=0.7,
+                default_value=1.0,
                 slider=True,
                 min_val=0.0,
                 max_val=2.0,
@@ -210,21 +225,17 @@ class GoogleImageGeneration(SuccessFailureNode):
         if not prompt:
             exceptions.append(ValueError(f"{self.name} prompt must be provided"))
 
-        # Validate object_images count
+        # Get all image lists
+        input_images = self.get_parameter_list_value("input_images") or []
         object_images = self.get_parameter_list_value("object_images") or []
-        if len(object_images) > MAX_OBJECT_IMAGES:
-            exceptions.append(
-                ValueError(
-                    f"{self.name} object_images can have a maximum of {MAX_OBJECT_IMAGES} images, got {len(object_images)}"
-                )
-            )
-
-        # Validate human_images count
         human_images = self.get_parameter_list_value("human_images") or []
-        if len(human_images) > MAX_HUMAN_IMAGES:
+
+        # Validate combined image count does not exceed maximum
+        total_images = len(input_images) + len(object_images) + len(human_images)
+        if total_images > MAX_INPUT_IMAGES:
             exceptions.append(
                 ValueError(
-                    f"{self.name} human_images can have a maximum of {MAX_HUMAN_IMAGES} images, got {len(human_images)}"
+                    f"{self.name} total input images cannot exceed {MAX_INPUT_IMAGES}, got {total_images}"
                 )
             )
 
@@ -258,8 +269,12 @@ class GoogleImageGeneration(SuccessFailureNode):
         image_size = self.get_parameter_value("image_size")
         temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
+
+        # Get all image lists and combine them
+        input_images = self.get_parameter_list_value("input_images") or []
         object_images = self.get_parameter_list_value("object_images") or []
         human_images = self.get_parameter_list_value("human_images") or []
+        all_images = input_images + object_images + human_images
 
         # Build contents array with prompt and optional images
         parts = []
@@ -268,15 +283,8 @@ class GoogleImageGeneration(SuccessFailureNode):
         if prompt:
             parts.append({"text": prompt})
 
-        # Add object images
-        for img in object_images:
-            result = await self._process_input_image(img)
-            if result:
-                mime_type, image_data = result
-                parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
-
-        # Add human images
-        for img in human_images:
+        # Add all input images
+        for img in all_images:
             result = await self._process_input_image(img)
             if result:
                 mime_type, image_data = result
