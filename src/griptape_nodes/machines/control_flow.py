@@ -432,6 +432,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # Check if we're using an isolated DagBuilder (for subflows)
         flow_manager = GriptapeNodes.FlowManager()
+        node_manager = GriptapeNodes.NodeManager()
         is_isolated = dag_builder is not flow_manager.global_dag_builder
 
         if is_isolated:
@@ -467,8 +468,16 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
                 # Only add if not already added (proxy might already be in DAG)
+                data_node_graph = node.name
                 if node_to_add.name not in dag_builder.node_to_reference:
-                    dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
+                    # Figure out which graph the data node belongs to, if it belongs to a graph.
+                    for graph_start_node_name in dag_builder.graphs:
+                        graph_start_node = node_manager.get_node_by_name(graph_start_node_name)
+                        correct_graph = flow_manager.is_node_connected(graph_start_node, node)
+                        if correct_graph:
+                            data_node_graph = graph_start_node_name
+                            break
+                    dag_builder.add_node_with_dependencies(node_to_add, data_node_graph)
                 flow_manager.global_flow_queue.queue.remove(item)
 
         return start_nodes

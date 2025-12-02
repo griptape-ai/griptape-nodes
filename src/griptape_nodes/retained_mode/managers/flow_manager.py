@@ -3966,7 +3966,7 @@ class FlowManager:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-    def get_connections_on_node(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode] | None:  # noqa: ARG002
+    def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
         connections = self.get_connections()
         # get all of the connection ids
         connected_nodes = []
@@ -3993,7 +3993,7 @@ class FlowManager:
         # Return all connected nodes. No duplicates
         return connected_nodes
 
-    def get_all_connected_nodes(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
+    def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
         discovered = {}
         processed = {}
         queue = Queue()
@@ -4002,13 +4002,18 @@ class FlowManager:
         while not queue.empty():
             curr_node = queue.get()
             processed[curr_node] = True
-            next_nodes = self.get_connections_on_node(flow, curr_node)
+            next_nodes = self.get_connections_on_node(curr_node)
             if next_nodes:
                 for next_node in next_nodes:
                     if next_node not in discovered:
                         discovered[next_node] = True
                         queue.put(next_node)
         return list(processed.keys())
+
+
+    def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> bool:
+        nodes = self.get_all_connected_nodes(start_node)
+        return node in nodes
 
     def get_node_dependencies(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.
