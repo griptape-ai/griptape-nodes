@@ -58,6 +58,14 @@ class ResultDetails:
                 raise ValueError(err_msg)
             self.result_details = list(result_details)
 
+    def __str__(self) -> str:
+        """String representation of ResultDetails.
+
+        Returns:
+            str: Concatenated messages of all ResultDetail objects
+        """
+        return "\n".join(detail.message for detail in self.result_details)
+
 
 # The Payload class is a marker interface
 class Payload(ABC):  # noqa: B024
