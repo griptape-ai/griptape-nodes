@@ -1,4 +1,6 @@
-"""Library lifecycle and fitness enumerations."""
+"""Library lifecycle and fitness enumerations and data structures."""
+
+from __future__ import annotations
 
 from enum import StrEnum
 
@@ -8,7 +10,7 @@ class LibraryLifecycleState(StrEnum):
 
     FAILURE = "failure"
     DISCOVERED = "discovered"
-    INSPECTED = "inspected"
+    METADATA_LOADED = "metadata_loaded"
     EVALUATED = "evaluated"
     DEPENDENCIES_INSTALLED = "dependencies_installed"
     LOADED = "loaded"

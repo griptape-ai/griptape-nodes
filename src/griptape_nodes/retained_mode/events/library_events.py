@@ -550,33 +550,44 @@ class DiscoverLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailu
 
 @dataclass
 @PayloadRegistry.register
-class InspectLibraryContentsRequest(RequestPayload):
-    """Inspect a library's JSON schema and validate its contents.
+class EvaluateLibraryFitnessRequest(RequestPayload):
+    """Evaluate a library's fitness (compatibility with current engine).
 
-    Loads and validates the library JSON file, extracting node types,
-    features, and metadata. Does not load Python modules or dependencies.
+    Checks version compatibility and determines if the library can be loaded.
+    Does not actually load Python modules - just validates compatibility.
 
     Args:
-        library_path: Path to library JSON file to inspect (must be in discovered state)
+        schema: The loaded LibrarySchema from metadata loading
 
-    Results: InspectLibraryContentsResultSuccess | InspectLibraryContentsResultFailure
+    Results: EvaluateLibraryFitnessResultSuccess | EvaluateLibraryFitnessResultFailure
     """
 
-    library_path: Path
+    schema: LibrarySchema
 
 
 @dataclass
 @PayloadRegistry.register
-class InspectLibraryContentsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Library inspection successful."""
+class EvaluateLibraryFitnessResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library fitness evaluation successful.
 
-    library_metadata: LibraryMetadata
+    Returns fitness and any non-fatal problems (warnings).
+    Caller manages their own lifecycle state.
+    """
+
+    fitness: LibraryFitness
+    problems: list[LibraryProblem]
 
 
 @dataclass
 @PayloadRegistry.register
-class InspectLibraryContentsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Library inspection failed."""
+class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library fitness evaluation failed - library is not fit for this engine.
+
+    Returns fitness and problems for caller to update their LibraryInfo.
+    """
+
+    fitness: LibraryFitness
+    problems: list[LibraryProblem]
 
 
 @dataclass

@@ -63,6 +63,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     DownloadLibraryRequest,
     DownloadLibraryResultFailure,
     DownloadLibraryResultSuccess,
+    EvaluateLibraryFitnessRequest,
+    EvaluateLibraryFitnessResultFailure,
+    EvaluateLibraryFitnessResultSuccess,
     GetAllInfoForAllLibrariesRequest,
     GetAllInfoForAllLibrariesResultFailure,
     GetAllInfoForAllLibrariesResultSuccess,
@@ -75,9 +78,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     GetNodeMetadataFromLibraryRequest,
     GetNodeMetadataFromLibraryResultFailure,
     GetNodeMetadataFromLibraryResultSuccess,
-    InspectLibraryContentsRequest,
-    InspectLibraryContentsResultFailure,
-    InspectLibraryContentsResultSuccess,
     InspectLibraryRepoRequest,
     InspectLibraryRepoResultFailure,
     InspectLibraryRepoResultSuccess,
@@ -152,7 +152,10 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_directory i
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.local_file import (
     LibraryProvenanceLocalFile,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness, LibraryLifecycleState
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import (
+    LibraryFitness,
+    LibraryLifecycleState,
+)
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
@@ -217,25 +220,26 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
+@dataclass
+class LibraryInfo:
+    """Information about a library that was attempted to be loaded.
+
+    Tracks the lifecycle state (where we are in the loading process) and fitness (health/quality).
+    Includes the file path and any problems encountered during loading.
+    """
+
+    lifecycle_state: LibraryLifecycleState
+    fitness: LibraryFitness
+    library_path: str
+    library_name: str | None = None
+    library_version: str | None = None
+    problems: list[LibraryProblem] = field(default_factory=list)
+
+
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
     LIBRARY_CONFIG_GLOB_PATTERN = "griptape[_-]nodes[_-]library.json"
-
-    @dataclass
-    class LibraryInfo:
-        """Information about a library that was attempted to be loaded.
-
-        Tracks the lifecycle state (where we are in the loading process) and fitness (health/quality).
-        Includes the file path and any problems encountered during loading.
-        """
-
-        lifecycle_state: LibraryLifecycleState
-        fitness: LibraryFitness
-        library_path: str
-        library_name: str | None = None
-        library_version: str | None = None
-        problems: list[LibraryProblem] = field(default_factory=list)
 
     _library_file_path_to_info: dict[str, LibraryInfo]
 
@@ -530,7 +534,9 @@ class LibraryManager:
         result = GetLibraryMetadataResultSuccess(metadata=metadata, result_details=details)
         return result
 
-    def load_library_metadata_from_file_request(self, request: LoadLibraryMetadataFromFileRequest) -> ResultPayload:
+    def load_library_metadata_from_file_request(  # noqa: PLR0911
+        self, request: LoadLibraryMetadataFromFileRequest
+    ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure:
         """Load library metadata from a JSON file without loading the actual node modules.
 
         This method provides a lightweight way to get library schema information
@@ -605,6 +611,18 @@ class LibraryManager:
                 library_name=library_name,
                 status=LibraryFitness.UNUSABLE,
                 problems=[LibrarySchemaExceptionProblem(error_message=str(err))],
+                result_details=details,
+            )
+
+        # Make sure the version string is copacetic.
+        library_version = library_data.metadata.library_version
+        if library_version is None:
+            details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
+            return LoadLibraryMetadataFromFileResultFailure(
+                library_path=file_path,
+                library_name=library_data.name,
+                status=LibraryFitness.UNUSABLE,
+                problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
                 result_details=details,
             )
 
@@ -826,7 +844,7 @@ class LibraryManager:
 
         # Check if the file exists
         if not json_path.exists():
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+            self._library_file_path_to_info[file_path] = LibraryInfo(
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=None,
@@ -844,7 +862,7 @@ class LibraryManager:
             # Metadata loading failed, use the detailed error information from the failure result
             failure_result = cast("LoadLibraryMetadataFromFileResultFailure", metadata_result)
 
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+            self._library_file_path_to_info[file_path] = LibraryInfo(
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=failure_result.library_name,
@@ -855,19 +873,7 @@ class LibraryManager:
 
         # Get the validated library data
         library_data = metadata_result.library_schema
-
-        # Make sure the version string is copacetic.
         library_version = library_data.metadata.library_version
-        if library_version is None:
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryLifecycleState.FAILURE,
-                library_path=file_path,
-                library_name=library_data.name,
-                fitness=LibraryFitness.UNUSABLE,
-                problems=[InvalidVersionStringProblem(version_string=str(library_data.metadata.library_version))],
-            )
-            details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
-            return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
@@ -916,7 +922,7 @@ class LibraryManager:
                     base_dir=base_dir,
                 )
             except Exception as err:
-                self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                self._library_file_path_to_info[file_path] = LibraryInfo(
                     lifecycle_state=LibraryLifecycleState.FAILURE,
                     library_path=file_path,
                     library_name=library_data.name,
@@ -942,7 +948,7 @@ class LibraryManager:
 
         except KeyError as err:
             # Library already exists
-            self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+            self._library_file_path_to_info[file_path] = LibraryInfo(
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=file_path,
                 library_name=library_data.name,
@@ -1616,7 +1622,7 @@ class LibraryManager:
 
             # Record all failed libraries in our tracking immediately
             for failed_library in metadata_result.failed_libraries:
-                self._library_file_path_to_info[failed_library.library_path] = LibraryManager.LibraryInfo(
+                self._library_file_path_to_info[failed_library.library_path] = LibraryInfo(
                     lifecycle_state=LibraryLifecycleState.FAILURE,
                     library_path=failed_library.library_path,
                     library_name=failed_library.library_name,
@@ -2010,27 +2016,8 @@ class LibraryManager:
         library_file_path: str,
         library_version: str | None,
         problems: list[LibraryProblem],
-    ) -> LibraryManager.LibraryInfo:
+    ) -> LibraryInfo:
         any_nodes_loaded_successfully = False
-
-        # Check for version-based compatibility issues and add to problems
-        version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(library_data)
-        has_disqualifying_issues = False
-        for issue in version_issues:
-            problems.append(issue.problem)
-            if issue.severity == LibraryFitness.UNUSABLE:
-                has_disqualifying_issues = True
-
-        # Early exit if any version issues are disqualifying
-        if has_disqualifying_issues:
-            return LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryLifecycleState.FAILURE,
-                library_path=library_file_path,
-                library_name=library_data.name,
-                library_version=library_version,
-                fitness=LibraryFitness.UNUSABLE,
-                problems=problems,
-            )
 
         # Call the before_library_nodes_loaded callback if available
         advanced_library = library.get_advanced_library()
@@ -2114,7 +2101,7 @@ class LibraryManager:
             status = LibraryFitness.GOOD
 
         # Create a LibraryInfo object based on load successes and problem count.
-        return LibraryManager.LibraryInfo(
+        return LibraryInfo(
             lifecycle_state=LibraryLifecycleState.LOADED,
             library_path=library_file_path,
             library_name=library_data.name,
@@ -2208,7 +2195,7 @@ class LibraryManager:
 
         except KeyError as err:
             # Library already exists
-            self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
+            self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryInfo(
                 lifecycle_state=LibraryLifecycleState.FAILURE,
                 library_path=sandbox_library_dir_as_posix,
                 library_name=library_data.name,
@@ -2304,7 +2291,7 @@ class LibraryManager:
                 continue
 
             # Create minimal LibraryInfo entry in discovered state
-            self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+            self._library_file_path_to_info[file_path_str] = LibraryInfo(
                 lifecycle_state=LibraryLifecycleState.DISCOVERED,
                 fitness=LibraryFitness.NOT_EVALUATED,
                 library_path=file_path_str,
@@ -2318,45 +2305,40 @@ class LibraryManager:
             libraries_discovered=discovered_paths,
         )
 
-    def inspect_library_contents_request(self, request: InspectLibraryContentsRequest) -> ResultPayload:
-        """Inspect a library's JSON schema and validate its contents."""
-        library_path_str = str(request.library_path)
+    def evaluate_library_fitness_request(
+        self, request: EvaluateLibraryFitnessRequest
+    ) -> EvaluateLibraryFitnessResultSuccess | EvaluateLibraryFitnessResultFailure:
+        """Evaluate library fitness using version compatibility checks.
 
-        # Find library info by path
-        if library_path_str not in self._library_file_path_to_info:
-            return InspectLibraryContentsResultFailure(
-                result_details=f"Library at path '{library_path_str}' not found in discovered libraries"
+        Extracts version checking logic from _attempt_load_nodes_from_library.
+        Checks engine version compatibility without loading Python modules.
+        """
+        schema = request.schema
+        problems: list[LibraryProblem] = []
+
+        # Check for version-based compatibility issues
+        version_issues = GriptapeNodes.VersionCompatibilityManager().check_library_version_compatibility(schema)
+        has_disqualifying_issues = False
+
+        for issue in version_issues:
+            problems.append(issue.problem)
+            if issue.severity == LibraryFitness.UNUSABLE:
+                has_disqualifying_issues = True
+
+        if has_disqualifying_issues:
+            return EvaluateLibraryFitnessResultFailure(
+                result_details=f"Library '{schema.name}' has version compatibility issues",
+                fitness=LibraryFitness.UNUSABLE,
+                problems=problems,
             )
 
-        library_info = self._library_file_path_to_info[library_path_str]
+        # Determine fitness based on whether we have any non-disqualifying issues
+        fitness = LibraryFitness.FLAWED if problems else LibraryFitness.GOOD
 
-        if library_info.lifecycle_state != LibraryLifecycleState.DISCOVERED:
-            return InspectLibraryContentsResultFailure(
-                result_details=f"Library at '{library_path_str}' is in state '{library_info.lifecycle_state}', expected DISCOVERED"
-            )
-
-        # Load metadata using existing method
-        metadata_request = LoadLibraryMetadataFromFileRequest(file_path=library_path_str)
-        metadata_result = self.load_library_metadata_from_file_request(metadata_request)
-
-        if not isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
-            # Update library info to FAILURE state
-            library_info.lifecycle_state = LibraryLifecycleState.FAILURE
-            library_info.fitness = LibraryFitness.UNUSABLE
-            return InspectLibraryContentsResultFailure(
-                result_details=f"Failed to inspect library at '{library_path_str}': {metadata_result.result_details}"
-            )
-
-        # Update library info with inspection results
-        library_schema = metadata_result.library_schema
-        library_info.lifecycle_state = LibraryLifecycleState.INSPECTED
-        library_info.library_name = library_schema.name
-        library_info.library_version = library_schema.metadata.library_version
-
-        # Success path at the end
-        return InspectLibraryContentsResultSuccess(
-            result_details=ResultDetails(message=f"Successfully inspected library '{library_schema.name}'"),
-            library_metadata=library_schema.metadata,
+        return EvaluateLibraryFitnessResultSuccess(
+            result_details=ResultDetails(message=f"Library '{schema.name}' is compatible"),
+            fitness=fitness,
+            problems=problems,
         )
 
     async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002
