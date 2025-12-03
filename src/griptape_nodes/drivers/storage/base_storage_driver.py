@@ -28,11 +28,12 @@ class BaseStorageDriver(ABC):
         self.workspace_directory = workspace_directory
 
     @abstractmethod
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+    def create_signed_upload_url(self, path: Path, *, force_localhost: bool = False) -> CreateSignedUploadUrlResponse:
         """Create a signed upload URL for the given path.
 
         Args:
             path: The path of the file to create a signed URL for.
+            force_localhost: If True, force the upload to use localhost regardless of configured URL.
 
         Returns:
             CreateSignedUploadUrlResponse: A dictionary containing the signed URL, headers, and operation type.

@@ -37,8 +37,14 @@ class LocalStorageDriver(BaseStorageDriver):
         self.upload_base_url = upload_base_url
         self.download_base_url = download_base_url
 
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
-        static_url = urljoin(self.upload_base_url, "/static-upload-urls")
+    def create_signed_upload_url(self, path: Path, *, force_localhost: bool = False) -> CreateSignedUploadUrlResponse:
+        if force_localhost:
+            from griptape_nodes.servers.static import STATIC_SERVER_HOST, STATIC_SERVER_PORT, STATIC_SERVER_URL
+
+            localhost_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}"
+            static_url = urljoin(localhost_url, "/static-upload-urls")
+        else:
+            static_url = urljoin(self.upload_base_url, "/static-upload-urls")
         try:
             response = httpx.post(static_url, json={"file_path": str(path)})
             response.raise_for_status()

@@ -38,7 +38,9 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         self.bucket_id = bucket_id
 
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+    def create_signed_upload_url(self, path: Path, *, force_localhost: bool = False) -> CreateSignedUploadUrlResponse:
+        # force_localhost is not applicable for cloud storage, but kept for interface compatibility
+        _ = force_localhost
         self._create_asset(path.as_posix())
 
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")

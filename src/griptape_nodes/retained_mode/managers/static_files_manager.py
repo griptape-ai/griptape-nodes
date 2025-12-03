@@ -204,7 +204,7 @@ class StaticFilesManager:
         resolved_directory = self._get_static_files_directory()
         file_path = Path(resolved_directory) / file_name
 
-        response = self.storage_driver.create_signed_upload_url(file_path)
+        response = self.storage_driver.create_signed_upload_url(file_path, force_localhost=True)
 
         try:
             response = httpx.request(
