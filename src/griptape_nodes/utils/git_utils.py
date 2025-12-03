@@ -276,7 +276,7 @@ def get_current_ref(library_path: Path) -> str | None:
         library_path: The path to the library directory.
 
     Returns:
-        str | None: The current git reference if found, None if not a git repository or detached HEAD.
+        str | None: The current git reference (branch name, tag name, or commit SHA) if found, None if not a git repository.
 
     Raises:
         GitRefError: If an error occurs while getting the current git reference.
@@ -301,8 +301,10 @@ def get_current_ref(library_path: Path) -> str | None:
                 logger.debug("Repository at %s has detached HEAD on tag %s", library_path, tag_name)
                 return tag_name
 
-            logger.debug("Repository at %s has detached HEAD (not on a tag)", library_path)
-            return None
+            # No tag found, return the commit SHA as fallback
+            head_commit = repo.head.target
+            logger.debug("Repository at %s has detached HEAD at commit %s", library_path, head_commit)
+            return str(head_commit)
 
     except pygit2.GitError as e:
         msg = f"Error getting current git reference for {library_path}: {e}"
@@ -811,8 +813,28 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
         if tag_ref in repo.references:
             repo.checkout(tag_ref)
         elif branch_ref in repo.references:
-            # For remote branches, create/update local branch and checkout
-            repo.checkout(branch_ref)
+            # For remote branches, create/update local tracking branch and checkout
+            remote_branch_name = f"origin/{ref_name}"
+            remote_branch = repo.branches.get(remote_branch_name)
+
+            if remote_branch is None:
+                msg = f"Remote branch {remote_branch_name} not found at {library_path}"
+                raise GitRefError(msg)
+
+            commit = repo.get(remote_branch.target)
+            if commit is None:
+                msg = f"Failed to get commit for remote branch {remote_branch_name} at {library_path}"
+                raise GitRefError(msg)
+
+            # Create or update local branch
+            if ref_name in repo.branches.local:
+                local_branch = repo.branches.local[ref_name]
+                local_branch.set_target(commit.id)
+            else:
+                local_branch = repo.branches.local.create(ref_name, commit)  # type: ignore[arg-type]
+
+            local_branch.upstream = remote_branch
+            repo.checkout(local_branch)
         elif ref_name in repo.branches:
             # Local branch
             repo.checkout(repo.branches[ref_name])
@@ -897,6 +919,61 @@ def _run_git_command(args: list[str], cwd: str, error_msg: str) -> subprocess.Co
     return result
 
 
+def _checkout_branch_tag_or_commit(repo: pygit2.Repository, ref: str) -> None:
+    """Check out a branch, tag, or commit in a repository.
+
+    For branches, creates a local tracking branch from the remote.
+    For tags and commits, checks out in detached HEAD state.
+
+    Args:
+        repo: The pygit2 Repository object.
+        ref: The branch, tag, or commit reference to checkout.
+
+    Raises:
+        GitCloneError: If checkout fails.
+    """
+    # Try to resolve as a local branch first
+    try:
+        branch = repo.branches[ref]
+        repo.checkout(branch)
+    except (pygit2.GitError, KeyError, IndexError):
+        pass
+    else:
+        logger.debug("Checked out local branch %s", ref)
+        return
+
+    # Try to resolve as a remote branch and create local tracking branch
+    remote_ref = f"refs/remotes/origin/{ref}"
+    remote_branch_exists = remote_ref in repo.references
+
+    if remote_branch_exists:
+        remote_branch_name = f"origin/{ref}"
+        remote_branch = repo.branches.get(remote_branch_name)
+
+        if remote_branch is not None:
+            commit = repo.get(remote_branch.target)
+            if commit is None:
+                msg = f"Failed to get commit for remote branch {remote_branch_name}"
+                raise GitCloneError(msg)
+
+            # Create local tracking branch
+            local_branch = repo.branches.local.create(ref, commit)  # type: ignore[arg-type]
+            local_branch.upstream = remote_branch
+            repo.checkout(local_branch)
+            logger.debug("Checked out remote branch %s as local tracking branch", ref)
+            return
+
+    # Not a local or remote branch, try as tag or commit
+    try:
+        commit_obj = repo.revparse_single(ref)
+        repo.checkout_tree(commit_obj)
+        repo.set_head(commit_obj.id)
+        logger.debug("Checked out %s as tag or commit", ref)
+    except pygit2.GitError as e:
+        msg = f"Failed to checkout {ref}: {e}"
+        raise GitCloneError(msg) from e
+
+
 def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | None = None) -> None:
     """Clone a git repository to a target directory.
 
@@ -926,21 +1003,7 @@ def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | N
 
         # Checkout specific branch/tag/commit if provided
         if branch_tag_commit:
-            # Try to resolve as a branch first
-            try:
-                branch = repo.branches[branch_tag_commit]
-                repo.checkout(branch)
-                logger.debug("Checked out branch %s", branch_tag_commit)
-            except (pygit2.GitError, KeyError, IndexError):
-                # Try to resolve as a tag or commit
-                try:
-                    commit_obj = repo.revparse_single(branch_tag_commit)
-                    repo.checkout_tree(commit_obj)
-                    repo.set_head(commit_obj.id)
-                    logger.debug("Checked out %s", branch_tag_commit)
-                except pygit2.GitError as e:
-                    msg = f"Failed to checkout {branch_tag_commit}: {e}"
-                    raise GitCloneError(msg) from e
+            _checkout_branch_tag_or_commit(repo, branch_tag_commit)
 
     except pygit2.GitError as e:
         msg = f"Git error while cloning {git_url} to {target_path}: {e}"
