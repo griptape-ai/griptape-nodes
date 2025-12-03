@@ -4,7 +4,7 @@ from griptape.artifacts import ImageUrlArtifact
 from PIL import UnidentifiedImageError
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.color_picker import ColorPicker
@@ -333,7 +333,12 @@ class DisplayImageGrid(ControlNode):
         canvas.paste(grid_image, (x_offset, y_offset), grid_image if grid_image.mode == "RGBA" else None)
         return canvas
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[None]:
+        """Non-blocking entry point for Griptape engine."""
+        yield lambda: self._process_sync()
+
+    def _process_sync(self) -> None:
+        """Synchronous processing of the image grid."""
         try:
             # Get parameters
             images = self.get_parameter_value("images")
