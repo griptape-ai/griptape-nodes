@@ -94,9 +94,13 @@ class EventLogHandler(logging.Handler):
 # Logger for this module. Important that this is not the same as the griptape_nodes logger or else we'll have infinite log events.
 logger = logging.getLogger("griptape_nodes_app")
 
+# Get configured log level from config
+log_level_str = config_manager.get_config_value("log_level").upper()
+log_level = logging.getLevelNamesMapping()[log_level_str]
+
 griptape_nodes_logger = logging.getLogger("griptape_nodes")
 griptape_nodes_logger.addHandler(EventLogHandler())
-griptape_nodes_logger.setLevel(logging.INFO)
+griptape_nodes_logger.setLevel(log_level)
 
 # Root logger only gets RichHandler for console output
 logging.basicConfig(
