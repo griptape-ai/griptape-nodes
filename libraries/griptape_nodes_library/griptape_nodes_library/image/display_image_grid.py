@@ -221,6 +221,97 @@ class DisplayImageGrid(ControlNode):
             exceptions.append(ValueError(msg))
         return exceptions
 
+    def _get_output_dimensions(
+        self, output_image_size: str, output_preset: str, output_image_width_param: int
+    ) -> tuple[int, int | None, bool]:
+        """Determine output dimensions based on size mode.
+
+        Returns:
+            tuple: (output_image_width, output_image_height, use_preset_dimensions)
+        """
+        if output_image_size == "preset":
+            preset_dimensions = {
+                "4K": (3840, 2160),
+                "1440p": (2560, 1440),
+                "1080p": (1920, 1080),
+                "720p": (1280, 720),
+            }
+            output_image_width, output_image_height = preset_dimensions.get(output_preset, (1920, 1080))
+            return output_image_width, output_image_height, True
+        # custom
+        return output_image_width_param, None, False
+
+    def _create_placeholder(
+        self, background_color: str, *, transparent_bg: bool, output_format: str
+    ) -> ImageUrlArtifact:
+        """Create and save a placeholder image when no images are provided."""
+        placeholder_image = create_placeholder_image(
+            DEFAULT_PLACEHOLDER_WIDTH,
+            DEFAULT_PLACEHOLDER_HEIGHT,
+            background_color,
+            transparent_bg=transparent_bg,
+        )
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_placeholder",
+            extension=output_format,
+        )
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            image_to_bytes(placeholder_image, output_format),
+            filename,
+        )
+        return ImageUrlArtifact(value=static_url)
+
+    def _apply_preset_canvas(
+        self,
+        grid_image: Any,
+        output_image_width: int,
+        output_image_height: int,
+        background_color: str,
+        grid_justification: str,
+        *,
+        transparent_bg: bool,
+    ) -> Any:
+        """Apply preset dimensions by scaling grid and placing on exact-sized canvas."""
+        from PIL import Image
+
+        # Get actual grid dimensions
+        grid_width = grid_image.width
+        grid_height = grid_image.height
+
+        # Calculate scaling factor to fit within preset dimensions
+        width_ratio = output_image_width / grid_width
+        height_ratio = output_image_height / grid_height
+        scale_factor = min(width_ratio, height_ratio, 1.0)  # Don't upscale, only downscale
+
+        # Resize grid if needed
+        if scale_factor < 1.0:
+            new_width = int(grid_width * scale_factor)
+            new_height = int(grid_height * scale_factor)
+            grid_image = grid_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            grid_width = new_width
+            grid_height = new_height
+
+        # Create canvas with exact preset dimensions
+        canvas = create_background_image(
+            output_image_width, output_image_height, background_color, transparent_bg=transparent_bg
+        )
+
+        # Calculate position based on justification (horizontal) and center vertically
+        y_offset = (output_image_height - grid_height) // 2
+
+        # Apply justification for horizontal positioning
+        if grid_justification == "center":
+            x_offset = (output_image_width - grid_width) // 2
+        elif grid_justification == "right":
+            x_offset = output_image_width - grid_width
+        else:  # left
+            x_offset = 0
+
+        # Paste grid onto canvas
+        canvas.paste(grid_image, (x_offset, y_offset), grid_image if grid_image.mode == "RGBA" else None)
+        return canvas
+
     def process(self) -> None:
         try:
             # Get parameters
@@ -238,41 +329,16 @@ class DisplayImageGrid(ControlNode):
             transparent_bg = self.get_parameter_value("transparent_bg")
             grid_justification = self.get_parameter_value("grid_justification")
 
-            # Determine actual output width based on mode
-            if output_image_size == "preset":
-                preset_dimensions = {
-                    "4K": (3840, 2160),
-                    "1440p": (2560, 1440),
-                    "1080p": (1920, 1080),
-                    "720p": (1280, 720),
-                }
-                output_image_width, output_image_height = preset_dimensions.get(output_preset, (1920, 1080))
-                use_preset_dimensions = True
-            else:  # custom
-                output_image_width = output_image_width_param
-                output_image_height = None  # Not used in custom mode
-                use_preset_dimensions = False
+            # Determine actual output dimensions
+            output_image_width, output_image_height, use_preset_dimensions = self._get_output_dimensions(
+                output_image_size, output_preset, output_image_width_param
+            )
 
-            # Validate inputs
+            # Handle empty images
             if not images:
-                # Create a placeholder image
-                placeholder_image = create_placeholder_image(
-                    DEFAULT_PLACEHOLDER_WIDTH,
-                    DEFAULT_PLACEHOLDER_HEIGHT,
-                    background_color,
-                    transparent_bg=transparent_bg,
+                url_artifact = self._create_placeholder(
+                    background_color, transparent_bg=transparent_bg, output_format=output_format
                 )
-                # Save and create URL for placeholder
-                filename = generate_filename(
-                    node_name=self.name,
-                    suffix="_placeholder",
-                    extension=output_format,
-                )
-                static_url = GriptapeNodes.StaticFilesManager().save_static_file(
-                    image_to_bytes(placeholder_image, output_format),
-                    filename,
-                )
-                url_artifact = ImageUrlArtifact(value=static_url)
                 self.publish_update_to_parameter("output", url_artifact)
                 return
 
@@ -300,46 +366,16 @@ class DisplayImageGrid(ControlNode):
                     justification=grid_justification,
                 )
 
-            # If preset mode, create canvas with exact dimensions and fit the grid
+            # Apply preset canvas if needed
             if use_preset_dimensions and output_image_height is not None:
-                from PIL import Image
-
-                # Get actual grid dimensions
-                grid_width = grid_image.width
-                grid_height = grid_image.height
-
-                # Calculate scaling factor to fit within preset dimensions
-                width_ratio = output_image_width / grid_width
-                height_ratio = output_image_height / grid_height
-                scale_factor = min(width_ratio, height_ratio, 1.0)  # Don't upscale, only downscale
-
-                # Resize grid if needed
-                if scale_factor < 1.0:
-                    new_width = int(grid_width * scale_factor)
-                    new_height = int(grid_height * scale_factor)
-                    grid_image = grid_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    grid_width = new_width
-                    grid_height = new_height
-
-                # Create canvas with exact preset dimensions
-                canvas = create_background_image(
-                    output_image_width, output_image_height, background_color, transparent_bg=transparent_bg
+                grid_image = self._apply_preset_canvas(
+                    grid_image,
+                    output_image_width,
+                    output_image_height,
+                    background_color,
+                    grid_justification,
+                    transparent_bg=transparent_bg,
                 )
-
-                # Calculate position based on justification (horizontal) and center vertically
-                y_offset = (output_image_height - grid_height) // 2
-
-                # Apply justification for horizontal positioning
-                if grid_justification == "center":
-                    x_offset = (output_image_width - grid_width) // 2
-                elif grid_justification == "right":
-                    x_offset = output_image_width - grid_width
-                else:  # left
-                    x_offset = 0
-
-                # Paste grid onto canvas
-                canvas.paste(grid_image, (x_offset, y_offset), grid_image if grid_image.mode == "RGBA" else None)
-                grid_image = canvas
 
             # Save the grid image and create URL
             filename = generate_filename(
