@@ -5,11 +5,14 @@ import pytest
 
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
+    InstallLibraryDependenciesResultFailure,
+    InstallLibraryDependenciesResultSuccess,
     LoadLibrariesRequest,
     LoadLibrariesResultFailure,
     LoadLibrariesResultSuccess,
     LoadLibraryMetadataFromFileResultSuccess,
     RegisterLibraryFromFileRequest,
+    RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -443,6 +446,7 @@ class TestLibraryManagerRegisterLibraryFromFile:
             # Mock that venv already exists (old code would skip installation)
             patch.object(library_manager, "_get_library_venv_path") as mock_venv,
             patch.object(library_manager, "install_library_dependencies_request") as mock_install,
+            patch("griptape_nodes.retained_mode.managers.library_manager.logger") as mock_logger,
         ):
             mock_path.return_value.exists.return_value = True
             mock_load.return_value = LoadLibraryMetadataFromFileResultSuccess(
@@ -453,6 +457,10 @@ class TestLibraryManagerRegisterLibraryFromFile:
                 result_details=ResultDetails(message="Success", level=20),
             )
             mock_venv.return_value.exists.return_value = True
+            # Mock successful dependency installation
+            mock_install.return_value = InstallLibraryDependenciesResultSuccess(
+                library_name="test_lib", dependencies_installed=2, result_details=ResultDetails(message="OK", level=20)
+            )
 
             await library_manager.register_library_from_file_request(
                 RegisterLibraryFromFileRequest(file_path="/mock.json")
@@ -460,3 +468,45 @@ class TestLibraryManagerRegisterLibraryFromFile:
 
             # Verify dependencies were installed despite existing venv
             mock_install.assert_called_once()
+            # Verify logger.info was called with dependency count
+            mock_logger.info.assert_called_with("Installed %d dependencies for library '%s'", 2, "test_lib")
+
+    @pytest.mark.asyncio
+    async def test_dependency_installation_failure_returns_failure(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that dependency installation failure returns RegisterLibraryFromFileResultFailure."""
+        mgr = griptape_nodes.LibraryManager()
+        schema = MagicMock()
+        schema.name = "lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = ["req"]
+        schema.advanced_library_path = None
+
+        with (
+            patch(
+                "griptape_nodes.retained_mode.managers.library_manager.Path",
+                return_value=MagicMock(exists=lambda: True),
+            ),
+            patch.object(
+                mgr,
+                "load_library_metadata_from_file_request",
+                return_value=LoadLibraryMetadataFromFileResultSuccess(
+                    library_schema=schema,
+                    file_path="/f",
+                    git_remote=None,
+                    git_ref=None,
+                    result_details=ResultDetails(message="OK", level=20),
+                ),
+            ),
+            patch.object(mgr, "_get_library_venv_path", return_value=MagicMock(exists=lambda: True)),
+            # Mock failed dependency installation
+            patch.object(
+                mgr,
+                "install_library_dependencies_request",
+                return_value=InstallLibraryDependenciesResultFailure(result_details="Install failed"),
+            ),
+        ):
+            result = await mgr.register_library_from_file_request(RegisterLibraryFromFileRequest("/f"))
+
+            # Verify failure result with expected error message
+            assert isinstance(result, RegisterLibraryFromFileResultFailure)
+            assert "Failed to install dependencies for library 'lib'" in str(result.result_details)
