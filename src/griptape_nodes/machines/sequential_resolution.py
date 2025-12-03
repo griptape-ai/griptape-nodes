@@ -308,7 +308,7 @@ class ExecuteNodeState(State):
                 return CompleteState
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
-                msg = f"Canceling flow run. Node '{current_node.name}' encountered a problem: {e}"
+                msg = f"Node '{current_node.name}' encountered a problem: {e}"
                 # Mark the node as unresolved, broadcasting to everyone.
                 current_node.make_node_unresolved(
                     current_states_to_trigger_change_event=set(
@@ -318,7 +318,10 @@ class ExecuteNodeState(State):
 
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-                await GriptapeNodes.FlowManager().cancel_flow_run()
+                # Do NOT call cancel_flow_run() here - that cancels the global main flow!
+                # When executing in a subflow (e.g., for-each loop iteration), we want to
+                # terminate only the current subflow, not the entire main workflow.
+                # The exception will propagate up to the caller, which will handle it appropriately.
 
                 GriptapeNodes.EventManager().put_event(
                     ExecutionGriptapeNodeEvent(
