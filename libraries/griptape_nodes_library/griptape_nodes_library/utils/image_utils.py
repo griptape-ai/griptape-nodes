@@ -447,7 +447,7 @@ def load_images_from_list(images: list) -> list[Image.Image]:
     return pil_images
 
 
-def create_grid_layout(  # noqa: PLR0913
+def create_grid_layout(  # noqa: PLR0913, PLR0912, C901
     images: list[str],
     columns: int,
     output_image_width: int,

@@ -262,9 +262,7 @@ class DisplayImageGrid(ControlNode):
         )
         return ImageUrlArtifact(value=static_url)
 
-    def _scale_grid_to_fit(
-        self, grid_image: Any, target_width: int, target_height: int
-    ) -> tuple[Any, int, int]:
+    def _scale_grid_to_fit(self, grid_image: Any, target_width: int, target_height: int) -> tuple[Any, int, int]:
         """Scale grid image to fit within target dimensions.
 
         Returns:
