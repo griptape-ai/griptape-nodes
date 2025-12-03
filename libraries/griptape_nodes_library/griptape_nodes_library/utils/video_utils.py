@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from griptape_nodes.utils.async_utils import subprocess_run
+
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -188,7 +190,7 @@ def validate_url(url: str) -> bool:
         return False
 
 
-def get_video_duration(video_url: str) -> float:
+async def get_video_duration(video_url: str) -> float:
     """Get the duration of a video in seconds using ffprobe.
 
     Args:
@@ -219,7 +221,7 @@ def get_video_duration(video_url: str) -> float:
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
+        result = await subprocess_run(cmd, capture_output=True, text=True, check=True)
         streams_data = json.loads(result.stdout)
 
         if streams_data.get("streams") and len(streams_data["streams"]) > 0:
@@ -228,9 +230,6 @@ def get_video_duration(video_url: str) -> float:
             if duration_str and duration_str != "N/A":
                 return float(duration_str)
 
-    except subprocess.TimeoutExpired as e:
-        msg = f"ffprobe timed out for {video_url}"
-        raise ValueError(msg) from e
     except subprocess.CalledProcessError as e:
         msg = f"ffprobe failed for {video_url}: {e.stderr}"
         raise ValueError(msg) from e
