@@ -1,11 +1,13 @@
 """Self command for Griptape Nodes CLI."""
 
+import asyncio
 import json
 import platform
 import shutil
 import sys
 
 import typer
+from rich.table import Table
 
 from griptape_nodes.cli.shared import (
     CONFIG_DIR,
@@ -16,6 +18,8 @@ from griptape_nodes.cli.shared import (
     PYPI_UPDATE_URL,
     console,
 )
+from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.retained_mode.events.library_events import LoadLibrariesRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import (
@@ -54,7 +58,7 @@ def version() -> None:
 @app.command()
 def info() -> None:
     """Display system information for debugging."""
-    _print_system_info()
+    asyncio.run(_print_system_info_async())
 
 
 def _get_latest_version(package: str, install_source: str) -> str:
@@ -130,6 +134,16 @@ def _uninstall_self() -> None:
     os_manager.replace_process([uv_path, "tool", "uninstall", "griptape-nodes"])
 
 
+async def _print_system_info_async() -> None:
+    """Print comprehensive system information (async wrapper to load libraries)."""
+    # Load libraries from configuration first
+    load_request = LoadLibrariesRequest()
+    await GriptapeNodes.ahandle_request(load_request)
+
+    # Now print all the info
+    _print_system_info()
+
+
 def _print_system_info() -> None:
     """Print comprehensive system information."""
     console.print("\n[bold cyan]Griptape Nodes System Information[/bold cyan]\n")
@@ -138,6 +152,7 @@ def _print_system_info() -> None:
     _print_platform_info()
     _print_paths_info()
     _print_configuration()
+    _print_registered_libraries()
 
 
 def _print_engine_info() -> None:
@@ -188,4 +203,39 @@ def _print_configuration() -> None:
         console.print(f"[dim]{config_json}[/dim]")
     except Exception as e:
         console.print(f"  [red]Error retrieving configuration: {e}[/red]")
+    console.print()
+
+
+def _print_registered_libraries() -> None:
+    """Print registered libraries information."""
+    console.print("[bold]Registered Libraries:[/bold]")
+    try:
+        library_names = LibraryRegistry.list_libraries()
+        if not library_names:
+            console.print("  [yellow]No libraries registered[/yellow]")
+            console.print()
+            return
+
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Library Name", style="cyan")
+        table.add_column("Version", style="green")
+        table.add_column("Engine Version", style="yellow")
+        table.add_column("Author", style="blue")
+
+        for library_name in library_names:
+            try:
+                library = LibraryRegistry.get_library(library_name)
+                metadata = library.get_metadata()
+                table.add_row(
+                    library_name,
+                    metadata.library_version,
+                    metadata.engine_version,
+                    metadata.author,
+                )
+            except KeyError:
+                table.add_row(library_name, "[red]Error[/red]", "[red]Error[/red]", "[red]Error[/red]")
+
+        console.print(table)
+    except Exception as e:
+        console.print(f"  [red]Error retrieving libraries: {e}[/red]")
     console.print()
