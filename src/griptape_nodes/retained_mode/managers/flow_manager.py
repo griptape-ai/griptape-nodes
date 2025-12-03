@@ -1327,6 +1327,16 @@ class FlowManager:
 
         end_node_packaging_result = end_node_result.packaging_result
 
+        # If no entry control node specified, connect start directly to end
+        if not request.entry_control_node_name and not request.entry_control_parameter_name:
+            start_to_end_control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=start_node_result.start_node_commands.node_uuid,
+                source_parameter_name="exec_out",
+                target_node_uuid=end_node_packaging_result.end_node_commands.node_uuid,
+                target_parameter_name="exec_in",
+            )
+            start_node_result.start_to_package_connections.append(start_to_end_control_connection)
+
         # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
         from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
 
