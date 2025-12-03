@@ -13,33 +13,32 @@ logger = logging.getLogger("griptape_nodes")
 class LocalStorageDriver(BaseStorageDriver):
     """Stores files using the engine's local static server."""
 
-    def __init__(self, workspace_directory: Path, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        workspace_directory: Path,
+        upload_base_url: str,
+        download_base_url: str,
+    ) -> None:
         """Initialize the LocalStorageDriver.
 
         Args:
             workspace_directory: The base workspace directory path.
-            base_url: The base URL for the static file server. If not provided, it will be constructed
+            upload_base_url: The base URL for uploading to the static file server.
+            download_base_url: The base URL for downloading from the static file server.
         """
         super().__init__(workspace_directory)
 
-        from griptape_nodes.servers.static import (
-            STATIC_SERVER_ENABLED,
-            STATIC_SERVER_HOST,
-            STATIC_SERVER_PORT,
-            STATIC_SERVER_URL,
-        )
+        from griptape_nodes.servers.static import STATIC_SERVER_ENABLED
 
         if not STATIC_SERVER_ENABLED:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
             raise ValueError(msg)
-        if base_url is None:
-            # Default to localhost - the storage driver creator can pass a proxy URL if needed
-            self.base_url = f"http://{STATIC_SERVER_HOST}:{STATIC_SERVER_PORT}{STATIC_SERVER_URL}"
-        else:
-            self.base_url = base_url
+
+        self.upload_base_url = upload_base_url
+        self.download_base_url = download_base_url
 
     def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
-        static_url = urljoin(self.base_url, "/static-upload-urls")
+        static_url = urljoin(self.upload_base_url, "/static-upload-urls")
         try:
             response = httpx.post(static_url, json={"file_path": str(path)})
             response.raise_for_status()
@@ -58,8 +57,8 @@ class LocalStorageDriver(BaseStorageDriver):
         return {"url": url, "headers": response_data.get("headers", {}), "method": "PUT"}
 
     def create_signed_download_url(self, path: Path) -> str:
-        # The base_url already includes the /static path, so just append the path
-        url = f"{self.base_url}/{path.as_posix()}"
+        # The download_base_url already includes the /static path, so just append the path
+        url = f"{self.download_base_url}/{path.as_posix()}"
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
@@ -71,7 +70,7 @@ class LocalStorageDriver(BaseStorageDriver):
             path: The path of the file to delete.
         """
         # Use the static server's delete endpoint
-        delete_url = urljoin(self.base_url, f"/static-files/{path.as_posix()}")
+        delete_url = urljoin(self.upload_base_url, f"/static-files/{path.as_posix()}")
 
         try:
             response = httpx.delete(delete_url)
@@ -88,7 +87,7 @@ class LocalStorageDriver(BaseStorageDriver):
             A list of file names in storage.
         """
         # Use the static server's list endpoint
-        list_url = urljoin(self.base_url, "/static-uploads/")
+        list_url = urljoin(self.upload_base_url, "/static-uploads/")
 
         try:
             response = httpx.get(list_url)

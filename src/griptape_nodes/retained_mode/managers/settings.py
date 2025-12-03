@@ -259,3 +259,13 @@ class Settings(BaseModel):
         default_factory=lambda: f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}",
         description="Base URL for the static server. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Override this when using tunnels (ngrok, cloudflare) or reverse proxies.",
     )
+    static_server_upload_base_url: str = Field(
+        category=STATIC_SERVER,
+        default_factory=lambda: f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}",
+        description="Base URL for uploading files to the static server. Used by the engine for internal file uploads. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Should typically remain as localhost for optimal performance and security.",
+    )
+    static_server_download_base_url: str = Field(
+        category=STATIC_SERVER,
+        default_factory=lambda: f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}",
+        description="Base URL for downloading files from the static server. Used to generate URLs for user access. Defaults to http://localhost:8124 but should be overridden with your public IP, domain, or tunnel URL (ngrok, cloudflare) when accessed remotely.",
+    )

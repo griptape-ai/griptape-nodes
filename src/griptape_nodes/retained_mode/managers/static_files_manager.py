@@ -53,11 +53,14 @@ class StaticFilesManager:
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
 
-        # Build base URL for LocalStorageDriver from configured base URL
+        # Build base URLs for LocalStorageDriver from configured base URLs
         from griptape_nodes.servers.static import STATIC_SERVER_URL
 
-        base_url_config = config_manager.get_config_value("static_server_base_url")
-        base_url = f"{base_url_config}{STATIC_SERVER_URL}"
+        upload_base_url_config = config_manager.get_config_value("static_server_upload_base_url")
+        upload_base_url = f"{upload_base_url_config}{STATIC_SERVER_URL}"
+
+        download_base_url_config = config_manager.get_config_value("static_server_download_base_url")
+        download_base_url = f"{download_base_url_config}{STATIC_SERVER_URL}"
 
         match self.storage_backend:
             case StorageBackend.GTC:
@@ -67,7 +70,9 @@ class StaticFilesManager:
                     logger.warning(
                         "GT_CLOUD_BUCKET_ID secret is not available, falling back to local storage. Run `gtn init` to set it up."
                     )
-                    self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
+                    self.storage_driver = LocalStorageDriver(
+                        workspace_directory, upload_base_url=upload_base_url, download_base_url=download_base_url
+                    )
                 else:
                     static_files_directory = config_manager.get_config_value(
                         "static_files_directory", default="staticfiles"
@@ -79,7 +84,9 @@ class StaticFilesManager:
                         static_files_directory=static_files_directory,
                     )
             case StorageBackend.LOCAL:
-                self.storage_driver = LocalStorageDriver(workspace_directory, base_url=base_url)
+                self.storage_driver = LocalStorageDriver(
+                    workspace_directory, upload_base_url=upload_base_url, download_base_url=download_base_url
+                )
             case _:
                 msg = f"Invalid storage backend: {self.storage_backend}"
                 raise ValueError(msg)
