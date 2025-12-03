@@ -443,7 +443,9 @@ class TestGetCurrentBranch:
             assert result is None
 
     def test_get_current_ref_returns_none_when_head_detached(self, temp_dir: Path) -> None:
-        """Test that None is returned when HEAD is detached."""
+        """Test that commit SHA is returned when HEAD is detached."""
+        expected_commit_sha = "abc123def456"
+
         with (
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
@@ -452,13 +454,16 @@ class TestGetCurrentBranch:
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
 
+            mock_head = Mock()
+            mock_head.target = expected_commit_sha
             mock_repo = Mock()
             mock_repo.head_is_detached = True
+            mock_repo.head = mock_head
             mock_repo_class.return_value = mock_repo
 
             result = get_current_ref(temp_dir)
 
-            assert result is None
+            assert result == expected_commit_sha
 
     def test_get_current_ref_returns_branch_name_when_on_branch(self, temp_dir: Path) -> None:
         """Test that branch name is returned when on a branch."""
@@ -964,6 +969,7 @@ class TestCloneRepository:
             mock_commit.id = "abc123"
             mock_repo = Mock()
             mock_repo.branches = {}
+            mock_repo.references = []
             mock_repo.revparse_single.return_value = mock_commit
             mock_clone.return_value = mock_repo
 
