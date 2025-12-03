@@ -116,7 +116,7 @@ class ParallelResolutionContext:
 
 class ExecuteDagState(State):
     @staticmethod
-    async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:
+    async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:  # noqa: C901
         current_node = done_node.node_reference
 
         # Check if node was already resolved (shouldn't happen)

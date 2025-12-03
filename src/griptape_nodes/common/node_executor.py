@@ -170,6 +170,14 @@ class EntryNodeParameter(NamedTuple):
     entry_parameter: str | None
 
 
+class LoopBodyNodes(NamedTuple):
+    """Result of collecting loop body nodes."""
+
+    all_nodes: set[str]
+    execution_type: str
+    node_group_name: str | None
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -573,29 +581,19 @@ class NodeExecutor:
 
         return EntryNodeParameter(entry_node=entry_control_node_name, entry_parameter=entry_control_parameter_name)
 
-    async def _package_loop_body(
+    def _collect_loop_body_nodes(
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
-    ) -> tuple[PackageNodesAsSerializedFlowResultSuccess, str] | None:
-        """Package the loop body (nodes between start and end) into a serialized flow.
-
-        Args:
-            start_node: The BaseIterativeStartNode marking the start of the loop
-            end_node: The BaseIterativeEndNode marking the end of the loop
-            execution_type: The execution environment type
+        nodes_in_control_flow: set[str],
+        dag_builder: DagBuilder,
+        connections: Any,
+    ) -> LoopBodyNodes:
+        """Collect all nodes in the loop body, including data dependencies.
 
         Returns:
-            PackageNodesAsSerializedFlowResultSuccess if successful, None if empty loop body
+            LoopBodyNodes containing all_nodes, execution_type, and node_group_name
         """
-        flow_manager = GriptapeNodes.FlowManager()
-        connections = flow_manager.get_connections()
-
-        # Collect all nodes in the forward control path from start to end
-        nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
-
-        # Filter out nodes already in the current DAG and collect data dependencies
-        dag_builder = flow_manager.global_dag_builder
         all_nodes: set[str] = set()
         visited_deps: set[str] = set()
 
@@ -628,6 +626,38 @@ class NodeExecutor:
                 node_group_name = node_obj.name
             else:
                 all_nodes.add(node_inside)
+
+        return LoopBodyNodes(all_nodes=all_nodes, execution_type=execution_type, node_group_name=node_group_name)
+
+    async def _package_loop_body(
+        self,
+        start_node: BaseIterativeStartNode,
+        end_node: BaseIterativeEndNode,
+    ) -> tuple[PackageNodesAsSerializedFlowResultSuccess, str] | None:
+        """Package the loop body (nodes between start and end) into a serialized flow.
+
+        Args:
+            start_node: The BaseIterativeStartNode marking the start of the loop
+            end_node: The BaseIterativeEndNode marking the end of the loop
+            execution_type: The execution environment type
+
+        Returns:
+            PackageNodesAsSerializedFlowResultSuccess if successful, None if empty loop body
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+
+        # Collect all nodes in the forward control path from start to end
+        nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
+
+        # Filter out nodes already in the current DAG and collect data dependencies
+        dag_builder = flow_manager.global_dag_builder
+        loop_body_result = self._collect_loop_body_nodes(
+            start_node, end_node, nodes_in_control_flow, dag_builder, connections
+        )
+        all_nodes = loop_body_result.all_nodes
+        execution_type = loop_body_result.execution_type
+        node_group_name = loop_body_result.node_group_name
 
         # Handle empty loop body (no nodes between start and end)
         if not all_nodes:
