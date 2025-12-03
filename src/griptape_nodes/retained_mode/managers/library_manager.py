@@ -881,21 +881,21 @@ class LibraryManager:
         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
             venv_path = self._get_library_venv_path(library_data.name, file_path)
 
-            # If venv doesn't exist, install dependencies
-            if not venv_path.exists():
-                install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
-                install_result = await self.install_library_dependencies_request(install_request)
+            install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
+            install_result = await self.install_library_dependencies_request(install_request)
 
-                if isinstance(install_result, InstallLibraryDependenciesResultFailure):
-                    details = f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
-                    return RegisterLibraryFromFileResultFailure(result_details=details)
+            if isinstance(install_result, InstallLibraryDependenciesResultFailure):
+                details = (
+                    f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
+                )
+                return RegisterLibraryFromFileResultFailure(result_details=details)
 
-                if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
-                    logger.info(
-                        "Installed %d dependencies for library '%s'",
-                        install_result.dependencies_installed,
-                        library_data.name,
-                    )
+            if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
+                logger.info(
+                    "Installed %d dependencies for library '%s'",
+                    install_result.dependencies_installed,
+                    library_data.name,
+                )
 
             # Add venv site-packages to sys.path so node imports can find dependencies
             if venv_path.exists():
@@ -1737,10 +1737,7 @@ class LibraryManager:
         logger.info("Starting download of %d libraries from config", len(git_urls))
 
         # Use shared download method
-        results = await self._download_libraries_from_git_urls(
-            git_urls,
-            install_dependencies=True,
-        )
+        results = await self._download_libraries_from_git_urls(git_urls)
 
         # Count successes and failures
         successful = sum(1 for r in results.values() if r["success"])
@@ -1755,14 +1752,11 @@ class LibraryManager:
     async def _download_libraries_from_git_urls(
         self,
         git_urls_with_refs: list[str],
-        *,
-        install_dependencies: bool = True,
     ) -> dict[str, dict[str, Any]]:
         """Download multiple libraries from git URLs concurrently.
 
         Args:
             git_urls_with_refs: List of git URLs with optional @ref suffix (e.g., "url@v1.0")
-            install_dependencies: Whether to install dependencies after download (default: True)
 
         Returns:
             Dictionary mapping git_url_with_ref to result info:
@@ -1806,7 +1800,6 @@ class LibraryManager:
                 DownloadLibraryRequest(
                     git_url=git_url,
                     branch_tag_commit=ref,
-                    install_dependencies=install_dependencies,
                     fail_on_exists=False,
                     auto_register=False,
                 )
@@ -2676,15 +2669,13 @@ class LibraryManager:
         library_name: str,
         library_file_path: str,
         *,
-        install_dependencies: bool,
         failure_result_class: type[ResultPayloadFailure],
     ) -> str | ResultPayloadFailure:
-        """Reload library and install dependencies after git operation.
+        """Reload library after git operation.
 
         Args:
             library_name: Name of the library to reload
             library_file_path: Path to the library JSON file
-            install_dependencies: Whether to install dependencies after reload
             failure_result_class: Class to use for failure results
 
         Returns:
@@ -2727,19 +2718,6 @@ class LibraryManager:
                 new_version = "unknown"
         except KeyError:
             new_version = "unknown"
-
-        # Install dependencies if requested
-        if install_dependencies:
-            logger.info("Installing dependencies for library '%s'", library_name)
-            install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_file_path=actual_library_file_path)
-            )
-            if not install_deps_result.succeeded():
-                logger.warning(
-                    "Library '%s' git operation succeeded but dependency installation failed: %s",
-                    library_name,
-                    install_deps_result.result_details,
-                )
 
         return new_version
 
@@ -2786,11 +2764,10 @@ class LibraryManager:
             details = f"Failed to update Library '{library_name}': {e}"
             return UpdateLibraryResultFailure(result_details=details, retryable=retryable)
 
-        # Reload library and install dependencies
+        # Reload library
         reload_result = await self._reload_library_after_git_operation(
             library_name=library_name,
             library_file_path=library_file_path,
-            install_dependencies=request.install_dependencies,
             failure_result_class=UpdateLibraryResultFailure,
         )
         if isinstance(reload_result, ResultPayloadFailure):
@@ -2840,11 +2817,10 @@ class LibraryManager:
             details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
             return SwitchLibraryRefResultFailure(result_details=details)
 
-        # Reload library and install dependencies
+        # Reload library
         reload_result = await self._reload_library_after_git_operation(
             library_name=library_name,
             library_file_path=library_file_path,
-            install_dependencies=request.install_dependencies,
             failure_result_class=SwitchLibraryRefResultFailure,
         )
         if isinstance(reload_result, ResultPayloadFailure):
@@ -2958,18 +2934,6 @@ class LibraryManager:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
             return DownloadLibraryResultFailure(result_details=details)
 
-        # Install dependencies if requested
-        if request.install_dependencies and not skip_clone:
-            install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
-            )
-            if not install_deps_result.succeeded():
-                logger.warning(
-                    "Library '%s' was downloaded but dependency installation failed: %s",
-                    library_name,
-                    install_deps_result.result_details,
-                )
-
         # Automatically register the downloaded library (unless disabled for startup downloads)
         if request.auto_register:
             register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
@@ -3082,8 +3046,6 @@ class LibraryManager:
 
     async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
         """Sync all libraries to latest versions and ensure dependencies are installed."""
-        install_dependencies = request.install_dependencies
-
         # Phase 1: Download missing libraries from both config keys
         config_mgr = GriptapeNodes.ConfigManager()
 
@@ -3101,10 +3063,7 @@ class LibraryManager:
 
         if all_git_urls:
             logger.info("Found %d git URLs, downloading missing libraries", len(all_git_urls))
-            download_results = await self._download_libraries_from_git_urls(
-                all_git_urls,
-                install_dependencies=install_dependencies,
-            )
+            download_results = await self._download_libraries_from_git_urls(all_git_urls)
 
             # Process results for summary
             for git_url, result in download_results.items():
@@ -3191,7 +3150,6 @@ class LibraryManager:
             update_result = await GriptapeNodes.ahandle_request(
                 UpdateLibraryRequest(
                     library_name=library_name,
-                    install_dependencies=install_dependencies,
                     overwrite_existing=request.overwrite_existing,
                 )
             )
