@@ -8,6 +8,8 @@ from griptape_nodes.retained_mode.events.library_events import (
     LoadLibrariesRequest,
     LoadLibrariesResultFailure,
     LoadLibrariesResultSuccess,
+    LoadLibraryMetadataFromFileResultSuccess,
+    RegisterLibraryFromFileRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -418,3 +420,43 @@ class TestLibraryManagerMigrateOldXdgPaths:
             assert len(download_call[0][1]) == 2  # Original + 1 new  # noqa: PLR2004
             assert "griptape-nodes-library-standard" in download_call[0][1][0]  # Original
             assert any("griptape-nodes-library-griptape-cloud" in url for url in download_call[0][1])
+
+
+class TestLibraryManagerRegisterLibraryFromFile:
+    """Test the register_library_from_file_request functionality in LibraryManager."""
+
+    @pytest.mark.asyncio
+    async def test_always_installs_dependencies_even_when_venv_exists(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that dependencies are always installed on library load, even when venv already exists."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        # Mock library schema with pip dependencies
+        schema = MagicMock()
+        schema.name = "test_lib"
+        schema.metadata.library_version = "1.0.0"
+        schema.metadata.dependencies.pip_dependencies = ["requests"]
+        schema.advanced_library_path = None
+
+        with (
+            patch("griptape_nodes.retained_mode.managers.library_manager.Path") as mock_path,
+            patch.object(library_manager, "load_library_metadata_from_file_request") as mock_load,
+            # Mock that venv already exists (old code would skip installation)
+            patch.object(library_manager, "_get_library_venv_path") as mock_venv,
+            patch.object(library_manager, "install_library_dependencies_request") as mock_install,
+        ):
+            mock_path.return_value.exists.return_value = True
+            mock_load.return_value = LoadLibraryMetadataFromFileResultSuccess(
+                library_schema=schema,
+                file_path="/mock.json",
+                git_remote=None,
+                git_ref=None,
+                result_details=ResultDetails(message="Success", level=20),
+            )
+            mock_venv.return_value.exists.return_value = True
+
+            await library_manager.register_library_from_file_request(
+                RegisterLibraryFromFileRequest(file_path="/mock.json")
+            )
+
+            # Verify dependencies were installed despite existing venv
+            mock_install.assert_called_once()
