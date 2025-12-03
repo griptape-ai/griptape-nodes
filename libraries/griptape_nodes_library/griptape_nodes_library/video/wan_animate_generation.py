@@ -441,7 +441,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         if top_level_error:
             return self._format_top_level_error(top_level_error)
 
-        status = self._extract_status(response_json) or "unknown"
+        status = self._extract_status(response_json) or STATUS_UNKNOWN
         return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
@@ -497,14 +497,12 @@ class WanAnimateGeneration(SuccessFailureNode):
         self.parameter_output_values["video"] = None
 
     @staticmethod
-    def _extract_status(obj: dict[str, Any] | None) -> str | None:
-        if not obj:
+    def _extract_status(response_json: dict[str, Any] | None) -> str | None:
+        if not response_json:
             return None
-        output = obj.get("output")
-        if isinstance(output, dict):
-            task_status = output.get("task_status")
-            if isinstance(task_status, str):
-                return task_status
+        task_status = response_json.get("task_status")
+        if isinstance(task_status, str):
+            return task_status
         return None
 
     @staticmethod
