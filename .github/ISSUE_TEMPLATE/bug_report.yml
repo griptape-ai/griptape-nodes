@@ -11,33 +11,18 @@ body:
         Thank you for taking the time to fill out this bug report.
         Please provide as much information as possible to help us resolve the issue quickly.
 
-  - type: input
-    id: engine-version
+  - type: textarea
+    id: system-info
     attributes:
-      label: Engine Version
-      description: What version of the Engine are you using? (version shown when starting the engine or branch name for dev builds)
-      placeholder: e.g., 2.3.1 or dev-feature-x
-      value: "N/A"
-    validations:
-      required: true
-
-  - type: input
-    id: node-libraries
-    attributes:
-      label: Node Libraries Version
-      description: What version of Node Libraries are you using? (version shown in the application or branch name for dev builds)
-      placeholder: e.g., 1.4.2 or dev-libraries-2023
-      value: "N/A"
-    validations:
-      required: true
-
-  - type: input
-    id: editor-version
-    attributes:
-      label: Editor Version
-      description: What version of the Editor are you using? (typically a date)
-      placeholder: e.g., 2023-05-15
-      value: "N/A"
+      label: System Information
+      description: |
+        Please run the following command and paste the output below:
+        ```bash
+        gtn self info
+        ```
+        This will provide comprehensive information about your engine version, platform, configuration, and registered libraries.
+      placeholder: Paste the output of `gtn self info` here
+      render: shell
     validations:
       required: true
 
