@@ -53,7 +53,7 @@ def is_monorepo(library_path: Path) -> bool:
     return len(library_json_files) > 1
 
 
-def clone_and_get_library_version(remote_url: str) -> LibraryVersionInfo:
+def clone_and_get_library_version(remote_url: str, ref: str = "HEAD") -> LibraryVersionInfo:
     """Fetch library version and commit SHA using sparse checkout for efficiency.
 
     Uses sparse checkout to download only the library JSON file instead of the entire repository,
@@ -61,6 +61,7 @@ def clone_and_get_library_version(remote_url: str) -> LibraryVersionInfo:
 
     Args:
         remote_url: The git remote URL (HTTPS or SSH).
+        ref: The git reference (branch, tag, or commit SHA) to check. Defaults to "HEAD".
 
     Returns:
         LibraryVersionInfo: Library version and commit SHA from the repository.
@@ -68,7 +69,7 @@ def clone_and_get_library_version(remote_url: str) -> LibraryVersionInfo:
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url)
+    library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url, ref=ref)
     return LibraryVersionInfo(library_version=library_version, commit_sha=commit_sha)
 
 

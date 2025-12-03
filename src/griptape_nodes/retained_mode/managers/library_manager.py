@@ -2570,9 +2570,10 @@ class LibraryManager:
         # Get local commit SHA
         local_commit = await asyncio.to_thread(get_local_commit_sha, library_dir)
 
-        # Clone remote and get latest version and commit SHA
+        # Clone remote and get latest version and commit SHA (using current ref or HEAD if detached)
         try:
-            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            ref_to_check = git_ref or "HEAD"
+            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote, ref_to_check)
             latest_version = version_info.library_version
             remote_commit = version_info.commit_sha
         except GitCloneError as e:
