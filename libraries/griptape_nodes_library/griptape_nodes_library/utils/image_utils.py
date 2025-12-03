@@ -501,10 +501,10 @@ def create_grid_layout(  # noqa: PLR0913
         # Calculate position based on justification
         # Base x position without justification
         base_x = col * (cell_width + spacing) + spacing + resized_result.x_offset
-        
+
         # Calculate number of images in current row
         images_in_row = min(columns, len(pil_images) - row * columns)
-        
+
         # Adjust x position based on justification
         if justification == "center":
             # Center the row by adding offset
@@ -524,7 +524,7 @@ def create_grid_layout(  # noqa: PLR0913
                 final_x = base_x
         else:  # "left" or default
             final_x = base_x
-            
+
         final_y = row * (cell_height + spacing) + spacing + resized_result.y_offset
         grid_image.paste(
             resized_result.image,

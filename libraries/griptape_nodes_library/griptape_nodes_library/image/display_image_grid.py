@@ -143,7 +143,9 @@ class DisplayImageGrid(ControlNode):
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"hide": True},
         )
-        self.output_preset.add_trait(Options(choices=["4K (3840x2160)", "1440p (2560x1440)", "1080p (1920x1080)", "720p (1280x720)"]))
+        self.output_preset.add_trait(
+            Options(choices=["4K (3840x2160)", "1440p (2560x1440)", "1080p (1920x1080)", "720p (1280x720)"])
+        )
         self.add_parameter(self.output_preset)
 
         self.output_image_width = Parameter(
@@ -301,6 +303,7 @@ class DisplayImageGrid(ControlNode):
             # If preset mode, create canvas with exact dimensions and fit the grid
             if use_preset_dimensions and output_image_height is not None:
                 from PIL import Image
+
                 # Get actual grid dimensions
                 grid_width = grid_image.width
                 grid_height = grid_image.height
@@ -319,7 +322,9 @@ class DisplayImageGrid(ControlNode):
                     grid_height = new_height
 
                 # Create canvas with exact preset dimensions
-                canvas = create_background_image(output_image_width, output_image_height, background_color, transparent_bg=transparent_bg)
+                canvas = create_background_image(
+                    output_image_width, output_image_height, background_color, transparent_bg=transparent_bg
+                )
 
                 # Calculate position based on justification (horizontal) and center vertically
                 y_offset = (output_image_height - grid_height) // 2
