@@ -13,9 +13,7 @@ DEFAULT_GRIPTAPE_CLOUD_ENDPOINT = urljoin(base=DEFAULT_GRIPTAPE_CLOUD_URL, url="
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("griptape_nodes")
-logger.setLevel(logging.INFO)
 
 
 class BaseGriptapeCloudNode(BaseNode, GriptapeCloudApiMixin):

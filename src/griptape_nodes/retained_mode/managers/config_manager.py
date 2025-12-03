@@ -528,7 +528,9 @@ class ConfigManager:
             level: The log level to set (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
         """
         try:
-            logger.setLevel(level.upper())
-        except ValueError:
+            level_upper = level.upper()
+            log_level = getattr(logging, level_upper)
+            logger.setLevel(log_level)
+        except (ValueError, AttributeError):
             logger.error("Invalid log level %s. Defaulting to INFO.", level)
             logger.setLevel(logging.INFO)

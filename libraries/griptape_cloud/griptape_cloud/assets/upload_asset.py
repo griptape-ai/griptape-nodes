@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from griptape_cloud_client.models.bucket_detail import BucketDetail
 
 logger = logging.getLogger("griptape_nodes")
-logger.setLevel(logging.INFO)
 
 
 class UploadAsset(BaseGriptapeCloudNode, ControlNode):
