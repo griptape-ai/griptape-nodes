@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json as _json
+import json
 import logging
 import math
 import os
 import time
-from contextlib import suppress
 from time import monotonic, sleep
 from typing import Any
 from urllib.parse import urljoin
@@ -351,9 +350,6 @@ class WanAnimateGeneration(SuccessFailureNode):
                 self._handle_failure_exception(RuntimeError(error_msg))
                 return
 
-            with suppress(Exception):
-                logger.debug("GET payload attempt #%s: %s", attempt + 1, _json.dumps(last_json, indent=2))
-
             status = self._extract_status(last_json) or "running"
             is_complete = self._is_complete(last_json)
             attempt += 1
@@ -442,7 +438,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                return _json.loads(provider_response)
+                return json.loads(provider_response)
             except Exception:
                 return None
         if isinstance(provider_response, dict):
