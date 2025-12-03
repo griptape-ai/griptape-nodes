@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+NODE_GROUP_FLOW = "NodeGroupFlow"
+
 
 class CurrentNodes(NamedTuple):
     """The two relevant nodes during flow execution."""

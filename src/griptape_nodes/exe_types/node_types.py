@@ -1966,6 +1966,7 @@ class NodeGroupNode(BaseNode):
         Note: This is called during __init__, so the node may not yet be added to a flow.
         The subflow will be created without a parent initially, and can be reparented later.
         """
+        from griptape_nodes.exe_types.flow import NODE_GROUP_FLOW
         from griptape_nodes.retained_mode.events.flow_events import (
             CreateFlowRequest,
             CreateFlowResultSuccess,
@@ -1979,7 +1980,15 @@ class NodeGroupNode(BaseNode):
         current_flow = GriptapeNodes.ContextManager().get_current_flow()
         parent_flow_name = current_flow.name if current_flow else None
 
-        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name, set_as_new_context=False)
+        # Create metadata with flow_type
+        subflow_metadata = {"flow_type": NODE_GROUP_FLOW}
+
+        request = CreateFlowRequest(
+            flow_name=subflow_name,
+            parent_flow_name=parent_flow_name,
+            set_as_new_context=False,
+            metadata=subflow_metadata,
+        )
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, CreateFlowResultSuccess):
