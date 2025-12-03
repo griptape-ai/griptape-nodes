@@ -41,6 +41,7 @@ Use this node when you want to:
     - **masonry**: Pinterest-style layout with varying heights
 
 - **grid_justification** (grid layout only): Horizontal alignment of images in incomplete rows
+
     - **left**: Align images to the left (default)
     - **center**: Center images horizontally
     - **right**: Align images to the right
@@ -62,18 +63,21 @@ Use this node when you want to:
 #### Output Settings
 
 - **output_image_size**: Choose between custom width or preset sizes
+
     - **custom**: Use a custom width value
     - **preset**: Use standard video resolutions
 
 - **output_image_width** (default: 1200): Maximum width in pixels (shown when custom is selected)
 
 - **output_preset**: Standard video resolutions (shown when preset is selected)
+
     - **4K (3840x2160)**: Ultra HD resolution
     - **1440p (2560x1440)**: Quad HD resolution
     - **1080p (1920x1080)**: Full HD resolution
     - **720p (1280x720)**: HD resolution
 
 - **output_format**: Output file format
+
     - **png**: Best quality, supports transparency
     - **jpeg**: Smaller file size, no transparency
     - **webp**: Modern format with good compression
