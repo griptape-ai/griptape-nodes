@@ -27,6 +27,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeDependencies,
     NodeGroupNode,
     NodeResolutionState,
+    TransformedParameterValue,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -832,7 +833,7 @@ class NodeManager:
                     if control_node in connected_nodes:
                         result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
                         cancelled = True
-                        if not result.succeeded():
+                        if result.failed():
                             details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                             return DeleteNodeResultFailure(result_details=details)
             if resolving_node_names is not None and not cancelled:
@@ -840,7 +841,7 @@ class NodeManager:
                     resolving_node = GriptapeNodes.ObjectManager().get_object_by_name(resolving_node_name)
                     if resolving_node in connected_nodes:
                         result = GriptapeNodes.handle_request(CancelFlowRequest(flow_name=parent_flow_name))
-                        if not result.succeeded():
+                        if result.failed():
                             details = f"Attempted to delete a Node '{node.name}'. Failed because running flow could not cancel."
                             return DeleteNodeResultFailure(result_details=details)
                         break  # Only need to cancel once
@@ -848,7 +849,7 @@ class NodeManager:
             parent_flow.clear_execution_queue()
         return None
 
-    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912 (complex logic, lots of edge cases)
+    def on_delete_node_request(self, request: DeleteNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (Complex logic, lots of edge cases)
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -925,6 +926,13 @@ class NodeManager:
                         )
                         return DeleteNodeResultFailure(result_details=details)
 
+        # Check if it's in a node group
+        if isinstance(node.parent_group, NodeGroupNode):
+            try:
+                node.parent_group.delete_nodes_from_group([node])
+            except ValueError as e:
+                details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
+                return DeleteNodeResultFailure(result_details=details)
         # Remove from the owning Flow
         parent_flow.remove_node(node.name)
 
@@ -2062,15 +2070,30 @@ class NodeManager:
                     result = SetParameterValueResultFailure(result_details=details)
                     return result
 
+        # Store original values in temp vars before calling before_value_set
+        parameter_value = request.value
+        parameter_value_type = request.data_type
+
         # Call before_value_set hook (allows nodes to modify values and temporarily control settable state)
         try:
-            modified_value = node.before_value_set(parameter, request.value)
+            modified_value = node.before_value_set(parameter, parameter_value)
             if modified_value is not None:
-                request.value = modified_value
+                # Check if it's a TransformedParameterValue (value + type)
+                if isinstance(modified_value, TransformedParameterValue):
+                    parameter_value = modified_value.value
+                    parameter_value_type = modified_value.parameter_type
+                else:
+                    # Just a value, no type change
+                    parameter_value = modified_value
         except Exception as err:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because before_value_set hook raised exception: {err}"
             result = SetParameterValueResultFailure(result_details=details)
             return result
+
+        # Update request with potentially transformed values
+        request.value = parameter_value
+        if parameter_value_type is not None:
+            request.data_type = parameter_value_type
 
         # Validate that parameters can be set at all (note: we want the value to be set during initial setup, but not after)
         # We skip this if it's a passthru from a connection or if we're on initial setup; those always trump settable.
@@ -2079,7 +2102,7 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
-        object_type = request.data_type if request.data_type else parameter.type
+        object_type = parameter_value_type if parameter_value_type else parameter.type
         # If the parameter is control type, we shouldn't check the value being set, since it's just a marker for which path to take, not a real value, and will likely be a string, which doesn't match ControlType.
         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
             object_type
@@ -2445,7 +2468,7 @@ class NodeManager:
         # Validate here.
         result = self.on_validate_node_dependencies_request(ValidateNodeDependenciesRequest(node_name=node_name))
         try:
-            if not result.succeeded():
+            if result.failed():
                 details = f"Failed to resolve node '{node_name}'. Flow Validation Failed"
                 return StartFlowResultFailure(validation_exceptions=[], result_details=details)
             result = cast("ValidateNodeDependenciesResultSuccess", result)
@@ -2519,36 +2542,45 @@ class NodeManager:
         with GriptapeNodes.ContextManager().node(node=node):
             # Handle NodeGroupNode specially - skip library lookup entirely
             library_used = ""
+            lookup_metadata = False
+            library_details = None
             if isinstance(node, NodeGroupNode):
                 # NodeGroupNode doesn't have a library dependency
                 execution_env = node.get_parameter_value(node.execution_environment.name)
                 if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
                     library_used = execution_env
+                    lookup_metadata = True
             else:
                 # Get the library and version details for regular nodes
                 library_used = node.metadata["library"]
+                lookup_metadata = True
             # Get the library metadata so we can get the version.
-            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
-            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
-            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                library_metadata_request
-            )
+            if lookup_metadata:
+                library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+                # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+                # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+                library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                    library_metadata_request
+                )
 
-            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                if isinstance(node, ErrorProxyNode):
-                    # For ErrorProxyNode, use descriptive message when original library unavailable
-                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
-                    library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
-                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
-                    logger.warning(details)
+                if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                    if isinstance(node, ErrorProxyNode):
+                        # For ErrorProxyNode, use descriptive message when original library unavailable
+                        library_version = (
+                            "<version unavailable; workflow was saved when library was unable to be loaded>"
+                        )
+                        library_details = LibraryNameAndVersion(
+                            library_name=library_used, library_version=library_version
+                        )
+                        details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                        logger.warning(details)
+                    else:
+                        # For regular nodes, this is still an error
+                        details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                        return SerializeNodeToCommandsResultFailure(result_details=details)
                 else:
-                    # For regular nodes, this is still an error
-                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                    return SerializeNodeToCommandsResultFailure(result_details=details)
-            else:
-                library_version = library_metadata_result.metadata.library_version
-                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    library_version = library_metadata_result.metadata.library_version
+                    library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
             if isinstance(node, NodeGroupNode):
@@ -2986,7 +3018,7 @@ class NodeManager:
                 target_parameter_name=connection_command.target_parameter_name,
             )
             result = GriptapeNodes.handle_request(connection_request)
-            if not result.succeeded():
+            if result.failed():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
         return DeserializeSelectedNodesFromCommandsResultSuccess(
@@ -2998,7 +3030,7 @@ class NodeManager:
         result = GriptapeNodes.handle_request(
             SerializeSelectedNodesToCommandsRequest(nodes_to_serialize=request.nodes_to_duplicate)
         )
-        if not result.succeeded():
+        if result.failed():
             details = "Failed to serialized selected nodes."
             return DuplicateSelectedNodesResultFailure(result_details=details)
         result = GriptapeNodes.handle_request(DeserializeSelectedNodesFromCommandsRequest(positions=request.positions))

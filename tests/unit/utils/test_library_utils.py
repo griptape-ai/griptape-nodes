@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.utils.git_utils import GitCloneError
-from griptape_nodes.utils.library_utils import clone_and_get_library_version, is_monorepo
+from griptape_nodes.utils.library_utils import clone_and_get_library_version, filter_old_xdg_library_paths, is_monorepo
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -126,3 +126,83 @@ class TestCloneAndGetLibraryVersion:
                 clone_and_get_library_version("https://github.com/user/repo.git")
 
             assert "sparse checkout failed" in str(exc_info.value)
+
+
+class TestFilterOldXdgLibraryPaths:
+    """Test filter_old_xdg_library_paths function."""
+
+    def test_filter_returns_tuple(self) -> None:
+        """Test that filter returns tuple with filtered paths and removed library names."""
+        with patch("griptape_nodes.utils.library_utils.xdg_data_home") as mock_xdg:
+            mock_xdg.return_value = Path("/home/user/.local/share")
+
+            paths = [
+                "/home/user/.local/share/griptape_nodes/libraries/griptape_nodes_library",
+                "/home/user/.local/share/griptape_nodes/libraries/griptape_cloud",
+                "/custom/path",
+            ]
+
+            filtered, removed = filter_old_xdg_library_paths(paths)
+
+            assert isinstance((filtered, removed), tuple)
+            assert len((filtered, removed)) == 2  # noqa: PLR2004
+            assert filtered == ["/custom/path"]
+            assert removed == {"griptape_nodes_library", "griptape_cloud"}
+
+    def test_filter_no_removals(self) -> None:
+        """Test filter when no old paths are present."""
+        with patch("griptape_nodes.utils.library_utils.xdg_data_home") as mock_xdg:
+            mock_xdg.return_value = Path("/home/user/.local/share")
+
+            paths = ["/custom/path", "https://github.com/user/lib@main"]
+
+            filtered, removed = filter_old_xdg_library_paths(paths)
+
+            assert filtered == paths
+            assert removed == set()
+
+    def test_filter_empty_list(self) -> None:
+        """Test filter with empty list."""
+        filtered, removed = filter_old_xdg_library_paths([])
+
+        assert filtered == []
+        assert removed == set()
+
+    def test_filter_removes_all_three_library_types(self) -> None:
+        """Test that all three old library types are removed."""
+        with patch("griptape_nodes.utils.library_utils.xdg_data_home") as mock_xdg:
+            mock_xdg.return_value = Path("/home/user/.local/share")
+
+            xdg_base = "/home/user/.local/share/griptape_nodes/libraries"
+            paths = [
+                f"{xdg_base}/griptape_nodes_library/lib.json",
+                f"{xdg_base}/griptape_nodes_advanced_media_library/lib.json",
+                f"{xdg_base}/griptape_cloud/lib.json",
+                "/custom/library",
+            ]
+
+            filtered, removed = filter_old_xdg_library_paths(paths)
+
+            assert filtered == ["/custom/library"]
+            assert removed == {
+                "griptape_nodes_library",
+                "griptape_nodes_advanced_media_library",
+                "griptape_cloud",
+            }
+
+    def test_filter_preserves_custom_paths_and_git_urls(self) -> None:
+        """Test that custom paths and git URLs are preserved."""
+        with patch("griptape_nodes.utils.library_utils.xdg_data_home") as mock_xdg:
+            mock_xdg.return_value = Path("/home/user/.local/share")
+
+            xdg_base = "/home/user/.local/share/griptape_nodes/libraries"
+            old_path = f"{xdg_base}/griptape_nodes_library"
+            custom_path = "/opt/custom/libraries/my_library"
+            git_url = "https://github.com/user/awesome-library@stable"
+
+            paths = [old_path, custom_path, git_url]
+
+            filtered, removed = filter_old_xdg_library_paths(paths)
+
+            assert filtered == [custom_path, git_url]
+            assert removed == {"griptape_nodes_library"}

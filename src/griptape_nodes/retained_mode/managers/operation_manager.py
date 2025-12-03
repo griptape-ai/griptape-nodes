@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Self
 
+from griptape_nodes.retained_mode.managers.settings import EVENTS_TO_ECHO_KEY
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -438,7 +440,7 @@ class OperationDepthManager:
         self.payload_converter = PayloadConverter()
 
         # Ask the config manager for the list of events we want echoed.
-        config_events = config_mgr.get_config_value("app_events.events_to_echo_as_retained_mode")
+        config_events = config_mgr.get_config_value(EVENTS_TO_ECHO_KEY)
         self.events_to_echo = set(config_events)
 
     def __enter__(self) -> Self:

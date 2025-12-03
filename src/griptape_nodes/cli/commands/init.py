@@ -22,7 +22,9 @@ from griptape_nodes.cli.shared import (
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.git_utils import extract_repo_name_from_url
+from griptape_nodes.utils.library_utils import filter_old_xdg_library_paths
 
 config_manager = GriptapeNodes.ConfigManager()
 secrets_manager = GriptapeNodes.SecretsManager()
@@ -234,11 +236,11 @@ def _handle_additional_library_config(config: InitConfig) -> bool | None:
             register_griptape_cloud_library=register_griptape_cloud_library,
         )
         config_manager.set_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_download",
+            LIBRARIES_TO_DOWNLOAD_KEY,
             libraries_config.libraries_to_download,
         )
         config_manager.set_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_register",
+            LIBRARIES_TO_REGISTER_KEY,
             libraries_config.libraries_to_register,
         )
         console.print(
@@ -511,8 +513,8 @@ def _build_libraries_list(
 ) -> LibrariesConfig:
     """Builds the lists of libraries to download and register based on library settings."""
     # Get current configuration for both lists
-    download_key = "app_events.on_app_initialization_complete.libraries_to_download"
-    register_key = "app_events.on_app_initialization_complete.libraries_to_register"
+    download_key = LIBRARIES_TO_DOWNLOAD_KEY
+    register_key = LIBRARIES_TO_REGISTER_KEY
 
     current_downloads = config_manager.get_config_value(
         download_key,
@@ -527,6 +529,9 @@ def _build_libraries_list(
 
     new_downloads = current_downloads.copy()
     new_register = current_register.copy()
+
+    # Remove old XDG data home library paths from libraries_to_register
+    new_register, _ = filter_old_xdg_library_paths(new_register)
 
     # Create a set of current download identifiers for fast lookup
     current_download_identifiers = {extract_repo_name_from_url(lib) for lib in current_downloads}
