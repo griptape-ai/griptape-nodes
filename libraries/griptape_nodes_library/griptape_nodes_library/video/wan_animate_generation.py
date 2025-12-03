@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
 import os
 import time
-from time import monotonic, sleep
 from typing import Any
 from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -39,6 +39,14 @@ MODE_OPTIONS = [
 
 # HTTP status code threshold for error responses
 HTTP_ERROR_STATUS = 400
+
+# Generation status constants
+STATUS_PENDING = "PENDING"
+STATUS_RUNNING = "RUNNING"
+STATUS_SUCCEEDED = "SUCCEEDED"
+STATUS_FAILED = "FAILED"
+STATUS_CANCELED = "CANCELED"
+STATUS_UNKNOWN = "UNKNOWN"
 
 
 class WanAnimateGeneration(SuccessFailureNode):
@@ -198,10 +206,10 @@ class WanAnimateGeneration(SuccessFailureNode):
             exceptions.append(ValueError("Video URL must be provided"))
         return exceptions if exceptions else None
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+    async def aprocess(self) -> None:
+        await self._process()
 
-    def _process(self) -> None:
+    async def _process(self) -> None:
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -215,13 +223,13 @@ class WanAnimateGeneration(SuccessFailureNode):
             return
 
         # Get parameters
-        params = self._get_parameters()
+        params = await self._get_parameters()
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         # Build and submit request
         try:
-            generation_id = self._submit_request(params, headers)
+            generation_id = await self._submit_request(params, headers)
             if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
@@ -235,19 +243,19 @@ class WanAnimateGeneration(SuccessFailureNode):
             return
 
         # Poll for result
-        self._poll_for_result(generation_id, headers, params["duration"])
+        await self._poll_for_result(generation_id, headers, params["duration"])
 
         # Cleanup uploaded artifacts
         self._public_image_url_parameter.delete_uploaded_artifact()
         self._public_video_url_parameter.delete_uploaded_artifact()
 
-    def _get_parameters(self) -> dict[str, Any]:
+    async def _get_parameters(self) -> dict[str, Any]:
         # Get the original video URL before uploading to calculate duration
         video_param = self.get_parameter_value("video_url")
         original_video_url = video_param.value if hasattr(video_param, "value") else str(video_param)
 
         # Calculate duration from the original video (ceiling to int)
-        duration = math.ceil(get_video_duration(original_video_url))
+        duration = math.ceil(await get_video_duration(original_video_url))
         logger.debug("Detected video duration: %ss", duration)
 
         return {
@@ -266,13 +274,15 @@ class WanAnimateGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
         post_url = urljoin(self._proxy_base, f"models/{params['model']}")
         payload = self._build_payload(params)
 
         logger.debug("Submitting request to proxy model=%s", params["model"])
 
-        post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
+        async with httpx.AsyncClient() as client:
+            post_resp = await client.post(post_url, json=payload, headers=headers, timeout=60)
+
         if post_resp.status_code >= HTTP_ERROR_STATUS:
             self._set_safe_defaults()
             logger.debug(
@@ -320,60 +330,60 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         return payload
 
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = monotonic()
+        start_time = time.monotonic()
         last_json = None
         attempt = 0
         poll_interval_s = 5.0
         timeout_s = video_duration * 20.0
 
-        while True:
-            if monotonic() - start_time > timeout_s:
-                self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                logger.debug("Polling timed out waiting for result")
-                self._set_status_results(
-                    was_successful=False,
-                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
-                )
-                return
+        async with httpx.AsyncClient() as client:
+            while True:
+                if time.monotonic() - start_time > timeout_s:
+                    self.parameter_output_values["video"] = self._extract_video_url(last_json)
+                    logger.debug("Polling timed out waiting for result")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                    )
+                    return
 
-            try:
-                get_resp = requests.get(get_url, headers=headers, timeout=60)
-                get_resp.raise_for_status()
-                last_json = get_resp.json()
-                self.parameter_output_values["provider_response"] = last_json
-            except Exception as exc:
-                logger.debug("GET generation failed: %s", exc)
-                error_msg = f"Failed to poll generation status: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
+                try:
+                    get_resp = await client.get(get_url, headers=headers, timeout=60)
+                    get_resp.raise_for_status()
+                    last_json = get_resp.json()
+                    self.parameter_output_values["provider_response"] = last_json
+                except Exception as exc:
+                    logger.debug("GET generation failed: %s", exc)
+                    error_msg = f"Failed to poll generation status: {exc}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    self._handle_failure_exception(RuntimeError(error_msg))
+                    return
 
-            status = self._extract_status(last_json) or "running"
-            is_complete = self._is_complete(last_json)
-            attempt += 1
-            logger.info("Polling attempt #%s status=%s", attempt, status)
+                status = self._extract_status(last_json) or STATUS_UNKNOWN
+                attempt += 1
+                logger.info("Polling attempt #%s status=%s", attempt, status)
 
-            # Check for explicit failure statuses
-            if status.lower() in {"failed", "error"}:
-                provider_resp = last_json.get("provider_response") if last_json else {}
-                error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None
-                error_message = provider_resp.get("message") if isinstance(provider_resp, dict) else None
-                log_parts = [p for p in [error_code, error_message] if p]
-                logger.error("Generation failed: %s", " - ".join(log_parts) or status)
-                self.parameter_output_values["video"] = None
-                error_details = self._extract_error_details(last_json)
-                self._set_status_results(was_successful=False, result_details=error_details)
-                return
+                # Check for failure or cancellation
+                if status in {STATUS_FAILED, STATUS_CANCELED}:
+                    provider_resp = last_json.get("provider_response") if last_json else {}
+                    error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None
+                    error_message = provider_resp.get("message") if isinstance(provider_resp, dict) else None
+                    log_parts = [p for p in [error_code, error_message] if p]
+                    logger.error("Generation failed: %s", " - ".join(log_parts) or status)
+                    self.parameter_output_values["video"] = None
+                    error_details = self._extract_error_details(last_json)
+                    self._set_status_results(was_successful=False, result_details=error_details)
+                    return
 
-            if status.lower() in {"succeeded", "success", "completed"} or is_complete:
-                self._handle_completion(last_json, generation_id)
-                return
+                if status == STATUS_SUCCEEDED:
+                    await self._handle_completion(last_json, generation_id)
+                    return
 
-            sleep(poll_interval_s)
+                await asyncio.sleep(poll_interval_s)
 
-    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)
         if not extracted_url:
             self.parameter_output_values["video"] = None
@@ -385,7 +395,7 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         try:
             logger.debug("Downloading video bytes from provider URL")
-            video_bytes = self._download_bytes_from_url(extracted_url)
+            video_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             logger.debug("Failed to download video: %s", e)
             video_bytes = None
@@ -490,45 +500,12 @@ class WanAnimateGeneration(SuccessFailureNode):
     def _extract_status(obj: dict[str, Any] | None) -> str | None:
         if not obj:
             return None
-        for key in ("status", "state", "phase", "task_status"):
-            val = obj.get(key)
-            if isinstance(val, str):
-                return val
-        data = obj.get("data") if isinstance(obj, dict) else None
-        if isinstance(data, dict):
-            for key in ("status", "state", "phase"):
-                val = data.get(key)
-                if isinstance(val, str):
-                    return val
+        output = obj.get("output")
+        if isinstance(output, dict):
+            task_status = output.get("task_status")
+            if isinstance(task_status, str):
+                return task_status
         return None
-
-    @staticmethod
-    def _is_complete(obj: dict[str, Any] | None) -> bool:
-        if not isinstance(obj, dict):
-            return False
-        if obj.get("result") not in (None, {}):
-            return True
-        if WanAnimateGeneration._is_provider_complete(obj):
-            return True
-        for key in ("finished_at", "completed_at", "end_time"):
-            if obj.get(key):
-                return True
-        return False
-
-    @staticmethod
-    def _is_provider_complete(prov: Any) -> bool:
-        if not isinstance(prov, dict):
-            return False
-        for key in ("output", "outputs", "data", "task_result"):
-            if prov.get(key) not in (None, {}):
-                return True
-        status = None
-        for key in ("status", "state", "phase", "task_status"):
-            val = prov.get(key)
-            if isinstance(val, str):
-                status = val.lower()
-                break
-        return status in {"succeeded", "success", "completed"}
 
     @staticmethod
     def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
@@ -542,11 +519,11 @@ class WanAnimateGeneration(SuccessFailureNode):
         return None
 
     @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
+    async def _download_bytes_from_url(url: str) -> bytes | None:
         try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=120)
+                resp.raise_for_status()
+                return resp.content
         except Exception:
             return None
-        else:
-            return resp.content
