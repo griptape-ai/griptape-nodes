@@ -163,6 +163,13 @@ class PublishLocalWorkflowResult(NamedTuple):
     package_result: PackageNodesAsSerializedFlowResultSuccess
 
 
+class EntryNodeParameter(NamedTuple):
+    """Entry node and Entry Parameter."""
+
+    entry_node: str | None
+    entry_parameter: str | None
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -516,7 +523,54 @@ class NodeExecutor:
             raise ValueError(msg)
         return my_subprocess_result
 
-    async def _package_loop_body(  # noqa: C901, PLR0915, PLR0912
+    def _find_loop_entry_node(
+        self, start_node: BaseIterativeStartNode, node_group_name: str | None, connections: Any
+    ) -> EntryNodeParameter:
+        """Find the entry control node and parameter for a loop body.
+
+        Args:
+            start_node: The loop start node
+            node_group_name: Name of NodeGroup if loop body is a NodeGroup, None otherwise
+            connections: Connections object from FlowManager
+
+        Returns:
+            Tuple of (entry_node_name, entry_parameter_name) or (None, None) if not found
+        """
+        entry_control_node_name = None
+        entry_control_parameter_name = None
+        exec_out_param_name = start_node.exec_out.name
+
+        if start_node.name not in connections.outgoing_index:
+            return EntryNodeParameter(None, None)
+
+        exec_out_connections = connections.outgoing_index[start_node.name].get(exec_out_param_name, [])
+        if not exec_out_connections:
+            return EntryNodeParameter(None, None)
+
+        first_conn_id = exec_out_connections[0]
+        first_conn = connections.connections[first_conn_id]
+
+        # If connecting to a NodeGroup, find the actual internal entry node
+        if node_group_name is not None and first_conn.target_node.name == node_group_name:
+            # The connection goes to a proxy parameter on the NodeGroup
+            # Find the internal connection from that proxy parameter to the actual entry node
+            proxy_param = first_conn.target_parameter
+            if node_group_name in connections.outgoing_index:
+                proxy_connections = connections.outgoing_index[node_group_name].get(proxy_param.name, [])
+                if proxy_connections:
+                    internal_conn_id = proxy_connections[0]
+                    internal_conn = connections.connections[internal_conn_id]
+                    if internal_conn.is_node_group_internal:
+                        entry_control_node_name = internal_conn.target_node.name
+                        entry_control_parameter_name = internal_conn.target_parameter.name
+        else:
+            # Direct connection to a regular node
+            entry_control_node_name = first_conn.target_node.name
+            entry_control_parameter_name = first_conn.target_parameter.name
+
+        return EntryNodeParameter(entry_node=entry_control_node_name, entry_parameter=entry_control_parameter_name)
+
+    async def _package_loop_body(
         self,
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
@@ -551,46 +605,32 @@ class NodeExecutor:
                     node_obj, connections, nodes_in_control_flow, visited_deps
                 )
                 all_nodes.update(deps)
-                if isinstance(node_obj, NodeGroupNode):
-                    node_children = node_obj.get_all_nodes()
-                    all_nodes.update(node_children.keys())
 
         # Exclude the start and end loop nodes from packaging
         all_nodes.discard(start_node.name)
         all_nodes.discard(end_node.name)
 
+        # See if they're all in one NodeGroup
+        execution_type = LOCAL_EXECUTION
+        node_group_name = None
+        if len(all_nodes) == 1:
+            node_inside = all_nodes.pop()
+            node_obj = node_manager.get_node_by_name(node_inside)
+            if isinstance(node_obj, NodeGroupNode):
+                execution_type = node_obj.get_parameter_value(node_obj.execution_environment.name)
+                all_nodes.update(node_obj.get_all_nodes())
+                node_group_name = node_obj.name
+            else:
+                all_nodes.add(node_inside)
+
         # Handle empty loop body (no nodes between start and end)
         if not all_nodes:
             await self._handle_empty_loop_body(start_node, end_node)
             return None
-
-        # See if they're all in one NodeGroup
-        execution_type = LOCAL_EXECUTION
-        total_node_group = None
-        for check_node in all_nodes:
-            node_group = node_manager.get_node_by_name(check_node).parent_group
-            if isinstance(node_group, NodeGroupNode):
-                total_node_group = node_group
-                break
-        if total_node_group is not None:
-            if all_nodes == total_node_group.nodes.keys():
-                execution_type = total_node_group.get_parameter_value(total_node_group.execution_environment.name)
-            else:
-                # Make sure the node group is included in the package request, if it isn't the whole loop.
-                all_nodes.add(total_node_group.name)
         # Find the first node in the loop body (where start_node.exec_out connects to)
-        entry_control_node_name = None
-        entry_control_parameter_name = None
-
-        exec_out_param_name = start_node.exec_out.name
-        if start_node.name in connections.outgoing_index:
-            exec_out_connections = connections.outgoing_index[start_node.name].get(exec_out_param_name, [])
-            if exec_out_connections:
-                first_conn_id = exec_out_connections[0]
-                first_conn = connections.connections[first_conn_id]
-                entry_control_node_name = first_conn.target_node.name
-                entry_control_parameter_name = first_conn.target_parameter.name
-
+        entry_node_parameter = self._find_loop_entry_node(start_node, node_group_name, connections)
+        entry_control_node_name = entry_node_parameter.entry_node
+        entry_control_parameter_name = entry_node_parameter.entry_parameter
         # Determine library and node types based on execution_type
         library = None
         if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
@@ -617,6 +657,7 @@ class NodeExecutor:
             entry_control_node_name=entry_control_node_name,
             entry_control_parameter_name=entry_control_parameter_name,
             output_parameter_prefix=f"{end_node.name.replace(' ', '_')}_loop_",
+            node_group_name=node_group_name,
         )
 
         package_result = GriptapeNodes.handle_request(request)
@@ -1163,7 +1204,7 @@ class NodeExecutor:
             return current_item_values[iteration_index]
         return None
 
-    def get_parameter_values_per_iteration(
+    def get_parameter_values_per_iteration(  # noqa: C901, Needed to add special handling for node groups.
         self,
         start_node: BaseIterativeStartNode,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
@@ -1219,6 +1260,30 @@ class NodeExecutor:
                 source_param_name = conn.source_parameter_name
                 target_node_name = conn.target_node_name
                 target_param_name = conn.target_parameter_name
+
+                # If target is a NodeGroup, follow the internal connection to get the actual target
+                node_manager = GriptapeNodes.NodeManager()
+                flow_manager = GriptapeNodes.FlowManager()
+                try:
+                    target_node = node_manager.get_node_by_name(target_node_name)
+                except ValueError:
+                    msg = f"Failed to get node {target_node_name} for connection {conn} from start node {start_node.name}. Can't get parameter value iterations."
+                    logger.error(msg)
+                    raise RuntimeError(msg)  # noqa: B904
+                if isinstance(target_node, NodeGroupNode):
+                    # Get connections from this proxy parameter to find the actual internal target
+                    connections = flow_manager.get_connections()
+                    proxy_param = target_node.get_parameter_by_name(target_param_name)
+                    if proxy_param:
+                        internal_connections = connections.get_all_outgoing_connections(target_node)
+                        for internal_conn in internal_connections:
+                            if (
+                                internal_conn.source_parameter.name == target_param_name
+                                and internal_conn.is_node_group_internal
+                            ):
+                                target_node_name = internal_conn.target_node.name
+                                target_param_name = internal_conn.target_parameter.name
+                                break
 
                 # Find the target parameter that corresponds to this target
                 for startflow_param_name, original_node_param in start_node_param_mappings.items():
@@ -1375,6 +1440,29 @@ class NodeExecutor:
             if conn.target_parameter_name == "new_item_to_add":
                 source_node_name = conn.source_node_name
                 source_param_name = conn.source_parameter_name
+
+                # If source is a NodeGroup, follow the internal connection to get the actual source
+                node_manager = GriptapeNodes.NodeManager()
+                flow_manager = GriptapeNodes.FlowManager()
+                try:
+                    source_node = node_manager.get_node_by_name(source_node_name)
+                except ValueError:
+                    continue
+                if isinstance(source_node, NodeGroupNode):
+                    # Get connections to this proxy parameter to find the actual internal source
+                    connections = flow_manager.get_connections()
+                    proxy_param = source_node.get_parameter_by_name(source_param_name)
+                    if proxy_param:
+                        internal_connections = connections.get_all_incoming_connections(source_node)
+                        for internal_conn in internal_connections:
+                            if (
+                                internal_conn.target_parameter.name == source_param_name
+                                and internal_conn.is_node_group_internal
+                            ):
+                                source_node_name = internal_conn.source_node.name
+                                source_param_name = internal_conn.source_parameter.name
+                                break
+
                 # Find the EndFlow parameter that corresponds to this source
                 for sanitized_param_name, original_node_param in end_node_param_mappings.items():
                     if (
@@ -2295,8 +2383,18 @@ class NodeExecutor:
                 continue
 
             # Set the value on the target node
+            # Provide source node/parameter to bypass connection conflict validation
+            # These values are coming from execution results, treat as upstream values
             if target_param.type != ParameterTypeBuiltin.CONTROL_TYPE:
-                target_node.set_parameter_value(target_param_name, param_value)
+                GriptapeNodes.NodeManager().on_set_parameter_value_request(
+                    SetParameterValueRequest(
+                        node_name=target_node_name,
+                        parameter_name=target_param_name,
+                        value=param_value,
+                        incoming_connection_source_node_name=node.name,
+                        incoming_connection_source_parameter_name=target_param_name,
+                    )
+                )
             target_node.parameter_output_values[target_param_name] = param_value
 
             logger.debug(

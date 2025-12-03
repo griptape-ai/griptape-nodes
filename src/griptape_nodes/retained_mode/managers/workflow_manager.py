@@ -1845,15 +1845,33 @@ class WorkflowManager:
                 flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
             )
 
-            # Generate nodes in flow AST node. This will create the node and apply all element modifiers
-            nodes_in_flow = self._generate_nodes_in_flow(
-                serialized_flow_commands, import_recorder, node_uuid_to_node_variable_name
-            )
+            # Separate regular nodes from NodeGroup nodes in main flow
+            from griptape_nodes.retained_mode.events.node_events import CreateNodeGroupRequest
 
-            # Add the nodes to the body of the Current Context flow's "with" statement
-            assign_flow_context_node.body.extend(nodes_in_flow)
+            regular_node_commands = []
+            node_group_commands = []
+            for serialized_node_command in serialized_flow_commands.serialized_node_commands:
+                create_cmd = serialized_node_command.create_node_command
+                if isinstance(create_cmd, CreateNodeGroupRequest):
+                    node_group_commands.append(serialized_node_command)
+                else:
+                    regular_node_commands.append(serialized_node_command)
 
-            # Process sub-flows - for each sub-flow, generate its initialization command
+            # Track the running node index across all flows to ensure unique variable names
+            current_node_index = 0
+
+            # Generate regular nodes in main flow first (NOT NodeGroups yet)
+            for serialized_node_command in regular_node_commands:
+                node_creation_ast = self._generate_node_creation_code(
+                    serialized_node_command,
+                    current_node_index,
+                    import_recorder,
+                    node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                )
+                assign_flow_context_node.body.extend(node_creation_ast)
+                current_node_index += 1
+
+            # Process sub-flows - for each sub-flow, generate its nodes
             for sub_flow_index, sub_flow_commands in enumerate(serialized_flow_commands.sub_flows_commands):
                 sub_flow_creation_index = flow_creation_index + 1 + sub_flow_index
 
@@ -1863,7 +1881,10 @@ class WorkflowManager:
                     match sub_flow_initialization_command:
                         case CreateFlowRequest():
                             sub_flow_create_node = self._generate_create_flow(
-                                sub_flow_initialization_command, import_recorder, sub_flow_creation_index
+                                sub_flow_initialization_command,
+                                import_recorder,
+                                sub_flow_creation_index,
+                                parent_flow_creation_index=flow_creation_index,
                             )
                             assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_create_node))
                         case ImportWorkflowAsReferencedSubFlowRequest():
@@ -1871,6 +1892,50 @@ class WorkflowManager:
                                 sub_flow_initialization_command, import_recorder, sub_flow_creation_index
                             )
                             assign_flow_context_node.body.append(cast("ast.stmt", sub_flow_import_node))
+
+                # Generate the nodes in this subflow (just like we do for main flow)
+                if sub_flow_commands.serialized_node_commands:
+                    # Create "with" statement for subflow
+                    subflow_context_node = self._generate_assign_flow_context(
+                        flow_initialization_command=sub_flow_initialization_command,
+                        flow_creation_index=sub_flow_creation_index,
+                    )
+                    # Generate nodes in subflow, passing current index and getting next available
+                    subflow_nodes, current_node_index = self._generate_nodes_in_flow(
+                        sub_flow_commands, import_recorder, node_uuid_to_node_variable_name, current_node_index
+                    )
+                    subflow_context_node.body.extend(subflow_nodes)
+
+                    # Generate connections for nodes in this subflow (must be in subflow context)
+                    subflow_connection_asts = self._generate_connections_code(
+                        serialized_connections=sub_flow_commands.serialized_connections,
+                        node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                        import_recorder=import_recorder,
+                    )
+                    subflow_context_node.body.extend(subflow_connection_asts)
+
+                    # Generate parameter values for nodes in this subflow (must be in subflow context)
+                    subflow_parameter_value_asts = self._generate_set_parameter_value_code(
+                        set_parameter_value_commands=sub_flow_commands.set_parameter_value_commands,
+                        lock_commands=sub_flow_commands.set_lock_commands_per_node,
+                        node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                        unique_values_dict_name="top_level_unique_values_dict",
+                        import_recorder=import_recorder,
+                    )
+                    subflow_context_node.body.extend(subflow_parameter_value_asts)
+
+                    assign_flow_context_node.body.append(subflow_context_node)
+
+            # Generate NodeGroup nodes LAST (after subflows, so child nodes exist)
+            for serialized_node_command in node_group_commands:
+                node_creation_ast = self._generate_node_creation_code(
+                    serialized_node_command,
+                    current_node_index,
+                    import_recorder,
+                    node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                )
+                assign_flow_context_node.body.extend(node_creation_ast)
+                current_node_index += 1
 
             # Now generate the connection code and add it to the flow context
             connection_asts = self._generate_connections_code(
@@ -1880,7 +1945,7 @@ class WorkflowManager:
             )
             assign_flow_context_node.body.extend(connection_asts)
 
-            # Generate parameter values
+            # Generate parameter values for main flow only (subflow parameter values generated inside their contexts)
             set_parameter_value_asts = self._generate_set_parameter_value_code(
                 set_parameter_value_commands=serialized_flow_commands.set_parameter_value_commands,
                 lock_commands=serialized_flow_commands.set_lock_commands_per_node,
@@ -2816,7 +2881,11 @@ class WorkflowManager:
         return full_ast
 
     def _generate_create_flow(
-        self, create_flow_command: CreateFlowRequest, import_recorder: ImportRecorder, flow_creation_index: int
+        self,
+        create_flow_command: CreateFlowRequest,
+        import_recorder: ImportRecorder,
+        flow_creation_index: int,
+        parent_flow_creation_index: int | None = None,
     ) -> ast.Module:
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.flow_events", "CreateFlowRequest")
 
@@ -2828,9 +2897,19 @@ class WorkflowManager:
             for field in fields(create_flow_command):
                 field_value = getattr(create_flow_command, field.name)
                 if field_value != field.default:
-                    create_flow_request_args.append(
-                        ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
-                    )
+                    # Special handling for parent_flow_name - use variable reference if parent index provided
+                    if field.name == "parent_flow_name" and parent_flow_creation_index is not None:
+                        parent_flow_variable = f"flow{parent_flow_creation_index}_name"
+                        create_flow_request_args.append(
+                            ast.keyword(
+                                arg=field.name,
+                                value=ast.Name(id=parent_flow_variable, ctx=ast.Load(), lineno=1, col_offset=0),
+                            )
+                        )
+                    else:
+                        create_flow_request_args.append(
+                            ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
+                        )
 
         # Create a comment explaining the behavior
         comment_ast = ast.Expr(
@@ -3041,18 +3120,31 @@ class WorkflowManager:
         serialized_flow_commands: SerializedFlowCommands,
         import_recorder: ImportRecorder,
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
-    ) -> list[ast.stmt]:
-        # Generate node creation code and add it to the flow context
+        starting_node_index: int,
+    ) -> tuple[list[ast.stmt], int]:
+        """Generate node creation code for nodes in a flow.
+
+        Args:
+            serialized_flow_commands: Commands for the flow
+            import_recorder: Import recorder for tracking imports
+            node_uuid_to_node_variable_name: Mapping from node UUIDs to variable names
+            starting_node_index: The starting index for node variable names
+
+        Returns:
+            Tuple of (list of AST statements, next available node index)
+        """
         node_creation_asts = []
-        for node_index, serialized_node_command in enumerate(serialized_flow_commands.serialized_node_commands):
+        current_index = starting_node_index
+        for serialized_node_command in serialized_flow_commands.serialized_node_commands:
             node_creation_ast = self._generate_node_creation_code(
                 serialized_node_command,
-                node_index,
+                current_index,
                 import_recorder,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
             )
             node_creation_asts.extend(node_creation_ast)
-        return node_creation_asts
+            current_index += 1
+        return node_creation_asts, current_index
 
     def _generate_node_creation_code(  # noqa: C901, PLR0912
         self,

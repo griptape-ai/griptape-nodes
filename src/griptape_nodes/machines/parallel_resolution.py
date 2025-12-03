@@ -206,14 +206,6 @@ class ExecuteDagState(State):
         # Early returns for various conditions
         if ExecuteDagState._should_skip_control_flow(context, node, network_name, flow_manager):
             return
-        from griptape_nodes.exe_types.node_types import NodeGroupNode
-
-        if isinstance(node, NodeGroupNode):
-            node_and_next_output = node.get_next_control_output()
-            if node_and_next_output is not None:
-                next_node, next_output = node_and_next_output
-                ExecuteDagState._process_next_control_node(context, next_node, next_output, network_name, flow_manager)
-            return
         next_output = node.get_next_control_output()
         if next_output is not None:
             ExecuteDagState._process_next_control_node(context, node, next_output, network_name, flow_manager)
@@ -249,7 +241,7 @@ class ExecuteDagState(State):
         flow_manager: FlowManager,
     ) -> None:
         """Process the next control node in the flow."""
-        node_connection = flow_manager.get_connections().get_connected_node(node, next_output)
+        node_connection = flow_manager.get_connections().get_connected_node(node, next_output, include_internal=False)
         if node_connection is not None:
             next_node, next_parameter = node_connection
             # Set entry control parameter

@@ -1060,3 +1060,51 @@ class DeleteNodeGroupResultFailure(ResultPayloadFailure):
 
     Common causes: NodeGroup not found, deletion cleanup failed, node is not a NodeGroup.
     """
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveNodeToNewFlowRequest(RequestPayload):
+    """Move a node from one flow to another flow.
+
+    Use when: Reorganizing nodes between flows, adding nodes to NodeGroup subflows,
+    removing nodes from NodeGroup subflows. Node connections are preserved since
+    connections are global and work across flows.
+
+    Args:
+        node_name: Name of the node to move (None for current context)
+        target_flow_name: Name of the destination flow
+        source_flow_name: Name of the source flow (None to use node's current flow)
+
+    Results: MoveNodeToNewFlowResultSuccess | MoveNodeToNewFlowResultFailure (node not found, flow not found, node not in source flow)
+    """
+
+    target_flow_name: str
+    node_name: str | None = None
+    source_flow_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveNodeToNewFlowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Node moved successfully between flows. Connections preserved.
+
+    Args:
+        node_name: Name of the node that was moved
+        source_flow_name: Name of the flow the node was moved from
+        target_flow_name: Name of the flow the node was moved to
+    """
+
+    node_name: str
+    source_flow_name: str
+    target_flow_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class MoveNodeToNewFlowResultFailure(ResultPayloadFailure):
+    """Node move failed.
+
+    Common causes: node not found, source flow not found, target flow not found,
+    node not in source flow, node is a NodeGroup with subflow conflicts.
+    """

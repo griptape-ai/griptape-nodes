@@ -330,14 +330,35 @@ class FlowManager:
         return connections
 
     def _get_connections_for_flow(self, flow: ControlFlow) -> list:
-        """Get connections where both nodes are in the specified flow."""
+        """Get connections where both nodes are in the specified flow or its child flows.
+
+        For parent flows, this includes cross-flow connections between the parent and its children.
+        For child flows, this only includes connections within that specific flow.
+        """
         flow_connections = []
+        flow_name = flow.name
+
+        # Get all child flow names for this flow
+        child_flow_names = set()
+        for child_name, parent_name in self._name_to_parent_name.items():
+            if parent_name == flow_name:
+                child_flow_names.add(child_name)
+
+        # Build set of all node names in this flow and its direct children
+        all_node_names = set(flow.nodes.keys())
+        for child_flow_name in child_flow_names:
+            child_flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow_name, ControlFlow)
+            if child_flow is not None:
+                all_node_names.update(child_flow.nodes.keys())
+
+        # Include connections where both nodes are in this flow hierarchy
         for connection in self._connections.connections.values():
-            source_in_flow = connection.source_node.name in flow.nodes
-            target_in_flow = connection.target_node.name in flow.nodes
-            # Only include connection if BOTH nodes are in this flow (for serialization)
-            if source_in_flow and target_in_flow:
+            source_in_hierarchy = connection.source_node.name in all_node_names
+            target_in_hierarchy = connection.target_node.name in all_node_names
+
+            if source_in_hierarchy and target_in_hierarchy:
                 flow_connections.append(connection)
+
         return flow_connections
 
     def get_parent_flow(self, flow_name: str) -> str | None:
@@ -896,13 +917,23 @@ class FlowManager:
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
         try:
             # Actually create the Connection.
+            if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (
+                isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node
+            ):
+                # Here we're checking if it's an internal connection. (from the NodeGroup to a node within it.)
+                # If that's true, we set that automatically.
+                is_node_group_internal = True
+            else:
+                # If not true, we default to the request
+                is_node_group_internal = request.is_node_group_internal
             conn = self._connections.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
                 target_parameter=target_param,
+                is_node_group_internal=is_node_group_internal,
             )
-            conn_id = id(conn)
+            id(conn)
         except ValueError as e:
             details = f'Connection failed: "{e}"'
 
@@ -943,26 +974,36 @@ class FlowManager:
         target_parent = target_node.parent_group
 
         # If source is in a group, this is an outgoing external connection
-        if source_parent is not None and isinstance(source_parent, NodeGroupNode) and target_parent != source_parent:
-            source_parent.track_external_connection(
+        if (
+            source_parent is not None
+            and isinstance(source_parent, NodeGroupNode)
+            and source_parent not in (target_parent, target_node)
+        ):
+            success = source_parent.map_external_connection(
                 conn=conn,
-                conn_id=conn_id,
                 is_incoming=False,
-                grouped_node=source_node,
             )
+            if success:
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
+                return CreateConnectionResultSuccess(result_details=details)
+            details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
+            return CreateConnectionResultFailure(result_details=details)
 
         # If target is in a group, this is an incoming external connection
-        if target_parent is not None and isinstance(target_parent, NodeGroupNode) and source_parent != target_parent:
-            target_parent.track_external_connection(
+        if (
+            target_parent is not None
+            and isinstance(target_parent, NodeGroupNode)
+            and target_parent not in (source_parent, source_node)
+        ):
+            success = target_parent.map_external_connection(
                 conn=conn,
-                conn_id=conn_id,
                 is_incoming=True,
-                grouped_node=target_node,
             )
-
-        # If both in same group, track as internal connection
-        if source_parent is not None and source_parent == target_parent and isinstance(source_parent, NodeGroupNode):
-            source_parent.track_internal_connection(conn)
+            if success:
+                details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}, remapped with proxy parameter."'
+                return CreateConnectionResultSuccess(result_details=details)
+            details = f'Failed to connect "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name} by remapping to proxy."'
+            return CreateConnectionResultFailure(result_details=details)
 
         details = f'Connected "{source_node_name}.{request.source_parameter_name}" to "{target_node_name}.{request.target_parameter_name}"'
 
@@ -1104,12 +1145,7 @@ class FlowManager:
 
         # Check if either node is in a NodeGroup and untrack connections BEFORE removing connection
 
-        source_parent = source_node.parent_group
-        target_parent = target_node.parent_group
-
         # Find the connection before it's deleted
-        conn = None
-        conn_id = None
         if (
             source_node.name in self._connections.outgoing_index
             and source_param.name in self._connections.outgoing_index[source_node.name]
@@ -1121,46 +1157,7 @@ class FlowManager:
                     candidate.target_node.name == target_node.name
                     and candidate.target_parameter.name == target_param.name
                 ):
-                    conn = candidate
-                    conn_id = candidate_id
                     break
-
-        # If source is in a group, untrack outgoing external connection
-        if (
-            conn
-            and conn_id
-            and source_parent is not None
-            and isinstance(source_parent, NodeGroupNode)
-            and target_parent != source_parent
-        ):
-            source_parent.untrack_external_connection(
-                conn=conn,
-                conn_id=conn_id,
-                is_incoming=False,
-            )
-
-        # If target is in a group, untrack incoming external connection
-        if (
-            conn
-            and conn_id
-            and target_parent is not None
-            and isinstance(target_parent, NodeGroupNode)
-            and source_parent != target_parent
-        ):
-            target_parent.untrack_external_connection(
-                conn=conn,
-                conn_id=conn_id,
-                is_incoming=True,
-            )
-
-        # If both in same group, untrack internal connection
-        if (
-            conn
-            and source_parent is not None
-            and source_parent == target_parent
-            and isinstance(source_parent, NodeGroupNode)
-        ):
-            source_parent.untrack_internal_connection(conn)
 
         # Remove the connection.
         if not self._connections.remove_connection(
@@ -2185,7 +2182,7 @@ class FlowManager:
 
         # Find the metadata for the current library
         library_metadata = execution_env_metadata.get(start_node_library_name)
-        if not library_metadata:
+        if library_metadata is None:
             msg = f"NodeGroupNode '{node_group_node.name}' metadata does not contain library '{start_node_library_name}'. Available libraries: {list(execution_env_metadata.keys())}"
             raise ValueError(msg)
 
@@ -2606,31 +2603,146 @@ class FlowManager:
 
         return StartFlowFromNodeResultSuccess(result_details=details)
 
+    def get_start_nodes_in_flow(self, flow: ControlFlow) -> list[BaseNode]:  # noqa: C901, PLR0912, PLR0915
+        """Find start nodes in a specific flow.
+
+        A start node is defined as:
+        1. An explicit StartNode instance, OR
+        2. A control node with no incoming control connections, OR
+        3. A data node with no outgoing connections
+
+        Nodes that are children of NodeGroupNodes are excluded.
+
+        Args:
+            flow: The flow to search for start nodes
+
+        Returns:
+            List of start nodes, prioritized as: StartNodes, control nodes, data nodes
+        """
+        connections = self.get_connections()
+        all_nodes = list(flow.nodes.values())
+        if not all_nodes:
+            return []
+
+        start_nodes = []
+        control_nodes = []
+        data_nodes = []
+
+        for node in all_nodes:
+            if isinstance(node, StartNode):
+                start_nodes.append(node)
+                continue
+
+            has_control_param = False
+            for parameter in node.parameters:
+                if ParameterTypeBuiltin.CONTROL_TYPE.value == parameter.output_type:
+                    incoming_control = (
+                        node.name in connections.incoming_index
+                        and parameter.name in connections.incoming_index[node.name]
+                    )
+                    outgoing_control = (
+                        node.name in connections.outgoing_index
+                        and parameter.name in connections.outgoing_index[node.name]
+                    )
+                    if incoming_control or outgoing_control:
+                        has_control_param = True
+                        break
+
+            if not has_control_param:
+                data_nodes.append(node)
+                continue
+
+            has_incoming_control = False
+            if node.name in connections.incoming_index:
+                for param_name in connections.incoming_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        connection_ids = connections.incoming_index[node.name][param_name]
+                        has_external_control_connection = False
+                        for connection_id in connection_ids:
+                            connection = connections.connections[connection_id]
+                            # Skip internal NodeGroup connections
+                            if connection.is_node_group_internal:
+                                continue
+                            if isinstance(node, BaseIterativeStartNode):
+                                connected_node = connection.get_source_node()
+                                if connected_node == node.end_node:
+                                    continue
+                            has_external_control_connection = True
+                            break
+                        if has_external_control_connection:
+                            has_incoming_control = True
+                            break
+
+            if has_incoming_control:
+                continue
+
+            if node.name in connections.outgoing_index:
+                for param_name in connections.outgoing_index[node.name]:
+                    param = node.get_parameter_by_name(param_name)
+                    if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
+                        control_nodes.append(node)
+                        break
+            else:
+                control_nodes.append(node)
+
+        valid_data_nodes = []
+        for node in data_nodes:
+            # Check if the node has any non-internal outgoing connections
+            has_external_outgoing = False
+            if node.name in connections.outgoing_index:
+                for param_name in connections.outgoing_index[node.name]:
+                    connection_ids = connections.outgoing_index[node.name][param_name]
+                    for connection_id in connection_ids:
+                        connection = connections.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
+                        has_external_outgoing = True
+                        break
+                    if has_external_outgoing:
+                        break
+            # Only add nodes that have no non-internal outgoing connections
+            if not has_external_outgoing:
+                valid_data_nodes.append(node)
+
+        return start_nodes + control_nodes + valid_data_nodes
+
     async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
         flow_name = request.flow_name
         if not flow_name:
             details = "Must provide flow name to start a flow."
-
             return StartFlowResultFailure(validation_exceptions=[], result_details=details)
-        # get the flow by ID
+
         try:
             flow = self.get_flow_by_name(flow_name)
         except KeyError as err:
             details = f"Cannot start flow. Error: {err}"
             return StartFlowFromNodeResultFailure(validation_exceptions=[err], result_details=details)
-        # Check to see if the flow is already running.
+
         if not self.check_for_existing_running_flow():
             msg = "There must be a flow going to start a Subflow"
             return StartLocalSubflowResultFailure(result_details=msg)
+
+        start_node_name = request.start_node
+        if start_node_name is None:
+            start_nodes = self.get_start_nodes_in_flow(flow)
+            if not start_nodes:
+                details = f"Cannot start subflow '{flow_name}'. No start nodes found in flow."
+                return StartLocalSubflowResultFailure(result_details=details)
+            start_node = start_nodes[0]
+        else:
+            try:
+                start_node = GriptapeNodes.NodeManager().get_node_by_name(start_node_name)
+            except ValueError as err:
+                details = f"Cannot start subflow '{flow_name}'. Start node '{start_node_name}' not found: {err}"
+                return StartLocalSubflowResultFailure(result_details=details)
 
         subflow_machine = ControlFlowMachine(
             flow.name,
             pickle_control_flow_result=request.pickle_control_flow_result,
             use_isolated_dag_builder=True,
         )
-
-        # Get the start node object from the node name string
-        start_node = GriptapeNodes.NodeManager().get_node_by_name(request.start_node)
 
         await subflow_machine.start_flow(start_node)
 
@@ -2882,6 +2994,78 @@ class FlowManager:
 
         return node_types_used
 
+    def _aggregate_connections(
+        self,
+        flow_connections: list[SerializedFlowCommands.IndirectConnectionSerialization],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> list[SerializedFlowCommands.IndirectConnectionSerialization]:
+        """Aggregate connections from this flow and all sub-flows into a single list.
+
+        Args:
+            flow_connections: List of connections from the current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            List of all connections from this flow and all sub-flows combined
+        """
+        aggregated_connections = list(flow_connections)
+
+        # Aggregate connections from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            aggregated_connections.extend(sub_flow_cmd.serialized_connections)
+
+        return aggregated_connections
+
+    def _aggregate_unique_parameter_values(
+        self,
+        unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]:
+        """Aggregate unique parameter values from this flow and all sub-flows.
+
+        Args:
+            unique_parameter_uuid_to_values: Unique parameter values from current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Dictionary with all unique parameter values merged
+        """
+        aggregated_values = dict(unique_parameter_uuid_to_values)
+
+        # Merge unique values from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            aggregated_values.update(sub_flow_cmd.unique_parameter_uuid_to_values)
+
+        return aggregated_values
+
+    def _aggregate_set_parameter_value_commands(
+        self,
+        set_parameter_value_commands: dict[
+            SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+        ],
+        sub_flows_commands: list[SerializedFlowCommands],
+    ) -> dict[SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]]:
+        """Aggregate set parameter value commands from this flow and all sub-flows.
+
+        Args:
+            set_parameter_value_commands: Set parameter value commands from current flow
+            sub_flows_commands: List of sub-flow commands to aggregate from
+
+        Returns:
+            Dictionary with all set parameter value commands merged
+        """
+        aggregated_commands = dict(set_parameter_value_commands)
+
+        # Merge commands from all sub-flows
+        for sub_flow_cmd in sub_flows_commands:
+            for node_uuid, commands in sub_flow_cmd.set_parameter_value_commands.items():
+                if node_uuid in aggregated_commands:
+                    aggregated_commands[node_uuid].extend(commands)
+                else:
+                    aggregated_commands[node_uuid] = list(commands)
+
+        return aggregated_commands
+
     # TODO: https://github.com/griptape-ai/griptape-nodes/issues/861
     # similar manager refactors: https://github.com/griptape-ai/griptape-nodes/issues/806
     def on_serialize_flow_to_commands(self, request: SerializeFlowToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -2921,8 +3105,13 @@ class FlowManager:
                 else:
                     # Always set set_as_new_context=False during serialization - let the workflow manager
                     # that loads this serialized flow decide whether to push it to context or not
+                    # Get parent flow name from the flow manager's tracking
+                    parent_name = self.get_parent_flow(flow_name)
                     create_flow_request = CreateFlowRequest(
-                        parent_flow_name=None, set_as_new_context=False, metadata=flow.metadata
+                        flow_name=flow_name,
+                        parent_flow_name=parent_name,
+                        set_as_new_context=False,
+                        metadata=flow.metadata,
                     )
             else:
                 create_flow_request = None
@@ -2980,22 +3169,8 @@ class FlowManager:
                         )
                     set_parameter_value_commands_per_node[serialized_node.node_uuid] = set_value_commands_list
 
-            # We'll have to do a patch-up of all the connections, since we can't predict all of the node names being accurate
-            # when we're restored.
-            # Create all of the connections
-            create_connection_commands = []
-            for connection in self._get_connections_for_flow(flow):
-                source_node_uuid = node_name_to_uuid[connection.source_node.name]
-                target_node_uuid = node_name_to_uuid[connection.target_node.name]
-                create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
-                    source_node_uuid=source_node_uuid,
-                    source_parameter_name=connection.source_parameter.name,
-                    target_node_uuid=target_node_uuid,
-                    target_parameter_name=connection.target_parameter.name,
-                )
-                create_connection_commands.append(create_connection_command)
-
-            # Now sub-flows.
+            # Serialize sub-flows first, before creating connections.
+            # We need the complete UUID map from all flows to handle cross-flow connections.
             parent_flow = GriptapeNodes.ContextManager().get_current_flow()
             parent_flow_name = parent_flow.name
             flows_in_flow_request = ListFlowsInFlowRequest(parent_flow_name=parent_flow_name)
@@ -3006,18 +3181,20 @@ class FlowManager:
 
             sub_flow_commands = []
             for child_flow in flows_in_flow_result.flow_names:
-                flow = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(child_flow, ControlFlow)
-                if flow is None:
+                child_flow_obj = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(
+                    child_flow, ControlFlow
+                )
+                if child_flow_obj is None:
                     details = f"Attempted to serialize Flow '{flow_name}', but no Flow with that name could be found."
                     return SerializeFlowToCommandsResultFailure(result_details=details)
 
                 # Check if this is a referenced workflow
-                if self.is_referenced_workflow(flow):
+                if self.is_referenced_workflow(child_flow_obj):
                     # For referenced workflows, create a minimal SerializedFlowCommands with just the import command
-                    referenced_workflow_name = self.get_referenced_workflow_name(flow)
+                    referenced_workflow_name = self.get_referenced_workflow_name(child_flow_obj)
                     import_command = ImportWorkflowAsReferencedSubFlowRequest(
                         workflow_name=referenced_workflow_name,  # type: ignore[arg-type] # is_referenced_workflow() guarantees this is not None
-                        imported_flow_metadata=flow.metadata,
+                        imported_flow_metadata=child_flow_obj.metadata,
                     )
 
                     # Create NodeDependencies with just the referenced workflow
@@ -3039,7 +3216,7 @@ class FlowManager:
                     sub_flow_commands.append(serialized_flow)
                 else:
                     # For standalone sub-flows, use the existing recursive serialization
-                    with GriptapeNodes.ContextManager().flow(flow=flow):
+                    with GriptapeNodes.ContextManager().flow(flow=child_flow_obj):
                         child_flow_request = SerializeFlowToCommandsRequest()
                         child_flow_result = GriptapeNodes().handle_request(child_flow_request)
                         if not isinstance(child_flow_result, SerializeFlowToCommandsResultSuccess):
@@ -3054,19 +3231,62 @@ class FlowManager:
 
         # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
+        # Build a complete node name to UUID map including nodes from all subflows
+        complete_node_name_to_uuid = dict(node_name_to_uuid)  # Start with current flow's nodes
+
+        def collect_subflow_node_uuids(subflow_commands_list: list[SerializedFlowCommands]) -> None:
+            """Recursively collect node name-to-UUID mappings from subflows."""
+            for subflow_cmd in subflow_commands_list:
+                for node_cmd in subflow_cmd.serialized_node_commands:
+                    # Extract node name from the create command
+                    create_cmd = node_cmd.create_node_command
+                    if isinstance(create_cmd, CreateNodeRequest) and create_cmd.node_name:
+                        complete_node_name_to_uuid[create_cmd.node_name] = node_cmd.node_uuid
+                    elif isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_group_name:
+                        complete_node_name_to_uuid[create_cmd.node_group_name] = node_cmd.node_uuid
+                # Recursively process nested subflows
+                if subflow_cmd.sub_flows_commands:
+                    collect_subflow_node_uuids(subflow_cmd.sub_flows_commands)
+
+        collect_subflow_node_uuids(sub_flow_commands)
 
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
             if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
-                # Convert node names to UUIDs
+                # Convert node names to UUIDs using the complete map (including subflows)
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
-                    if child_node_name in node_name_to_uuid:
-                        uuid = node_name_to_uuid[child_node_name]
+                    if child_node_name in complete_node_name_to_uuid:
+                        uuid = complete_node_name_to_uuid[child_node_name]
                         node_uuids.append(uuid)
                 # Replace the list with UUIDs (as strings since that's what the field expects)
                 create_cmd.node_names_to_add = node_uuids
+
+        # Now create the connections using the complete UUID map (includes all flows).
+        # This must happen after subflows are serialized so we have all UUIDs available.
+        create_connection_commands = []
+        for connection in self._get_connections_for_flow(flow):
+            source_node_name = connection.source_node.name
+            target_node_name = connection.target_node.name
+
+            # Use the complete UUID map that includes nodes from all subflows
+            if source_node_name not in complete_node_name_to_uuid:
+                details = f"Attempted to serialize Flow '{flow_name}'. Connection source node '{source_node_name}' not found in UUID map."
+                return SerializeFlowToCommandsResultFailure(result_details=details)
+            if target_node_name not in complete_node_name_to_uuid:
+                details = f"Attempted to serialize Flow '{flow_name}'. Connection target node '{target_node_name}' not found in UUID map."
+                return SerializeFlowToCommandsResultFailure(result_details=details)
+
+            source_node_uuid = complete_node_name_to_uuid[source_node_name]
+            target_node_uuid = complete_node_name_to_uuid[target_node_name]
+            create_connection_command = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=source_node_uuid,
+                source_parameter_name=connection.source_parameter.name,
+                target_node_uuid=target_node_uuid,
+                target_parameter_name=connection.target_parameter.name,
+            )
+            create_connection_commands.append(create_connection_command)
 
         # Aggregate all dependencies from nodes and sub-flows
         aggregated_dependencies = self._aggregate_flow_dependencies(serialized_node_commands, sub_flow_commands)
@@ -3078,16 +3298,30 @@ class FlowManager:
             details = f"Attempted to serialize Flow '{flow_name}' to commands. Failed while aggregating node types: {e}"
             return SerializeFlowToCommandsResultFailure(result_details=details)
 
+        # Aggregate unique parameter values from this flow and all sub-flows
+        aggregated_unique_values = self._aggregate_unique_parameter_values(
+            unique_parameter_uuid_to_values, sub_flow_commands
+        )
+
+        # Aggregate all connections from this flow and all sub-flows
+        aggregated_connections = self._aggregate_connections(create_connection_commands, sub_flow_commands)
+
+        # Extract flow name from initialization command if available
+        extracted_flow_name = None
+        if create_flow_request is not None and hasattr(create_flow_request, "flow_name"):
+            extracted_flow_name = create_flow_request.flow_name
+
         serialized_flow = SerializedFlowCommands(
             flow_initialization_command=create_flow_request,
             serialized_node_commands=serialized_node_commands,
-            serialized_connections=create_connection_commands,
-            unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
+            serialized_connections=aggregated_connections,
+            unique_parameter_uuid_to_values=aggregated_unique_values,
             set_parameter_value_commands=set_parameter_value_commands_per_node,
             set_lock_commands_per_node=set_lock_commands_per_node,
             sub_flows_commands=sub_flow_commands,
             node_dependencies=aggregated_dependencies,
             node_types_used=aggregated_node_types_used,
+            flow_name=extracted_flow_name,
         )
         details = f"Successfully serialized Flow '{flow_name}' into commands."
         result = SerializeFlowToCommandsResultSuccess(serialized_flow_commands=serialized_flow, result_details=details)
@@ -3565,10 +3799,13 @@ class FlowManager:
                     connection_ids = connections.incoming_index[node.name][parameter_name]
                     for connection_id in connection_ids:
                         connection = connections.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
                         return connection.get_source_node()
         return None
 
-    def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912
+    def get_start_node_queue(self) -> Queue | None:  # noqa: C901, PLR0912, PLR0915
         # For cross-flow execution, we need to consider ALL nodes across ALL flows
         # Clear and use the global execution queue
         self._global_flow_queue.queue.clear()
@@ -3589,6 +3826,10 @@ class FlowManager:
         control_nodes = []
         cn_mgr = self.get_connections()
         for node in all_nodes:
+            # Skip nodes that are children of a NodeGroupNode - they should not be start nodes
+            if node.parent_group is not None and isinstance(node.parent_group, NodeGroupNode):
+                continue
+
             # if it's a start node, start here! Return the first one!
             if isinstance(node, StartNode):
                 start_nodes.append(node)
@@ -3620,17 +3861,26 @@ class FlowManager:
                     param = node.get_parameter_by_name(param_name)
                     if param and ParameterTypeBuiltin.CONTROL_TYPE.value == param.output_type:
                         # there is a control connection coming in
-                        # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
-                        if isinstance(node, BaseIterativeStartNode):
-                            connection_id = cn_mgr.incoming_index[node.name][param_name][0]
+                        # Check each connection to see if it's an internal NodeGroup connection
+                        connection_ids = cn_mgr.incoming_index[node.name][param_name]
+                        has_external_control_connection = False
+                        for connection_id in connection_ids:
                             connection = cn_mgr.connections[connection_id]
-                            connected_node = connection.get_source_node()
-                            # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
-                            # If it is, then this could still be the first node in the control flow.
-                            if connected_node == node.end_node:
+                            # Skip internal NodeGroup connections - they shouldn't disqualify a node from being a start node
+                            if connection.is_node_group_internal:
                                 continue
-                        has_control_connection = True
-                        break
+                            # If the node is a BaseIterativeStartNode, it may have an incoming hidden connection from it's BaseIterativeEndNode for iteration.
+                            if isinstance(node, BaseIterativeStartNode):
+                                connected_node = connection.get_source_node()
+                                # Check if the source node is the end loop node associated with this BaseIterativeStartNode.
+                                # If it is, then this could still be the first node in the control flow.
+                                if connected_node == node.end_node:
+                                    continue
+                            has_external_control_connection = True
+                            break
+                        if has_external_control_connection:
+                            has_control_connection = True
+                            break
             # if there is a connection coming in, isn't a start.
             if has_control_connection:
                 continue
@@ -3649,8 +3899,22 @@ class FlowManager:
         # Let's return a data node that has no OUTGOING data connections!
         for node in data_nodes:
             cn_mgr = self.get_connections()
-            # check if it has an outgoing connection. We don't want it to (that means we get the most resolution)
-            if node.name not in cn_mgr.outgoing_index:
+            # Check if the node has any non-internal outgoing connections
+            has_external_outgoing = False
+            if node.name in cn_mgr.outgoing_index:
+                for param_name in cn_mgr.outgoing_index[node.name]:
+                    connection_ids = cn_mgr.outgoing_index[node.name][param_name]
+                    for connection_id in connection_ids:
+                        connection = cn_mgr.connections[connection_id]
+                        # Skip internal NodeGroup connections
+                        if connection.is_node_group_internal:
+                            continue
+                        has_external_outgoing = True
+                        break
+                    if has_external_outgoing:
+                        break
+            # Only add nodes that have no non-internal outgoing connections
+            if not has_external_outgoing:
                 valid_data_nodes.append(node)
         # ok now - populate the global flow queue with node type information
         for node in start_nodes:

@@ -13,26 +13,24 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
-    ApiKeyProviderParameter,
-    ApiKeyValidationResult,
-)
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
-__all__ = ["FluxImageGeneration"]
+__all__ = ["Flux2ImageGeneration"]
 
 # Define constant for prompt truncation length
 PROMPT_TRUNCATE_LENGTH = 100
 
-# API timeout in seconds
-API_TIMEOUT = 60
+# Maximum number of input images supported
+MAX_INPUT_IMAGES = 10
 
 # Aspect ratio options
 ASPECT_RATIO_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:7", "7:3"]
@@ -41,7 +39,7 @@ ASPECT_RATIO_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
 # Model options
-MODEL_OPTIONS = ["flux-kontext-pro"]
+MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex"]
 
 # Safety tolerance options
 SAFETY_TOLERANCE_OPTIONS = ["least restrictive", "moderate", "most restrictive"]
@@ -52,14 +50,9 @@ STATUS_ERROR = "Error"
 STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
-# API Configuration for proxy API
-PROXY_URL_TEMPLATE = "{base}models/{model}"
-POLLING_URL_TEMPLATE = "{base}generations/{id}"
-RESPONSE_ID_KEY = "generation_id"
 
-
-class FluxImageGeneration(SuccessFailureNode):
-    """Generate images using Flux models via API (supports user-provided API keys via proxy).
+class Flux2ImageGeneration(SuccessFailureNode):
+    """Generate images using Flux-2 models via Griptape model proxy.
 
     Inputs:
         - model (str): Flux model to use (default: "flux-kontext-pro")
@@ -70,6 +63,8 @@ class FluxImageGeneration(SuccessFailureNode):
         - prompt_upsampling (bool): If true, performs upsampling on the prompt
         - output_format (str): Desired format of the output image ("jpeg" or "png")
         - safety_tolerance (str): Content moderation preset ("least restrictive", "moderate", or "most restrictive")
+        - steps (int): [flex only] Number of inference steps. Maximum: 50, default: 50. Higher = more detail, slower.
+        - guidance (float): [flex only] Guidance scale. Controls how closely the output follows the prompt. Minimum: 1.5, maximum: 10, default: 4.5. Higher = closer prompt adherence.
 
     Outputs:
         - generation_id (str): Generation ID from the API
@@ -81,14 +76,11 @@ class FluxImageGeneration(SuccessFailureNode):
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
-    USER_API_KEY_NAME = "BFL_API_KEY"
-    USER_API_KEY_URL = "https://dashboard.bfl.ai/api/keys"
-    USER_API_KEY_PROVIDER_NAME = "BlackForest Labs"
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
-        self.description = "Generate images using Flux models via API (supports user-provided API keys via proxy)"
+        self.description = "Generate images using Flux models via Griptape model proxy"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
@@ -96,18 +88,11 @@ class FluxImageGeneration(SuccessFailureNode):
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/")
 
-        # Add API key provider component
-        self._api_key_provider = ApiKeyProviderParameter(
-            node=self,
-            api_key_name=self.USER_API_KEY_NAME,
-            provider_name=self.USER_API_KEY_PROVIDER_NAME,
-            api_key_url=self.USER_API_KEY_URL,
-        )
-        self._api_key_provider.add_parameters()
+        # Model selection
         self.add_parameter(
             ParameterString(
                 name="model",
-                default_value="flux-kontext-pro",
+                default_value="flux-2-pro",
                 tooltip="Select the Flux model to use",
                 allow_output=False,
                 traits={Options(choices=MODEL_OPTIONS)},
@@ -130,17 +115,22 @@ class FluxImageGeneration(SuccessFailureNode):
 
         # Optional input image for image-to-image generation
         self.add_parameter(
-            Parameter(
-                name="input_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                default_value=None,
-                tooltip="Optional input image for image-to-image generation (supports up to 20MB or 20 megapixels)",
+            ParameterList(
+                name="input_images",
+                input_types=[
+                    "ImageArtifact",
+                    "ImageUrlArtifact",
+                    "str",
+                    "list",
+                    "list[ImageArtifact]",
+                    "list[ImageUrlArtifact]",
+                ],
+                default_value=[],
+                tooltip="Optional input images for image-to-image generation (supports up to 20MB or 20 megapixels)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Image"},
+                ui_options={"expander": True, "display_name": "Input Images"},
             )
         )
-
         # Aspect ratio parameter
         self.add_parameter(
             ParameterString(
@@ -193,6 +183,33 @@ class FluxImageGeneration(SuccessFailureNode):
                 traits={Options(choices=SAFETY_TOLERANCE_OPTIONS)},
             )
         )
+        # Steps parameter
+        self.add_parameter(
+            ParameterInt(
+                name="steps",
+                default_value=50,
+                tooltip="Number of inference steps",
+                allow_output=False,
+                slider=True,
+                min_val=1,
+                max_val=100,
+                hide=True,
+            )
+        )
+
+        # Guidance parameter
+        self.add_parameter(
+            ParameterFloat(
+                name="guidance",
+                default_value=4.5,
+                tooltip="Guidance scale",
+                allow_output=False,
+                slider=True,
+                min_val=1.5,
+                max_val=10,
+                hide=True,
+            )
+        )
 
         # OUTPUTS
         self.add_parameter(
@@ -201,8 +218,6 @@ class FluxImageGeneration(SuccessFailureNode):
                 tooltip="Generation ID from the API",
                 allow_input=False,
                 allow_property=False,
-                allow_output=True,
-                ui_options={"hide_property": True},
             )
         )
 
@@ -211,7 +226,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 name="provider_response",
                 output_type="dict",
                 type="dict",
-                tooltip="Verbatim response from the API",
+                tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
             )
@@ -240,6 +255,17 @@ class FluxImageGeneration(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "model":
+            if value in ["flux-2-flex"]:
+                self.show_parameter_by_name("steps")
+                self.show_parameter_by_name("guidance")
+            else:
+                self.hide_parameter_by_name("steps")
+                self.hide_parameter_by_name("guidance")
+
+        super().after_value_set(parameter, value)
+
     async def aprocess(self) -> None:
         await self._process()
 
@@ -256,26 +282,17 @@ class FluxImageGeneration(SuccessFailureNode):
             return
 
         try:
-            validation_result = self._validate_api_key()
+            api_key = self._validate_api_key()
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
-        # Build headers: always use proxy API key, optionally add user API key
-        headers = {
-            "Authorization": f"Bearer {validation_result.proxy_api_key}",
-            "Content-Type": "application/json",
-        }
-        if validation_result.user_api_key:
-            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         model = params["model"]
-        if validation_result.user_api_key:
-            self._log(f"Generating image with {model} using Griptape model proxy with user-provided API key")
-        else:
-            self._log(f"Generating image with {model} using Griptape model proxy")
+        self._log(f"Generating image with {model}")
 
         # Submit request to get generation ID
         try:
@@ -284,7 +301,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No generation ID returned from API. Cannot proceed with generation.",
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
                 )
                 return
         except RuntimeError as e:
@@ -300,12 +317,14 @@ class FluxImageGeneration(SuccessFailureNode):
         return {
             "model": self.get_parameter_value("model") or "flux-kontext-pro",
             "prompt": self.get_parameter_value("prompt") or "",
-            "input_image": self.get_parameter_value("input_image"),
+            "input_images": self.get_parameter_list_value("input_images") or [],
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
             "seed": self.get_parameter_value("seed") or -1,
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
             "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
+            "steps": self.get_parameter_value("steps") or 50,
+            "guidance": self.get_parameter_value("guidance") or 4.5,
         }
 
     def _parse_safety_tolerance(self, value: str | None) -> int:
@@ -334,38 +353,24 @@ class FluxImageGeneration(SuccessFailureNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
-    def _validate_api_key(self) -> ApiKeyValidationResult:
-        """Validate and return API key and whether to use user API.
-
-        Returns:
-            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
-        """
-        return self._api_key_provider.validate_api_key()
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        self._api_key_provider.after_value_set(parameter, value)
-        return super().after_value_set(parameter, value)
+    def _validate_api_key(self) -> str:
+        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
+        if not api_key:
+            self._set_safe_defaults()
+            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
+            raise ValueError(msg)
+        return api_key
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        """Submit request to proxy API and return generation ID.
-
-        Args:
-            params: Request parameters
-            headers: Request headers
-
-        Returns:
-            Generation ID string, or None if not found
-        """
         payload = await self._build_payload(params)
-        model = params["model"]
-        url = PROXY_URL_TEMPLATE.format(base=self._proxy_base, model=model)
+        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
-        self._log(f"Submitting request to Griptape model proxy with {model}")
+        self._log(f"Submitting request to Griptape model proxy with {params['model']}")
         self._log_request(payload)
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
                 response_json = response.json()
                 self._log("Request submitted successfully")
@@ -379,32 +384,18 @@ class FluxImageGeneration(SuccessFailureNode):
             except Exception:
                 msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
-        except httpx.ConnectTimeout as e:
-            error_msg = (
-                f"{self.name}: Connection to API timed out after {API_TIMEOUT} seconds. "
-                f"This may indicate network connectivity issues or the API may be temporarily unavailable."
-            )
-            raise RuntimeError(error_msg) from e
-        except httpx.TimeoutException as e:
-            error_msg = (
-                f"{self.name}: Request to API timed out after {API_TIMEOUT} seconds. "
-                f"The API may be experiencing high load. Please try again later."
-            )
-            raise RuntimeError(error_msg) from e
         except Exception as e:
             self._log(f"Request failed: {e}")
             msg = f"{self.name} request failed: {e}"
             raise RuntimeError(msg) from e
 
-        # Extract generation ID from response
-        generation_id = response_json.get(RESPONSE_ID_KEY)
-
+        # Extract generation_id from response
+        generation_id = response_json.get("generation_id")
         if generation_id:
             self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. {RESPONSE_ID_KEY}={generation_id}")
+            self._log(f"Submitted. generation_id={generation_id}")
             return str(generation_id)
-
-        self._log(f"No {RESPONSE_ID_KEY} returned from POST response")
+        self._log("No generation_id returned from POST response")
         return None
 
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -416,14 +407,32 @@ class FluxImageGeneration(SuccessFailureNode):
             "safety_tolerance": params["safety_tolerance"],
         }
 
+        # add steps and guidance for flex model
+        if params["model"] == "flux-2-flex":
+            payload["steps"] = params["steps"]
+            payload["guidance"] = params["guidance"]
+
         # Add seed if not -1 (random)
         if params["seed"] != -1:
             payload["seed"] = params["seed"]
 
-        # Add input image if provided
-        input_image_data = await self._process_input_image(params["input_image"])
-        if input_image_data:
-            payload["input_image"] = input_image_data
+        # Add input images if provided (input_image, input_image_2, ..., input_image_9)
+        input_images_list = params.get("input_images", [])
+        if not isinstance(input_images_list, list):
+            input_images_list = [input_images_list] if input_images_list else []
+
+        image_index = 0
+        for image_input in input_images_list:
+            if image_index >= MAX_INPUT_IMAGES:
+                break
+
+            input_image_data = await self._process_input_image(image_input)
+            if input_image_data:
+                if image_index == 0:
+                    payload["input_image"] = input_image_data
+                else:
+                    payload[f"input_image_{image_index + 1}"] = input_image_data
+                image_index += 1
 
         return payload
 
@@ -494,27 +503,21 @@ class FluxImageGeneration(SuccessFailureNode):
             prompt = sanitized_payload.get("prompt", "")
             if len(prompt) > PROMPT_TRUNCATE_LENGTH:
                 sanitized_payload["prompt"] = prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
-            # Redact base64 input image data
-            if "input_image" in sanitized_payload:
-                image_data = sanitized_payload["input_image"]
-                if isinstance(image_data, str) and image_data.startswith("data:image/"):
-                    parts = image_data.split(",", 1)
-                    header = parts[0] if parts else "data:image/"
-                    b64_len = len(parts[1]) if len(parts) > 1 else 0
-                    sanitized_payload["input_image"] = f"{header},<base64 data length={b64_len}>"
+            # Redact base64 input image data for all input images (input_image, input_image_2, ..., input_image_9)
+            for key in list(sanitized_payload.keys()):
+                if key == "input_image" or (key.startswith("input_image_") and key[12:].isdigit()):
+                    image_data = sanitized_payload[key]
+                    if isinstance(image_data, str) and image_data.startswith("data:image/"):
+                        parts = image_data.split(",", 1)
+                        header = parts[0] if parts else "data:image/"
+                        b64_len = len(parts[1]) if len(parts) > 1 else 0
+                        sanitized_payload[key] = f"{header},<base64 data length={b64_len}>"
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the proxy API endpoint until ready.
-
-        Args:
-            generation_id: The generation/request ID to poll for
-            headers: Request headers
-        """
-        # Build polling URL for proxy API
-        get_url = POLLING_URL_TEMPLATE.format(base=self._proxy_base, id=generation_id)
-
+        """Poll the generations endpoint until ready."""
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         max_attempts = 120  # 10 minutes with 5s intervals
         poll_interval = 5
 
@@ -522,7 +525,7 @@ class FluxImageGeneration(SuccessFailureNode):
             for attempt in range(max_attempts):
                 try:
                     self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=API_TIMEOUT)
+                    response = await client.get(get_url, headers=headers, timeout=60)
                     response.raise_for_status()
                     result_json = response.json()
 
