@@ -262,35 +262,56 @@ class DisplayImageGrid(ControlNode):
         )
         return ImageUrlArtifact(value=static_url)
 
-    def _apply_preset_canvas(
-        self,
-        grid_image: Any,
-        output_image_width: int,
-        output_image_height: int,
-        background_color: str,
-        grid_justification: str,
-        *,
-        transparent_bg: bool,
-    ) -> Any:
-        """Apply preset dimensions by scaling grid and placing on exact-sized canvas."""
+    def _scale_grid_to_fit(
+        self, grid_image: Any, target_width: int, target_height: int
+    ) -> tuple[Any, int, int]:
+        """Scale grid image to fit within target dimensions.
+
+        Returns:
+            tuple: (scaled_image, final_width, final_height)
+        """
         from PIL import Image
 
-        # Get actual grid dimensions
         grid_width = grid_image.width
         grid_height = grid_image.height
 
         # Calculate scaling factor to fit within preset dimensions
-        width_ratio = output_image_width / grid_width
-        height_ratio = output_image_height / grid_height
+        width_ratio = target_width / grid_width
+        height_ratio = target_height / grid_height
         scale_factor = min(width_ratio, height_ratio, 1.0)  # Don't upscale, only downscale
 
         # Resize grid if needed
         if scale_factor < 1.0:
             new_width = int(grid_width * scale_factor)
             new_height = int(grid_height * scale_factor)
-            grid_image = grid_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            grid_width = new_width
-            grid_height = new_height
+            return grid_image.resize((new_width, new_height), Image.Resampling.LANCZOS), new_width, new_height
+
+        return grid_image, grid_width, grid_height
+
+    def _apply_preset_canvas(
+        self,
+        grid_image: Any,
+        target_dimensions: tuple[int, int],
+        *,
+        background_color: str,
+        grid_justification: str,
+        transparent_bg: bool,
+    ) -> Any:
+        """Apply preset dimensions by scaling grid and placing on exact-sized canvas.
+
+        Args:
+            grid_image: The grid image to scale and place on canvas
+            target_dimensions: Tuple of (width, height) for the target canvas
+            background_color: Background color for the canvas
+            grid_justification: Horizontal alignment (left/center/right)
+            transparent_bg: Whether to use transparent background
+        """
+        output_image_width, output_image_height = target_dimensions
+
+        # Scale grid to fit within preset dimensions
+        grid_image, grid_width, grid_height = self._scale_grid_to_fit(
+            grid_image, output_image_width, output_image_height
+        )
 
         # Create canvas with exact preset dimensions
         canvas = create_background_image(
@@ -370,10 +391,9 @@ class DisplayImageGrid(ControlNode):
             if use_preset_dimensions and output_image_height is not None:
                 grid_image = self._apply_preset_canvas(
                     grid_image,
-                    output_image_width,
-                    output_image_height,
-                    background_color,
-                    grid_justification,
+                    (output_image_width, output_image_height),
+                    background_color=background_color,
+                    grid_justification=grid_justification,
                     transparent_bg=transparent_bg,
                 )
 
