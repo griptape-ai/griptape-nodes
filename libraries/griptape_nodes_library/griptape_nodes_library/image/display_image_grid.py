@@ -14,6 +14,7 @@ from griptape_nodes_library.utils.image_utils import (
     DEFAULT_PLACEHOLDER_HEIGHT,
     DEFAULT_PLACEHOLDER_WIDTH,
     cleanup_temp_files,
+    create_background_image,
     create_grid_layout,
     create_masonry_layout,
     create_placeholder_image,
@@ -46,6 +47,17 @@ class DisplayImageGrid(ControlNode):
 
         self.layout_style.add_trait(Options(choices=["grid", "masonry"]))
         self.add_parameter(self.layout_style)
+
+        # Grid justification parameter
+        self.grid_justification = Parameter(
+            name="grid_justification",
+            type="str",
+            default_value="left",
+            tooltip="How to justify images in grid layout (grid layout only)",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        )
+        self.grid_justification.add_trait(Options(choices=["left", "center", "right"]))
+        self.add_parameter(self.grid_justification)
 
         # Grid dimensions
         self.columns = Parameter(
@@ -95,7 +107,7 @@ class DisplayImageGrid(ControlNode):
         self.transparent_bg = Parameter(
             name="transparent_bg",
             type="bool",
-            default_value=True,
+            default_value=False,
             tooltip="Use transparent background instead of solid color",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
         )
@@ -104,12 +116,36 @@ class DisplayImageGrid(ControlNode):
         self.background_color = Parameter(
             name="background_color",
             type="str",
-            default_value="#00000000",
+            default_value="#000000",
             tooltip="Background color of the grid (hex color)",
-            ui_options={"hide": True},
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             traits={ColorPicker(format="hexa")},
         )
         self.add_parameter(self.background_color)
+
+        # Output image size mode parameter
+        self.output_image_size = Parameter(
+            name="output_image_size",
+            type="str",
+            default_value="custom",
+            tooltip="Use custom width or preset sizes",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        )
+        self.output_image_size.add_trait(Options(choices=["custom", "preset"]))
+        self.add_parameter(self.output_image_size)
+
+        # Output preset parameter (hidden by default)
+        self.output_preset = Parameter(
+            name="output_preset",
+            type="str",
+            default_value="1080p (1920x1080)",
+            tooltip="Preset output size",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            ui_options={"hide": True},
+        )
+        self.output_preset.add_trait(Options(choices=["4K (3840x2160)", "1440p (2560x1440)", "1080p (1920x1080)", "720p (1280x720)"]))
+        self.add_parameter(self.output_preset)
+
         self.output_image_width = Parameter(
             name="output_image_width",
             type="int",
@@ -142,6 +178,18 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "layout_style":
+            if value == "masonry":
+                self.hide_parameter_by_name("grid_justification")
+            else:
+                self.show_parameter_by_name("grid_justification")
+        if parameter.name == "output_image_size":
+            if value == "custom":
+                self.show_parameter_by_name("output_image_width")
+                self.hide_parameter_by_name("output_preset")
+            else:  # preset
+                self.hide_parameter_by_name("output_image_width")
+                self.show_parameter_by_name("output_preset")
         if parameter.name == "transparent_bg":
             if value:
                 self.hide_parameter_by_name("background_color")
@@ -177,13 +225,31 @@ class DisplayImageGrid(ControlNode):
             images = self.get_parameter_value("images")
             layout_style = self.get_parameter_value("layout_style")
             columns = self.get_parameter_value("columns")
-            output_image_width = self.get_parameter_value("output_image_width")
+            output_image_size = self.get_parameter_value("output_image_size")
+            output_preset = self.get_parameter_value("output_preset")
+            output_image_width_param = self.get_parameter_value("output_image_width")
             spacing = self.get_parameter_value("spacing")
             background_color = self.get_parameter_value("background_color")
             border_radius = self.get_parameter_value("border_radius")
             crop_to_fit = self.get_parameter_value("crop_to_fit")
             output_format = self.get_parameter_value("output_format")
             transparent_bg = self.get_parameter_value("transparent_bg")
+            grid_justification = self.get_parameter_value("grid_justification")
+
+            # Determine actual output width based on mode
+            if output_image_size == "preset":
+                preset_dimensions = {
+                    "4K": (3840, 2160),
+                    "1440p": (2560, 1440),
+                    "1080p": (1920, 1080),
+                    "720p": (1280, 720),
+                }
+                output_image_width, output_image_height = preset_dimensions.get(output_preset, (1920, 1080))
+                use_preset_dimensions = True
+            else:  # custom
+                output_image_width = output_image_width_param
+                output_image_height = None  # Not used in custom mode
+                use_preset_dimensions = False
 
             # Validate inputs
             if not images:
@@ -229,7 +295,46 @@ class DisplayImageGrid(ControlNode):
                     border_radius,
                     crop_to_fit=crop_to_fit,
                     transparent_bg=transparent_bg,
+                    justification=grid_justification,
                 )
+
+            # If preset mode, create canvas with exact dimensions and fit the grid
+            if use_preset_dimensions and output_image_height is not None:
+                from PIL import Image
+                # Get actual grid dimensions
+                grid_width = grid_image.width
+                grid_height = grid_image.height
+
+                # Calculate scaling factor to fit within preset dimensions
+                width_ratio = output_image_width / grid_width
+                height_ratio = output_image_height / grid_height
+                scale_factor = min(width_ratio, height_ratio, 1.0)  # Don't upscale, only downscale
+
+                # Resize grid if needed
+                if scale_factor < 1.0:
+                    new_width = int(grid_width * scale_factor)
+                    new_height = int(grid_height * scale_factor)
+                    grid_image = grid_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    grid_width = new_width
+                    grid_height = new_height
+
+                # Create canvas with exact preset dimensions
+                canvas = create_background_image(output_image_width, output_image_height, background_color, transparent_bg=transparent_bg)
+
+                # Calculate position based on justification (horizontal) and center vertically
+                y_offset = (output_image_height - grid_height) // 2
+
+                # Apply justification for horizontal positioning
+                if grid_justification == "center":
+                    x_offset = (output_image_width - grid_width) // 2
+                elif grid_justification == "right":
+                    x_offset = output_image_width - grid_width
+                else:  # left
+                    x_offset = 0
+
+                # Paste grid onto canvas
+                canvas.paste(grid_image, (x_offset, y_offset), grid_image if grid_image.mode == "RGBA" else None)
+                grid_image = canvas
 
             # Save the grid image and create URL
             filename = generate_filename(

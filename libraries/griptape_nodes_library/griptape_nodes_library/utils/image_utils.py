@@ -457,6 +457,7 @@ def create_grid_layout(  # noqa: PLR0913
     *,
     crop_to_fit: bool,
     transparent_bg: bool,
+    justification: str = "left",
 ) -> Image.Image:
     """Create a uniform grid layout of images."""
     if not images:
@@ -497,8 +498,33 @@ def create_grid_layout(  # noqa: PLR0913
         if border_radius > 0:
             resized_result.image = apply_border_radius(resized_result.image, border_radius)
 
-        # Calculate final position
-        final_x = col * (cell_width + spacing) + spacing + resized_result.x_offset
+        # Calculate position based on justification
+        # Base x position without justification
+        base_x = col * (cell_width + spacing) + spacing + resized_result.x_offset
+        
+        # Calculate number of images in current row
+        images_in_row = min(columns, len(pil_images) - row * columns)
+        
+        # Adjust x position based on justification
+        if justification == "center":
+            # Center the row by adding offset
+            if images_in_row < columns:
+                row_width = images_in_row * (cell_width + spacing) + spacing
+                offset = (total_width - row_width) // 2
+                final_x = base_x + offset
+            else:
+                final_x = base_x
+        elif justification == "right":
+            # Right align by adding offset
+            if images_in_row < columns:
+                row_width = images_in_row * (cell_width + spacing) + spacing
+                offset = total_width - row_width
+                final_x = base_x + offset
+            else:
+                final_x = base_x
+        else:  # "left" or default
+            final_x = base_x
+            
         final_y = row * (cell_height + spacing) + spacing + resized_result.y_offset
         grid_image.paste(
             resized_result.image,
