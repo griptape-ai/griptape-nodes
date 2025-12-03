@@ -4010,7 +4010,6 @@ class FlowManager:
                         queue.put(next_node)
         return list(processed.keys())
 
-
     def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> bool:
         nodes = self.get_all_connected_nodes(start_node)
         return node in nodes

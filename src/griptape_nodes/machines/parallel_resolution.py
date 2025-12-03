@@ -197,6 +197,13 @@ class ExecuteDagState(State):
         )
         # Now the final thing to do, is to take their directed graph and update it.
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
+        graph = context.networks[network_name]
+        if len(graph.nodes()) == 0 and context.dag_builder is not None:
+            # remove from dependencies. This is so we can potentially queue the data node.
+            data_start_nodes = context.dag_builder.remove_graph_from_dependencies(network_name)
+            for data_start_node_name in data_start_nodes:
+                data_start_node = GriptapeNodes.NodeManager().get_node_by_name(data_start_node_name)
+                context.dag_builder.add_node_with_dependencies(data_start_node, network_name)
 
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:

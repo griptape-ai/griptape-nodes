@@ -605,7 +605,7 @@ class NodeExecutor:
         for node_name in nodes_in_control_flow:
             if node_name not in dag_builder.node_to_reference:
                 all_nodes.add(node_name)
-                # TODO will there be an issue with nodes in the control flow? 
+                # TODO will there be an issue with nodes in the control flow?
             node_obj = node_manager.get_node_by_name(node_name)
             deps = DagBuilder.collect_data_dependencies_for_node(
                 node_obj, connections, nodes_in_control_flow, visited_deps

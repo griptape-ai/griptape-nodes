@@ -45,11 +45,13 @@ class DagBuilder:
     graphs: dict[str, DirectedGraph]  # Str is the name of the start node associated here.
     node_to_reference: dict[str, DagNode]
     graph_to_nodes: dict[str, set[str]]  # Track which nodes belong to which graph
+    start_node_candidates: dict[str, set[str]]
 
     def __init__(self) -> None:
         self.graphs = {}
         self.node_to_reference: dict[str, DagNode] = {}
         self.graph_to_nodes = {}
+        self.start_node_candidates = {}
 
     # Complex with the inner recursive method, but it needs connections and added_nodes.
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
@@ -139,6 +141,7 @@ class DagBuilder:
         self.graphs.clear()
         self.node_to_reference.clear()
         self.graph_to_nodes.clear()
+        self.start_node_candidates.clear()
 
     def can_queue_control_node(self, node: DagNode) -> bool:
         if len(self.graphs) == 1:
@@ -338,3 +341,17 @@ class DagBuilder:
             for node_name in self.graph_to_nodes[graph_name]:
                 self.node_to_reference.pop(node_name, None)
             self.graph_to_nodes.pop(graph_name, None)
+
+    def remove_graph_from_dependencies(self, dependent_graph_name: str) -> list[str]:
+        # Removes a list of start nodes that are now available for dag building.
+        start_nodes = []
+        # copy because we will be removing as iterating.
+        for start_node_name, graph_deps in self.start_node_candidates.copy().items():
+            # Copy because we will be modifying it.
+            for graph_deps_name in graph_deps.copy():
+                if dependent_graph_name == graph_deps_name:
+                    graph_deps.remove(dependent_graph_name)
+            if len(self.start_node_candidates[start_node_name]) == 0:
+                del self.start_node_candidates[start_node_name]
+                start_nodes.append(start_node_name)
+        return start_nodes

@@ -409,7 +409,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         ):
             await self.update()
 
-    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:
+    async def _process_nodes_for_dag(self, start_node: BaseNode) -> list[BaseNode]:  # noqa: C901, PLR0912
         """Process data_nodes from the global queue to build unified DAG.
 
         This method identifies data_nodes in the execution queue and processes
@@ -444,11 +444,11 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             return [start_node]
 
         # For main flows using the global DagBuilder, process the global queue
-        queue_items = list(flow_manager.global_flow_queue.queue)
         start_nodes = [start_node]
         from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
 
-        # Find data_nodes and remove them from queue
+        # PASS 1: Process all control/start nodes first to build control flow graphs
+        queue_items = list(flow_manager.global_flow_queue.queue)
         for item in queue_items:
             if item.dag_execution_type in (DagExecutionType.CONTROL_NODE, DagExecutionType.START_NODE):
                 node = item.node
@@ -462,22 +462,27 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                     if node_to_add not in start_nodes:
                         start_nodes.append(node_to_add)
                 flow_manager.global_flow_queue.queue.remove(item)
-            elif item.dag_execution_type == DagExecutionType.DATA_NODE:
+
+        # PASS 2: Process all data nodes after control graphs are built
+        queue_items = list(flow_manager.global_flow_queue.queue)
+        for item in queue_items:
+            if item.dag_execution_type == DagExecutionType.DATA_NODE:
                 node = item.node
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
                 # Only add if not already added (proxy might already be in DAG)
-                data_node_graph = node.name
                 if node_to_add.name not in dag_builder.node_to_reference:
+                    # Now, we need to create the DAG, but it can't be queued or used until it's dependencies have been resolved.
                     # Figure out which graph the data node belongs to, if it belongs to a graph.
                     for graph_start_node_name in dag_builder.graphs:
                         graph_start_node = node_manager.get_node_by_name(graph_start_node_name)
                         correct_graph = flow_manager.is_node_connected(graph_start_node, node)
+                        # This means this node is in the downstream connection of one of this graph.
                         if correct_graph:
-                            data_node_graph = graph_start_node_name
-                            break
-                    dag_builder.add_node_with_dependencies(node_to_add, data_node_graph)
+                            if node.name not in dag_builder.start_node_candidates:
+                                dag_builder.start_node_candidates[node.name] = set()
+                            dag_builder.start_node_candidates[node.name].add(graph_start_node_name)
                 flow_manager.global_flow_queue.queue.remove(item)
 
         return start_nodes
