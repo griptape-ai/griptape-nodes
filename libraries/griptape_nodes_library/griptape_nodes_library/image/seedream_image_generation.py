@@ -27,6 +27,7 @@ PROMPT_TRUNCATE_LENGTH = 100
 
 # Model mapping from human-friendly names to API model IDs
 MODEL_MAPPING = {
+    "seedream-4.5": "seedream-4-5-251128",
     "seedream-4.0": "seedream-4-0-250828",
     "seedream-3.0-t2i": "seedream-3-0-t2i-250415",
     "seededit-3.0-i2i": "seededit-3-0-i2i-250628",
@@ -34,6 +35,17 @@ MODEL_MAPPING = {
 
 # Size options for different models
 SIZE_OPTIONS = {
+    "seedream-4.5": [
+        "2K",
+        "4K",
+        "2560x1440",
+        "1440x2560",
+        "3840x2160",
+        "2160x3840",
+        "4096x2160",
+        "2160x4096",
+        "4096x4096",
+    ],
     "seedream-4.0": [
         "1K",
         "2K",
@@ -62,22 +74,28 @@ SIZE_OPTIONS = {
     ],
 }
 
-SEEDREAM_4_0_MAX_IMAGES = 10
+# Maximum number of input images for models that support multiple images
+MAX_IMAGES_PER_MODEL = {
+    "seedream-4.5": 14,
+    "seedream-4.0": 10,
+}
 
 
 class SeedreamImageGeneration(SuccessFailureNode):
     """Generate images using Seedream models via Griptape model proxy.
 
-    Supports three models:
+    Supports four models:
+    - seedream-4.5: Latest model with optional multiple image inputs (up to 14) and shorthand size options (2K, 4K)
+      Minimum resolution: 2560x1440, Maximum resolution: 4096x4096
     - seedream-4.0: Advanced model with optional multiple image inputs (up to 10) and shorthand size options (1K, 2K, 4K)
     - seedream-3.0-t2i: Text-to-image only model with explicit size dimensions (WIDTHxHEIGHT format)
     - seededit-3.0-i2i: Image-to-image editing model requiring single input image (WIDTHxHEIGHT format)
 
     Inputs:
-        - model (str): Model selection (seedream-4.0, seedream-3.0-t2i, seededit-3.0-i2i)
+        - model (str): Model selection (seedream-4.5, seedream-4.0, seedream-3.0-t2i, seededit-3.0-i2i)
         - prompt (str): Text prompt for image generation
         - image (ImageArtifact): Single input image (required for seededit-3.0-i2i, hidden for other models)
-        - images (list): Multiple input images (seedream-4.0 only, up to 10 images total)
+        - images (list): Multiple input images (seedream-4.5 supports up to 14, seedream-4.0 up to 10)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
@@ -110,10 +128,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value="seedream-4.0",
+                default_value="seedream-4.5",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["seedream-4.0", "seedream-3.0-t2i", "seededit-3.0-i2i"])},
+                traits={Options(choices=["seedream-4.5", "seedream-4.0", "seedream-3.0-t2i", "seededit-3.0-i2i"])},
             )
         )
 
@@ -146,7 +164,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Multiple image inputs for seedream-4.0 (up to 10 images)
+        # Multiple image inputs for seedream-4.5/4.0 (up to 14/10 images)
         self.add_parameter(
             ParameterList(
                 name="images",
@@ -159,7 +177,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                     "list[ImageUrlArtifact]",
                 ],
                 default_value=[],
-                tooltip="Input images for seedream-4.0 (up to 10 images total)",
+                tooltip="Input images for seedream (up to 14 for v4.5, 10 for v4.0)",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"expander": True, "display_name": "Input Images"},
             )
@@ -171,10 +189,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 name="size",
                 input_types=["str"],
                 type="str",
-                default_value="1K",
+                default_value="2K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=SIZE_OPTIONS["seedream-4.0"])},
+                traits={Options(choices=SIZE_OPTIONS["seedream-4.5"])},
             )
         )
 
@@ -244,13 +262,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-        # Initialize parameter visibility based on default model (seedream-4.0)
+        # Initialize parameter visibility based on default model (seedream-4.5)
         self._initialize_parameter_visibility()
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model") or "seedream-4.0"
-        if default_model == "seedream-4.0":
+        default_model = self.get_parameter_value("model") or "seedream-4.5"
+        if default_model in ("seedream-4.5", "seedream-4.0"):
             # Hide single image input, show images list, hide guidance scale
             self.hide_parameter_by_name("image")
             self.show_parameter_by_name("images")
@@ -269,54 +287,63 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update size options and parameter visibility based on model selection."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
-            new_choices = SIZE_OPTIONS[value]
-            current_size = self.get_parameter_value("size")
-
-            # Set appropriate parameters for each model
-            if value == "seedream-4.0":
-                # Hide single image input, show images list, hide guidance scale
-                self.hide_parameter_by_name("image")
-                self.show_parameter_by_name("images")
-                self.hide_parameter_by_name("guidance_scale")
-                # Update size choices and preserve current size if valid, otherwise default to 1K for v4
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    default_size = "1K" if "1K" in new_choices else new_choices[0]
-                    self._update_option_choices("size", new_choices, default_size)
-
-            elif value == "seedream-3.0-t2i":
-                # Hide image inputs (not supported), show guidance scale
-                self.hide_parameter_by_name("image")
-                self.hide_parameter_by_name("images")
-                self.show_parameter_by_name("guidance_scale")
-                # Set default guidance scale
-                self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and preserve current size if valid, otherwise default to 2048x2048 for v3 t2i
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    self._update_option_choices("size", new_choices, "2048x2048")
-
-            elif value == "seededit-3.0-i2i":
-                # Show single image input (required), hide images list, show guidance scale
-                self.show_parameter_by_name("image")
-                self.hide_parameter_by_name("images")
-                self.show_parameter_by_name("guidance_scale")
-                # Update tooltip for primary image parameter
-                image_param = self.get_parameter_by_name("image")
-                if image_param:
-                    image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
-                    image_param.ui_options["display_name"] = "Input Image"
-                # Set default guidance scale
-                self.set_parameter_value("guidance_scale", 2.5)
-                # Update size choices and preserve current size if valid, otherwise default to adaptive for seededit
-                if current_size in new_choices:
-                    self._update_option_choices("size", new_choices, current_size)
-                else:
-                    self._update_option_choices("size", new_choices, "adaptive")
-
+            self._update_model_parameters(value)
         return super().after_value_set(parameter, value)
+
+    def _update_model_parameters(self, model: str) -> None:
+        """Update parameters and UI based on selected model."""
+        new_choices = SIZE_OPTIONS[model]
+        current_size = self.get_parameter_value("size")
+
+        if model in ("seedream-4.5", "seedream-4.0"):
+            self._configure_v4_models(model, new_choices, current_size)
+        elif model == "seedream-3.0-t2i":
+            self._configure_v3_t2i_model(new_choices, current_size)
+        elif model == "seededit-3.0-i2i":
+            self._configure_seededit_model(new_choices, current_size)
+
+    def _configure_v4_models(self, model: str, new_choices: list[str], current_size: str) -> None:
+        """Configure UI for seedream-4.5 and seedream-4.0 models."""
+        self.hide_parameter_by_name("image")
+        self.show_parameter_by_name("images")
+        self.hide_parameter_by_name("guidance_scale")
+
+        if current_size in new_choices:
+            self._update_option_choices("size", new_choices, current_size)
+        else:
+            default_size = "2K" if model == "seedream-4.5" else "1K"
+            default_size = default_size if default_size in new_choices else new_choices[0]
+            self._update_option_choices("size", new_choices, default_size)
+
+    def _configure_v3_t2i_model(self, new_choices: list[str], current_size: str) -> None:
+        """Configure UI for seedream-3.0-t2i model."""
+        self.hide_parameter_by_name("image")
+        self.hide_parameter_by_name("images")
+        self.show_parameter_by_name("guidance_scale")
+        self.set_parameter_value("guidance_scale", 2.5)
+
+        if current_size in new_choices:
+            self._update_option_choices("size", new_choices, current_size)
+        else:
+            self._update_option_choices("size", new_choices, "2048x2048")
+
+    def _configure_seededit_model(self, new_choices: list[str], current_size: str) -> None:
+        """Configure UI for seededit-3.0-i2i model."""
+        self.show_parameter_by_name("image")
+        self.hide_parameter_by_name("images")
+        self.show_parameter_by_name("guidance_scale")
+
+        image_param = self.get_parameter_by_name("image")
+        if image_param:
+            image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
+            image_param.ui_options["display_name"] = "Input Image"
+
+        self.set_parameter_value("guidance_scale", 2.5)
+
+        if current_size in new_choices:
+            self._update_option_choices("size", new_choices, current_size)
+        else:
+            self._update_option_choices("size", new_choices, "adaptive")
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
@@ -327,14 +354,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
         exceptions = []
         model = self.get_parameter_value("model")
 
-        # Validate image count for seedream-4.0
-        if model == "seedream-4.0":
+        # Validate image count for models that support multiple images
+        if model in MAX_IMAGES_PER_MODEL:
+            max_images = MAX_IMAGES_PER_MODEL[model]
             images = self.get_parameter_list_value("images") or []
-            if len(images) > SEEDREAM_4_0_MAX_IMAGES:
+            if len(images) > max_images:
                 exceptions.append(
-                    ValueError(
-                        f"{self.name}: seedream-4.0 supports maximum {SEEDREAM_4_0_MAX_IMAGES} images, got {len(images)}"
-                    )
+                    ValueError(f"{self.name}: {model} supports maximum {max_images} images, got {len(images)}")
                 )
 
         return exceptions if exceptions else None
@@ -382,17 +408,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         params = {
-            "model": self.get_parameter_value("model") or "seedream-4.0",
+            "model": self.get_parameter_value("model") or "seedream-4.5",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": self.get_parameter_value("image"),
-            "size": self.get_parameter_value("size") or "1K",
+            "size": self.get_parameter_value("size") or "2K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
         }
 
-        # Get image list for seedream-4.0
-        if params["model"] == "seedream-4.0":
+        # Get image list for seedream-4.5 and seedream-4.0
+        if params["model"] in ("seedream-4.5", "seedream-4.0"):
             params["images"] = self.get_parameter_list_value("images") or []
 
         return params
@@ -461,8 +487,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
             payload["seed"] = params["seed"]
 
         # Model-specific parameters
-        if model == "seedream-4.0":
-            # Add multiple images if provided for v4
+        if model in ("seedream-4.5", "seedream-4.0"):
+            # Add multiple images if provided for v4.5/v4.0
             images = params.get("images", [])
             if images:
                 image_array = []
