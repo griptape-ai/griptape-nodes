@@ -56,6 +56,8 @@ logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
+NODE_GROUP_FLOW = "NodeGroupFlow"
+
 
 class TransformedParameterValue(NamedTuple):
     """Return type for BaseNode.before_value_set() to transform both value and type.
@@ -1966,7 +1968,6 @@ class NodeGroupNode(BaseNode):
         Note: This is called during __init__, so the node may not yet be added to a flow.
         The subflow will be created without a parent initially, and can be reparented later.
         """
-        from griptape_nodes.exe_types.flow import NODE_GROUP_FLOW
         from griptape_nodes.retained_mode.events.flow_events import (
             CreateFlowRequest,
             CreateFlowResultSuccess,
