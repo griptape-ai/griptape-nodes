@@ -58,6 +58,8 @@ class DisplayImage(DataNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "image":
             self._update_dimensions(value)
+            # Update output value for downstream connections
+            self.parameter_output_values["image"] = value
         return super().after_value_set(parameter, value)
 
     def _update_dimensions(self, image: ImageArtifact | ImageUrlArtifact | None) -> None:
@@ -81,6 +83,4 @@ class DisplayImage(DataNode):
         return 0, 0
 
     def process(self) -> None:
-        image = self.get_parameter_value("image")
-        self._update_dimensions(image)
-        self.parameter_output_values["image"] = image
+        """Process the node - logic handled in after_value_set."""
