@@ -293,6 +293,11 @@ def get_current_ref(library_path: Path) -> str | None:
 
         repo = pygit2.Repository(repo_path)
 
+        # Check if HEAD is unborn (no commits yet)
+        if repo.head_is_unborn:
+            logger.debug("Repository at %s has unborn HEAD (no commits)", library_path)
+            return None
+
         # Check if HEAD is detached
         if repo.head_is_detached:
             # HEAD is detached - check if it's pointing to a tag
