@@ -34,6 +34,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes")
 
+NODE_GROUP_FLOW = "NodeGroupFlow"
+
 
 class SubflowNodeGroup(BaseNodeGroup, ABC):
     """Abstract base class for subflow node groups.
@@ -100,7 +102,15 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         current_flow = GriptapeNodes.ContextManager().get_current_flow()
         parent_flow_name = current_flow.name if current_flow else None
 
-        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name, set_as_new_context=False)
+        # Create metadata with flow_type
+        subflow_metadata = {"flow_type": NODE_GROUP_FLOW}
+
+        request = CreateFlowRequest(
+            flow_name=subflow_name,
+            parent_flow_name=parent_flow_name,
+            set_as_new_context=False,
+            metadata=subflow_metadata,
+        )
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, CreateFlowResultSuccess):

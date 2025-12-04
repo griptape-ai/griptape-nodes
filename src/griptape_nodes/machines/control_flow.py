@@ -473,6 +473,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
+                disconnected = True
                 # Only add if not already added (proxy might already be in DAG)
                 disconnected = True
                 if node_to_add.name not in dag_builder.node_to_reference:
@@ -483,11 +484,14 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                         correct_graph = flow_manager.is_node_connected(graph_start_node, node)
                         # This means this node is in the downstream connection of one of this graph.
                         if correct_graph:
+                            # Is the node connected to a graph?
                             disconnected = False
                             if node.name not in dag_builder.start_node_candidates:
                                 dag_builder.start_node_candidates[node.name] = set()
                             dag_builder.start_node_candidates[node.name].add(graph_start_node_name)
                     if disconnected:
+                        # If the node is not connected to any graph, we can add it as it's own graph here.
+                        # It will not cause any overlapping confusion with existing graphs.
                         dag_builder.add_node_with_dependencies(node_to_add, node_to_add.name)
                 flow_manager.global_flow_queue.queue.remove(item)
 

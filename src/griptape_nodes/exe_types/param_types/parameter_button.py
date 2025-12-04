@@ -88,7 +88,7 @@ class ParameterButton(Parameter):
         on_click: Button.OnClickCallback | None = None,
         get_button_state: Button.GetButtonStateCallback | None = None,
         href: str | None = None,
-        hide: bool = False,
+        hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
         allow_input: bool = False,

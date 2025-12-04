@@ -47,6 +47,8 @@ logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
+NODE_GROUP_FLOW = "NodeGroupFlow"
+
 
 class TransformedParameterValue(NamedTuple):
     """Return type for BaseNode.before_value_set() to transform both value and type.

@@ -44,7 +44,7 @@ class Parameter3D(Parameter):
         clickable_file_browser: bool = True,
         expander: bool = False,
         accept_any: bool = True,
-        hide: bool = False,
+        hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
         allow_input: bool = True,

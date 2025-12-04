@@ -13,11 +13,13 @@ class FilePathParameter:
         parameter_name: str = "file_path",
         file_types: list[str] | None = None,
         initial_path: str | None = None,
+        tooltip: str = "Path to a local file",
     ):
         self._node = node
         self._parameter_name = parameter_name
         self._file_types = file_types
         self._initial_path = initial_path or str(GriptapeNodes.ConfigManager().workspace_path)
+        self._tooltip = tooltip
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -25,7 +27,7 @@ class FilePathParameter:
                 name=self._parameter_name,
                 input_types=["str"],
                 type="str",
-                tooltip="Path to a local lora file",
+                tooltip=self._tooltip,
                 traits={
                     FileSystemPicker(
                         allow_files=True,
@@ -39,7 +41,7 @@ class FilePathParameter:
         )
 
     def get_file_path(self) -> Path:
-        return Path(self._node.get_parameter_value(self._parameter_name))
+        return Path(self._node.get_parameter_value(self._parameter_name)).resolve()
 
     def validate_parameter_values(self) -> None:
         file_path = self.get_file_path()

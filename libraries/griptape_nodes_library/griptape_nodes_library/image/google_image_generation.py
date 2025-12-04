@@ -63,7 +63,6 @@ class GoogleImageGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "Model",
-                    "hide": False,
                 },
                 traits={
                     Options(
@@ -107,8 +106,9 @@ class GoogleImageGeneration(SuccessFailureNode):
                 default_value=[],
                 tooltip="Deprecated: Use input_images instead",
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"display_name": "Object Images", "expander": True, "hide": True},
+                ui_options={"display_name": "Object Images", "expander": True},
                 max_items=MAX_OBJECT_IMAGES,
+                hide=True,
             )
         )
 
@@ -120,8 +120,9 @@ class GoogleImageGeneration(SuccessFailureNode):
                 default_value=[],
                 tooltip="Deprecated: Use input_images instead",
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"display_name": "Human Images", "expander": True, "hide": True},
+                ui_options={"display_name": "Human Images", "expander": True},
                 max_items=MAX_HUMAN_IMAGES,
+                hide=True,
             )
         )
 

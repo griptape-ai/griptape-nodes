@@ -14,7 +14,9 @@ class LoadLora(ControlNode):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.lora_file_path_params = FilePathParameter(
-            self, file_types=[".safetensors", ".pt", ".bin", ".json", ".lora"]
+            self,
+            file_types=[".safetensors", ".sft", ".pt", ".bin", ".json", ".lora"],
+            tooltip="Absolute path to a local LoRA file",
         )
         self.lora_weight_and_output_params = FluxLoraParameters(self)
         self.lora_file_path_params.add_input_parameters()
@@ -27,7 +29,7 @@ class LoadLora(ControlNode):
                 type="str",
                 output_type="str",
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                tooltip="a phrase that shall be included in the prompt to ensure triggering the lora",
+                tooltip="A phrase that shall be included in the prompt to ensure triggering the lora",
                 hide=True,
             )
         )
