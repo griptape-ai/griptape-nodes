@@ -98,6 +98,11 @@ class HuggingFaceRepoFileParameter(HuggingFaceModelParameter):
         """Returns a list of model names that should be downloaded (excluding deprecated models)."""
         return [repo for (repo, file) in self._repo_files if not self._is_deprecated(repo)]
 
+    def add_input_parameters(self) -> None:
+        """Override to apply deprecated model filtering after parameter creation."""
+        super().add_input_parameters()
+        self.refresh_parameters()
+
     def get_repo_filename(self) -> str:
         repo_id, _ = self.get_repo_revision()
         for repo, file in self._repo_files:
