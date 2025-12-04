@@ -346,6 +346,16 @@
       }
     },
     {
+      "class_name": "StandardSubflowNodeGroup",
+      "file_path": "griptape_nodes_library/engine/standard_subflow_node_group.py",
+      "metadata": {
+        "category": "engine",
+        "description": "Groups multiple nodes together for organization and parallel execution",
+        "display_name": "Node Group",
+        "icon": "Layers"
+      }
+    },
+    {
       "class_name": "CreateIntList",
       "file_path": "griptape_nodes_library/lists/create_int_list.py",
       "metadata": {

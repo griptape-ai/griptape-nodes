@@ -123,7 +123,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
-    CreateNodeGroupRequest,
     CreateNodeRequest,
     DeleteNodeRequest,
     DeleteNodeResultFailure,
@@ -1527,14 +1526,12 @@ class FlowManager:
 
             # Populate the shared node_name_to_uuid mapping
             create_cmd = serialize_result.serialized_node_commands.create_node_command
-            # Get the node name from the CreateNodeGroupRequest command if necessary.
-            node_name = (
-                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
-            )
+            # Get the node name from the CreateNodeRequest command.
+            node_name = create_cmd.node_name
             if node_name is not None:
                 node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
 
-            # SubflowNodeGroups must be serialized LAST because CreateNodeGroupRequest references child node names
+            # SubflowNodeGroups must be serialized LAST because they reference child node names via node_names_to_add
             # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
             if isinstance(node, SubflowNodeGroup):
                 serialized_node_group_commands.append(serialize_result.serialized_node_commands)
@@ -1553,7 +1550,7 @@ class FlowManager:
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
                     if child_node_name in node_name_to_uuid:
@@ -1648,12 +1645,8 @@ class FlowManager:
             for serialized_node_command in serialized_package_nodes:
                 # We need to get the create commoand.
                 create_cmd = serialized_node_command.create_node_command
-                # In a CreateNodeGroupRequest, the node_name is the node_group_name, so we need to add both.
-                cmd_node_name = (
-                    create_cmd.node_group_name
-                    if isinstance(create_cmd, CreateNodeGroupRequest)
-                    else create_cmd.node_name
-                )
+                # Get the node name from CreateNodeRequest
+                cmd_node_name = create_cmd.node_name
                 if cmd_node_name == package_node.name:
                     serialized_node = serialized_node_command
                     break
@@ -2988,9 +2981,6 @@ class FlowManager:
         # Collect node types from all nodes in this flow
         for node_cmd in serialized_node_commands:
             create_cmd = node_cmd.create_node_command
-            # Skip SubflowNodeGroup as it doesn't have node_type/specific_library_name
-            if isinstance(create_cmd, CreateNodeGroupRequest):
-                continue
             node_type = create_cmd.node_type
             library_name = create_cmd.specific_library_name
             if library_name is None:
@@ -3250,10 +3240,8 @@ class FlowManager:
                 for node_cmd in subflow_cmd.serialized_node_commands:
                     # Extract node name from the create command
                     create_cmd = node_cmd.create_node_command
-                    if isinstance(create_cmd, CreateNodeRequest) and create_cmd.node_name:
+                    if create_cmd.node_name:
                         complete_node_name_to_uuid[create_cmd.node_name] = node_cmd.node_uuid
-                    elif isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_group_name:
-                        complete_node_name_to_uuid[create_cmd.node_group_name] = node_cmd.node_uuid
                 # Recursively process nested subflows
                 if subflow_cmd.sub_flows_commands:
                     collect_subflow_node_uuids(subflow_cmd.sub_flows_commands)
@@ -3263,7 +3251,7 @@ class FlowManager:
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 # Convert node names to UUIDs using the complete map (including subflows)
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
@@ -3382,16 +3370,14 @@ class FlowManager:
         node_uuid_to_deserialized_node_result = {}
         node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
-            # Get the node name from the CreateNodeGroupRequest command if necessary
+            # Get the node name from the CreateNodeRequest command
             create_cmd = serialized_node.create_node_command
-            original_node_name = (
-                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
-            )
+            original_node_name = create_cmd.node_name
 
             # For SubflowNodeGroups, remap node_names_to_add from UUIDs to actual node names
             # Create a copy to avoid mutating the original serialized data
             serialized_node_for_deserialization = serialized_node
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 # Use list comprehension to remap UUIDs to deserialized node names
                 remapped_names = [
                     node_uuid_to_deserialized_node_result[node_uuid].node_name
@@ -3399,10 +3385,18 @@ class FlowManager:
                     if node_uuid in node_uuid_to_deserialized_node_result
                 ]
                 # Create a copy of the command with remapped names instead of mutating original
-                create_cmd_copy = CreateNodeGroupRequest(
-                    node_group_name=create_cmd.node_group_name,
+                create_cmd_copy = CreateNodeRequest(
+                    node_type=create_cmd.node_type,
+                    specific_library_name=create_cmd.specific_library_name,
+                    node_name=create_cmd.node_name,
                     node_names_to_add=remapped_names,
+                    override_parent_flow_name=create_cmd.override_parent_flow_name,
                     metadata=create_cmd.metadata,
+                    resolution=create_cmd.resolution,
+                    initial_setup=create_cmd.initial_setup,
+                    set_as_new_context=create_cmd.set_as_new_context,
+                    create_error_proxy_on_failure=create_cmd.create_error_proxy_on_failure,
+                    is_node_group=create_cmd.is_node_group,
                 )
                 # Create a copy of serialized_node with the new command
                 serialized_node_for_deserialization = SerializedNodeCommands(

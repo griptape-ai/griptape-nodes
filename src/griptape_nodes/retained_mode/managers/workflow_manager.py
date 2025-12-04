@@ -58,7 +58,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesRequest,
     ListRegisteredLibrariesResultSuccess,
 )
-from griptape_nodes.retained_mode.events.node_events import CreateNodeGroupRequest
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
@@ -1846,13 +1845,13 @@ class WorkflowManager:
             )
 
             # Separate regular nodes from NodeGroup nodes in main flow
-            from griptape_nodes.retained_mode.events.node_events import CreateNodeGroupRequest
 
             regular_node_commands = []
             node_group_commands = []
             for serialized_node_command in serialized_flow_commands.serialized_node_commands:
                 create_cmd = serialized_node_command.create_node_command
-                if isinstance(create_cmd, CreateNodeGroupRequest):
+                # Check if this is a NodeGroup by checking is_node_group flag
+                if create_cmd.is_node_group:
                     node_group_commands.append(serialized_node_command)
                 else:
                     regular_node_commands.append(serialized_node_command)
@@ -3158,7 +3157,6 @@ class WorkflowManager:
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeDeprecationMetadata")
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "IconVariant")
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeRequest")
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.node_events", "CreateNodeGroupRequest")
         import_recorder.add_from_import(
             "griptape_nodes.retained_mode.events.parameter_events", "AddParameterToNodeRequest"
         )
@@ -3180,8 +3178,8 @@ class WorkflowManager:
             for field in fields(create_node_request):
                 field_value = getattr(create_node_request, field.name)
                 if field_value != field.default:
-                    # Special handling for CreateNodeGroupRequest.node_names_to_add - these are now UUIDs, convert to variable references
-                    if isinstance(create_node_request, CreateNodeGroupRequest) and field.name == "node_names_to_add":
+                    # Special handling for node_names_to_add - these are now UUIDs, convert to variable references
+                    if field.name == "node_names_to_add" and field_value:
                         # field_value is now a list of UUIDs (converted in _serialize_package_nodes_for_local_execution)
                         # Convert each UUID to an AST Name node referencing the generated variable
                         node_var_ast_list = []
@@ -3208,7 +3206,7 @@ class WorkflowManager:
                         create_node_request_args.append(
                             ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                         )
-        # Get the actual request class name (CreateNodeRequest or CreateNodeGroupRequest)
+        # Get the actual request class name (CreateNodeRequest)
         request_class_name = type(create_node_request).__name__
         # Handle the create node command and assign to node name
         create_node_call_ast = ast.Assign(

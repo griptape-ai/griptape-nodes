@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -34,8 +35,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class SubflowNodeGroup(BaseNodeGroup):
-    """Proxy node that represents a group of nodes during DAG execution.
+class SubflowNodeGroup(BaseNodeGroup, ABC):
+    """Abstract base class for subflow node groups.
+
+    Proxy node that represents a group of nodes during DAG execution.
 
     This node acts as a single execution unit for a group of nodes that should
     be executed in parallel. When the DAG executor encounters this proxy node,
@@ -741,12 +744,15 @@ class SubflowNodeGroup(BaseNodeGroup):
             node_names_in_group = set(self.nodes.keys())
             self._map_external_connections_for_nodes(remaining_nodes, connections, node_names_in_group)
 
-    async def aprocess(self) -> None:
-        """Execute all nodes in the group in parallel.
+    async def execute_subflow(self) -> None:
+        """Execute the subflow and propagate output values.
 
-        This method is called by the DAG executor. It executes all nodes in the
-        group concurrently using asyncio.gather and handles propagating input
-        values from the proxy to the grouped nodes.
+        This helper method:
+        1. Starts the local subflow execution
+        2. Collects output values from internal nodes
+        3. Sets them on the NodeGroup's output (right) proxy parameters
+
+        Can be called by concrete subclasses in their aprocess() implementation.
         """
         from griptape_nodes.retained_mode.events.execution_events import StartLocalSubflowRequest
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -792,6 +798,13 @@ class SubflowNodeGroup(BaseNodeGroup):
                 if value is not None:
                     self.parameter_output_values[proxy_param_name] = value
                 break
+
+    @abstractmethod
+    async def aprocess(self) -> None:
+        """Execute all nodes in the group.
+
+        Must be implemented by concrete subclasses to define execution behavior.
+        """
 
     def process(self) -> Any:
         """Synchronous process method - not used for proxy nodes."""
