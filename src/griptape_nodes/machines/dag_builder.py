@@ -342,16 +342,21 @@ class DagBuilder:
                 self.node_to_reference.pop(node_name, None)
             self.graph_to_nodes.pop(graph_name, None)
 
-    def remove_graph_from_dependencies(self, dependent_graph_name: str) -> list[str]:
-        # Removes a list of start nodes that are now available for dag building.
+    def remove_graph_from_dependencies(self) -> list[str]:
+        # Check all start node candidates and return those whose dependent graphs are all empty
         start_nodes = []
         # copy because we will be removing as iterating.
         for start_node_name, graph_deps in self.start_node_candidates.copy().items():
-            # Copy because we will be modifying it.
-            for graph_deps_name in graph_deps.copy():
-                if dependent_graph_name == graph_deps_name:
-                    graph_deps.remove(dependent_graph_name)
-            if len(self.start_node_candidates[start_node_name]) == 0:
+            # Check if all graphs this start node depends on are now empty
+            all_deps_empty = True
+            for graph_deps_name in graph_deps:
+                # Check if this graph exists and has nodes
+                if graph_deps_name in self.graphs and len(self.graphs[graph_deps_name].nodes()) > 0:
+                    all_deps_empty = False
+                    break
+
+            # If all dependent graphs are empty, this start node can be queued
+            if all_deps_empty:
                 del self.start_node_candidates[start_node_name]
                 start_nodes.append(start_node_name)
         return start_nodes

@@ -213,9 +213,7 @@ class NodeExecutor:
 
         # Handle iterative loop nodes - check if we need to package and execute the loop
         if isinstance(node, BaseIterativeEndNode):
-            logger.info("Detected BaseIterativeEndNode '%s' - calling handle_loop_execution", node.name)
             await self.handle_loop_execution(node)
-            logger.info("Completed handle_loop_execution for '%s'", node.name)
             return
 
         # We default to local execution if it is not a NodeGroupNode or BaseIterativeEndNode!
@@ -588,7 +586,6 @@ class NodeExecutor:
         start_node: BaseIterativeStartNode,
         end_node: BaseIterativeEndNode,
         nodes_in_control_flow: set[str],
-        dag_builder: DagBuilder,
         connections: Any,
     ) -> LoopBodyNodes:
         """Collect all nodes in the loop body, including data dependencies.
@@ -603,8 +600,8 @@ class NodeExecutor:
         # Exclude the start node from packaging. And, we don't want their dependencies.
         nodes_in_control_flow.discard(start_node.name)
         for node_name in nodes_in_control_flow:
-            if node_name not in dag_builder.node_to_reference:
-                all_nodes.add(node_name)
+            # Add ALL nodes in control flow for removal from parent DAG
+            all_nodes.add(node_name)
             node_obj = node_manager.get_node_by_name(node_name)
             deps = DagBuilder.collect_data_dependencies_for_node(
                 node_obj, connections, nodes_in_control_flow, visited_deps
@@ -652,10 +649,7 @@ class NodeExecutor:
         nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
 
         # Filter out nodes already in the current DAG and collect data dependencies
-        dag_builder = flow_manager.global_dag_builder
-        loop_body_result = self._collect_loop_body_nodes(
-            start_node, end_node, nodes_in_control_flow, dag_builder, connections
-        )
+        loop_body_result = self._collect_loop_body_nodes(start_node, end_node, nodes_in_control_flow, connections)
         all_nodes = loop_body_result.all_nodes
         execution_type = loop_body_result.execution_type
         node_group_name = loop_body_result.node_group_name
@@ -2376,11 +2370,24 @@ class NodeExecutor:
             if node:
                 packaged_nodes.add(node)
 
-        # Remove matching queue items
+        # Remove matching queue items from global queue
         items_to_remove = [item for item in flow_manager.global_flow_queue.queue if item.node in packaged_nodes]
 
         for item in items_to_remove:
             flow_manager.global_flow_queue.queue.remove(item)
+
+        # Remove from DAG builder to prevent parallel execution in parent flow
+        dag_builder = flow_manager.global_dag_builder
+        if dag_builder:
+            for node_name in packaged_node_names:
+                # Remove from node_to_reference
+                if node_name in dag_builder.node_to_reference:
+                    dag_builder.node_to_reference.pop(node_name)
+
+                # Remove from all networks and check if any become empty
+                for network in list(dag_builder.graphs.values()):
+                    if node_name in network.nodes():
+                        network.remove_node(node_name)
 
     def _deserialize_parameter_value(self, param_name: str, param_value: Any, unique_uuid_to_values: dict) -> Any:
         """Deserialize a single parameter value, handling UUID references and pickling.

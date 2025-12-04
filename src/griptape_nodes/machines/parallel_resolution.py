@@ -133,18 +133,15 @@ class ExecuteDagState(State):
         if isinstance(current_node, BaseIterativeStartNode):
             current_node.state = NodeResolutionState.RESOLVED
 
-            # Remove start node from the network
-            network = context.networks.get(network_name)
-            if network and current_node.name in network.nodes():
-                network.remove_node(current_node.name)
-                logger.debug("Removed start node '%s' from network '%s'", current_node.name, network_name)
+            # Remove start node from ALL networks where it appears
+            for network in list(context.networks.values()):
+                if current_node.name in network.nodes():
+                    network.remove_node(current_node.name)
 
             return
 
         # Publish all parameter updates.
         current_node.state = NodeResolutionState.RESOLVED
-        # Track this as the last resolved node
-        context.last_resolved_node = current_node
         # Track this as the last resolved node
         context.last_resolved_node = current_node
         # Serialization can be slow so only do it if the user wants debug details.
@@ -200,7 +197,7 @@ class ExecuteDagState(State):
         graph = context.networks[network_name]
         if len(graph.nodes()) == 0 and context.dag_builder is not None:
             # remove from dependencies. This is so we can potentially queue the data node.
-            data_start_nodes = context.dag_builder.remove_graph_from_dependencies(network_name)
+            data_start_nodes = context.dag_builder.remove_graph_from_dependencies()
             for data_start_node_name in data_start_nodes:
                 data_start_node = GriptapeNodes.NodeManager().get_node_by_name(data_start_node_name)
                 context.dag_builder.add_node_with_dependencies(data_start_node, network_name)
@@ -365,18 +362,12 @@ class ExecuteDagState(State):
     def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str], set[str]]:
         networks = context.networks
         leaf_nodes = set()
-        for network_name, network in networks.items():
+        for network in networks.values():
             # Check and see if there are leaf nodes that are cancelled.
             # Reinitialize leaf nodes since maybe we changed things up.
             # We removed nodes from the network. There may be new leaf nodes.
             # Add all leaf nodes from all networks (using set union to avoid duplicates)
             network_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
-            if network_leaf_nodes:
-                logger.info(
-                    "Network '%s' leaf nodes (in_degree=0): %s",
-                    network_name,
-                    ", ".join(f"{n} (in_degree={network.in_degree(n)})" for n in network_leaf_nodes),
-                )
             leaf_nodes.update(network_leaf_nodes)
         canceled_nodes = set()
         queued_nodes = set()
