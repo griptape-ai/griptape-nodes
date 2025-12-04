@@ -15,13 +15,13 @@ from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeStartNode,
 )
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
+from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
     BaseNode,
     EndNode,
-    NodeGroupNode,
     NodeResolutionState,
     StartNode,
 )
@@ -197,7 +197,7 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
-        if isinstance(node, NodeGroupNode):
+        if isinstance(node, SubflowNodeGroup):
             execution_type = node.get_parameter_value(node.execution_environment.name)
             if execution_type == LOCAL_EXECUTION:
                 # Just execute the node normally! This means we aren't doing any special packaging.
@@ -216,7 +216,7 @@ class NodeExecutor:
             await self.handle_loop_execution(node)
             return
 
-        # We default to local execution if it is not a NodeGroupNode or BaseIterativeEndNode!
+        # We default to local execution if it is not a SubflowNodeGroup or BaseIterativeEndNode!
         await node.aprocess()
 
     async def _execute_and_apply_workflow(
@@ -414,8 +414,8 @@ class NodeExecutor:
         workflow_start_end_nodes = await self._get_workflow_start_end_nodes(library)
 
         sanitized_library_name = library_name.replace(" ", "_")
-        # If we are packaging a NodeGroupNode, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the group node.
-        if isinstance(node, NodeGroupNode):
+        # If we are packaging a SubflowNodeGroup, that means that we are packaging multiple nodes together, so we have to get the list of nodes from the group node.
+        if isinstance(node, SubflowNodeGroup):
             node_names = list(node.get_all_nodes().keys())
         else:
             # Otherwise, it's a list of one node!
@@ -424,8 +424,8 @@ class NodeExecutor:
         if len(node_names) == 0:
             return None
 
-        # Pass node_group_name if we're packaging a NodeGroupNode
-        node_group_name = node.name if isinstance(node, NodeGroupNode) else None
+        # Pass node_group_name if we're packaging a SubflowNodeGroup
+        node_group_name = node.name if isinstance(node, SubflowNodeGroup) else None
 
         request = PackageNodesAsSerializedFlowRequest(
             node_names=node_names,
@@ -618,7 +618,7 @@ class NodeExecutor:
         if len(all_nodes) == 1:
             node_inside = all_nodes.pop()
             node_obj = node_manager.get_node_by_name(node_inside)
-            if isinstance(node_obj, NodeGroupNode):
+            if isinstance(node_obj, SubflowNodeGroup):
                 execution_type = node_obj.get_parameter_value(node_obj.execution_environment.name)
                 all_nodes.update(node_obj.get_all_nodes())
                 node_group_name = node_obj.name
@@ -1327,7 +1327,7 @@ class NodeExecutor:
                     msg = f"Failed to get node {target_node_name} for connection {conn} from start node {start_node.name}. Can't get parameter value iterations."
                     logger.error(msg)
                     raise RuntimeError(msg)  # noqa: B904
-                if isinstance(target_node, NodeGroupNode):
+                if isinstance(target_node, SubflowNodeGroup):
                     # Get connections from this proxy parameter to find the actual internal target
                     connections = flow_manager.get_connections()
                     proxy_param = target_node.get_parameter_by_name(target_param_name)
@@ -1505,7 +1505,7 @@ class NodeExecutor:
                     source_node = node_manager.get_node_by_name(source_node_name)
                 except ValueError:
                     continue
-                if isinstance(source_node, NodeGroupNode):
+                if isinstance(source_node, SubflowNodeGroup):
                     # Get connections to this proxy parameter to find the actual internal source
                     connections = flow_manager.get_connections()
                     proxy_param = source_node.get_parameter_by_name(source_param_name)
@@ -2434,7 +2434,7 @@ class NodeExecutor:
 
         Sets parameter values on the node and updates parameter_output_values dictionary.
         Uses parameter_name_mappings from package_result to map packaged parameters back to original nodes.
-        Works for both single-node and multi-node packages (NodeGroupNode).
+        Works for both single-node and multi-node packages (SubflowNodeGroup).
         """
         # If the packaged flow fails, the End Flow Node in the library published workflow will have entered from 'failed'
         if "failed" in parameter_output_values and parameter_output_values["failed"] == CONTROL_INPUT_PARAMETER:
@@ -2455,11 +2455,11 @@ class NodeExecutor:
             target_node_name = original_node_param.node_name
             target_param_name = original_node_param.parameter_name
 
-            # Determine the target node - if this is a NodeGroupNode, look up the child node
-            if isinstance(node, NodeGroupNode):
+            # Determine the target node - if this is a SubflowNodeGroup, look up the child node
+            if isinstance(node, SubflowNodeGroup):
                 if target_node_name not in node.nodes:
                     logger.warning(
-                        "Node '%s' not found in NodeGroupNode '%s', skipping value application",
+                        "Node '%s' not found in SubflowNodeGroup '%s', skipping value application",
                         target_node_name,
                         node.name,
                     )

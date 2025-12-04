@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import semver
 
-from griptape_nodes.exe_types.node_types import NodeGroupNode
+from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -56,7 +56,7 @@ class DeprecatedNodeGroupParametersCheck(SetParameterVersionCompatibilityCheck):
             return False
 
         # Check if node is NOT a NodeGroup (we only block for non-NodeGroup nodes)
-        if isinstance(node, NodeGroupNode):
+        if isinstance(node, SubflowNodeGroup):
             return False
 
         # Check if current engine version is >= 0.63.8

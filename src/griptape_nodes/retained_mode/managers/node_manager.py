@@ -19,13 +19,13 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
-    NodeGroupNode,
     NodeResolutionState,
     TransformedParameterValue,
 )
@@ -503,7 +503,7 @@ class NodeManager:
         )
 
     def on_create_node_group_request(self, request: CreateNodeGroupRequest) -> ResultPayload:  # noqa: C901
-        """Handle CreateNodeGroupRequest to create a new NodeGroupNode."""
+        """Handle CreateNodeGroupRequest to create a new SubflowNodeGroup."""
         flow_name = request.flow_name
         flow = None
 
@@ -528,15 +528,15 @@ class NodeManager:
 
         obj_mgr = GriptapeNodes.ObjectManager()
         final_node_group_name = obj_mgr.generate_name_for_object(
-            type_name="NodeGroupNode", requested_name=requested_node_group_name
+            type_name="SubflowNodeGroup", requested_name=requested_node_group_name
         )
 
         try:
             # Create metadata with required keys for serialization
             metadata = request.metadata if request.metadata else {}
-            metadata["node_type"] = "NodeGroupNode"
+            metadata["node_type"] = "SubflowNodeGroup"
 
-            node_group = NodeGroupNode(name=final_node_group_name, metadata=metadata)
+            node_group = SubflowNodeGroup(name=final_node_group_name, metadata=metadata)
         except Exception as err:
             details = f"Could not create NodeGroup '{final_node_group_name}': {err}"
             return CreateNodeGroupResultFailure(result_details=details)
@@ -618,7 +618,7 @@ class NodeManager:
 
     def _get_node_group(
         self, node_group_name: str, node_names: list[str]
-    ) -> NodeGroupNode | AddNodesToNodeGroupResultFailure:
+    ) -> SubflowNodeGroup | AddNodesToNodeGroupResultFailure:
         """Get the NodeGroup node."""
         try:
             node_group = GriptapeNodes.ObjectManager().get_object_by_name(node_group_name)
@@ -626,7 +626,7 @@ class NodeManager:
             details = f"Attempted to add nodes '{node_names}' to NodeGroup '{node_group_name}'. Failed because NodeGroup was not found."
             return AddNodesToNodeGroupResultFailure(result_details=details)
 
-        if not isinstance(node_group, NodeGroupNode):
+        if not isinstance(node_group, SubflowNodeGroup):
             details = f"Attempted to add nodes '{node_names}' to '{node_group_name}'. Failed because '{node_group_name}' is not a NodeGroup."
             return AddNodesToNodeGroupResultFailure(result_details=details)
 
@@ -705,7 +705,7 @@ class NodeManager:
 
     def _get_node_group_for_remove(
         self, node_group_name: str, node_names: list[str]
-    ) -> NodeGroupNode | RemoveNodeFromNodeGroupResultFailure:
+    ) -> SubflowNodeGroup | RemoveNodeFromNodeGroupResultFailure:
         """Get the NodeGroup node for remove operation."""
         try:
             node_group = GriptapeNodes.ObjectManager().get_object_by_name(node_group_name)
@@ -713,7 +713,7 @@ class NodeManager:
             details = f"Attempted to remove nodes '{node_names}' from NodeGroup '{node_group_name}'. Failed because NodeGroup was not found."
             return RemoveNodeFromNodeGroupResultFailure(result_details=details)
 
-        if not isinstance(node_group, NodeGroupNode):
+        if not isinstance(node_group, SubflowNodeGroup):
             details = f"Attempted to remove nodes '{node_names}' from '{node_group_name}'. Failed because '{node_group_name}' is not a NodeGroup."
             return RemoveNodeFromNodeGroupResultFailure(result_details=details)
 
@@ -758,7 +758,7 @@ class NodeManager:
             )
             return DeleteNodeGroupResultFailure(result_details=details)
 
-        if not isinstance(node_group, NodeGroupNode):
+        if not isinstance(node_group, SubflowNodeGroup):
             details = (
                 f"Attempted to delete '{request.node_group_name}' as NodeGroup. Failed because it is not a NodeGroup."
             )
@@ -927,7 +927,7 @@ class NodeManager:
                         return DeleteNodeResultFailure(result_details=details)
 
         # Check if it's in a node group
-        if isinstance(node.parent_group, NodeGroupNode):
+        if isinstance(node.parent_group, SubflowNodeGroup):
             try:
                 node.parent_group.delete_nodes_from_group([node])
             except ValueError as e:
@@ -2540,12 +2540,12 @@ class NodeManager:
 
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
-            # Handle NodeGroupNode specially - skip library lookup entirely
+            # Handle SubflowNodeGroup specially - skip library lookup entirely
             library_used = ""
             lookup_metadata = False
             library_details = None
-            if isinstance(node, NodeGroupNode):
-                # NodeGroupNode doesn't have a library dependency
+            if isinstance(node, SubflowNodeGroup):
+                # SubflowNodeGroup doesn't have a library dependency
                 execution_env = node.get_parameter_value(node.execution_environment.name)
                 if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
                     library_used = execution_env
@@ -2582,8 +2582,8 @@ class NodeManager:
                     library_version = library_metadata_result.metadata.library_version
                     library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
-            # Handle NodeGroupNode specially - emit CreateNodeGroupRequest instead
-            if isinstance(node, NodeGroupNode):
+            # Handle SubflowNodeGroup specially - emit CreateNodeGroupRequest instead
+            if isinstance(node, SubflowNodeGroup):
                 # Remove node_names_in_group from metadata - it's redundant and will be regenerated
                 metadata_copy = copy.deepcopy(node.metadata)
                 metadata_copy.pop("node_names_in_group", None)
@@ -2594,7 +2594,7 @@ class NodeManager:
                     metadata=metadata_copy,
                 )
             else:
-                # For non-NodeGroupNode, library_details should always be set
+                # For non-SubflowNodeGroup, library_details should always be set
                 if library_details is None:
                     details = f"Attempted to serialize Node '{node_name}' to commands. Library details missing."
                     return SerializeNodeToCommandsResultFailure(result_details=details)
@@ -2622,10 +2622,10 @@ class NodeManager:
             # For ErrorProxyNode, we can't create a reference node, so skip comparison
             if isinstance(node, ErrorProxyNode):
                 reference_node = None
-            elif isinstance(node, NodeGroupNode):
-                # For NodeGroupNode, create a fresh reference instance the same way we create NodeGroupNodes
-                reference_node = NodeGroupNode(
-                    name="REFERENCE NODE", metadata={"library": "griptape_nodes", "node_type": "NodeGroupNode"}
+            elif isinstance(node, SubflowNodeGroup):
+                # For SubflowNodeGroup, create a fresh reference instance the same way we create SubflowNodeGroups
+                reference_node = SubflowNodeGroup(
+                    name="REFERENCE NODE", metadata={"library": "griptape_nodes", "node_type": "SubflowNodeGroup"}
                 )
             else:
                 reference_node = type(node)(name="REFERENCE NODE")

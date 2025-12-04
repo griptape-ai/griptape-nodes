@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
+from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     BaseNode,
-    NodeGroupNode,
     NodeResolutionState,
 )
 from griptape_nodes.machines.fsm import FSM, State
@@ -209,7 +209,7 @@ def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple
     entry_parameter = next_node_info.entry_parameter
 
     # Check if node has a parent and if parent is not local execution
-    if target_node.parent_group is not None and isinstance(target_node.parent_group, NodeGroupNode):
+    if target_node.parent_group is not None and isinstance(target_node.parent_group, SubflowNodeGroup):
         parent_group = target_node.parent_group
         execution_env = parent_group.get_parameter_value(parent_group.execution_environment.name)
         if execution_env != LOCAL_EXECUTION:
@@ -345,7 +345,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             current_nodes = await self._process_nodes_for_dag(start_node)
         else:
             current_nodes = [start_node]
-            if isinstance(start_node.parent_group, NodeGroupNode):
+            if isinstance(start_node.parent_group, SubflowNodeGroup):
                 # In sequential mode, we aren't going to run this. Just continue.
                 node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
                 if node is not None:
