@@ -2432,47 +2432,45 @@ class NodeManager:
 
         # This is our current dude.
         with GriptapeNodes.ContextManager().node(node=node):
-            # Handle SubflowNodeGroup specially - skip library lookup entirely
-            library_used = ""
-            lookup_metadata = False
-            library_details = None
+            # Get the library and version details for all nodes
+            library_used = node.metadata["library"]
+            # For SubflowNodeGroup, also check if execution environment uses a special library
+            execution_env_library_details = None
             if isinstance(node, SubflowNodeGroup):
-                # SubflowNodeGroup doesn't have a library dependency
                 execution_env = node.get_parameter_value(node.execution_environment.name)
                 if execution_env not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
-                    library_used = execution_env
-                    lookup_metadata = True
-            else:
-                # Get the library and version details for regular nodes
-                library_used = node.metadata["library"]
-                lookup_metadata = True
+                    # Get library details for the execution environment library
+                    exec_env_metadata_request = GetLibraryMetadataRequest(library=execution_env)
+                    exec_env_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                        exec_env_metadata_request
+                    )
+                    if isinstance(exec_env_metadata_result, GetLibraryMetadataResultSuccess):
+                        exec_env_library_version = exec_env_metadata_result.metadata.library_version
+                        execution_env_library_details = LibraryNameAndVersion(
+                            library_name=execution_env, library_version=exec_env_library_version
+                        )
             # Get the library metadata so we can get the version.
-            if lookup_metadata:
-                library_metadata_request = GetLibraryMetadataRequest(library=library_used)
-                # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
-                # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
-                library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
-                    library_metadata_request
-                )
+            library_metadata_request = GetLibraryMetadataRequest(library=library_used)
+            # Call LibraryManager directly to avoid error toasts when library is unavailable (expected for ErrorProxyNode)
+            # Per https://github.com/griptape-ai/griptape-nodes/issues/1940
+            library_metadata_result = GriptapeNodes.LibraryManager().get_library_metadata_request(
+                library_metadata_request
+            )
 
-                if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
-                    if isinstance(node, ErrorProxyNode):
-                        # For ErrorProxyNode, use descriptive message when original library unavailable
-                        library_version = (
-                            "<version unavailable; workflow was saved when library was unable to be loaded>"
-                        )
-                        library_details = LibraryNameAndVersion(
-                            library_name=library_used, library_version=library_version
-                        )
-                        details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
-                        logger.warning(details)
-                    else:
-                        # For regular nodes, this is still an error
-                        details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
-                        return SerializeNodeToCommandsResultFailure(result_details=details)
-                else:
-                    library_version = library_metadata_result.metadata.library_version
+            if not isinstance(library_metadata_result, GetLibraryMetadataResultSuccess):
+                if isinstance(node, ErrorProxyNode):
+                    # For ErrorProxyNode, use descriptive message when original library unavailable
+                    library_version = "<version unavailable; workflow was saved when library was unable to be loaded>"
                     library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
+                    details = f"Serializing Node '{node_name}' (original type: {node.original_node_type}) with unavailable library '{library_used}'. Saving as ErrorProxy with placeholder version. Fix the missing library and reload the workflow to restore the original node."
+                    logger.warning(details)
+                else:
+                    # For regular nodes, this is still an error
+                    details = f"Attempted to serialize Node '{node_name}' to commands. Failed to get metadata for library '{library_used}'."
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+            else:
+                library_version = library_metadata_result.metadata.library_version
+                library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
             # Handle SubflowNodeGroup specially - serialize like normal nodes but preserve node group behavior
             if isinstance(node, SubflowNodeGroup):
@@ -2601,6 +2599,10 @@ class NodeManager:
         # Add the library dependency to the node dependencies (if applicable)
         if library_details is not None:
             node_dependencies.libraries.add(library_details)
+
+        # For SubflowNodeGroup, also add execution environment library dependency if present
+        if execution_env_library_details is not None:
+            node_dependencies.libraries.add(execution_env_library_details)
 
         # Hooray
         serialized_node_commands = SerializedNodeCommands(
