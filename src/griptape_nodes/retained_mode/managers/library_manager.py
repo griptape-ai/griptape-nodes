@@ -617,7 +617,11 @@ class LibraryManager:
         # Get git remote and ref if this library is in a git repository
         library_dir = json_path.parent.absolute()
         git_remote = get_git_remote(library_dir)
-        git_ref = get_current_ref(library_dir)
+        try:
+            git_ref = get_current_ref(library_dir)
+        except GitRefError as e:
+            logger.debug("Failed to get git ref for %s: %s", library_dir, e)
+            git_ref = None
 
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -773,7 +777,11 @@ class LibraryManager:
 
         # Get git remote and ref if the sandbox directory is in a git repository
         git_remote = get_git_remote(sandbox_library_dir)
-        git_ref = get_current_ref(sandbox_library_dir)
+        try:
+            git_ref = get_current_ref(sandbox_library_dir)
+        except GitRefError as e:
+            logger.debug("Failed to get git ref for sandbox library %s: %s", sandbox_library_dir, e)
+            git_ref = None
 
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
         return LoadLibraryMetadataFromFileResultSuccess(
