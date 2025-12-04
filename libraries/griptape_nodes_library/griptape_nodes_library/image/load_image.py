@@ -5,6 +5,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
@@ -19,6 +20,13 @@ from griptape_nodes_library.utils.image_utils import (
     save_pil_image_with_named_filename,
 )
 
+
+CHANNEL_NONE = "none"
+CHANNEL_RED = "red"
+CHANNEL_GREEN = "green"
+CHANNEL_BLUE = "blue"
+CHANNEL_ALPHA = "alpha"
+CHANNEL_OPTIONS = [CHANNEL_NONE, CHANNEL_RED, CHANNEL_GREEN, CHANNEL_BLUE, CHANNEL_ALPHA]
 
 class LoadImage(SuccessFailureNode):
     @staticmethod
@@ -71,17 +79,16 @@ class LoadImage(SuccessFailureNode):
             config=self._tethering_config,
         )
 
-        # Add channel parameter for mask extraction
-        from griptape_nodes.traits.options import Options
-
         channel_param = Parameter(
             name="mask_channel",
             type="str",
-            tooltip="Channel to extract as mask (red, green, blue, or alpha).",
-            default_value="alpha",
+            tooltip=f"Channel to extract as mask ({', '.join(CHANNEL_OPTIONS)}).",
+            default_value=CHANNEL_NONE,
             ui_options={"hide": True},
+            traits={
+                Options(choices=CHANNEL_OPTIONS)
+            }
         )
-        channel_param.add_trait(Options(choices=["red", "green", "blue", "alpha"]))
         self.add_parameter(channel_param)
 
         self.add_parameter(
@@ -247,7 +254,8 @@ class LoadImage(SuccessFailureNode):
         image_artifact = self.get_parameter_value("image")
         mask_channel = self.get_parameter_value("mask_channel")
 
-        if image_artifact is None or mask_channel is None:
+        if image_artifact is None or mask_channel is None or mask_channel == CHANNEL_NONE:
+            self.parameter_output_values["output_mask"] = None
             return
 
         # Normalize input to ImageUrlArtifact
