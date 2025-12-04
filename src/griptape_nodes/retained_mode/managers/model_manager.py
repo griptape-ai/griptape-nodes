@@ -8,7 +8,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 

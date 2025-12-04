@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
-from urllib.parse import unquote, urlparse
 
 from griptape.artifacts import UrlArtifact
+from upath import UPath as Path
 
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.events.os_events import (
@@ -86,13 +85,10 @@ class FileOperationBaseNode(SuccessFailureNode):
         if not isinstance(url_or_uri, str):
             return url_or_uri
 
-        # Handle file:// URLs using Path (like url_utils.py does)
+        # Handle file:// URLs - UPath natively supports file:// URIs
         if url_or_uri.startswith("file://"):
-            parsed = urlparse(url_or_uri)
-            if parsed.scheme == "file":
-                # Use Path to handle file:// URLs - automatically handles Windows paths
-                file_path = Path(unquote(parsed.path))
-                return str(file_path)
+            file_path = Path(url_or_uri)
+            return str(file_path)
 
         # Strip query parameters (cachebuster ?t=...)
         url = url_or_uri

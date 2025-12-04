@@ -1,4 +1,4 @@
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (

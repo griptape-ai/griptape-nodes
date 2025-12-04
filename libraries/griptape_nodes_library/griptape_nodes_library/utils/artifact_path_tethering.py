@@ -2,11 +2,11 @@ import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 
 import httpx
+from upath import UPath as Path
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
@@ -617,8 +617,8 @@ class ArtifactPathTethering:
         # Validate content type
         parsed = urlparse(url)
         if parsed.scheme == "file":
-            # For file:// URLs, validate content type by file extension
-            file_path = Path(unquote(parsed.path))
+            # For file:// URLs, validate content type by file extension - UPath natively handles file:// URIs
+            file_path = Path(url)
             content_type = get_content_type_from_extension(file_path)
             if content_type is None:
                 error_msg = f"Unable to determine content type from file extension for '{url}'"

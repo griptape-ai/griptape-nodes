@@ -1,5 +1,5 @@
 import logging
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, cast
 
 import requests

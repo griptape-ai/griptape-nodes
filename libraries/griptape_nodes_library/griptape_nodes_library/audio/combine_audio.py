@@ -1,7 +1,7 @@
 import contextlib
 import subprocess
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact

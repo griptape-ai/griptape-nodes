@@ -9,7 +9,6 @@ from griptape_nodes.utils.url_utils import (
     is_url,
     load_content_from_url,
     stream_download_to_file,
-    strip_file_scheme,
     validate_content_type_for_category,
     validate_url,
 )
@@ -23,7 +22,6 @@ __all__ = [
     "is_url",
     "load_content_from_url",
     "stream_download_to_file",
-    "strip_file_scheme",
     "validate_content_type_for_category",
     "validate_url",
 ]

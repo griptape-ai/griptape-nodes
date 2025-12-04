@@ -8,10 +8,8 @@ import stat
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, NamedTuple
-from urllib.parse import urlparse
-from urllib.request import url2pathname
 
 import aioshutil
 import portalocker
@@ -293,15 +291,17 @@ class OSManager:
             Resolved Path object
         """
         try:
-            # Check if it's a file:// URI first
-            parsed = urlparse(path_str)
-            if parsed.scheme == "file":
-                # Extract the absolute path from file:// URI and decode percent-encoding
-                return self.resolve_path_safely(Path(url2pathname(parsed.path)))
+            # UPath natively handles file:// URIs
+            path = Path(path_str)
 
-            if Path(path_str).is_absolute() or path_str.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
+            if path.is_absolute():
+                # For absolute paths (including file:// URIs), resolve safely
+                return self.resolve_path_safely(path)
+
+            if path_str.startswith("~"):
+                # Expand tilde and environment variables for paths starting with ~
                 return self._expand_path(path_str)
+
             # Both workspace and system-wide modes resolve relative to current directory
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):

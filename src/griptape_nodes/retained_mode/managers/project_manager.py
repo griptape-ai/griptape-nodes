@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.common.macro_parser import (

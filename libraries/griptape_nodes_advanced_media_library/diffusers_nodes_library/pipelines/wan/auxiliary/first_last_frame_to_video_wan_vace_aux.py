@@ -1,7 +1,7 @@
 import logging
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact

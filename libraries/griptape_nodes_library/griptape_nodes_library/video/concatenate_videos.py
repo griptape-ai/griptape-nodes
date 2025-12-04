@@ -2,7 +2,7 @@ import json
 import subprocess
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import httpx

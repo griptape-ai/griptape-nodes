@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import uuid
 from collections import OrderedDict
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import cv2  # type: ignore[reportMissingImports]

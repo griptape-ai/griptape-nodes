@@ -2,9 +2,7 @@ import base64
 import binascii
 import logging
 import threading
-from pathlib import Path
-from urllib.parse import urlparse
-from urllib.request import url2pathname
+from upath import UPath as Path
 
 from xdg_base_dirs import xdg_config_home
 
@@ -176,12 +174,8 @@ class StaticFilesManager:
         """
         workspace_path = self.config_manager.workspace_path
 
-        # Parse file path, handling file:// URLs and percent-encoding
-        parsed = urlparse(file_path)
-        if parsed.scheme == "file":
-            path = Path(url2pathname(parsed.path))
-        else:
-            path = Path(url2pathname(file_path))
+        # UPath natively handles file:// URIs and percent-encoded paths
+        path = Path(file_path)
 
         # Resolve relative paths relative to workspace
         if not path.is_absolute():

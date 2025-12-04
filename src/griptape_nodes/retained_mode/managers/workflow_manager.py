@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from inspect import getmodule, isclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, TypeVar, cast
 
 import aiofiles

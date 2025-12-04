@@ -4,7 +4,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, NamedTuple
 from urllib.error import URLError
 

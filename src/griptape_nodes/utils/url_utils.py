@@ -1,11 +1,10 @@
 import logging
 import mimetypes
-from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
-from urllib.request import url2pathname
 
 import httpx
+from upath import UPath as Path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -87,26 +86,6 @@ def get_content_type_from_extension(file_path: str | Path) -> str | None:
     return mime_type
 
 
-def strip_file_scheme(url: str) -> str:
-    """Strip file:// scheme from URL, pass through other URLs/paths unchanged.
-
-    Some libraries (like diffusers.utils.load_video) support HTTP/HTTPS URLs
-    and local file paths, but NOT file:// URLs. This helper converts file://
-    URLs to paths so they can be used with such libraries.
-
-    Args:
-        url: A URL (http://, https://, file://) or file path
-
-    Returns:
-        For file:// URLs: the extracted file path
-        For other inputs: the original string unchanged
-    """
-    parsed = urlparse(url)
-    if parsed.scheme == "file":
-        return url2pathname(parsed.path)
-    return url
-
-
 def validate_content_type_for_category(
     content_type: str | None,
     expected_category: Literal["image", "video", "audio"],
@@ -153,11 +132,9 @@ def load_content_from_url(
 
     parsed = urlparse(url)
 
-    # Handle file:// URLs
+    # Handle file:// URLs - UPath natively supports file:// URIs
     if parsed.scheme == "file":
-        # Parse file path from URL
-        # file:///path/to/file -> /path/to/file
-        file_path = Path(url2pathname(parsed.path))
+        file_path = Path(url)
 
         if not file_path.exists():
             msg = f"File not found: {file_path}"
@@ -207,9 +184,9 @@ async def aload_content_from_url(
 
     parsed = urlparse(url)
 
-    # Handle file:// URLs - file operations are synchronous
+    # Handle file:// URLs - UPath natively supports file:// URIs
     if parsed.scheme == "file":
-        file_path = Path(url2pathname(parsed.path))
+        file_path = Path(url)
 
         if not file_path.exists():
             msg = f"File not found: {file_path}"
@@ -265,9 +242,9 @@ async def stream_download_to_file(
 
     parsed = urlparse(url)
 
-    # Handle file:// URLs - just copy the file
+    # Handle file:// URLs - UPath natively supports file:// URIs
     if parsed.scheme == "file":
-        source_path = Path(url2pathname(parsed.path))
+        source_path = Path(url)
 
         if not source_path.exists():
             msg = f"File not found: {source_path}"
@@ -311,9 +288,9 @@ def get_content_type_from_url(url: str) -> str | None:
     """
     parsed = urlparse(url)
 
-    # For file:// URLs, use extension
+    # For file:// URLs, use extension - UPath natively supports file:// URIs
     if parsed.scheme == "file":
-        file_path = Path(url2pathname(parsed.path))
+        file_path = Path(url)
         return get_content_type_from_extension(file_path)
 
     # For http/https URLs, make HEAD request

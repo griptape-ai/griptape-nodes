@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from upath import UPath as Path
 from typing import NamedTuple
 
 from xdg_base_dirs import xdg_data_home

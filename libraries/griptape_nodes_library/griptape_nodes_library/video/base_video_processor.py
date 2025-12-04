@@ -1,7 +1,7 @@
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, ClassVar
 
 # static_ffmpeg is dynamically installed by the library loader at runtime

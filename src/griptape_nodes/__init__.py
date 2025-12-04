@@ -1,7 +1,7 @@
 """Griptape Nodes package."""
 
 import sys
-from pathlib import Path
+from upath import UPath as Path
 
 from rich.console import Console
 

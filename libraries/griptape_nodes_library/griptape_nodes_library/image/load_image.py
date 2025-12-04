@@ -217,7 +217,7 @@ class LoadImage(SuccessFailureNode):
 
         # Convert path to artifact using tethering utilities
         try:
-            from pathlib import Path
+            from upath import UPath as Path
 
             # Check if it's a URL/URI (http://, https://, file://)
             if is_url(path_value):

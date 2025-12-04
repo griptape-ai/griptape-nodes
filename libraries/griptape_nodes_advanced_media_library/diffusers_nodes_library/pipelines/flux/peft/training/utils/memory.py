@@ -1,7 +1,7 @@
 import contextlib
 import logging
 from collections.abc import Iterator
-from pathlib import Path
+from upath import UPath as Path
 
 import torch  # type: ignore[reportMissingImports]
 from accelerate import cpu_offload  # type: ignore[reportMissingImports]

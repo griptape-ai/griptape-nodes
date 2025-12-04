@@ -1,7 +1,7 @@
 import logging
 import re
 from os import getenv
-from pathlib import Path
+from upath import UPath as Path
 from typing import Literal, overload
 
 from dotenv import dotenv_values, get_key, load_dotenv, set_key, unset_key

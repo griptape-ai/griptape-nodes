@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
+from upath import UPath as Path
 from typing import TypedDict
 
 import httpx

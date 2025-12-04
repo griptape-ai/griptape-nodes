@@ -2,7 +2,7 @@ import copy
 import json
 import logging
 import os
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, Literal
 
 from pydantic import ValidationError

@@ -1,5 +1,5 @@
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, ClassVar
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact

@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 from uuid import uuid4

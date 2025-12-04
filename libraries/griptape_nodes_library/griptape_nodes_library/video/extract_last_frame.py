@@ -1,5 +1,5 @@
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from PIL import Image

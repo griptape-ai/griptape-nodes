@@ -1,6 +1,6 @@
 import logging
 import os
-from pathlib import Path
+from upath import UPath as Path
 from urllib.parse import urljoin
 
 import httpx

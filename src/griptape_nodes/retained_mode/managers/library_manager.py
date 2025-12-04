@@ -12,7 +12,7 @@ import sysconfig
 from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib.resources import files
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
 from packaging.requirements import InvalidRequirement, Requirement

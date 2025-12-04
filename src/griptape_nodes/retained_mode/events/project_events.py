@@ -15,7 +15,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from upath import UPath as Path
 
     from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
     from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate

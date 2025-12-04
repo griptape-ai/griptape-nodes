@@ -6,8 +6,8 @@ import PIL.ImageOps
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL.Image import Image
+from upath import UPath as Path
 
-from griptape_nodes.utils.url_utils import strip_file_scheme
 
 
 def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
@@ -60,7 +60,7 @@ def video_url_artifact_to_pil_images(video_artifact: VideoUrlArtifact) -> list[I
 
     # Use diffusers' load_video utility to convert video URL to PIL frames
     # Convert file:// URI to path for diffusers compatibility
-    return diffusers.utils.loading_utils.load_video(strip_file_scheme(video_artifact.value))
+    return diffusers.utils.loading_utils.load_video(str(Path(video_artifact.value)))
 
 
 def pad_mirror(image: Image, target_size: tuple[int, int]) -> Image:

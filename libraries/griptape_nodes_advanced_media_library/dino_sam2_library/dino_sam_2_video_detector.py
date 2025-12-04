@@ -1,6 +1,6 @@
 import logging
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
@@ -19,7 +19,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.url_utils import load_content_from_url, strip_file_scheme
+from griptape_nodes.utils.url_utils import load_content_from_url
 
 logger = logging.getLogger("sam2_nodes_library")
 
@@ -103,7 +103,7 @@ class DinoSam2VideoDetector(ControlNode):
     def get_video_frames_pil(self) -> list[PIL.Image.Image]:
         """Get the input video frames as a list of PIL Image objects."""
         # Convert file:// URI to path for diffusers compatibility
-        return diffusers.utils.load_video(strip_file_scheme(self.get_video_mp4()))
+        return diffusers.utils.load_video(str(Path(self.get_video_mp4())))
 
     def get_prompt(self) -> str:
         """Get the prompt text for object detection."""

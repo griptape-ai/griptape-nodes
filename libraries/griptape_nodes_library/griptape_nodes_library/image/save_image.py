@@ -1,6 +1,6 @@
 from enum import StrEnum, auto
 from io import BytesIO
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact

@@ -2,7 +2,7 @@ import base64
 import tempfile
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact

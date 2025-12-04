@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
+from upath import UPath as Path
 
 from griptape.drivers.memory.conversation import BaseConversationMemoryDriver
 from griptape.drivers.memory.conversation.local import LocalConversationMemoryDriver

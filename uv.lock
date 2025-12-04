@@ -397,6 +397,7 @@ dependencies = [
     { name = "semver" },
     { name = "tomlkit" },
     { name = "typer" },
+    { name = "universal-pathlib" },
     { name = "uv" },
     { name = "uvicorn" },
     { name = "watchfiles" },
@@ -461,6 +462,7 @@ requires-dist = [
     { name = "semver", specifier = ">=3.0.4" },
     { name = "tomlkit", specifier = ">=0.13.2" },
     { name = "typer", specifier = ">=0.15.0" },
+    { name = "universal-pathlib", specifier = ">=0.3.7" },
     { name = "uv", specifier = ">=0.6.16" },
     { name = "uvicorn", specifier = ">=0.34.2" },
     { name = "watchfiles", specifier = ">=1.1.0" },
@@ -1080,6 +1082,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ec/46/68dde5b6bc00c1296ec6466ab27dddede6aec9af1b99090e1107091b3b84/paginate-0.5.7.tar.gz", hash = "sha256:22bd083ab41e1a8b4f3690544afb2c60c25e5c9a63a30fa2f483f6c60c8e5945", size = 19252, upload-time = "2024-08-25T14:17:24.139Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/90/96/04b8e52da071d28f5e21a805b19cb9390aa17a47462ac87f5e2696b9566d/paginate-0.5.7-py2.py3-none-any.whl", hash = "sha256:b885e2af73abcf01d9559fd5216b57ef722f8c42affbb63942377668e35c7591", size = 13746, upload-time = "2024-08-25T14:17:22.55Z" },
+]
+
+[[package]]
+name = "pathlib-abc"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/cb/448649d7f25d228bf0be3a04590ab7afa77f15e056f8fa976ed05ec9a78f/pathlib_abc-0.5.2.tar.gz", hash = "sha256:fcd56f147234645e2c59c7ae22808b34c364bb231f685ddd9f96885aed78a94c", size = 33342, upload-time = "2025-10-10T18:37:20.524Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/29/c028a0731e202035f0e2e0bfbf1a3e46ad6c628cbb17f6f1cc9eea5d9ff1/pathlib_abc-0.5.2-py3-none-any.whl", hash = "sha256:4c9d94cf1b23af417ce7c0417b43333b06a106c01000b286c99de230d95eefbb", size = 19070, upload-time = "2025-10-10T18:37:19.437Z" },
 ]
 
 [[package]]
@@ -1753,6 +1764,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/76/87/56d791e4bd457bc1624118901afd2fb565e6e4d40df4619536175de8c1c2/typos-1.37.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:221b4baffb34a27d959dd99efaaccf5ac62e3ae279f769a97b33fdd976eb6aad", size = 8020423, upload-time = "2025-10-03T19:11:07.378Z" },
     { url = "https://files.pythonhosted.org/packages/7e/9d/6754b784226d8aaf4cc1f087e741ec6d2cc50b165b83ba254a30e73e72e5/typos-1.37.2-py3-none-win32.whl", hash = "sha256:fc29c3f114507128d23740949186907c79d599fcd934d76e2982d8eb2cd47458", size = 3018205, upload-time = "2025-10-03T19:11:08.929Z" },
     { url = "https://files.pythonhosted.org/packages/80/d7/30d2b265df7efab02af98b9ca50eb2a44e817c38edc7502b28267e60597a/typos-1.37.2-py3-none-win_amd64.whl", hash = "sha256:5c0fe930b79b795f236a19c427f39054815032cceaab08cf0131c3d0ab2634db", size = 3192437, upload-time = "2025-10-03T19:11:10.13Z" },
+]
+
+[[package]]
+name = "universal-pathlib"
+version = "0.3.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "fsspec" },
+    { name = "pathlib-abc" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/96/b58b00ce27cbc37fd3c79944438dd8630d2c39f9467c9e73e1a4a3eec1ef/universal_pathlib-0.3.7.tar.gz", hash = "sha256:36331056fa59a7d7cd3b61b4045f3a3418f446f23ec1a01d281c4510814b4b05", size = 253466, upload-time = "2025-12-03T00:06:43.859Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/77/53c2d3a0413bc55b4c91067a0c41e55451be9b0784d204e4e46ce5abf668/universal_pathlib-0.3.7-py3-none-any.whl", hash = "sha256:fb95117b20b5981f86ef9d887fddbf9c61d3596634ba42cccea444931d87c201", size = 80738, upload-time = "2025-12-03T00:06:41.997Z" },
 ]
 
 [[package]]

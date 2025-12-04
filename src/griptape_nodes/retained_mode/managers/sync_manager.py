@@ -6,7 +6,7 @@ import threading
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING
 
 from watchfiles import Change, PythonFilter, watch

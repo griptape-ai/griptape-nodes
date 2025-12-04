@@ -1,7 +1,7 @@
 import os
 import platform
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from unittest.mock import patch
 
 import pytest

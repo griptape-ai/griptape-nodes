@@ -1,7 +1,7 @@
 import logging
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -10,7 +10,6 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.url_utils import strip_file_scheme
 from transformers_nodes_library.depth_anything_for_depth_estimation_parameters import (
     DepthAnythingForDepthEstimationParameters,
 )
@@ -56,7 +55,7 @@ class DepthAnythingForDepthEstimationVideo(ControlNode):
 
         # Load video frames using diffusers utilities
         # Convert file:// URI to path for diffusers compatibility
-        input_frames = diffusers.utils.load_video(strip_file_scheme(input_video_artifact.value))
+        input_frames = diffusers.utils.load_video(str(Path(input_video_artifact.value)))
 
         if not input_frames:
             msg = "Could not load frames from input video"

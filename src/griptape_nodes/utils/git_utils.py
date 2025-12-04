@@ -6,7 +6,7 @@ import json
 import logging
 import subprocess
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import NamedTuple
 
 import pygit2

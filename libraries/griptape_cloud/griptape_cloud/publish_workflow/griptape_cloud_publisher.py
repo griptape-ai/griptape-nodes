@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from urllib.parse import urljoin
 

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 # static_ffmpeg is dynamically installed by the library loader at runtime

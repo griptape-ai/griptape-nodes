@@ -1,7 +1,7 @@
 import base64
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact

@@ -6,7 +6,7 @@ import logging
 import tempfile
 import threading
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
