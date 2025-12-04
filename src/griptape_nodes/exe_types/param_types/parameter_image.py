@@ -46,7 +46,7 @@ class ParameterImage(Parameter):
         webcam_capture_image: bool = False,
         edit_mask: bool = False,
         accept_any: bool = True,
-        hide: bool = False,
+        hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
         allow_input: bool = True,
