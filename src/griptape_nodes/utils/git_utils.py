@@ -631,12 +631,17 @@ def update_to_moving_tag(library_path: Path, tag_name: str, *, overwrite_existin
 
     # Use pygit2 to fetch tags and checkout
     try:
-        # Step 1: Fetch all tags, force update existing ones
+        # Step 1: Delete local tag to allow fetch to update it (pygit2 doesn't honor +force)
+        tag_ref = f"refs/tags/{tag_name}"
+        if tag_ref in repo.references:
+            repo.references.delete(tag_ref)
+            logger.debug("Deleted local tag %s to allow force-update", tag_name)
+
+        # Step 2: Fetch all tags (will create the deleted tag with new commit)
         remote = repo.remotes["origin"]
         remote.fetch(refspecs=["+refs/tags/*:refs/tags/*"])
 
-        # Step 2: Checkout the tag with force to discard local changes
-        tag_ref = f"refs/tags/{tag_name}"
+        # Step 3: Checkout the tag with force to discard local changes
         if tag_ref not in repo.references:
             msg = f"Tag {tag_name} not found at {library_path}"
             raise GitPullError(msg)
