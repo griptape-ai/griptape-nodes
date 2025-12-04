@@ -29,10 +29,7 @@
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.52.1",
     "engine_version": "0.65.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
@@ -351,7 +348,7 @@
       "metadata": {
         "category": "engine",
         "description": "Groups multiple nodes together for organization and parallel execution",
-        "display_name": "Node Group",
+        "display_name": "Subflow Node Group",
         "icon": "Layers"
       }
     },

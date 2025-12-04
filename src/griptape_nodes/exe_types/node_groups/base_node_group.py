@@ -28,3 +28,4 @@ class BaseNodeGroup(BaseNode):
         """
         super().__init__(name, metadata)
         self.nodes = {}
+        self.metadata["is_node_group"] = True
