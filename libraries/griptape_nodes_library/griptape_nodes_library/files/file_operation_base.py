@@ -70,10 +70,10 @@ class FileOperationBaseNode(SuccessFailureNode):
     """
 
     def _resolve_url_or_uri_to_path(self, url_or_uri: str) -> str:
-        """Resolve URLs or URIs to file paths.
+        """Resolve URLs or URLs to file paths.
 
         Handles:
-        - file:// URIs: Uses Path to convert to file path (handles Windows automatically)
+        - file:// URLs: Uses Path to convert to file path (handles Windows automatically)
         - localhost URLs: Converts to workspace-relative paths
         - Other strings: Returns as-is
 
@@ -86,11 +86,11 @@ class FileOperationBaseNode(SuccessFailureNode):
         if not isinstance(url_or_uri, str):
             return url_or_uri
 
-        # Handle file:// URIs using Path (like url_utils.py does)
+        # Handle file:// URLs using Path (like url_utils.py does)
         if url_or_uri.startswith("file://"):
             parsed = urlparse(url_or_uri)
             if parsed.scheme == "file":
-                # Use Path to handle file:// URIs - automatically handles Windows paths
+                # Use Path to handle file:// URLs - automatically handles Windows paths
                 file_path = Path(unquote(parsed.path))
                 return str(file_path)
 
@@ -113,13 +113,13 @@ class FileOperationBaseNode(SuccessFailureNode):
     def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
 
-        Also resolves file:// URIs and localhost URLs to file paths.
+        Also resolves file:// URLs and localhost URLs to file paths.
 
         Args:
             value: Artifact object, dict with "value" key, or string
 
         Returns:
-            String value extracted from the artifact, with URLs/URIs resolved
+            String value extracted from the artifact, with URLs/URLs resolved
         """
         if isinstance(value, str):
             return self._resolve_url_or_uri_to_path(value)

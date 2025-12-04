@@ -7,7 +7,7 @@ from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.utils import is_url, stream_download_to_file, validate_uri
+from griptape_nodes.utils import is_url, stream_download_to_file, validate_url
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -152,14 +152,6 @@ def extract_url_from_audio_object(obj: Any) -> str | None:
     return None
 
 
-def validate_url(url: str) -> bool:
-    """Validate that the URL/URI is safe for processing.
-
-    Supports http://, https://, and file:// URIs.
-    """
-    return validate_uri(url)
-
-
 @dataclass
 class AudioDownloadResult:
     """Result of audio download operation."""
@@ -171,7 +163,7 @@ class AudioDownloadResult:
 async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
     """Download audio from URL/URI to temporary file.
 
-    Supports http://, https://, and file:// URIs.
+    Supports http://, https://, and file:// URLs.
 
     Args:
         url: The audio URL/URI to download

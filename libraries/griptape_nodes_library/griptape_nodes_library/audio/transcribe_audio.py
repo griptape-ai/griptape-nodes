@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, Par
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.audio_utils import dict_to_audio_url_artifact
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -181,8 +181,8 @@ class TranscribeAudio(ControlNode):
             audio_artifact = audio
 
         if isinstance(audio_artifact, AudioUrlArtifact):
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            audio_bytes = load_content_from_uri(audio_artifact.value)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            audio_bytes = load_content_from_url(audio_artifact.value)
             audio_artifact = AudioLoader().parse(audio_bytes)
         task = AudioTranscriptionTask(audio_artifact, audio_transcription_driver=driver)
 

@@ -15,7 +15,7 @@ from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters impo
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.url_utils import uri_to_path_or_url
+from griptape_nodes.utils.url_utils import strip_file_scheme
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -124,7 +124,7 @@ class WanVideoToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameter
 
         # Use diffusers loading utilities to convert video URL to frames
         # Convert file:// URI to path for diffusers compatibility
-        return diffusers.utils.load_video(uri_to_path_or_url(video_artifact.value))
+        return diffusers.utils.load_video(strip_file_scheme(video_artifact.value))
 
     def latents_to_video_mp4(self, pipe: diffusers.WanVideoToVideoPipeline, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""

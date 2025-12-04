@@ -7,7 +7,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
@@ -81,8 +81,8 @@ class MergeImages(ControlNode):
         if isinstance(img, dict):
             img = dict_to_image_url_artifact(img)
         if isinstance(img, ImageUrlArtifact):
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            image_data = load_content_from_uri(img.value)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            image_data = load_content_from_url(img.value)
             img = Image.open(io.BytesIO(image_data))
         return img
 

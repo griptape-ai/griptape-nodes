@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     apply_mask_transformations,
@@ -138,9 +138,9 @@ class ApplyMask(DataNode):
             self._apply_mask_to_input(input_image, input_mask, channel)
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL/URI using load_content_from_uri."""
-        # Use load_content_from_uri which handles file://, http://, and https:// URIs
-        image_data = load_content_from_uri(url, timeout=30.0)
+        """Load image from URL/URI using load_content_from_url."""
+        # Use load_content_from_url which handles file://, http://, and https:// URLs
+        image_data = load_content_from_url(url, timeout=30.0)
         return Image.open(BytesIO(image_data))
 
     def _create_edge_mask(self, size: tuple[int, int], fade_distance: float) -> Image.Image:

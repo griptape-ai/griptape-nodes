@@ -15,7 +15,7 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 from griptape_nodes_library.utils.file_utils import generate_filename
 
@@ -211,8 +211,8 @@ class CombineAudio(SuccessFailureNode):
         """Download an audio file to a temporary file."""
         # FAILURE CASES FIRST
         try:
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            audio_content = load_content_from_uri(audio_artifact.value, timeout=60.0)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            audio_content = load_content_from_url(audio_artifact.value, timeout=60.0)
         except ValueError as e:
             error_msg = f"{self.name}: Failed to download audio file {index + 1}: invalid URI - {e}"
             raise RuntimeError(error_msg) from e

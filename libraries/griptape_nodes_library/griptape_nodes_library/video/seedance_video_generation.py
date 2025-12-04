@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import get_content_type_from_extension, load_content_from_uri
+from griptape_nodes.utils.url_utils import get_content_type_from_extension, is_url, load_content_from_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -403,11 +403,11 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str) or not url.startswith(("http://", "https://", "file://")):
+        if not isinstance(url, str) or not is_url(url):
             return url
 
         try:
-            image_content = load_content_from_uri(url, timeout=20.0)
+            image_content = load_content_from_url(url, timeout=20.0)
             ct = get_content_type_from_extension(url) or "image/jpeg"
             if not ct.startswith("image/"):
                 ct = "image/jpeg"
@@ -724,9 +724,9 @@ class SeedanceVideoGeneration(SuccessFailureNode):
     def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL/URI.
 
-        Supports http://, https://, and file:// URIs.
+        Supports http://, https://, and file:// URLs.
         """
         try:
-            return load_content_from_uri(url, timeout=120.0)
+            return load_content_from_url(url, timeout=120.0)
         except Exception:
             return None

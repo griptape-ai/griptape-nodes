@@ -16,7 +16,7 @@ from utils.image_utils import load_image_from_url_artifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.url_utils import uri_to_path_or_url
+from griptape_nodes.utils.url_utils import strip_file_scheme
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -80,7 +80,7 @@ class StaticMaskWanVaceAux(ControlNode):
 
         # Load video frames
         # Convert file:// URI to path for diffusers compatibility
-        video_frames = diffusers.utils.load_video(uri_to_path_or_url(input_video.value))
+        video_frames = diffusers.utils.load_video(strip_file_scheme(input_video.value))
 
         if not video_frames:
             msg = "Could not load frames from input video"

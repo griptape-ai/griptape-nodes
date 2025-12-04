@@ -12,12 +12,12 @@ logger = logging.getLogger("griptape_nodes")
 # Default timeout for HTTP requests
 DEFAULT_HTTP_TIMEOUT = 30.0
 
-# Supported URI schemes
+# Supported URL schemes
 SUPPORTED_SCHEMES = ("http", "https", "file")
 
 
 def is_url(value: str) -> bool:
-    """Check if a string is a supported URL/URI.
+    """Check if a string is a supported URL.
 
     Args:
         value: String to check
@@ -28,30 +28,30 @@ def is_url(value: str) -> bool:
     return value.startswith(("http://", "https://", "file://"))
 
 
-def get_uri_scheme(uri: str) -> str | None:
-    """Get the scheme from a URI.
+def get_url_scheme(url: str) -> str | None:
+    """Get the scheme from a URL.
 
     Args:
-        uri: URI string to parse
+        url: URL string to parse
 
     Returns:
         The scheme (e.g., "http", "https", "file") or None if invalid
     """
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
     return parsed.scheme if parsed.scheme else None
 
 
-def validate_uri(uri: str, *, allowed_schemes: tuple[str, ...] = SUPPORTED_SCHEMES) -> bool:
-    """Validate that a URI has a supported scheme and proper format.
+def validate_url(url: str, *, allowed_schemes: tuple[str, ...] = SUPPORTED_SCHEMES) -> bool:
+    """Validate that a URL has a supported scheme and proper format.
 
     Args:
-        uri: URI to validate
+        url: URL to validate
         allowed_schemes: Tuple of allowed scheme names (default: http, https, file)
 
     Returns:
-        True if URI is valid, False otherwise
+        True if URL is valid, False otherwise
     """
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
 
     # Check if scheme is allowed
     if parsed.scheme not in allowed_schemes:
@@ -63,7 +63,7 @@ def validate_uri(uri: str, *, allowed_schemes: tuple[str, ...] = SUPPORTED_SCHEM
 
     # For file://, require absolute path (starts with /)
     if parsed.scheme == "file":
-        # file:// URIs should have path starting with / for absolute paths
+        # file:// URLs should have path starting with / for absolute paths
         # file:///absolute/path is correct format
         return parsed.path.startswith("/")
 
@@ -74,7 +74,7 @@ def get_content_type_from_extension(file_path: str | Path) -> str | None:
     """Get content type from file extension.
 
     Args:
-        file_path: Path or URI with file extension
+        file_path: Path or URL with file extension
 
     Returns:
         MIME type string or None if unknown
@@ -87,24 +87,24 @@ def get_content_type_from_extension(file_path: str | Path) -> str | None:
     return mime_type
 
 
-def uri_to_path_or_url(uri: str) -> str:
-    """Convert file:// URI to file path, pass through other URLs/paths unchanged.
+def strip_file_scheme(url: str) -> str:
+    """Strip file:// scheme from URL, pass through other URLs/paths unchanged.
 
     Some libraries (like diffusers.utils.load_video) support HTTP/HTTPS URLs
-    and local file paths, but NOT file:// URIs. This helper converts file://
-    URIs to paths so they can be used with such libraries.
+    and local file paths, but NOT file:// URLs. This helper converts file://
+    URLs to paths so they can be used with such libraries.
 
     Args:
-        uri: A URL, file:// URI, or file path
+        url: A URL (http://, https://, file://) or file path
 
     Returns:
-        For file:// URIs: the extracted file path
+        For file:// URLs: the extracted file path
         For other inputs: the original string unchanged
     """
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
     if parsed.scheme == "file":
         return url2pathname(parsed.path)
-    return uri
+    return url
 
 
 def validate_content_type_for_category(
@@ -126,36 +126,36 @@ def validate_content_type_for_category(
     return content_type.startswith(f"{expected_category}/")
 
 
-def load_content_from_uri(
-    uri: str,
+def load_content_from_url(
+    url: str,
     *,
     timeout: float = DEFAULT_HTTP_TIMEOUT,
     validate_scheme: bool = True,
 ) -> bytes:
-    """Load content from a URI (http://, https://, or file://).
+    """Load content from a URL (http://, https://, or file://).
 
     Args:
-        uri: URI to load from
+        url: URL to load from
         timeout: Timeout in seconds for HTTP requests (ignored for file://)
-        validate_scheme: Whether to validate URI scheme before loading
+        validate_scheme: Whether to validate URL scheme before loading
 
     Returns:
         File content as bytes
 
     Raises:
-        ValueError: If URI scheme is invalid or file:// path is not absolute
-        FileNotFoundError: If file:// URI points to non-existent file
+        ValueError: If URL scheme is invalid or file:// path is not absolute
+        FileNotFoundError: If file:// URL points to non-existent file
         httpx.HTTPError: If HTTP request fails
     """
-    if validate_scheme and not validate_uri(uri):
-        msg = f"Invalid URI: {uri}. Must be http://, https://, or file:// with absolute path"
+    if validate_scheme and not validate_url(url):
+        msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
 
-    # Handle file:// URIs
+    # Handle file:// URLs
     if parsed.scheme == "file":
-        # Parse file path from URI
+        # Parse file path from URL
         # file:///path/to/file -> /path/to/file
         file_path = Path(url2pathname(parsed.path))
 
@@ -169,45 +169,45 @@ def load_content_from_uri(
 
         return file_path.read_bytes()
 
-    # Handle http:// and https:// URIs
+    # Handle http:// and https:// URLs
     if parsed.scheme in ("http", "https"):
-        response = httpx.get(uri, timeout=timeout)
+        response = httpx.get(url, timeout=timeout)
         response.raise_for_status()
         return response.content
 
     # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URI scheme: {parsed.scheme}"
+    msg = f"Unsupported URL scheme: {parsed.scheme}"
     raise ValueError(msg)
 
 
-async def aload_content_from_uri(
-    uri: str,
+async def aload_content_from_url(
+    url: str,
     *,
     timeout: float = DEFAULT_HTTP_TIMEOUT,  # noqa: ASYNC109
     validate_scheme: bool = True,
 ) -> bytes:
-    """Load content from a URI asynchronously (http://, https://, or file://).
+    """Load content from a URL asynchronously (http://, https://, or file://).
 
     Args:
-        uri: URI to load from
+        url: URL to load from
         timeout: Timeout in seconds for HTTP requests (ignored for file://)
-        validate_scheme: Whether to validate URI scheme before loading
+        validate_scheme: Whether to validate URL scheme before loading
 
     Returns:
         File content as bytes
 
     Raises:
-        ValueError: If URI scheme is invalid or file:// path is not absolute
-        FileNotFoundError: If file:// URI points to non-existent file
+        ValueError: If URL scheme is invalid or file:// path is not absolute
+        FileNotFoundError: If file:// URL points to non-existent file
         httpx.HTTPError: If HTTP request fails
     """
-    if validate_scheme and not validate_uri(uri):
-        msg = f"Invalid URI: {uri}. Must be http://, https://, or file:// with absolute path"
+    if validate_scheme and not validate_url(url):
+        msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
 
-    # Handle file:// URIs - file operations are synchronous
+    # Handle file:// URLs - file operations are synchronous
     if parsed.scheme == "file":
         file_path = Path(url2pathname(parsed.path))
 
@@ -221,51 +221,51 @@ async def aload_content_from_uri(
 
         return file_path.read_bytes()
 
-    # Handle http:// and https:// URIs asynchronously
+    # Handle http:// and https:// URLs asynchronously
     if parsed.scheme in ("http", "https"):
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(uri)
+            response = await client.get(url)
             response.raise_for_status()
             return response.content
 
     # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URI scheme: {parsed.scheme}"
+    msg = f"Unsupported URL scheme: {parsed.scheme}"
     raise ValueError(msg)
 
 
 async def stream_download_to_file(
-    uri: str,
+    url: str,
     destination: Path,
     *,
     timeout: float = DEFAULT_HTTP_TIMEOUT,  # noqa: ASYNC109
     validate_scheme: bool = True,
 ) -> Path:
-    """Stream download content from URI to a file.
+    """Stream download content from URL to a file.
 
-    For file:// URIs, simply copies the file.
-    For http:// and https:// URIs, streams the download.
+    For file:// URLs, simply copies the file.
+    For http:// and https:// URLs, streams the download.
 
     Args:
-        uri: URI to download from
+        url: URL to download from
         destination: Destination file path
         timeout: Timeout in seconds for HTTP requests
-        validate_scheme: Whether to validate URI scheme
+        validate_scheme: Whether to validate URL scheme
 
     Returns:
         Path to the downloaded file
 
     Raises:
-        ValueError: If URI is invalid
-        FileNotFoundError: If source file not found (for file:// URIs)
+        ValueError: If URL is invalid
+        FileNotFoundError: If source file not found (for file:// URLs)
         httpx.HTTPError: If HTTP request fails
     """
-    if validate_scheme and not validate_uri(uri):
-        msg = f"Invalid URI: {uri}. Must be http://, https://, or file:// with absolute path"
+    if validate_scheme and not validate_url(url):
+        msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
 
-    # Handle file:// URIs - just copy the file
+    # Handle file:// URLs - just copy the file
     if parsed.scheme == "file":
         source_path = Path(url2pathname(parsed.path))
 
@@ -281,9 +281,9 @@ async def stream_download_to_file(
         destination.write_bytes(source_path.read_bytes())
         return destination
 
-    # Handle http:// and https:// URIs - stream download
+    # Handle http:// and https:// URLs - stream download
     if parsed.scheme in ("http", "https"):
-        async with httpx.AsyncClient(timeout=timeout) as client, client.stream("GET", uri) as response:
+        async with httpx.AsyncClient(timeout=timeout) as client, client.stream("GET", url) as response:
             response.raise_for_status()
 
             with destination.open("wb") as f:
@@ -293,39 +293,39 @@ async def stream_download_to_file(
         return destination
 
     # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URI scheme: {parsed.scheme}"
+    msg = f"Unsupported URL scheme: {parsed.scheme}"
     raise ValueError(msg)
 
 
-def get_content_type_from_uri(uri: str) -> str | None:
-    """Get content type for a URI.
+def get_content_type_from_url(url: str) -> str | None:
+    """Get content type for a URL.
 
-    For http/https URIs, makes a HEAD request to get Content-Type header.
-    For file:// URIs, guesses from file extension.
+    For http/https URLs, makes a HEAD request to get Content-Type header.
+    For file:// URLs, guesses from file extension.
 
     Args:
-        uri: URI to check
+        url: URL to check
 
     Returns:
         Content type string or None if unable to determine
     """
-    parsed = urlparse(uri)
+    parsed = urlparse(url)
 
-    # For file:// URIs, use extension
+    # For file:// URLs, use extension
     if parsed.scheme == "file":
         file_path = Path(url2pathname(parsed.path))
         return get_content_type_from_extension(file_path)
 
-    # For http/https URIs, make HEAD request
+    # For http/https URLs, make HEAD request
     if parsed.scheme in ("http", "https"):
         try:
-            response = httpx.head(uri, timeout=DEFAULT_HTTP_TIMEOUT)
+            response = httpx.head(url, timeout=DEFAULT_HTTP_TIMEOUT)
             response.raise_for_status()
             content_type = response.headers.get("content-type", "")
             # Split to remove charset and other parameters
             return content_type.split(";")[0].strip()
         except Exception as e:
-            logger.warning("Failed to get content type from %s: %s", uri, e)
+            logger.warning("Failed to get content type from %s: %s", url, e)
             return None
 
     return None

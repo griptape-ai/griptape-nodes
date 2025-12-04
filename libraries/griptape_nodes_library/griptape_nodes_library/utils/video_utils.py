@@ -8,13 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.utils import is_url, stream_download_to_file, validate_uri
+from griptape_nodes.utils import is_url, stream_download_to_file, validate_url
 from griptape_nodes.utils.async_utils import subprocess_run
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -181,14 +179,6 @@ def extract_url_from_video_object(obj: Any) -> str | None:
     return None
 
 
-def validate_url(url: str) -> bool:
-    """Validate that the URL/URI is safe for processing.
-
-    Supports http://, https://, and file:// URIs.
-    """
-    return validate_uri(url)
-
-
 async def get_video_duration(video_url: str) -> float:
     """Get the duration of a video in seconds using ffprobe.
 
@@ -311,7 +301,7 @@ class VideoDownloadResult:
 async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
     """Download video from URL/URI to temporary file.
 
-    Supports http://, https://, and file:// URIs.
+    Supports http://, https://, and file:// URLs.
 
     Args:
         url: The video URL/URI to download

@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 
 
 class DisplayImage(DataNode):
@@ -73,8 +73,8 @@ class DisplayImage(DataNode):
         if isinstance(image, ImageArtifact):
             return image.width, image.height
         if isinstance(image, ImageUrlArtifact):
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            image_data = load_content_from_uri(image.value, timeout=30.0)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            image_data = load_content_from_url(image.value, timeout=30.0)
             pil_image = Image.open(BytesIO(image_data))
             return pil_image.width, pil_image.height
         if image:

@@ -176,7 +176,7 @@ class StaticFilesManager:
         """
         workspace_path = self.config_manager.workspace_path
 
-        # Parse file path, handling file:// URIs and percent-encoding
+        # Parse file path, handling file:// URLs and percent-encoding
         parsed = urlparse(file_path)
         if parsed.scheme == "file":
             path = Path(url2pathname(parsed.path))

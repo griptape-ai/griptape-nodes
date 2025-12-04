@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils import is_url, load_content_from_uri
+from griptape_nodes.utils import is_url, load_content_from_url
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -107,7 +107,7 @@ def validate_pil_format(format_str: str, param_name: str = "format") -> None:
 def is_local(url: str) -> bool:
     """Check if a URL is a local file path (not a file:// URI).
 
-    Note: file:// URIs are not considered "local" for the purposes of this function,
+    Note: file:// URLs are not considered "local" for the purposes of this function,
     as they should be handled by the URI loading system.
     """
     # Check if it's a URL/URI (http://, https://, file://)
@@ -260,7 +260,7 @@ def load_pil_from_url(url: str) -> Image.Image:
 
     # URL/URI (http://, https://, file://) - use centralized loader
     try:
-        content = load_content_from_uri(url, timeout=DEFAULT_TIMEOUT)
+        content = load_content_from_url(url, timeout=DEFAULT_TIMEOUT)
         return Image.open(BytesIO(content))
     except Exception as e:
         msg = f"Failed to load image from URI: {url}\nError: {e}"
@@ -304,8 +304,8 @@ def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageA
         ValueError: If image download fails with descriptive error message
     """
     try:
-        # Use load_content_from_uri which handles file://, http://, and https:// URIs
-        image_bytes = load_content_from_uri(image_url_artifact.value)
+        # Use load_content_from_url which handles file://, http://, and https:// URLs
+        image_bytes = load_content_from_url(image_url_artifact.value)
     except (URLError, RequestException, ConnectionError, TimeoutError, ValueError, FileNotFoundError) as err:
         details = (
             f"Failed to download image at '{image_url_artifact.value}'.\n"

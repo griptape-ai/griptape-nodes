@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes.utils import get_content_type_from_extension, is_url, load_content_from_uri, validate_uri
+from griptape_nodes.utils import get_content_type_from_extension, is_url, load_content_from_url, validate_url
 
 
 def default_extract_url_from_artifact_value(
@@ -120,7 +120,7 @@ class ArtifactPathValidator(Trait):
 
             # Check if it's a URL/URI (http://, https://, file://)
             if is_url(path_str):
-                valid = validate_uri(path_str)
+                valid = validate_url(path_str)
                 if not valid:
                     error_msg = f"Invalid URL/URI: '{path_str}'"
                     raise ValueError(error_msg)
@@ -390,7 +390,7 @@ class ArtifactPathTethering:
 
         try:
             # Process the path (URL or file) - reuse existing path logic
-            if self._is_url(path_value):
+            if is_url(path_value):
                 download_url = self._download_and_upload_url(path_value)
             else:
                 # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
@@ -443,13 +443,6 @@ class ArtifactPathTethering:
                 artifact.meta = metadata
             return artifact
         return value
-
-    def _is_url(self, path: str) -> bool:
-        """Check if the path is a URL/URI.
-
-        Supports http://, https://, and file:// URIs.
-        """
-        return is_url(path)
 
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""
@@ -609,14 +602,14 @@ class ArtifactPathTethering:
         unique_id = str(uuid.uuid4())[:8]
         return f"{domain}_{unique_id}.{self.config.default_extension}"
 
-    def _download_and_upload_url(self, url: str) -> str:  # noqa: C901, PLR0912, PLR0915
+    def _download_and_upload_url(self, url: str) -> str:
         """Download artifact from URL/URI and upload to static storage, return download URL.
 
-        Supports http://, https://, and file:// URIs.
+        Supports http://, https://, and file:// URLs.
         """
         # Load content from URI using centralized loader
         try:
-            content = load_content_from_uri(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
+            content = load_content_from_url(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
         except Exception as e:
             error_msg = f"Failed to load artifact from URI '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e
@@ -624,7 +617,7 @@ class ArtifactPathTethering:
         # Validate content type
         parsed = urlparse(url)
         if parsed.scheme == "file":
-            # For file:// URIs, validate content type by file extension
+            # For file:// URLs, validate content type by file extension
             file_path = Path(unquote(parsed.path))
             content_type = get_content_type_from_extension(file_path)
             if content_type is None:

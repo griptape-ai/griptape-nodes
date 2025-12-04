@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -160,8 +160,8 @@ class ImageBash(DataNode):
     def _get_image_dimensions(self, image_url: str) -> tuple[int, int]:
         """Get the width and height of an image from its URL or file:// URI."""
         try:
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            image_bytes = load_content_from_uri(image_url)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            image_bytes = load_content_from_url(image_url)
 
             with Image.open(BytesIO(image_bytes)) as img:
                 return img.size  # Returns (width, height)

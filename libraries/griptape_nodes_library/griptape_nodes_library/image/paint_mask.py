@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     apply_mask_transformations,
@@ -154,8 +154,8 @@ class PaintMask(DataNode):
             if isinstance(meta, dict) and meta.get("maskEdited", False):
                 # If mask was edited, keep it but update source image URL
                 mask_url = output_mask_value.value
-                # Use load_content_from_uri which handles file://, http://, and https:// URIs
-                mask_content = load_content_from_uri(mask_url, timeout=30.0)
+                # Use load_content_from_url which handles file://, http://, and https:// URLs
+                mask_content = load_content_from_url(mask_url, timeout=30.0)
                 new_mask_filename = generate_filename(
                     node_name=self.name,
                     suffix="_mask",
@@ -248,9 +248,9 @@ class PaintMask(DataNode):
         return mask.convert("RGB")
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL/URI using load_content_from_uri."""
-        # Use load_content_from_uri which handles file://, http://, and https:// URIs
-        image_data = load_content_from_uri(url, timeout=30.0)
+        """Load image from URL/URI using load_content_from_url."""
+        # Use load_content_from_url which handles file://, http://, and https:// URLs
+        image_data = load_content_from_url(url, timeout=30.0)
         return Image.open(BytesIO(image_data))
 
     def _extract_alpha_from_mask(self, mask_pil: Image.Image) -> Image.Image:

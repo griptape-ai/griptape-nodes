@@ -150,7 +150,7 @@ class ResolveStaticFilePathRequest(RequestPayload):
     """Resolve a static file URL back to its original file path.
 
     Use when: Converting static storage URLs to file paths, handling browser uploads,
-    normalizing URLs to file:// URIs, retrieving original file locations.
+    normalizing URLs to file:// URLs, retrieving original file locations.
 
     Args:
         url: Static file URL to resolve (e.g., http://localhost:5000/static/photo.jpg)

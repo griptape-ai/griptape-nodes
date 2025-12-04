@@ -16,7 +16,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils import aload_content_from_uri
+from griptape_nodes.utils import aload_content_from_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -596,9 +596,9 @@ class WanTextToVideoGeneration(SuccessFailureNode):
     async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL/URI.
 
-        Supports http://, https://, and file:// URIs.
+        Supports http://, https://, and file:// URLs.
         """
         try:
-            return await aload_content_from_uri(url, timeout=30.0)
+            return await aload_content_from_url(url, timeout=30.0)
         except Exception:
             return None

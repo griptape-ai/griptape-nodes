@@ -11,7 +11,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.traits.options import Options
-from griptape_nodes.utils.url_utils import load_content_from_uri
+from griptape_nodes.utils.url_utils import load_content_from_url
 from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -549,8 +549,8 @@ class ConcatenateVideos(BaseVideoProcessor):
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL or file:// URI to local file."""
         try:
-            # Use load_content_from_uri which handles file://, http://, and https:// URIs
-            video_bytes = load_content_from_uri(video_url)
+            # Use load_content_from_url which handles file://, http://, and https:// URLs
+            video_bytes = load_content_from_url(video_url)
 
             output_file = Path(output_path)
             output_file.write_bytes(video_bytes)
