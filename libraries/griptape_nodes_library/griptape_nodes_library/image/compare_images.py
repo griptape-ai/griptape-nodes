@@ -59,7 +59,7 @@ class CompareImages(ControlNode):
         result_dict = {"input_image_1": image_1, "input_image_2": image_2}
 
         # Update Compare parameter value
-        self.parameter_values["Compare"] = result_dict
+        self.set_parameter_value("Compare", result_dict)
 
         # Update output values for downstream connections
         self.parameter_output_values["Compare"] = result_dict
