@@ -6,10 +6,9 @@ import PIL.Image
 import spandrel  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import torch.nn.functional  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from PIL.Image import Image
-
-from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 
 logger = logging.getLogger("spandrel_nodes_library")
 
