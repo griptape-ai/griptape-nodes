@@ -9,12 +9,15 @@ import torch.nn.functional  # type: ignore[reportMissingImports]
 from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from PIL.Image import Image
 
+from diffusers_nodes_library.common.utils.torch_utils import get_best_device
+
 logger = logging.getLogger("spandrel_nodes_library")
 
 
 class SpandrelPipeline:
-    def __init__(self, model: spandrel.ModelDescriptor) -> None:
+    def __init__(self, model: spandrel.ModelDescriptor, device: torch.device) -> None:
         self.model = model
+        self.device = device
 
     @classmethod
     @cache
@@ -32,7 +35,11 @@ class SpandrelPipeline:
         sd = torch.load(model_path, map_location="cpu")
         model = spandrel.ModelLoader().load_from_state_dict(sd).eval()
 
-        return SpandrelPipeline(model)
+        device = get_best_device()
+        model = model.to(device)
+        logger.info("SpandrelPipeline loaded on device: %s", device)
+
+        return SpandrelPipeline(model, device)
 
     def __call__(self, input_image_pil: Image, *_) -> Image:
         # Will fail if not RGB (like RGBA), I think it actually just
@@ -42,7 +49,7 @@ class SpandrelPipeline:
 
         input_tensor = pil_to_tensor(input_image_pil)
         input_tensor = input_tensor.movedim(-1, -3)
-        input_tensor.to("cpu")
+        input_tensor = input_tensor.to(self.device)
 
         with torch.no_grad():
             output_tensor = self.model(input_tensor)
