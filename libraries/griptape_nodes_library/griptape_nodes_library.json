@@ -349,7 +349,8 @@
         "category": "engine",
         "description": "Groups multiple nodes together for organization and parallel execution",
         "display_name": "Subflow Node Group",
-        "icon": "Layers"
+        "icon": "Layers",
+        "is_node_group": true
       }
     },
     {
