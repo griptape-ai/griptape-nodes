@@ -1,11 +1,12 @@
+import gc
 import logging
-from functools import cache
 
 import numpy as np
 import PIL.Image
 import spandrel  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 import torch.nn.functional  # type: ignore[reportMissingImports]
+from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from huggingface_hub import hf_hub_download  # pyright: ignore[reportMissingImports]
 from PIL.Image import Image
 
@@ -13,11 +14,11 @@ logger = logging.getLogger("spandrel_nodes_library")
 
 
 class SpandrelPipeline:
-    def __init__(self, model: spandrel.ModelDescriptor) -> None:
+    def __init__(self, model: spandrel.ModelDescriptor, device: torch.device) -> None:
         self.model = model
+        self.device = device
 
     @classmethod
-    @cache
     def from_hf_file(cls, repo_id: str, revision: str, filename: str) -> "SpandrelPipeline":
         if repo_id != "skbhadra/ClearRealityV1" or filename != "4x-ClearRealityV1.pth":
             logger.exception("Unsupported (repo_id: %s filename: %s) pair", repo_id, filename)
@@ -32,7 +33,11 @@ class SpandrelPipeline:
         sd = torch.load(model_path, map_location="cpu")
         model = spandrel.ModelLoader().load_from_state_dict(sd).eval()
 
-        return SpandrelPipeline(model)
+        device = get_best_device()
+        model = model.to(device)
+        logger.info("SpandrelPipeline loaded on device: %s", device)
+
+        return SpandrelPipeline(model, device)
 
     def __call__(self, input_image_pil: Image, *_) -> Image:
         # Will fail if not RGB (like RGBA), I think it actually just
@@ -42,7 +47,7 @@ class SpandrelPipeline:
 
         input_tensor = pil_to_tensor(input_image_pil)
         input_tensor = input_tensor.movedim(-1, -3)
-        input_tensor.to("cpu")
+        input_tensor = input_tensor.to(self.device)
 
         with torch.no_grad():
             output_tensor = self.model(input_tensor)
@@ -50,6 +55,18 @@ class SpandrelPipeline:
         output_tensor = torch.clamp(output_tensor.movedim(-3, -1), min=0, max=1.0)
         output_image_pil = tensor_to_pil(output_tensor)
         return output_image_pil
+
+
+def clear_spandrel_pipeline(pipe: SpandrelPipeline) -> None:
+    """Clear spandrel pipeline from memory."""
+    if pipe.model is not None:
+        pipe.model.to("cpu")
+        del pipe.model
+        pipe.model = None
+    del pipe
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def tensor_to_pil(image_pt: torch.Tensor, batch_index: int = 0) -> Image:
