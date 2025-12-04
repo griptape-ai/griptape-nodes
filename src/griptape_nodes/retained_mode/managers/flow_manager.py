@@ -2751,7 +2751,7 @@ class FlowManager:
         subflow_machine = ControlFlowMachine(
             flow.name,
             pickle_control_flow_result=request.pickle_control_flow_result,
-            use_isolated_dag_builder=True,
+            is_isolated=True,
         )
 
         await subflow_machine.start_flow(start_node)
@@ -3604,9 +3604,10 @@ class FlowManager:
         self._global_flow_queue.task_done()
         return queue_item.node
 
-    def clear_execution_queue(self) -> None:
+    def clear_execution_queue(self, flow: ControlFlow) -> None:
         """Clear all nodes from the global execution queue."""
-        self._global_flow_queue.queue.clear()
+        if self._global_control_flow_machine and self._global_control_flow_machine.context.flow_name == flow.name:
+            self._global_flow_queue.queue.clear()
 
     def has_connection(
         self,

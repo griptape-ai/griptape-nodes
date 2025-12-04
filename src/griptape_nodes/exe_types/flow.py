@@ -81,7 +81,7 @@ class ControlFlow:
     def clear_execution_queue(self) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        GriptapeNodes.FlowManager().clear_execution_queue()
+        GriptapeNodes.FlowManager().clear_execution_queue(self)
 
     def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

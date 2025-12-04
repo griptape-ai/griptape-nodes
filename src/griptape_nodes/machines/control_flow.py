@@ -52,6 +52,7 @@ class ControlFlowContext:
     flow_name: str
     pickle_control_flow_result: bool
     end_node: BaseNode | None = None
+    is_isolated: bool
 
     def __init__(
         self,
@@ -60,7 +61,7 @@ class ControlFlowContext:
         *,
         execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
         pickle_control_flow_result: bool = False,
-        use_isolated_dag_builder: bool = False,
+        is_isolated: bool = False,
     ) -> None:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
@@ -69,7 +70,7 @@ class ControlFlowContext:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             # Create isolated DagBuilder for independent subflows
-            if use_isolated_dag_builder:
+            if is_isolated:
                 dag_builder = DagBuilder()
                 logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
             else:
@@ -82,6 +83,7 @@ class ControlFlowContext:
             self.resolution_machine = SequentialResolutionMachine()
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
+        self.is_isolated = is_isolated
 
     def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
         """Get all next nodes from the current nodes.
@@ -123,7 +125,7 @@ class ControlFlowContext:
                     logger.debug("Control Flow: Node '%s' has no control output", current_node.name)
 
         # If no connections found, check execution queue
-        if not next_nodes:
+        if not next_nodes and not self.is_isolated:
             node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
             if node is not None:
                 next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
@@ -320,7 +322,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         flow_name: str,
         *,
         pickle_control_flow_result: bool = False,
-        use_isolated_dag_builder: bool = False,
+        is_isolated: bool = False,
     ) -> None:
         execution_type = GriptapeNodes.ConfigManager().get_config_value(
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
@@ -331,7 +333,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             max_nodes_in_parallel,
             execution_type=execution_type,
             pickle_control_flow_result=pickle_control_flow_result,
-            use_isolated_dag_builder=use_isolated_dag_builder,
+            is_isolated=is_isolated,
         )
         super().__init__(context)
 

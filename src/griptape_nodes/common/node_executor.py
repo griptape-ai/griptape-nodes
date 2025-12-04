@@ -213,7 +213,9 @@ class NodeExecutor:
 
         # Handle iterative loop nodes - check if we need to package and execute the loop
         if isinstance(node, BaseIterativeEndNode):
+            logger.info("Detected BaseIterativeEndNode '%s' - calling handle_loop_execution", node.name)
             await self.handle_loop_execution(node)
+            logger.info("Completed handle_loop_execution for '%s'", node.name)
             return
 
         # We default to local execution if it is not a NodeGroupNode or BaseIterativeEndNode!
@@ -603,7 +605,6 @@ class NodeExecutor:
         for node_name in nodes_in_control_flow:
             if node_name not in dag_builder.node_to_reference:
                 all_nodes.add(node_name)
-                # TODO will there be an issue with nodes in the control flow?
             node_obj = node_manager.get_node_by_name(node_name)
             deps = DagBuilder.collect_data_dependencies_for_node(
                 node_obj, connections, nodes_in_control_flow, visited_deps
@@ -707,6 +708,9 @@ class NodeExecutor:
             start_node.name,
             end_node.name,
         )
+
+        # Remove packaged nodes from global queue since they will be copied into loop iterations
+        self._remove_packaged_nodes_from_queue(all_nodes)
 
         return package_result, execution_type
 
@@ -872,6 +876,12 @@ class NodeExecutor:
         try:
             # Execute iterations one at a time
             for iteration_index in range(total_iterations):
+                logger.info(
+                    "Starting sequential iteration %d/%d for loop ending at '%s'",
+                    iteration_index,
+                    total_iterations,
+                    end_loop_node.name,
+                )
                 # Set input values for this iteration
                 parameter_values = parameter_values_per_iteration[iteration_index]
 
@@ -893,6 +903,12 @@ class NodeExecutor:
 
                 # Execute this iteration with event translation instead of suppression
                 # This allows the UI to show the original nodes highlighting during loop execution
+                logger.info(
+                    "Executing subflow for iteration %d - flow: '%s', start_node: '%s'",
+                    iteration_index,
+                    flow_name,
+                    packaged_start_node_name,
+                )
                 with EventTranslationContext(event_manager, reverse_node_mapping):
                     start_subflow_request = StartLocalSubflowRequest(
                         flow_name=flow_name,
@@ -903,6 +919,9 @@ class NodeExecutor:
 
                 if not isinstance(start_subflow_result, StartLocalSubflowResultSuccess):
                     msg = f"Sequential loop iteration {iteration_index} failed: {start_subflow_result.result_details}"
+                    logger.error(
+                        "Sequential iteration %d failed for loop ending at '%s'", iteration_index, end_loop_node.name
+                    )
                     raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime execution error, not a type error
 
                 successful_iterations.append(iteration_index)
@@ -1050,14 +1069,22 @@ class NodeExecutor:
             value = iteration_results[iteration_index]
             end_node._results_list.append(value)
 
+        logger.info(
+            "Loop '%s': Built results list with %d items from sequential iterations",
+            end_node.name,
+            len(end_node._results_list),
+        )
+
         # Output final results to the results parameter
         end_node._output_results_list()
+        logger.info("Loop '%s': Outputted final results list", end_node.name)
 
         # Apply last iteration values to the original packaged nodes
         self._apply_last_iteration_to_packaged_nodes(
             last_iteration_values=last_iteration_values,
             package_result=package_result,
         )
+        logger.info("Loop '%s': Applied last iteration values to packaged nodes", end_node.name)
 
         logger.info(
             "Completed sequential loop execution from '%s' to '%s' with %d results",
@@ -2328,6 +2355,32 @@ class NodeExecutor:
                     param_name, param_value, unique_uuid_to_values
                 )
         return parameter_output_values
+
+    def _remove_packaged_nodes_from_queue(self, packaged_node_names: set[str]) -> None:
+        """Remove nodes from global flow queue after they've been packaged for loop execution.
+
+        When nodes are packaged for For Each loops, they will be deserialized into separate
+        flow instances. We need to remove them from the global queue to prevent them from
+        being executed in the main flow while also being copied into loop iterations.
+
+        Args:
+            packaged_node_names: Set of node names that were packaged
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Get the nodes from the names
+        packaged_nodes = set()
+        for node_name in packaged_node_names:
+            node = node_manager.get_node_by_name(node_name)
+            if node:
+                packaged_nodes.add(node)
+
+        # Remove matching queue items
+        items_to_remove = [item for item in flow_manager.global_flow_queue.queue if item.node in packaged_nodes]
+
+        for item in items_to_remove:
+            flow_manager.global_flow_queue.queue.remove(item)
 
     def _deserialize_parameter_value(self, param_name: str, param_value: Any, unique_uuid_to_values: dict) -> Any:
         """Deserialize a single parameter value, handling UUID references and pickling.
