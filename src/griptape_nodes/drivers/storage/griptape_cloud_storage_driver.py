@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -38,7 +39,17 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         self.bucket_id = bucket_id
 
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+    def create_signed_upload_url(
+        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> CreateSignedUploadUrlResponse:
+        if existing_file_policy != ExistingFilePolicy.OVERWRITE:
+            logger.warning(
+                "Griptape Cloud storage only supports OVERWRITE policy. "
+                "Requested policy '%s' will be ignored for file: %s",
+                existing_file_policy.value,
+                path,
+            )
+
         self._create_asset(path.as_posix())
 
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
@@ -52,7 +63,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         response_data = response.json()
 
-        return {"url": response_data["url"], "headers": response_data.get("headers", {}), "method": "PUT"}
+        return {
+            "url": response_data["url"],
+            "headers": response_data.get("headers", {}),
+            "method": "PUT",
+            "file_path": str(path),
+        }
 
     def create_signed_download_url(self, path: Path) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
