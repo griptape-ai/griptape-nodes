@@ -81,17 +81,17 @@ class ControlFlow:
     def clear_execution_queue(self) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        GriptapeNodes.FlowManager().clear_execution_queue()
+        GriptapeNodes.FlowManager().clear_execution_queue(self)
 
     def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        return GriptapeNodes.FlowManager().get_connections_on_node(self, node)
+        return GriptapeNodes.FlowManager().get_connections_on_node(node)
 
     def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        return GriptapeNodes.FlowManager().get_all_connected_nodes(self, node)
+        return GriptapeNodes.FlowManager().get_all_connected_nodes(node)
 
     def get_node_dependencies(self, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.

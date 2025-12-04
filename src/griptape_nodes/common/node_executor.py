@@ -170,6 +170,14 @@ class EntryNodeParameter(NamedTuple):
     entry_parameter: str | None
 
 
+class LoopBodyNodes(NamedTuple):
+    """Result of collecting loop body nodes."""
+
+    all_nodes: set[str]
+    execution_type: str
+    node_group_name: str | None
+
+
 class NodeExecutor:
     """Singleton executor that executes nodes dynamically."""
 
@@ -567,8 +575,57 @@ class NodeExecutor:
             # Direct connection to a regular node
             entry_control_node_name = first_conn.target_node.name
             entry_control_parameter_name = first_conn.target_parameter.name
+            # If the connection is just to the End Node, then we don't have an entry control connection.
+            if first_conn.target_node == start_node.end_node:
+                return EntryNodeParameter(None, None)
 
         return EntryNodeParameter(entry_node=entry_control_node_name, entry_parameter=entry_control_parameter_name)
+
+    def _collect_loop_body_nodes(
+        self,
+        start_node: BaseIterativeStartNode,
+        end_node: BaseIterativeEndNode,
+        nodes_in_control_flow: set[str],
+        connections: Any,
+    ) -> LoopBodyNodes:
+        """Collect all nodes in the loop body, including data dependencies.
+
+        Returns:
+            LoopBodyNodes containing all_nodes, execution_type, and node_group_name
+        """
+        all_nodes: set[str] = set()
+        visited_deps: set[str] = set()
+
+        node_manager = GriptapeNodes.NodeManager()
+        # Exclude the start node from packaging. And, we don't want their dependencies.
+        nodes_in_control_flow.discard(start_node.name)
+        for node_name in nodes_in_control_flow:
+            # Add ALL nodes in control flow for removal from parent DAG
+            all_nodes.add(node_name)
+            node_obj = node_manager.get_node_by_name(node_name)
+            deps = DagBuilder.collect_data_dependencies_for_node(
+                node_obj, connections, nodes_in_control_flow, visited_deps
+            )
+            all_nodes.update(deps)
+        # Discard the end node from packaging.
+        all_nodes.discard(end_node.name)
+        # Make sure the start node wasn't added in the dependencies.
+        all_nodes.discard(start_node.name)
+
+        # See if they're all in one NodeGroup
+        execution_type = LOCAL_EXECUTION
+        node_group_name = None
+        if len(all_nodes) == 1:
+            node_inside = all_nodes.pop()
+            node_obj = node_manager.get_node_by_name(node_inside)
+            if isinstance(node_obj, NodeGroupNode):
+                execution_type = node_obj.get_parameter_value(node_obj.execution_environment.name)
+                all_nodes.update(node_obj.get_all_nodes())
+                node_group_name = node_obj.name
+            else:
+                all_nodes.add(node_inside)
+
+        return LoopBodyNodes(all_nodes=all_nodes, execution_type=execution_type, node_group_name=node_group_name)
 
     async def _package_loop_body(
         self,
@@ -592,36 +649,10 @@ class NodeExecutor:
         nodes_in_control_flow = DagBuilder.collect_nodes_in_forward_control_path(start_node, end_node, connections)
 
         # Filter out nodes already in the current DAG and collect data dependencies
-        dag_builder = flow_manager.global_dag_builder
-        all_nodes: set[str] = set()
-        visited_deps: set[str] = set()
-
-        node_manager = GriptapeNodes.NodeManager()
-        for node_name in nodes_in_control_flow:
-            if node_name not in dag_builder.node_to_reference:
-                all_nodes.add(node_name)
-                node_obj = node_manager.get_node_by_name(node_name)
-                deps = DagBuilder.collect_data_dependencies_for_node(
-                    node_obj, connections, nodes_in_control_flow, visited_deps
-                )
-                all_nodes.update(deps)
-
-        # Exclude the start and end loop nodes from packaging
-        all_nodes.discard(start_node.name)
-        all_nodes.discard(end_node.name)
-
-        # See if they're all in one NodeGroup
-        execution_type = LOCAL_EXECUTION
-        node_group_name = None
-        if len(all_nodes) == 1:
-            node_inside = all_nodes.pop()
-            node_obj = node_manager.get_node_by_name(node_inside)
-            if isinstance(node_obj, NodeGroupNode):
-                execution_type = node_obj.get_parameter_value(node_obj.execution_environment.name)
-                all_nodes.update(node_obj.get_all_nodes())
-                node_group_name = node_obj.name
-            else:
-                all_nodes.add(node_inside)
+        loop_body_result = self._collect_loop_body_nodes(start_node, end_node, nodes_in_control_flow, connections)
+        all_nodes = loop_body_result.all_nodes
+        execution_type = loop_body_result.execution_type
+        node_group_name = loop_body_result.node_group_name
 
         # Handle empty loop body (no nodes between start and end)
         if not all_nodes:
@@ -671,6 +702,9 @@ class NodeExecutor:
             start_node.name,
             end_node.name,
         )
+
+        # Remove packaged nodes from global queue since they will be copied into loop iterations
+        self._remove_packaged_nodes_from_queue(all_nodes)
 
         return package_result, execution_type
 
@@ -836,6 +870,12 @@ class NodeExecutor:
         try:
             # Execute iterations one at a time
             for iteration_index in range(total_iterations):
+                logger.info(
+                    "Starting sequential iteration %d/%d for loop ending at '%s'",
+                    iteration_index,
+                    total_iterations,
+                    end_loop_node.name,
+                )
                 # Set input values for this iteration
                 parameter_values = parameter_values_per_iteration[iteration_index]
 
@@ -857,6 +897,12 @@ class NodeExecutor:
 
                 # Execute this iteration with event translation instead of suppression
                 # This allows the UI to show the original nodes highlighting during loop execution
+                logger.info(
+                    "Executing subflow for iteration %d - flow: '%s', start_node: '%s'",
+                    iteration_index,
+                    flow_name,
+                    packaged_start_node_name,
+                )
                 with EventTranslationContext(event_manager, reverse_node_mapping):
                     start_subflow_request = StartLocalSubflowRequest(
                         flow_name=flow_name,
@@ -867,6 +913,9 @@ class NodeExecutor:
 
                 if not isinstance(start_subflow_result, StartLocalSubflowResultSuccess):
                     msg = f"Sequential loop iteration {iteration_index} failed: {start_subflow_result.result_details}"
+                    logger.error(
+                        "Sequential iteration %d failed for loop ending at '%s'", iteration_index, end_loop_node.name
+                    )
                     raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime execution error, not a type error
 
                 successful_iterations.append(iteration_index)
@@ -1014,14 +1063,22 @@ class NodeExecutor:
             value = iteration_results[iteration_index]
             end_node._results_list.append(value)
 
+        logger.info(
+            "Loop '%s': Built results list with %d items from sequential iterations",
+            end_node.name,
+            len(end_node._results_list),
+        )
+
         # Output final results to the results parameter
         end_node._output_results_list()
+        logger.info("Loop '%s': Outputted final results list", end_node.name)
 
         # Apply last iteration values to the original packaged nodes
         self._apply_last_iteration_to_packaged_nodes(
             last_iteration_values=last_iteration_values,
             package_result=package_result,
         )
+        logger.info("Loop '%s': Applied last iteration values to packaged nodes", end_node.name)
 
         logger.info(
             "Completed sequential loop execution from '%s' to '%s' with %d results",
@@ -2292,6 +2349,45 @@ class NodeExecutor:
                     param_name, param_value, unique_uuid_to_values
                 )
         return parameter_output_values
+
+    def _remove_packaged_nodes_from_queue(self, packaged_node_names: set[str]) -> None:
+        """Remove nodes from global flow queue after they've been packaged for loop execution.
+
+        When nodes are packaged for For Each loops, they will be deserialized into separate
+        flow instances. We need to remove them from the global queue to prevent them from
+        being executed in the main flow while also being copied into loop iterations.
+
+        Args:
+            packaged_node_names: Set of node names that were packaged
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        node_manager = GriptapeNodes.NodeManager()
+
+        # Get the nodes from the names
+        packaged_nodes = set()
+        for node_name in packaged_node_names:
+            node = node_manager.get_node_by_name(node_name)
+            if node:
+                packaged_nodes.add(node)
+
+        # Remove matching queue items from global queue
+        items_to_remove = [item for item in flow_manager.global_flow_queue.queue if item.node in packaged_nodes]
+
+        for item in items_to_remove:
+            flow_manager.global_flow_queue.queue.remove(item)
+
+        # Remove from DAG builder to prevent parallel execution in parent flow
+        dag_builder = flow_manager.global_dag_builder
+        if dag_builder:
+            for node_name in packaged_node_names:
+                # Remove from node_to_reference
+                if node_name in dag_builder.node_to_reference:
+                    dag_builder.node_to_reference.pop(node_name)
+
+                # Remove from all networks and check if any become empty
+                for network in list(dag_builder.graphs.values()):
+                    if node_name in network.nodes():
+                        network.remove_node(node_name)
 
     def _deserialize_parameter_value(self, param_name: str, param_value: Any, unique_uuid_to_values: dict) -> Any:
         """Deserialize a single parameter value, handling UUID references and pickling.

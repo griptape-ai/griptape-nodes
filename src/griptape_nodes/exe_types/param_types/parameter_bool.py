@@ -42,7 +42,7 @@ class ParameterBool(Parameter):
         on_label: str | None = None,
         off_label: str | None = None,
         accept_any: bool = True,
-        hide: bool = False,
+        hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
         allow_input: bool = True,

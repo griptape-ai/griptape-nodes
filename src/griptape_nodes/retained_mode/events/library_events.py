@@ -729,14 +729,12 @@ class UpdateLibraryRequest(RequestPayload):
 
     Args:
         library_name: Name of the library to update
-        install_dependencies: If True, automatically install dependencies after updating (default: True)
         overwrite_existing: If True, discard any uncommitted local changes. If False, fail if uncommitted changes exist (default: False)
 
     Results: UpdateLibraryResultSuccess (with version info) | UpdateLibraryResultFailure (library not found, git error, update failure)
     """
 
     library_name: str
-    install_dependencies: bool = True
     overwrite_existing: bool = False
 
 
@@ -779,14 +777,12 @@ class SwitchLibraryRefRequest(RequestPayload):
     Args:
         library_name: Name of the library to switch
         ref_name: Name of the branch or tag to switch to
-        install_dependencies: If True, automatically install dependencies after switching (default: True)
 
     Results: SwitchLibraryRefResultSuccess (with ref/version info) | SwitchLibraryRefResultFailure (library not found, git error, ref not found)
     """
 
     library_name: str
     ref_name: str
-    install_dependencies: bool = True
 
 
 @dataclass
@@ -826,9 +822,10 @@ class DownloadLibraryRequest(RequestPayload):
         branch_tag_commit: Optional branch, tag, or commit to checkout (defaults to default branch)
         target_directory_name: Optional name for the target directory (defaults to repository name)
         download_directory: Optional parent directory path for download (defaults to workspace/libraries)
-        install_dependencies: If True, automatically install dependencies after downloading (default: True)
         overwrite_existing: If True, delete existing directory before cloning (default: False)
         auto_register: If True, automatically register library after download (default: True)
+        fail_on_exists: If True, fail with retryable error when directory exists and overwrite_existing=False.
+                       If False, skip clone and register existing library (idempotent). (default: True)
 
     Results: DownloadLibraryResultSuccess (with library info) | DownloadLibraryResultFailure (clone error, directory exists)
     """
@@ -837,9 +834,9 @@ class DownloadLibraryRequest(RequestPayload):
     branch_tag_commit: str | None = None
     target_directory_name: str | None = None
     download_directory: str | None = None
-    install_dependencies: bool = True
     overwrite_existing: bool = False
     auto_register: bool = True
+    fail_on_exists: bool = True
 
 
 @dataclass
@@ -930,13 +927,11 @@ class SyncLibrariesRequest(RequestPayload):
     up-to-date, setting up development environment, periodic maintenance.
 
     Args:
-        install_dependencies: If True, install dependencies after updating (default: True)
         overwrite_existing: If True, discard any uncommitted local changes when updating libraries. If False, fail if uncommitted changes exist (default: False)
 
     Results: SyncLibrariesResultSuccess (with summary) | SyncLibrariesResultFailure (sync errors)
     """
 
-    install_dependencies: bool = True
     overwrite_existing: bool = False
 
 

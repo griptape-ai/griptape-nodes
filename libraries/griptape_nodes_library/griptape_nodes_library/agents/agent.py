@@ -237,6 +237,7 @@ class Agent(ControlNode):
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
+                ui_options={"hide_property": True},
             )
         )
 

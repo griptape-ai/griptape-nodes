@@ -8,7 +8,6 @@ from griptape_nodes.cli.shared import console
 from griptape_nodes.retained_mode.events.library_events import (
     DownloadLibraryRequest,
     DownloadLibraryResultSuccess,
-    LoadLibrariesRequest,
     SyncLibrariesRequest,
     SyncLibrariesResultSuccess,
 )
@@ -20,29 +19,18 @@ app = typer.Typer(help="Manage local libraries.")
 
 @app.command()
 def sync(
-    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
     overwrite: bool = typer.Option(False, "--overwrite", help="Discard uncommitted changes in libraries"),  # noqa: FBT001
 ) -> None:
     """Sync all libraries to latest versions from their git repositories."""
-    asyncio.run(_sync_libraries(install_dependencies=not no_deps, overwrite_existing=overwrite))
+    asyncio.run(_sync_libraries(overwrite_existing=overwrite))
 
 
-async def _sync_libraries(*, install_dependencies: bool, overwrite_existing: bool) -> None:
+async def _sync_libraries(*, overwrite_existing: bool) -> None:
     """Sync all libraries by checking for updates and installing dependencies."""
-    console.print("[bold cyan]Loading libraries...[/bold cyan]")
-
-    # First, load libraries from configuration
-    load_request = LoadLibrariesRequest()
-    load_result = await GriptapeNodes.ahandle_request(load_request)
-    if not load_result.succeeded():
-        console.print(f"[red]Failed to load libraries: {load_result.result_details}[/red]")
-        return
-
     console.print("[bold cyan]Syncing libraries...[/bold cyan]")
 
     # Create sync request with provided parameters
     request = SyncLibrariesRequest(
-        install_dependencies=install_dependencies,
         overwrite_existing=overwrite_existing,
     )
 
@@ -73,29 +61,23 @@ async def _sync_libraries(*, install_dependencies: bool, overwrite_existing: boo
 
 
 @app.command()
-def download(  # noqa: PLR0913
+def download(
     git_url: str = typer.Argument(..., help="Git repository URL to download"),
     branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit to checkout"),
     target_dir: str | None = typer.Option(None, "--target-dir", help="Target directory name"),
     download_dir: str | None = typer.Option(None, "--download-dir", help="Parent directory for library download"),
-    no_deps: bool = typer.Option(False, "--no-deps", help="Skip installing dependencies"),  # noqa: FBT001
     overwrite: bool = typer.Option(False, "--overwrite", help="Overwrite existing library directory if it exists"),  # noqa: FBT001
 ) -> None:
     """Download a library from a git repository."""
-    asyncio.run(
-        _download_library(
-            git_url, branch, target_dir, download_dir, install_dependencies=not no_deps, overwrite_existing=overwrite
-        )
-    )
+    asyncio.run(_download_library(git_url, branch, target_dir, download_dir, overwrite_existing=overwrite))
 
 
-async def _download_library(  # noqa: PLR0913
+async def _download_library(
     git_url: str,
     branch_tag_commit: str | None,
     target_directory_name: str | None,
     download_directory: str | None,
     *,
-    install_dependencies: bool,
     overwrite_existing: bool,
 ) -> None:
     """Download a library from a git repository."""
@@ -110,7 +92,6 @@ async def _download_library(  # noqa: PLR0913
         branch_tag_commit=branch_tag_commit,
         target_directory_name=target_directory_name,
         download_directory=download_directory,
-        install_dependencies=install_dependencies,
         overwrite_existing=overwrite_existing,
     )
 

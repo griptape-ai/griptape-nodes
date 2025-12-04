@@ -41,7 +41,7 @@ class ParameterNumber(Parameter):
         max_val: float = 100,
         validate_min_max: bool = False,
         accept_any: bool = True,
-        hide: bool = False,
+        hide: bool | None = None,
         hide_label: bool = False,
         hide_property: bool = False,
         allow_input: bool = True,

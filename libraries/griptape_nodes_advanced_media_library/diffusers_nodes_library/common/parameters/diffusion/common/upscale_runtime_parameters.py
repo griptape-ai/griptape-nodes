@@ -11,7 +11,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
-from spandrel_nodes_library.utils import SpandrelPipeline  # type: ignore[reportMissingImports]
+from spandrel_nodes_library.utils import SpandrelPipeline, clear_spandrel_pipeline  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
@@ -375,6 +375,7 @@ class UpscalePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters, ABC):
             callback_on_tile_end=callback_on_tile_end,
         )
         self._node.log_params.append_to_logs(f"Finished tile {num_tiles} of {num_tiles}.\n")  # type: ignore[reportAttributeAccessIssue]
+        clear_spandrel_pipeline(pipe)
         return output_image_pil
 
     def _process_rescale(self, input_image_pil: Image) -> Image:

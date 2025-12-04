@@ -164,6 +164,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_status impo
     LibraryLifecycleState,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
 from griptape_nodes.utils.file_utils import find_file_in_directory
@@ -643,7 +644,11 @@ class LibraryManager:
         # Get git remote and ref if this library is in a git repository
         library_dir = json_path.parent.absolute()
         git_remote = get_git_remote(library_dir)
-        git_ref = get_current_ref(library_dir)
+        try:
+            git_ref = get_current_ref(library_dir)
+        except GitRefError as e:
+            logger.debug("Failed to get git ref for %s: %s", library_dir, e)
+            git_ref = None
 
         details = f"Successfully loaded library metadata from JSON file at {json_path}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -799,7 +804,11 @@ class LibraryManager:
 
         # Get git remote and ref if the sandbox directory is in a git repository
         git_remote = get_git_remote(sandbox_library_dir)
-        git_ref = get_current_ref(sandbox_library_dir)
+        try:
+            git_ref = get_current_ref(sandbox_library_dir)
+        except GitRefError as e:
+            logger.debug("Failed to get git ref for sandbox library %s: %s", sandbox_library_dir, e)
+            git_ref = None
 
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_library_dir}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -898,21 +907,21 @@ class LibraryManager:
         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
             venv_path = self._get_library_venv_path(library_data.name, file_path)
 
-            # If venv doesn't exist, install dependencies
-            if not venv_path.exists():
-                install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
-                install_result = await self.install_library_dependencies_request(install_request)
+            install_request = InstallLibraryDependenciesRequest(library_file_path=file_path)
+            install_result = await self.install_library_dependencies_request(install_request)
 
-                if isinstance(install_result, InstallLibraryDependenciesResultFailure):
-                    details = f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
-                    return RegisterLibraryFromFileResultFailure(result_details=details)
+            if isinstance(install_result, InstallLibraryDependenciesResultFailure):
+                details = (
+                    f"Failed to install dependencies for library '{library_data.name}': {install_result.result_details}"
+                )
+                return RegisterLibraryFromFileResultFailure(result_details=details)
 
-                if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
-                    logger.info(
-                        "Installed %d dependencies for library '%s'",
-                        install_result.dependencies_installed,
-                        library_data.name,
-                    )
+            if isinstance(install_result, InstallLibraryDependenciesResultSuccess):
+                logger.info(
+                    "Installed %d dependencies for library '%s'",
+                    install_result.dependencies_installed,
+                    library_data.name,
+                )
 
             # Add venv site-packages to sys.path so node imports can find dependencies
             if venv_path.exists():
@@ -1731,68 +1740,36 @@ class LibraryManager:
             self.print_library_load_status()
 
             # Remove any missing libraries AFTER we've printed them for the user.
-            user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+            user_libraries_section = LIBRARIES_TO_REGISTER_KEY
             self._remove_missing_libraries_from_config(config_category=user_libraries_section)
         finally:
             self._libraries_loading_complete.set()
 
     async def _ensure_libraries_from_config(self) -> None:
-        """Ensure libraries from git URLs specified in config are downloaded and registered.
+        """Ensure libraries from git URLs specified in config are downloaded.
 
-        This method processes all libraries in the config, ensuring they are properly set up:
+        This method:
         1. Reads libraries_to_download from config
-        2. For each library: downloads if missing, or validates/registers if already present
-        3. Processes all libraries concurrently
-        4. Logs summary of successful/failed operations
+        2. Downloads any missing libraries concurrently
+        3. Logs summary of successful/failed operations
 
         Supports URL format with @ref suffix (e.g., "https://github.com/user/repo@stable").
+        Libraries are registered later by load_all_libraries_from_config().
         """
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_download"
-        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
+        git_urls = config_mgr.get_config_value(LIBRARIES_TO_DOWNLOAD_KEY, default=[])
 
-        # Get libraries directory
-        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
-        if not libraries_dir_setting:
-            logger.debug("Cannot download libraries: libraries_directory setting is not configured")
+        if not git_urls:
+            logger.debug("No libraries to download from config")
             return
 
-        # Check which git URLs are missing locally
-        git_urls_to_download = config_libraries
+        logger.info("Starting download of %d libraries from config", len(git_urls))
 
-        # Early exit if nothing to download
-        if not git_urls_to_download:
-            logger.debug("No missing libraries to download from git URLs")
-            return
-
-        logger.info("Starting download of %d missing libraries", len(git_urls_to_download))
-
-        # Create concurrent download tasks
-        download_tasks = []
-        for git_url_with_ref in git_urls_to_download:
-            # Parse URL to extract git URL and optional ref
-            git_url, ref = parse_git_url_with_ref(git_url_with_ref)
-
-            task = asyncio.create_task(
-                GriptapeNodes.ahandle_request(
-                    DownloadLibraryRequest(
-                        git_url=git_url,
-                        branch_tag_commit=ref,
-                        target_directory_name=None,
-                        install_dependencies=True,
-                        # Skip auto-registration during startup to prevent double-registration.
-                        # All libraries will be registered uniformly in load_all_libraries_from_config().
-                        auto_register=False,
-                    )
-                )
-            )
-            download_tasks.append(task)
-
-        # Wait for all downloads to complete concurrently
-        results = await asyncio.gather(*download_tasks, return_exceptions=True)
+        # Use shared download method
+        results = await self._download_libraries_from_git_urls(git_urls)
 
         # Count successes and failures
-        successful = sum(1 for result in results if isinstance(result, DownloadLibraryResultSuccess))
+        successful = sum(1 for r in results.values() if r["success"])
         failed = len(results) - successful
 
         logger.info(
@@ -1800,6 +1777,85 @@ class LibraryManager:
             successful,
             failed,
         )
+
+    async def _download_libraries_from_git_urls(
+        self,
+        git_urls_with_refs: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Download multiple libraries from git URLs concurrently.
+
+        Args:
+            git_urls_with_refs: List of git URLs with optional @ref suffix (e.g., "url@v1.0")
+
+        Returns:
+            Dictionary mapping git_url_with_ref to result info:
+            {
+                "url@ref": {
+                    "success": bool,
+                    "library_name": str | None,
+                    "error": str | None,
+                    "skipped": bool (optional, True if already exists),
+                }
+            }
+        """
+        config_mgr = GriptapeNodes.ConfigManager()
+        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
+
+        if not libraries_dir_setting:
+            logger.warning("Cannot download libraries: libraries_directory not configured")
+            return {}
+
+        libraries_path = config_mgr.workspace_path / libraries_dir_setting
+
+        async def download_one(git_url_with_ref: str) -> tuple[str, dict[str, Any]]:
+            """Download a single library if not already present."""
+            # Parse URL to extract git URL and optional ref
+            git_url, ref = parse_git_url_with_ref(git_url_with_ref)
+            target_directory_name = extract_repo_name_from_url(git_url)
+            target_path = libraries_path / target_directory_name
+
+            # Skip if already exists
+            if target_path.exists():
+                logger.info("Library at '%s' already exists, skipping", target_path)
+                return git_url_with_ref, {
+                    "success": False,
+                    "library_name": None,
+                    "error": None,
+                    "skipped": True,
+                }
+
+            logger.info("Downloading library from '%s'", git_url_with_ref)
+            download_result = await GriptapeNodes.ahandle_request(
+                DownloadLibraryRequest(
+                    git_url=git_url,
+                    branch_tag_commit=ref,
+                    fail_on_exists=False,
+                    auto_register=False,
+                )
+            )
+
+            if isinstance(download_result, DownloadLibraryResultSuccess):
+                logger.info("Downloaded library '%s'", download_result.library_name)
+                return git_url_with_ref, {
+                    "success": True,
+                    "library_name": download_result.library_name,
+                    "error": None,
+                }
+
+            error = str(download_result.result_details)
+            logger.warning("Failed to download '%s': %s", git_url_with_ref, error)
+            return git_url_with_ref, {
+                "success": False,
+                "library_name": None,
+                "error": error,
+            }
+
+        # Download all concurrently
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(download_one(url)) for url in git_urls_with_refs]
+
+        # Collect results
+        return dict(task.result() for task in tasks)
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Automatically migrate old XDG library paths from config
@@ -1888,7 +1944,7 @@ class LibraryManager:
         config_mgr = GriptapeNodes.ConfigManager()
 
         # Get the current libraries_to_register list
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = LIBRARIES_TO_REGISTER_KEY
         libraries_to_register: list[str] = config_mgr.get_config_value(user_libraries_section)
 
         # Filter out empty or whitespace-only entries
@@ -2298,8 +2354,8 @@ class LibraryManager:
         config_mgr = GriptapeNodes.ConfigManager()
 
         # Get both config lists
-        register_key = "app_events.on_app_initialization_complete.libraries_to_register"
-        download_key = "app_events.on_app_initialization_complete.libraries_to_download"
+        register_key = LIBRARIES_TO_REGISTER_KEY
+        download_key = LIBRARIES_TO_DOWNLOAD_KEY
 
         libraries_to_register = config_mgr.get_config_value(register_key)
         libraries_to_download = config_mgr.get_config_value(download_key) or []
@@ -2694,7 +2750,7 @@ class LibraryManager:
             List of library file paths found
         """
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
+        user_libraries_section = LIBRARIES_TO_REGISTER_KEY
 
         discovered_libraries = set()
 
@@ -2788,9 +2844,10 @@ class LibraryManager:
         # Get local commit SHA
         local_commit = await asyncio.to_thread(get_local_commit_sha, library_dir)
 
-        # Clone remote and get latest version and commit SHA
+        # Clone remote and get latest version and commit SHA (using current ref or HEAD if detached)
         try:
-            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote)
+            ref_to_check = git_ref or "HEAD"
+            version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote, ref_to_check)
             latest_version = version_info.library_version
             remote_commit = version_info.commit_sha
         except GitCloneError as e:
@@ -2893,15 +2950,13 @@ class LibraryManager:
         library_name: str,
         library_file_path: str,
         *,
-        install_dependencies: bool,
         failure_result_class: type[ResultPayloadFailure],
     ) -> str | ResultPayloadFailure:
-        """Reload library and install dependencies after git operation.
+        """Reload library after git operation.
 
         Args:
             library_name: Name of the library to reload
             library_file_path: Path to the library JSON file
-            install_dependencies: Whether to install dependencies after reload
             failure_result_class: Class to use for failure results
 
         Returns:
@@ -2944,19 +2999,6 @@ class LibraryManager:
                 new_version = "unknown"
         except KeyError:
             new_version = "unknown"
-
-        # Install dependencies if requested
-        if install_dependencies:
-            logger.info("Installing dependencies for library '%s'", library_name)
-            install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_file_path=actual_library_file_path)
-            )
-            if not install_deps_result.succeeded():
-                logger.warning(
-                    "Library '%s' git operation succeeded but dependency installation failed: %s",
-                    library_name,
-                    install_deps_result.result_details,
-                )
 
         return new_version
 
@@ -3003,11 +3045,10 @@ class LibraryManager:
             details = f"Failed to update Library '{library_name}': {e}"
             return UpdateLibraryResultFailure(result_details=details, retryable=retryable)
 
-        # Reload library and install dependencies
+        # Reload library
         reload_result = await self._reload_library_after_git_operation(
             library_name=library_name,
             library_file_path=library_file_path,
-            install_dependencies=request.install_dependencies,
             failure_result_class=UpdateLibraryResultFailure,
         )
         if isinstance(reload_result, ResultPayloadFailure):
@@ -3057,11 +3098,10 @@ class LibraryManager:
             details = f"Failed to switch to '{ref_name}' for Library '{library_name}': {e}"
             return SwitchLibraryRefResultFailure(result_details=details)
 
-        # Reload library and install dependencies
+        # Reload library
         reload_result = await self._reload_library_after_git_operation(
             library_name=library_name,
             library_file_path=library_file_path,
-            install_dependencies=request.install_dependencies,
             failure_result_class=SwitchLibraryRefResultFailure,
         )
         if isinstance(reload_result, ResultPayloadFailure):
@@ -3122,14 +3162,7 @@ class LibraryManager:
         # Check if target directory already exists
         skip_clone = False
         if target_path.exists():
-            if not request.overwrite_existing:
-                # Skip cloning since directory already exists, but continue with registration
-                skip_clone = True
-                logger.info(
-                    "Library directory already exists at %s, skipping download but will proceed with registration",
-                    target_path,
-                )
-            else:
+            if request.overwrite_existing:
                 # Delete existing directory before cloning
                 delete_request = DeleteFileRequest(path=str(target_path), workspace_only=False)
                 delete_result = await GriptapeNodes.ahandle_request(delete_request)
@@ -3139,16 +3172,29 @@ class LibraryManager:
                     return DownloadLibraryResultFailure(result_details=details)
 
                 logger.info("Deleted existing directory at %s for overwrite", target_path)
+            else:
+                # Check fail_on_exists flag
+                if request.fail_on_exists:
+                    # Fail with retryable error for interactive CLI
+                    details = f"Cannot download library: target directory already exists at {target_path}"
+                    return DownloadLibraryResultFailure(result_details=details, retryable=True)
+
+                # Skip cloning since directory already exists, but continue with registration
+                skip_clone = True
+                logger.debug(
+                    "Library directory already exists at %s, skipping download but will proceed with registration",
+                    target_path,
+                )
 
         # Clone the repository (unless skipping because it already exists)
-        if not skip_clone:
+        if skip_clone:
+            logger.debug("Using existing library directory at %s", target_path)
+        else:
             try:
                 await asyncio.to_thread(clone_repository, git_url, target_path, branch_tag_commit)
             except GitCloneError as e:
                 details = f"Failed to clone repository from {git_url} to {target_path}: {e}"
                 return DownloadLibraryResultFailure(result_details=details)
-        else:
-            logger.info("Using existing library directory at %s", target_path)
 
         # Recursively search for griptape_nodes_library.json file
         library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
@@ -3169,18 +3215,6 @@ class LibraryManager:
             details = "Downloaded library has no 'name' field in griptape_nodes_library.json"
             return DownloadLibraryResultFailure(result_details=details)
 
-        # Install dependencies if requested
-        if request.install_dependencies:
-            install_deps_result = await GriptapeNodes.ahandle_request(
-                InstallLibraryDependenciesRequest(library_file_path=str(library_json_path))
-            )
-            if not install_deps_result.succeeded():
-                logger.warning(
-                    "Library '%s' was downloaded but dependency installation failed: %s",
-                    library_name,
-                    install_deps_result.result_details,
-                )
-
         # Automatically register the downloaded library (unless disabled for startup downloads)
         if request.auto_register:
             register_request = RegisterLibraryFromFileRequest(file_path=str(library_json_path))
@@ -3195,15 +3229,11 @@ class LibraryManager:
                 logger.info("Library '%s' registered successfully", library_name)
 
         # Add library JSON file path to config so it's registered on future startups
-        libraries_to_register = config_mgr.get_config_value(
-            "app_events.on_app_initialization_complete.libraries_to_register", default=[]
-        )
+        libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
         library_json_str = str(library_json_path)
         if library_json_str not in libraries_to_register:
             libraries_to_register.append(library_json_str)
-            config_mgr.set_config_value(
-                "app_events.on_app_initialization_complete.libraries_to_register", libraries_to_register
-            )
+            config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
             logger.info("Added library '%s' to config for auto-registration on startup", library_name)
 
         if skip_clone:
@@ -3297,73 +3327,48 @@ class LibraryManager:
 
     async def sync_libraries_request(self, request: SyncLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0915
         """Sync all libraries to latest versions and ensure dependencies are installed."""
-        install_dependencies = request.install_dependencies
-
-        # Phase 1: Download missing libraries from config
+        # Phase 1: Download missing libraries from both config keys
         config_mgr = GriptapeNodes.ConfigManager()
-        user_libraries_section = "app_events.on_app_initialization_complete.libraries_to_register"
-        config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
 
-        libraries_dir_setting = config_mgr.get_config_value("libraries_directory")
-        if not libraries_dir_setting:
-            details = "Cannot sync libraries: libraries_directory setting is not configured."
-            return SyncLibrariesResultFailure(result_details=details)
+        # Collect git URLs from both config keys
+        download_config = config_mgr.get_config_value(LIBRARIES_TO_DOWNLOAD_KEY, default=[])
+        register_config = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
+        git_urls_from_register = [entry for entry in register_config if is_git_url(entry)]
 
-        libraries_path = config_mgr.workspace_path / libraries_dir_setting
-        libraries_downloaded = 0
+        # Combine and deduplicate
+        all_git_urls = list(set(download_config + git_urls_from_register))
+
+        # Use shared download method
         update_summary = {}
+        libraries_downloaded = 0
 
-        # Process git URLs from config and download if missing
-        async def download_library_if_missing(git_url: str) -> tuple[str, bool, str | None]:
-            """Download a library from git URL if not already present.
+        if all_git_urls:
+            logger.info("Found %d git URLs, downloading missing libraries", len(all_git_urls))
+            download_results = await self._download_libraries_from_git_urls(all_git_urls)
 
-            Returns:
-                Tuple of (git_url, success, library_name_or_error)
-            """
-            target_directory_name = extract_repo_name_from_url(git_url)
-            target_path = libraries_path / target_directory_name
-
-            if target_path.exists():
-                logger.info("Library at '%s' already exists, skipping download", target_path)
-                return git_url, False, None
-
-            logger.info("Downloading library from '%s' to '%s'", git_url, target_path)
-            download_result = await GriptapeNodes.ahandle_request(
-                DownloadLibraryRequest(git_url=git_url, install_dependencies=install_dependencies)
-            )
-
-            if isinstance(download_result, DownloadLibraryResultSuccess):
-                library_name = download_result.library_name
-                logger.info("Successfully downloaded library '%s' from %s", library_name, git_url)
-                return git_url, True, library_name
-
-            error = str(download_result.result_details)
-            logger.warning("Failed to download library from '%s': %s", git_url, error)
-            return git_url, False, error
-
-        # Download missing libraries concurrently
-        git_urls_to_download = [entry for entry in config_libraries if is_git_url(entry)]
-
-        if git_urls_to_download:
-            logger.info("Found %d git URLs in config, checking for missing libraries", len(git_urls_to_download))
-            async with asyncio.TaskGroup() as tg:
-                download_tasks = [tg.create_task(download_library_if_missing(url)) for url in git_urls_to_download]
-
-            # Collect download results
-            for task in download_tasks:
-                git_url, success, library_name_or_error = task.result()
-                if success and library_name_or_error:
+            # Process results for summary
+            for git_url, result in download_results.items():
+                if result["success"]:
                     libraries_downloaded += 1
-                    update_summary[library_name_or_error] = {
+                    update_summary[result["library_name"]] = {
                         "status": "downloaded",
                         "git_url": git_url,
                     }
-                elif library_name_or_error:
-                    logger.warning("Download failed for '%s': %s", git_url, library_name_or_error)
+                elif result.get("error"):
+                    logger.warning("Download failed for '%s': %s", git_url, result["error"])
 
         logger.info("Downloaded %d new libraries", libraries_downloaded)
 
-        # Phase 2: Check and update all registered libraries
+        # Phase 2: Load libraries to ensure newly downloaded ones are registered
+        logger.info("Loading libraries to register newly downloaded ones")
+        load_request = LoadLibrariesRequest()
+        load_result = await GriptapeNodes.ahandle_request(load_request)
+
+        if not isinstance(load_result, LoadLibrariesResultSuccess):
+            logger.warning("Failed to load libraries after download: %s", load_result.result_details)
+            # Continue anyway - we can still update previously registered libraries
+
+        # Phase 3: Check and update all registered libraries
         # Get all registered libraries
         list_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
@@ -3426,7 +3431,6 @@ class LibraryManager:
             update_result = await GriptapeNodes.ahandle_request(
                 UpdateLibraryRequest(
                     library_name=library_name,
-                    install_dependencies=install_dependencies,
                     overwrite_existing=request.overwrite_existing,
                 )
             )

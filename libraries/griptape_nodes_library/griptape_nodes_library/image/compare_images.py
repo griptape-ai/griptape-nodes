@@ -48,25 +48,23 @@ class CompareImages(ControlNode):
         parameter: Parameter,
         value: Any,
     ) -> None:
-        if parameter.name in {"Image_1", "Image_2"}:
-            current_value = self.get_parameter_value("Compare")
-            if current_value is None:
-                current_value = {"input_image_1": None, "input_image_2": None}
-            if parameter.name == "Image_1":
-                current_value["input_image_1"] = value
-            elif parameter.name == "Image_2":
-                current_value["input_image_2"] = value
-            self.set_parameter_value("Compare", current_value)
+        if parameter.name not in {"Image_1", "Image_2"}:
+            return super().after_value_set(parameter, value)
+
+        # Get current images
+        image_1 = self.get_parameter_value("Image_1")
+        image_2 = self.get_parameter_value("Image_2")
+
+        # Create result dictionary with current images
+        result_dict = {"input_image_1": image_1, "input_image_2": image_2}
+
+        # Update Compare parameter value
+        self.set_parameter_value("Compare", result_dict)
+
+        # Update output values for downstream connections
+        self.parameter_output_values["Compare"] = result_dict
+
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        """Process the node by creating a dictionary from the input images."""
-        # Get the input images
-        image_1 = self.get_parameter_value("Image_1")
-        image_2 = self.get_parameter_value("Image_2")
-        # Create a dictionary with the images
-        result_dict = {"input_image_1": image_1, "input_image_2": image_2}
-
-        # Set output values
-        self.parameter_output_values["Compare"] = result_dict
-        self.parameter_values["Compare"] = result_dict  # For get_value compatibility
+        """Process the node - logic handled in after_value_set."""

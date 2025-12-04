@@ -100,7 +100,7 @@ class TestCloneAndGetLibraryVersion:
 
             result = clone_and_get_library_version("https://github.com/user/repo.git")
 
-            mock_sparse.assert_called_once_with("https://github.com/user/repo.git")
+            mock_sparse.assert_called_once_with("https://github.com/user/repo.git", ref="HEAD")
             assert result == ("1.0.0", "abc123def456")
 
     def test_clone_and_get_library_version_returns_only_version_and_commit(self) -> None:

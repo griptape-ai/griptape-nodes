@@ -27,8 +27,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.51.2",
-    "engine_version": "0.63.0",
+    "library_version": "0.52.1",
+    "engine_version": "0.65.0",
     "tags": [
       "Griptape",
       "AI"
@@ -747,6 +747,17 @@
         "category": "video",
         "description": "Generate videos from images using WAN models via Griptape model proxy",
         "display_name": "WAN Image to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "WanAnimateGeneration",
+      "file_path": "griptape_nodes_library/video/wan_animate_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate animated videos from images using WAN Animate models via Griptape model proxy",
+        "display_name": "WAN Animate Generation",
         "icon": "Sparkles",
         "group": "create"
       }

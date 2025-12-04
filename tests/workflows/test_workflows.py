@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import LocalWorkflowExecutor
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +70,12 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
     config_manager = griptape_nodes.ConfigManager()
 
     # Save the original libraries state
-    original_libraries = config_manager.get_config_value(
-        key="app_events.on_app_initialization_complete.libraries_to_register", default=[]
-    )
+    original_libraries = config_manager.get_config_value(key=LIBRARIES_TO_REGISTER_KEY, default=[])
 
     # Set the test libraries
     test_libraries = [str(lib) for lib in get_libraries()]
     config_manager.set_config_value(
-        key="app_events.on_app_initialization_complete.libraries_to_register",
+        key=LIBRARIES_TO_REGISTER_KEY,
         value=test_libraries,
     )
 
@@ -84,7 +83,7 @@ async def setup_test_libraries(griptape_nodes: GriptapeNodes) -> AsyncGenerator[
 
     # Restore original libraries state
     config_manager.set_config_value(
-        key="app_events.on_app_initialization_complete.libraries_to_register",
+        key=LIBRARIES_TO_REGISTER_KEY,
         value=original_libraries,
     )
 

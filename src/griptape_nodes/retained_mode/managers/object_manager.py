@@ -118,7 +118,7 @@ class ObjectManager:
         for flow_name in flows:
             if GriptapeNodes.FlowManager().check_for_existing_running_flow():
                 result = await GriptapeNodes.ahandle_request(CancelFlowRequest(flow_name=flow_name))
-                if not result.succeeded():
+                if result.failed():
                     details = f"Attempted to clear all object state and delete everything. Failed because running flow '{flow_name}' could not cancel."
                     logger.error(details)
                     return ClearAllObjectStateResultFailure(result_details=details)

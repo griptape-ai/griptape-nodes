@@ -45,11 +45,13 @@ class DagBuilder:
     graphs: dict[str, DirectedGraph]  # Str is the name of the start node associated here.
     node_to_reference: dict[str, DagNode]
     graph_to_nodes: dict[str, set[str]]  # Track which nodes belong to which graph
+    start_node_candidates: dict[str, set[str]]
 
     def __init__(self) -> None:
         self.graphs = {}
         self.node_to_reference: dict[str, DagNode] = {}
         self.graph_to_nodes = {}
+        self.start_node_candidates = {}
 
     # Complex with the inner recursive method, but it needs connections and added_nodes.
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
@@ -72,6 +74,14 @@ class DagBuilder:
 
             if current_node.name in self.node_to_reference:
                 return
+            # Add current node to tracking
+            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
+            self.node_to_reference[current_node.name] = dag_node
+            added_nodes.append(current_node)
+
+            # Add to graph
+            graph.add_node(node_for_adding=current_node.name)
+            self.graph_to_nodes[graph_name].add(current_node.name)
 
             # Check if we should ignore dependencies (for special nodes like output_selector)
             ignore_data_dependencies = hasattr(current_node, "ignore_dependencies")
@@ -102,15 +112,6 @@ class DagBuilder:
                 # Add edge from upstream to current
                 graph.add_edge(upstream_node.name, current_node.name)
 
-            # Add current node to tracking
-            dag_node = DagNode(node_reference=current_node, node_state=NodeState.WAITING)
-            self.node_to_reference[current_node.name] = dag_node
-            added_nodes.append(current_node)
-
-            # Add to graph
-            graph.add_node(node_for_adding=current_node.name)
-            self.graph_to_nodes[graph_name].add(current_node.name)
-
         _add_node_recursive(node, set(), graph)
 
         return added_nodes
@@ -140,6 +141,7 @@ class DagBuilder:
         self.graphs.clear()
         self.node_to_reference.clear()
         self.graph_to_nodes.clear()
+        self.start_node_candidates.clear()
 
     def can_queue_control_node(self, node: DagNode) -> bool:
         if len(self.graphs) == 1:
@@ -339,3 +341,22 @@ class DagBuilder:
             for node_name in self.graph_to_nodes[graph_name]:
                 self.node_to_reference.pop(node_name, None)
             self.graph_to_nodes.pop(graph_name, None)
+
+    def remove_graph_from_dependencies(self) -> list[str]:
+        # Check all start node candidates and return those whose dependent graphs are all empty
+        start_nodes = []
+        # copy because we will be removing as iterating.
+        for start_node_name, graph_deps in self.start_node_candidates.copy().items():
+            # Check if all graphs this start node depends on are now empty
+            all_deps_empty = True
+            for graph_deps_name in graph_deps:
+                # Check if this graph exists and has nodes
+                if graph_deps_name in self.graphs and len(self.graphs[graph_deps_name].nodes()) > 0:
+                    all_deps_empty = False
+                    break
+
+            # If all dependent graphs are empty, this start node can be queued
+            if all_deps_empty:
+                del self.start_node_candidates[start_node_name]
+                start_nodes.append(start_node_name)
+        return start_nodes
