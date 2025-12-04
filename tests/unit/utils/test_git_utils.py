@@ -450,13 +450,16 @@ class TestGetCurrentBranch:
             patch("griptape_nodes.utils.git_utils.is_git_repository") as mock_is_git,
             patch("griptape_nodes.utils.git_utils.pygit2.discover_repository") as mock_discover,
             patch("griptape_nodes.utils.git_utils.pygit2.Repository") as mock_repo_class,
+            patch("griptape_nodes.utils.git_utils.get_current_tag") as mock_get_current_tag,
         ):
             mock_is_git.return_value = True
             mock_discover.return_value = str(temp_dir / ".git")
+            mock_get_current_tag.return_value = None
 
             mock_head = Mock()
             mock_head.target = expected_commit_sha
             mock_repo = Mock()
+            mock_repo.head_is_unborn = False
             mock_repo.head_is_detached = True
             mock_repo.head = mock_head
             mock_repo_class.return_value = mock_repo
@@ -480,6 +483,7 @@ class TestGetCurrentBranch:
             mock_head = Mock()
             mock_head.shorthand = expected_branch
             mock_repo = Mock()
+            mock_repo.head_is_unborn = False
             mock_repo.head_is_detached = False
             mock_repo.head = mock_head
             mock_repo_class.return_value = mock_repo
