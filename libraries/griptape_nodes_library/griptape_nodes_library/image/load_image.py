@@ -20,13 +20,13 @@ from griptape_nodes_library.utils.image_utils import (
     save_pil_image_with_named_filename,
 )
 
-
 CHANNEL_NONE = "none"
 CHANNEL_RED = "red"
 CHANNEL_GREEN = "green"
 CHANNEL_BLUE = "blue"
 CHANNEL_ALPHA = "alpha"
 CHANNEL_OPTIONS = [CHANNEL_NONE, CHANNEL_RED, CHANNEL_GREEN, CHANNEL_BLUE, CHANNEL_ALPHA]
+
 
 class LoadImage(SuccessFailureNode):
     @staticmethod
@@ -85,9 +85,7 @@ class LoadImage(SuccessFailureNode):
             tooltip=f"Channel to extract as mask ({', '.join(CHANNEL_OPTIONS)}).",
             default_value=CHANNEL_NONE,
             ui_options={"hide": True},
-            traits={
-                Options(choices=CHANNEL_OPTIONS)
-            }
+            traits={Options(choices=CHANNEL_OPTIONS)},
         )
         self.add_parameter(channel_param)
 
