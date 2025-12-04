@@ -1,5 +1,5 @@
+import gc
 import logging
-from functools import cache
 
 import numpy as np
 import PIL.Image
@@ -20,7 +20,6 @@ class SpandrelPipeline:
         self.device = device
 
     @classmethod
-    @cache
     def from_hf_file(cls, repo_id: str, revision: str, filename: str) -> "SpandrelPipeline":
         if repo_id != "skbhadra/ClearRealityV1" or filename != "4x-ClearRealityV1.pth":
             logger.exception("Unsupported (repo_id: %s filename: %s) pair", repo_id, filename)
@@ -57,6 +56,18 @@ class SpandrelPipeline:
         output_tensor = torch.clamp(output_tensor.movedim(-3, -1), min=0, max=1.0)
         output_image_pil = tensor_to_pil(output_tensor)
         return output_image_pil
+
+
+def clear_spandrel_pipeline(pipe: SpandrelPipeline) -> None:
+    """Clear spandrel pipeline from memory."""
+    if pipe.model is not None:
+        pipe.model.to("cpu")
+        del pipe.model
+        pipe.model = None
+    del pipe
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def tensor_to_pil(image_pt: torch.Tensor, batch_index: int = 0) -> Image:
