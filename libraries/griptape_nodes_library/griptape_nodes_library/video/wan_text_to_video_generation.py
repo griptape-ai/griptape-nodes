@@ -383,8 +383,10 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             # Try to parse error response body
             try:
                 error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
+                error_msg = error_json.get("error", "")
+                provider_response = error_json.get("provider_response", "")
+                msg_parts = [p for p in [error_msg, provider_response] if p]
+                msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
             except Exception:
                 msg = f"API error: {e.response.status_code} - {e.response.text}"
             raise RuntimeError(msg) from e
