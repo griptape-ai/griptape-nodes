@@ -56,6 +56,8 @@ logger = logging.getLogger("griptape_nodes")
 
 T = TypeVar("T")
 
+NODE_GROUP_FLOW = "NodeGroupFlow"
+
 
 class TransformedParameterValue(NamedTuple):
     """Return type for BaseNode.before_value_set() to transform both value and type.
@@ -1979,7 +1981,15 @@ class NodeGroupNode(BaseNode):
         current_flow = GriptapeNodes.ContextManager().get_current_flow()
         parent_flow_name = current_flow.name if current_flow else None
 
-        request = CreateFlowRequest(flow_name=subflow_name, parent_flow_name=parent_flow_name, set_as_new_context=False)
+        # Create metadata with flow_type
+        subflow_metadata = {"flow_type": NODE_GROUP_FLOW}
+
+        request = CreateFlowRequest(
+            flow_name=subflow_name,
+            parent_flow_name=parent_flow_name,
+            set_as_new_context=False,
+            metadata=subflow_metadata,
+        )
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, CreateFlowResultSuccess):
