@@ -1327,6 +1327,16 @@ class FlowManager:
 
         end_node_packaging_result = end_node_result.packaging_result
 
+        # If no entry control node specified, connect start directly to end
+        if not request.entry_control_node_name and not request.entry_control_parameter_name:
+            start_to_end_control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=start_node_result.start_node_commands.node_uuid,
+                source_parameter_name="exec_out",
+                target_node_uuid=end_node_packaging_result.end_node_commands.node_uuid,
+                target_parameter_name="exec_in",
+            )
+            start_node_result.start_to_package_connections.append(start_to_end_control_connection)
+
         # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
         from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
 
@@ -2741,7 +2751,7 @@ class FlowManager:
         subflow_machine = ControlFlowMachine(
             flow.name,
             pickle_control_flow_result=request.pickle_control_flow_result,
-            use_isolated_dag_builder=True,
+            is_isolated=True,
         )
 
         await subflow_machine.start_flow(start_node)
@@ -3594,9 +3604,10 @@ class FlowManager:
         self._global_flow_queue.task_done()
         return queue_item.node
 
-    def clear_execution_queue(self) -> None:
+    def clear_execution_queue(self, flow: ControlFlow) -> None:
         """Clear all nodes from the global execution queue."""
-        self._global_flow_queue.queue.clear()
+        if self._global_control_flow_machine and self._global_control_flow_machine.context.flow_name == flow.name:
+            self._global_flow_queue.queue.clear()
 
     def has_connection(
         self,
@@ -3966,7 +3977,7 @@ class FlowManager:
                     connections.append((connection.source_node, connection.source_parameter))
         return connections
 
-    def get_connections_on_node(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode] | None:  # noqa: ARG002
+    def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
         connections = self.get_connections()
         # get all of the connection ids
         connected_nodes = []
@@ -3993,7 +4004,7 @@ class FlowManager:
         # Return all connected nodes. No duplicates
         return connected_nodes
 
-    def get_all_connected_nodes(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
+    def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
         discovered = {}
         processed = {}
         queue = Queue()
@@ -4002,13 +4013,17 @@ class FlowManager:
         while not queue.empty():
             curr_node = queue.get()
             processed[curr_node] = True
-            next_nodes = self.get_connections_on_node(flow, curr_node)
+            next_nodes = self.get_connections_on_node(curr_node)
             if next_nodes:
                 for next_node in next_nodes:
                     if next_node not in discovered:
                         discovered[next_node] = True
                         queue.put(next_node)
         return list(processed.keys())
+
+    def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> bool:
+        nodes = self.get_all_connected_nodes(start_node)
+        return node in nodes
 
     def get_node_dependencies(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.
