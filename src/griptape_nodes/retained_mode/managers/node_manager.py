@@ -778,6 +778,17 @@ class NodeManager:
             cancel_result = self.cancel_conditionally(parent_flow, parent_flow_name, node)
             if cancel_result is not None:
                 return cancel_result
+
+            subflow_name = None
+            # Remove nodes from the node group (if it is one) before deleting connections.
+            if isinstance(node, SubflowNodeGroup):
+                try:
+                    subflow_name = node.delete_group()
+                except ValueError as err:
+                    details = (
+                        f"Attempted to delete NodeGroup '{request.node_name}'. Failed to remove nodes from group: {err}"
+                    )
+                    return DeleteNodeResultFailure(result_details=details)
             # Remove all connections from this Node using a loop to handle cascading deletions
             any_connections_remain = True
             while any_connections_remain:
@@ -831,16 +842,6 @@ class NodeManager:
                 node.parent_group.delete_nodes_from_group([node])
             except ValueError as e:
                 details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
-                return DeleteNodeResultFailure(result_details=details)
-        # Remove from the owning Flow
-        subflow_name = None
-        if isinstance(node, SubflowNodeGroup):
-            try:
-                subflow_name = node.delete_group()
-            except ValueError as err:
-                details = (
-                    f"Attempted to delete NodeGroup '{request.node_name}'. Failed to remove nodes from group: {err}"
-                )
                 return DeleteNodeResultFailure(result_details=details)
         parent_flow.remove_node(node.name)
 
