@@ -136,3 +136,44 @@ class CreateStaticFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPa
     """
 
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkspaceFileDownloadUrlRequest(RequestPayload):
+    """Create a download URL for a file directly from workspace root.
+
+    Use when: Serving files from anywhere in the workspace without static files directory prefixing,
+    loading user files that are already in the workspace structure.
+
+    Args:
+        file_name: Path to file relative to workspace root
+
+    Results: CreateWorkspaceFileDownloadUrlResultSuccess (with URL) | CreateWorkspaceFileDownloadUrlResultFailure (URL creation error)
+    """
+
+    file_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkspaceFileDownloadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workspace file download URL created successfully.
+
+    Args:
+        url: Download URL for the workspace file
+    """
+
+    url: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkspaceFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workspace file download URL creation failed.
+
+    Args:
+        error: Detailed error message describing the failure
+    """
+
+    error: str
