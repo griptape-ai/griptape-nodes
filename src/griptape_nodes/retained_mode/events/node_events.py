@@ -105,7 +105,7 @@ class CreateNodeResultFailure(ResultPayloadFailure):
     """
 
 
-# Backwards compatibilty for workflows that use the deprecated CreateNodeGroupRequest
+# Backwards compatibility for workflows that use the deprecated CreateNodeGroupRequest
 @dataclass
 class CreateNodeGroupRequest:
     pass
