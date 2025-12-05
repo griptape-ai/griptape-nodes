@@ -3166,7 +3166,9 @@ class NodeManager:
         # Save the value if it was explicitly set OR if it equals the default value.
         # The latter ensures the default is preserved when loading workflows,
         # even if the code's default value changes later.
-        if parameter.name in node.parameter_values or (parameter.default_value is not None and effective_value == parameter.default_value):
+        if parameter.name in node.parameter_values or (
+            parameter.default_value is not None and effective_value == parameter.default_value
+        ):
             internal_value = effective_value
         # We have a value. Attempt to get a hash for it to see if it matches one
         # we've already indexed.
