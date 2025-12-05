@@ -12,7 +12,7 @@ import subprocess
 import sys
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from griptape_cloud_client.models.update_structure_response_content import UpdateStructureResponseContent

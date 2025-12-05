@@ -2,9 +2,9 @@ import base64
 import binascii
 import logging
 import threading
-from pathlib import Path
+from upath import UPath as Path
+from urllib.parse import unquote
 
-import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage import StorageBackend
@@ -21,6 +21,9 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
+    ResolveStaticFilePathRequest,
+    ResolveStaticFilePathResultFailure,
+    ResolveStaticFilePathResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -94,6 +97,9 @@ class StaticFilesManager:
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
             )
+            event_manager.assign_manager_to_request_type(
+                ResolveStaticFilePathRequest, self.on_handle_resolve_static_file_path_request
+            )
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
@@ -150,6 +156,47 @@ class StaticFilesManager:
             result_details="Successfully created static file upload URL",
         )
 
+    def _resolve_file_path_for_download(self, file_path: str) -> tuple[Path, bool, str | None]:
+        """Resolve a file path for download URL creation.
+
+        This method handles both absolute and workspace-relative paths. Files inside the
+        workspace are served from their workspace-relative location. Files outside the
+        workspace are served directly from their absolute path location.
+
+        Args:
+            file_path: Path to the file (absolute, workspace-relative, or file:// URI).
+                       Percent-encoded characters are decoded (e.g., %20 -> space).
+
+        Returns:
+            Tuple of (path, is_external, error_message). If error_message is not None,
+            an error occurred and path/is_external should not be used.
+            - path: workspace-relative path if inside workspace, absolute path if external
+            - is_external: True if file is outside workspace, False if inside
+        """
+        workspace_path = self.config_manager.workspace_path
+
+        # UPath natively handles file:// URIs and percent-encoded paths
+        path = Path(file_path)
+
+        # Resolve relative paths relative to workspace
+        if not path.is_absolute():
+            path = workspace_path / path
+
+        # Validate file exists
+        if not path.exists():
+            return Path(), False, f"File not found: {file_path}"
+
+        if not path.is_file():
+            return Path(), False, f"Path is not a file: {file_path}"
+
+        # Determine if file is inside or outside workspace
+        try:
+            workspace_relative = path.relative_to(workspace_path)
+        except ValueError:
+            return path, True, None
+        else:
+            return workspace_relative, False, None
+
     def on_handle_create_static_file_download_url_request(
         self,
         request: CreateStaticFileDownloadUrlRequest,
@@ -157,24 +204,109 @@ class StaticFilesManager:
         """Handle the request to create a presigned URL for downloading a static file.
 
         Args:
-            request: The request object containing the file name.
+            request: The request object containing either file_name or file_path.
 
         Returns:
             A result object indicating success or failure.
         """
-        file_name = request.file_name
+        # Validate that exactly one of file_name or file_path is provided
+        if request.file_name is None and request.file_path is None:
+            msg = "Either file_name or file_path must be provided"
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / file_name
+        if request.file_name is not None and request.file_path is not None:
+            msg = "Only one of file_name or file_path should be provided, not both"
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        # Determine which path to use
+        is_external = False
+        if request.file_path is not None:
+            # Use new path resolution logic
+            full_file_path, is_external, error = self._resolve_file_path_for_download(request.file_path)
+            if error is not None:
+                return CreateStaticFileDownloadUrlResultFailure(error=error, result_details=error)
+        else:
+            # Use legacy file_name logic for backward compatibility
+            # At this point, file_name must be not None due to earlier validation
+            file_name = request.file_name
+            if file_name is None:
+                msg = "file_name is None but should have been validated"
+                return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+            resolved_directory = self._get_static_files_directory()
+            full_file_path = Path(resolved_directory) / file_name
 
         try:
-            url = self.storage_driver.create_signed_download_url(full_file_path)
+            url = self.storage_driver.create_signed_download_url(full_file_path, is_external=is_external)
         except Exception as e:
-            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            file_ref = request.file_path or request.file_name
+            msg = f"Failed to create presigned URL for file {file_ref}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url, result_details="Successfully created static file download URL"
+        )
+
+    def on_handle_resolve_static_file_path_request(
+        self,
+        request: ResolveStaticFilePathRequest,
+    ) -> ResolveStaticFilePathResultSuccess | ResolveStaticFilePathResultFailure:
+        """Handle the request to resolve a static file URL back to its original file path.
+
+        Args:
+            request: The request object containing the URL to resolve.
+
+        Returns:
+            A result object indicating success (with file path) or failure.
+        """
+        url = request.url
+
+        # Only local storage driver supports URL resolution
+        if not isinstance(self.storage_driver, LocalStorageDriver):
+            msg = f"URL resolution not supported for storage backend: {self.storage_backend}"
+            return ResolveStaticFilePathResultFailure(result_details=msg)
+
+        # Get the base URL from the storage driver
+        base_url = self.storage_driver.base_url
+
+        # Strip query parameters (cache busting)
+        url_without_query = url.split("?")[0]
+
+        # Check if URL starts with base_url
+        if not url_without_query.startswith(base_url):
+            msg = f"URL does not match local static storage base URL: {url} (expected prefix: {base_url})"
+            return ResolveStaticFilePathResultFailure(result_details=msg)
+
+        # Strip base_url prefix to get the path part
+        relative_url_path = url_without_query[len(base_url) :]
+
+        # Remove leading slash if present
+        relative_url_path = relative_url_path.removeprefix("/")
+
+        # Check if it's an external file path
+        if relative_url_path.startswith("external/"):
+            # External file: reconstruct absolute path
+            # Remove 'external/' prefix
+            absolute_path_str = relative_url_path[len("external/") :]
+            # Add back leading slash for absolute paths
+            file_path = Path(f"/{absolute_path_str}")
+        else:
+            # Internal file: relative to workspace
+            # The path is already workspace-relative
+            file_path = self.config_manager.workspace_path / relative_url_path
+
+        # Verify file exists
+        if not file_path.exists():
+            msg = f"Resolved file path does not exist: {file_path}"
+            return ResolveStaticFilePathResultFailure(result_details=msg)
+
+        if not file_path.is_file():
+            msg = f"Resolved path is not a file: {file_path}"
+            return ResolveStaticFilePathResultFailure(result_details=msg)
+
+        # Return file:// URI
+        file_uri = unquote(file_path.absolute().as_uri())
+        return ResolveStaticFilePathResultSuccess(
+            file_uri=file_uri, result_details=f"Successfully resolved URL to file URI: {file_uri}"
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -195,23 +327,11 @@ class StaticFilesManager:
             The URL of the saved file.
         """
         resolved_directory = self._get_static_files_directory()
-        file_path = Path(resolved_directory) / file_name
+        file_path = (self.config_manager.workspace_path / Path(resolved_directory) / file_name).resolve()
 
-        response = self.storage_driver.create_signed_upload_url(file_path)
+        file_path.write_bytes(data)
 
-        try:
-            response = httpx.request(
-                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e.response.json())
-            logger.error(msg)
-            raise ValueError(msg) from e
-
-        url = self.storage_driver.create_signed_download_url(file_path)
-
-        return url
+        return file_path.as_uri()
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.

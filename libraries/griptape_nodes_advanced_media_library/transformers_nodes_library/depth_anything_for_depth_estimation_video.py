@@ -1,7 +1,7 @@
 import logging
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image
@@ -54,7 +54,8 @@ class DepthAnythingForDepthEstimationVideo(ControlNode):
         self.append_value_to_parameter("logs", "Loading video frames...\n")
 
         # Load video frames using diffusers utilities
-        input_frames = diffusers.utils.load_video(input_video_artifact.value)
+        # Convert file:// URI to path for diffusers compatibility
+        input_frames = diffusers.utils.load_video(str(Path(input_video_artifact.value)))
 
         if not input_frames:
             msg = "Could not load frames from input video"

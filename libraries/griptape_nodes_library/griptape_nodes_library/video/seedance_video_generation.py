@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import get_content_type_from_extension, is_url, load_content_from_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -402,16 +403,15 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        if not isinstance(url, str) or not is_url(url):
             return url
 
         try:
-            rff = requests.get(url, timeout=20)
-            rff.raise_for_status()
-            ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
+            image_content = load_content_from_url(url)
+            ct = get_content_type_from_extension(url) or "image/jpeg"
             if not ct.startswith("image/"):
                 ct = "image/jpeg"
-            b64 = base64.b64encode(rff.content).decode("utf-8")
+            b64 = base64.b64encode(image_content).decode("utf-8")
             self._log("Frame URL converted to data URI for proxy")
             return f"data:{ct};base64,{b64}"  # noqa: TRY300
         except Exception as e:
@@ -701,13 +701,15 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             v = val.strip()
             if not v:
                 return None
-            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
+            return (
+                v if v.startswith(("http://", "https://", "file://", "data:image/")) else f"data:image/png;base64,{v}"
+            )
 
         # Artifact-like objects
         try:
             # ImageUrlArtifact: .value holds URL string
             v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
+            if isinstance(v, str) and v.startswith(("http://", "https://", "file://", "data:image/")):
                 return v
             # ImageArtifact: .base64 holds raw or data-URI
             b64 = getattr(val, "base64", None)
@@ -720,16 +722,11 @@ class SeedanceVideoGeneration(SuccessFailureNode):
 
     @staticmethod
     def _download_bytes_from_url(url: str) -> bytes | None:
-        try:
-            import requests
-        except Exception as exc:  # pragma: no cover
-            msg = "Missing optional dependency 'requests'. Add it to library dependencies."
-            raise ImportError(msg) from exc
+        """Download bytes from a URL/URI.
 
+        Supports http://, https://, and file:// URLs.
+        """
         try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
-        except Exception:  # pragma: no cover
+            return load_content_from_url(url)
+        except Exception:
             return None
-        else:
-            return resp.content

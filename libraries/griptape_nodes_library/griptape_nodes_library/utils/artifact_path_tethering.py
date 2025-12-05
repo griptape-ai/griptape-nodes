@@ -2,11 +2,11 @@ import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
 import httpx
+from upath import UPath as Path
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.utils.video_utils import validate_url
+from griptape_nodes.utils import get_content_type_from_extension, is_url, load_content_from_url, validate_url
 
 
 def default_extract_url_from_artifact_value(
@@ -118,11 +118,11 @@ class ArtifactPathValidator(Trait):
 
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
-            # Check if it's a URL
-            if ArtifactPathTethering._is_url(path_str):
+            # Check if it's a URL/URI (http://, https://, file://)
+            if is_url(path_str):
                 valid = validate_url(path_str)
                 if not valid:
-                    error_msg = f"Invalid URL: '{path_str}'"
+                    error_msg = f"Invalid URL/URI: '{path_str}'"
                     raise ValueError(error_msg)
             else:
                 # Sanitize file paths before validation to handle shell escapes from macOS Finder
@@ -390,7 +390,7 @@ class ArtifactPathTethering:
 
         try:
             # Process the path (URL or file) - reuse existing path logic
-            if self._is_url(path_value):
+            if is_url(path_value):
                 download_url = self._download_and_upload_url(path_value)
             else:
                 # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
@@ -443,11 +443,6 @@ class ArtifactPathTethering:
                 artifact.meta = metadata
             return artifact
         return value
-
-    @staticmethod
-    def _is_url(path: str) -> bool:
-        """Check if the path is a URL."""
-        return path.startswith(("http://", "https://"))
 
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""
@@ -608,19 +603,40 @@ class ArtifactPathTethering:
         return f"{domain}_{unique_id}.{self.config.default_extension}"
 
     def _download_and_upload_url(self, url: str) -> str:
-        """Download artifact from URL and upload to static storage, return download URL."""
+        """Download artifact from URL/URI and upload to static storage, return download URL.
+
+        Supports http://, https://, and file:// URLs.
+        """
+        # Load content from URI using centralized loader
         try:
-            response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
-            response.raise_for_status()
+            content = load_content_from_url(url)
         except Exception as e:
-            error_msg = f"Failed to download artifact from URL '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
+            error_msg = f"Failed to load artifact from URI '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e
 
         # Validate content type
-        content_type = response.headers.get("content-type", "")
+        parsed = urlparse(url)
+        if parsed.scheme == "file":
+            # For file:// URLs, validate content type by file extension - UPath natively handles file:// URIs
+            file_path = Path(url)
+            content_type = get_content_type_from_extension(file_path)
+            if content_type is None:
+                error_msg = f"Unable to determine content type from file extension for '{url}'"
+                raise ValueError(error_msg)
+        else:
+            # For http/https URLs, get content type from HTTP response
+            try:
+                response = httpx.head(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";")[0].strip()
+            except Exception as e:
+                error_msg = f"Failed to get content type from URL '{url}': {e}"
+                raise ValueError(error_msg) from e
+
+        # Validate content type matches expected prefix
         if not content_type.startswith(self.config.url_content_type_prefix):
             artifact_type = self.config.url_content_type_prefix.rstrip("/")
-            error_msg = f"URL '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
+            error_msg = f"URI '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
             raise ValueError(error_msg)
 
         # Generate filename from URL
@@ -639,18 +655,18 @@ class ArtifactPathTethering:
         # Request presigned upload URL from static storage API
         upload_result = self._create_upload_url(filename)
 
-        # Upload the downloaded artifact data to the presigned URL
+        # Upload the downloaded artifact data
         try:
             upload_response = httpx.request(
                 upload_result.method,
                 upload_result.url,
-                content=response.content,
+                content=content,
                 headers=upload_result.headers,
             )
             upload_response.raise_for_status()
         except Exception as e:
-            content_size = len(response.content)
-            error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
+            content_size = len(content)
+            error_msg = f"Failed to upload loaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
             raise ValueError(error_msg) from e
 
         # Request download URL from static storage API

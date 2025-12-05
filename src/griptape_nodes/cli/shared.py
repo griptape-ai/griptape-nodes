@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from rich.console import Console

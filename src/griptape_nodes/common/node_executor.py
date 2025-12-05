@@ -5,7 +5,7 @@ import asyncio
 import logging
 import pickle
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher

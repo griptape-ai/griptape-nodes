@@ -2,12 +2,12 @@ import base64
 import tempfile
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+from upath import UPath as Path
+
+from griptape_nodes.utils import is_url, stream_download_to_file, validate_url
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -117,17 +117,17 @@ def is_downloadable_audio_url(obj: Any) -> bool:
         obj: Object to check (string, AudioUrlArtifact, etc.)
 
     Returns:
-        True if object contains an http/https URL that needs downloading
+        True if object contains an http/https/file URI that needs downloading
     """
-    # Direct URL string
-    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+    # Direct URL/URI string
+    if isinstance(obj, str) and is_url(obj):
         return True
 
     # Any AudioUrlArtifact-like object with downloadable URL
     if is_audio_url_artifact(obj) and hasattr(obj, "value"):
         value = obj.value  # type: ignore[attr-defined]
         if isinstance(value, str):
-            return value.startswith(("http://", "https://"))
+            return is_url(value)
 
     return False
 
@@ -152,15 +152,6 @@ def extract_url_from_audio_object(obj: Any) -> str | None:
     return None
 
 
-def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for audio processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
-
-
 @dataclass
 class AudioDownloadResult:
     """Result of audio download operation."""
@@ -170,10 +161,12 @@ class AudioDownloadResult:
 
 
 async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
-    """Download audio from URL to temporary file using async httpx streaming.
+    """Download audio from URL/URI to temporary file.
+
+    Supports http://, https://, and file:// URLs.
 
     Args:
-        url: The audio URL to download
+        url: The audio URL/URI to download
 
     Returns:
         AudioDownloadResult with path to temp file and detected format
@@ -181,7 +174,7 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
     Raises:
         ValueError: If URL is invalid or download fails
     """
-    # Validate URL first using existing function
+    # Validate URL/URI first
     if not validate_url(url):
         error_details = f"Invalid or unsafe URL: {url}"
         raise ValueError(error_details)
@@ -191,13 +184,8 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
         temp_path = Path(temp_file.name)
 
     try:
-        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            # Use sync file operations for writing chunks - this is appropriate for streaming
-            with temp_path.open("wb") as f:  # noqa: ASYNC230
-                async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                    f.write(chunk)
+        # Use centralized stream download function
+        await stream_download_to_file(url, temp_path)
 
         # Detect format from URL or use default
         detected_format = detect_audio_format({"value": url})

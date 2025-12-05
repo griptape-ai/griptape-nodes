@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio

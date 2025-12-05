@@ -1,7 +1,7 @@
 import io
 import tempfile
 from abc import ABC, abstractmethod
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, ClassVar
 
 from griptape.artifacts import ImageUrlArtifact

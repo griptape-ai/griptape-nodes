@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import torch  # type: ignore[reportMissingImports]

@@ -2,7 +2,7 @@ import logging
 import math
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import numpy as np

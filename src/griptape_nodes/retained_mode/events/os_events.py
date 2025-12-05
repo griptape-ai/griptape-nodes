@@ -250,7 +250,7 @@ class CreateFileRequest(RequestPayload):
         if self.path is not None:
             return self.path
         if self.directory_path is not None and self.name is not None:
-            from pathlib import Path
+            from upath import UPath as Path
 
             return str(Path(self.directory_path) / self.name)
         msg = "Either 'path' or both 'directory_path' and 'name' must be provided"

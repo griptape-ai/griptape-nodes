@@ -9,7 +9,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError

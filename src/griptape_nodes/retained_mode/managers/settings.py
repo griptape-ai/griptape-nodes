@@ -1,6 +1,6 @@
 import os
 from enum import StrEnum
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator

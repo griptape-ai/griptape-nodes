@@ -1,5 +1,5 @@
 import logging
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from huggingface_hub import scan_cache_dir

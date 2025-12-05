@@ -34,7 +34,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.utils.name_generator import generate_engine_name
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from upath import UPath as Path
 
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 

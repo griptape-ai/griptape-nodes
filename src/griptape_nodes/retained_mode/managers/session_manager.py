@@ -32,7 +32,7 @@ from griptape_nodes.retained_mode.events.app_events import (
 from griptape_nodes.retained_mode.events.base_events import BaseEvent, ResultPayload
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from upath import UPath as Path
 
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager

@@ -1,7 +1,7 @@
 """Main CLI application using typer."""
 
 import sys
-from pathlib import Path
+from upath import UPath as Path
 
 import typer
 from rich.console import Console

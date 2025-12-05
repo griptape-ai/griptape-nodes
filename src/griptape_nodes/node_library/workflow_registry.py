@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator

@@ -1,7 +1,7 @@
 import platform
 import tempfile
 from collections.abc import Generator
-from pathlib import Path
+from upath import UPath as Path
 from unittest.mock import patch
 
 import pytest

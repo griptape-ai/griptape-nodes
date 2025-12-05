@@ -1,7 +1,7 @@
 import itertools
 import logging
 import random
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import torch  # type: ignore[reportMissingImports]

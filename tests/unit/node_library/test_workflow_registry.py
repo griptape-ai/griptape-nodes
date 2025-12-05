@@ -2,7 +2,7 @@
 
 import os
 import platform
-from pathlib import Path
+from upath import UPath as Path
 
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

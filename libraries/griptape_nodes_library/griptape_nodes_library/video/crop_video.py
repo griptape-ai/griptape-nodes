@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import time
 from contextlib import suppress
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from PIL import Image, ImageDraw

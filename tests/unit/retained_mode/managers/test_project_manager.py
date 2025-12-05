@@ -1,7 +1,7 @@
 """Tests for ProjectManager macro event handlers."""
 
 import os
-from pathlib import Path
+from upath import UPath as Path
 from unittest.mock import Mock, patch
 
 import pytest

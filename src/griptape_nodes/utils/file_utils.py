@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from fnmatch import fnmatch
-from pathlib import Path
+from upath import UPath as Path
 
 logger = logging.getLogger(__name__)
 

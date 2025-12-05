@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
+from upath import UPath as Path
 
 from dotenv import load_dotenv
 

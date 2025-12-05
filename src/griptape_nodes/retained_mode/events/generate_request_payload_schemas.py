@@ -1,6 +1,6 @@
 import json
 import logging
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 from pydantic import BaseModel

@@ -3,7 +3,7 @@ import copy
 import math
 import shutil
 from contextlib import nullcontext
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]

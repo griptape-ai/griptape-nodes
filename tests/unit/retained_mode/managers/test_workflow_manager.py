@@ -1,5 +1,5 @@
 import asyncio
-from pathlib import Path
+from upath import UPath as Path
 from unittest.mock import MagicMock, patch
 
 from griptape_nodes.exe_types.core_types import Parameter

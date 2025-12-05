@@ -33,6 +33,7 @@ dependencies = [
   "asyncio-thread-runner>=1.0",
   "portalocker>=2.10.0",
   "pygit2>=1.19.0",
+  "universal-pathlib>=0.3.7",
 ]
 
 [project.optional-dependencies]

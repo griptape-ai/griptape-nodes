@@ -1,7 +1,7 @@
 import logging
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 
 import diffusers  # type: ignore[reportMissingImports]
 import PIL.Image  # type: ignore[reportMissingImports]
@@ -78,7 +78,8 @@ class StaticMaskWanVaceAux(ControlNode):
         mask_image = self.get_parameter_value("mask_image")
 
         # Load video frames
-        video_frames = diffusers.utils.load_video(input_video.value)
+        # Convert file:// URI to path for diffusers compatibility
+        video_frames = diffusers.utils.load_video(str(Path(input_video.value)))
 
         if not video_frames:
             msg = "Could not load frames from input video"

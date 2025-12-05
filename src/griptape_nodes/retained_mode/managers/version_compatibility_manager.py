@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
+from upath import UPath as Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import semver

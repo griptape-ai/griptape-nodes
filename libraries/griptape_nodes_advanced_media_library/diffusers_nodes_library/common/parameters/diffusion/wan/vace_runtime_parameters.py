@@ -1,7 +1,7 @@
 import logging
 import tempfile
 import uuid
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import diffusers  # type: ignore[reportMissingImports]
@@ -203,7 +203,8 @@ class WanVacePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             return []
 
         # Use diffusers loading utilities to convert video URL to frames
-        return diffusers.utils.load_video(video_artifact.value)
+        # Convert file:// URI to path for diffusers compatibility
+        return diffusers.utils.load_video(str(Path(video_artifact.value)))
 
     def latents_to_video_mp4(self, pipe: diffusers.WanVACEPipeline, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""

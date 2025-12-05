@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator
-from pathlib import Path
+from upath import UPath as Path
 from typing import Any
 
 import pytest
