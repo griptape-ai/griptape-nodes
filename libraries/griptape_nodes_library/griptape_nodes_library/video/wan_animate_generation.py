@@ -337,7 +337,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         last_json = None
         attempt = 0
         poll_interval_s = 5.0
-        pending_timeout_s = 30.0 
+        pending_timeout_s = 30.0
         running_timeout_s = video_duration * 30.0
 
         async with httpx.AsyncClient() as client:
@@ -366,7 +366,7 @@ class WanAnimateGeneration(SuccessFailureNode):
                         result_details=f"Video generation timed out after {pending_timeout_s} seconds waiting for generation to start.",
                     )
                     return
-                
+
                 if status == STATUS_RUNNING:
                     if not running_start_time:
                         running_start_time = time.monotonic()
