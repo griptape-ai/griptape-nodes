@@ -58,6 +58,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
     DiscoverLibrariesRequest,
+    DiscoverLibrariesResultFailure,
     DiscoverLibrariesResultSuccess,
     DownloadLibraryRequest,
     DownloadLibraryResultFailure,
@@ -2456,9 +2457,22 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
-    def discover_libraries_request(self, request: DiscoverLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        """Discover libraries from config and track them in discovered state."""
-        discovered_paths = set(self._discover_library_files())
+    def discover_libraries_request(
+        self,
+        request: DiscoverLibrariesRequest,  # noqa: ARG002
+    ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
+        """Discover libraries from config and track them in discovered state.
+
+        This is the event handler for DiscoverLibrariesRequest.
+        Scans configured library paths and creates LibraryInfo entries in DISCOVERED state.
+        """
+        try:
+            discovered_paths = set(self._discover_library_files())
+        except Exception as e:
+            logger.exception("Failed to discover library files")
+            return DiscoverLibrariesResultFailure(
+                result_details=f"Failed to discover library files: {e}",
+            )
 
         # Create minimal LibraryInfo entries for libraries not yet tracked
         for file_path in discovered_paths:
@@ -2720,23 +2734,53 @@ class LibraryManager:
         )
 
     async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        # Check if there are any new libraries in config that haven't been loaded yet
-        discovered_libraries = {str(path) for path in self._discover_library_files()}
-        loaded_libraries = set(self._library_file_path_to_info.keys())
-        unloaded_libraries = discovered_libraries - loaded_libraries
+        """Load all libraries from configuration (backward compatibility wrapper).
 
-        if not unloaded_libraries:
-            details = "All configured libraries are already loaded, no action needed."
+        This is the legacy entry point that loads all configured libraries.
+        New code should use LoadLibraryRequest to load specific libraries instead.
+        """
+        # First, discover all available libraries
+        discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
+        if isinstance(discover_result, DiscoverLibrariesResultFailure):
+            return LoadLibrariesResultFailure(result_details=f"Discovery failed: {discover_result.result_details}")
+
+        # Get all library names from discovered libraries
+        library_names = [
+            library_info.library_name
+            for library_info in self._library_file_path_to_info.values()
+            if library_info.library_name
+        ]
+
+        if not library_names:
+            details = "No libraries found in configuration."
             return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
-        try:
-            await self.load_all_libraries_from_config()
-            details = "Successfully loaded all libraries from configuration."
-            return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
-        except Exception as e:
-            details = f"Failed to load libraries from configuration: {e}"
-            logger.error(details)
-            return LoadLibrariesResultFailure(result_details=details)
+        # Load each discovered library
+        loaded_count = 0
+        failed_libraries = []
+
+        for library_name in library_names:
+            load_result = await self.load_library_request(
+                LoadLibraryRequest(library_name=library_name, perform_discovery_if_not_found=False)
+            )
+
+            if isinstance(load_result, LoadLibraryResultSuccess):
+                if not load_result.was_already_loaded:
+                    loaded_count += 1
+            else:
+                failed_libraries.append(library_name)
+                logger.warning("Failed to load library '%s': %s", library_name, load_result.result_details)
+
+        if loaded_count == 0 and len(failed_libraries) > 0:
+            return LoadLibrariesResultFailure(
+                result_details=f"Failed to load any libraries. Failed: {', '.join(failed_libraries)}"
+            )
+
+        message = f"Loaded {loaded_count} libraries"
+        if failed_libraries:
+            message += f". Failed: {', '.join(failed_libraries)}"
+
+        return LoadLibrariesResultSuccess(result_details=ResultDetails(message=message, level=logging.INFO))
 
     def _discover_library_files(self) -> list[Path]:
         """Discover library JSON files from config and workspace recursively.
