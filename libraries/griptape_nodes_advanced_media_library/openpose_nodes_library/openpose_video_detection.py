@@ -25,7 +25,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from openpose_nodes_library.huggingface_repo_file_parameter import (
+from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
 from openpose_nodes_library.model import util  # type: ignore[reportMissingImports]
