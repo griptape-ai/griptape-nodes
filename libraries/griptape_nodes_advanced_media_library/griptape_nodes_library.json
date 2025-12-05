@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.61.1",
+    "library_version": "0.62.1",
     "engine_version": "0.63.0",
     "tags": [
       "Griptape",
@@ -212,7 +212,11 @@
       "metadata": {
         "category": "image/flux/loras",
         "description": "TrainFluxLora node.",
-        "display_name": "Train Flux LoRA"
+        "display_name": "Train Flux LoRA",
+        "deprecation": {
+          "deprecation_message": "Use 'Train LoRA' from the Griptape Nodes LoRA Training Library instead: https://github.com/griptape-ai/griptape-nodes-lora-training-library",
+          "removal_version": "0.66.0"
+        }
       }
     },
     {
