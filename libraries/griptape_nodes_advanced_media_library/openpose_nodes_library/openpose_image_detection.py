@@ -16,10 +16,10 @@ from utils.image_utils import load_image_from_url_artifact  # type: ignore[repor
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file_parameter import (
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from openpose_nodes_library.model import util  # type: ignore[reportMissingImports]
 from openpose_nodes_library.model.body import Body  # type: ignore[reportMissingImports]
 from openpose_nodes_library.model.hand import Hand  # type: ignore[reportMissingImports]
