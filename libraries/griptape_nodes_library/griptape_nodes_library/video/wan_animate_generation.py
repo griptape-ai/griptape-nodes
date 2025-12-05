@@ -338,7 +338,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         attempt = 0
         poll_interval_s = 5.0
         pending_timeout_s = 30.0 
-        running_timeout_s = video_duration * 20.0
+        running_timeout_s = video_duration * 30.0
 
         async with httpx.AsyncClient() as client:
             while True:
