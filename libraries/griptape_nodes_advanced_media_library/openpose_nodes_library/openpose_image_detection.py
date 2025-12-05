@@ -1,6 +1,5 @@
 import copy
 import logging
-from collections import OrderedDict
 
 import cv2  # type: ignore[reportMissingImports]
 import huggingface_hub  # pyright: ignore[reportMissingImports]
@@ -80,12 +79,10 @@ class OpenPoseImageDetection(ControlNode):
         super().__init__(**kwargs)
         self._huggingface_repo_parameter = HuggingFaceRepoFileParameter(
             self,
-            repo_files_by_name=OrderedDict(
-                [
-                    ("body25", ("dylanholmes/openpose-safetensors", "body25.safetensors")),
-                    ("coco", ("dylanholmes/openpose-safetensors", "coco.safetensors")),
-                ]
-            ),
+            repo_files=[
+                ("dylanholmes/openpose-safetensors", "body25.safetensors"),
+                ("dylanholmes/openpose-safetensors", "coco.safetensors"),
+            ],
         )
         self.log_params = LogParameter(self)
 
@@ -164,7 +161,8 @@ class OpenPoseImageDetection(ControlNode):
         self.parameter_output_values["output_image"] = output_image_url_artifact
 
     def get_openpose_model(self) -> tuple[Body | Hand, str]:
-        repo_id, model_file, revision = self._huggingface_repo_parameter.get_repo_file_revision()
+        repo_id, revision = self._huggingface_repo_parameter.get_repo_revision()
+        model_file = self._huggingface_repo_parameter.get_repo_filename()
 
         # Download the model file from HuggingFace
         model_path = huggingface_hub.hf_hub_download(
