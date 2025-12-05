@@ -3,6 +3,7 @@ import binascii
 import logging
 import threading
 from upath import UPath as Path
+from urllib.parse import unquote
 
 from xdg_base_dirs import xdg_config_home
 
@@ -303,7 +304,7 @@ class StaticFilesManager:
             return ResolveStaticFilePathResultFailure(result_details=msg)
 
         # Return file:// URI
-        file_uri = file_path.absolute().as_uri()
+        file_uri = unquote(file_path.absolute().as_uri())
         return ResolveStaticFilePathResultSuccess(
             file_uri=file_uri, result_details=f"Successfully resolved URL to file URI: {file_uri}"
         )
