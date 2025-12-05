@@ -593,22 +593,6 @@ class FlowManager:
 
         # Let this Flow assume the Current Context while we delete everything within it.
         with GriptapeNodes.ContextManager().flow(flow=flow):
-            # Delete all child nodes in this Flow.
-            list_nodes_request = ListNodesInFlowRequest()
-            list_nodes_result = GriptapeNodes.handle_request(list_nodes_request)
-            if not isinstance(list_nodes_result, ListNodesInFlowResultSuccess):
-                details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to get the list of Nodes owned by this Flow."
-                result = DeleteFlowResultFailure(result_details=details)
-                return result
-            node_names = list_nodes_result.node_names
-            for node_name in node_names:
-                delete_node_request = DeleteNodeRequest(node_name=node_name)
-                delete_node_result = GriptapeNodes.handle_request(delete_node_request)
-                if isinstance(delete_node_result, DeleteNodeResultFailure):
-                    details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Node '{node_name}'."
-                    result = DeleteFlowResultFailure(result_details=details)
-                    return result
-
             # Delete all child Flows of this Flow.
             # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
             # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
@@ -637,6 +621,21 @@ class FlowManager:
                         details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Flow '{child_flow.name}'."
                         result = DeleteFlowResultFailure(result_details=details)
                         return result
+            # Delete all child nodes in this Flow.
+            list_nodes_request = ListNodesInFlowRequest()
+            list_nodes_result = GriptapeNodes.handle_request(list_nodes_request)
+            if not isinstance(list_nodes_result, ListNodesInFlowResultSuccess):
+                details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to get the list of Nodes owned by this Flow."
+                result = DeleteFlowResultFailure(result_details=details)
+                return result
+            node_names = list_nodes_result.node_names
+            for node_name in node_names:
+                delete_node_request = DeleteNodeRequest(node_name=node_name)
+                delete_node_result = GriptapeNodes.handle_request(delete_node_request)
+                if isinstance(delete_node_result, DeleteNodeResultFailure):
+                    details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Node '{node_name}'."
+                    result = DeleteFlowResultFailure(result_details=details)
+                    return result
 
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
