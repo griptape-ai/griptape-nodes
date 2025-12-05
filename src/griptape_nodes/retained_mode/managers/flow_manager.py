@@ -3396,7 +3396,6 @@ class FlowManager:
                     initial_setup=create_cmd.initial_setup,
                     set_as_new_context=create_cmd.set_as_new_context,
                     create_error_proxy_on_failure=create_cmd.create_error_proxy_on_failure,
-                    is_node_group=create_cmd.is_node_group,
                 )
                 # Create a copy of serialized_node with the new command
                 serialized_node_for_deserialization = SerializedNodeCommands(
@@ -3405,6 +3404,7 @@ class FlowManager:
                     element_modification_commands=serialized_node.element_modification_commands,
                     node_dependencies=serialized_node.node_dependencies,
                     lock_node_command=serialized_node.lock_node_command,
+                    is_node_group=serialized_node.is_node_group,
                 )
 
             deserialize_node_request = DeserializeNodeFromCommandsRequest(

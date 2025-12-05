@@ -1849,9 +1849,8 @@ class WorkflowManager:
             regular_node_commands = []
             node_group_commands = []
             for serialized_node_command in serialized_flow_commands.serialized_node_commands:
-                create_cmd = serialized_node_command.create_node_command
-                # Check if this is a NodeGroup by checking is_node_group flag
-                if create_cmd.is_node_group:
+                # Check if this is a NodeGroup by checking the SerializedNodeCommands flag
+                if serialized_node_command.is_node_group:
                     node_group_commands.append(serialized_node_command)
                 else:
                     regular_node_commands.append(serialized_node_command)

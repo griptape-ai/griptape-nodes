@@ -56,7 +56,6 @@ class CreateNodeRequest(RequestPayload):
         set_as_new_context: Set this node as current context after creation (defaults to False)
         create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
         node_names_to_add: List of existing node names to add to this node after creation (used by SubflowNodeGroup, defaults to None)
-        is_node_group: Flag indicating this request creates a NodeGroup (used for serialization ordering, defaults to False)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -76,8 +75,6 @@ class CreateNodeRequest(RequestPayload):
     create_error_proxy_on_failure: bool = True
     # List of node names to add to this node after creation (used by SubflowNodeGroup)
     node_names_to_add: list[str] | None = None
-    # Flag indicating this request creates a NodeGroup (used for serialization ordering)
-    is_node_group: bool = False
 
 
 @dataclass
@@ -453,6 +450,7 @@ class SerializedNodeCommands:
     element_modification_commands: list[RequestPayload]
     node_dependencies: NodeDependencies
     lock_node_command: SetLockNodeStateRequest | None = None
+    is_node_group: bool = False
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 

@@ -487,24 +487,31 @@ class NodeManager:
                         end_node.start_node = node
 
         # Handle node_names_to_add for SubflowNodeGroup nodes
-        if isinstance(node, SubflowNodeGroup) and request.node_names_to_add:
-            nodes_to_add = []
-            for node_name in request.node_names_to_add:
-                try:
-                    existing_node = self.get_node_by_name(node_name)
-                    nodes_to_add.append(existing_node)
-                except KeyError:
-                    warning_details = (
-                        f"Attempted to add node '{node_name}' to NodeGroup '{node.name}'. "
-                        f"Failed because node was not found."
-                    )
-                    logger.warning(warning_details)
-            if nodes_to_add:
-                try:
-                    node.add_nodes_to_group(nodes_to_add)
-                except Exception as err:
-                    warning_msg = f"Failed to add nodes to NodeGroup '{node.name}': {err}"
-                    logger.warning(warning_msg)
+        if request.node_names_to_add:
+            if isinstance(node, SubflowNodeGroup):
+                nodes_to_add = []
+                for node_name in request.node_names_to_add:
+                    try:
+                        existing_node = self.get_node_by_name(node_name)
+                        nodes_to_add.append(existing_node)
+                    except KeyError:
+                        warning_details = (
+                            f"Attempted to add node '{node_name}' to NodeGroup '{node.name}'. "
+                            f"Failed because node was not found."
+                        )
+                        logger.warning(warning_details)
+                if nodes_to_add:
+                    try:
+                        node.add_nodes_to_group(nodes_to_add)
+                    except Exception as err:
+                        warning_msg = f"Failed to add nodes to NodeGroup '{node.name}': {err}"
+                        logger.warning(warning_msg)
+            else:
+                warning_details = (
+                    f"Attempted to add nodes '{request.node_names_to_add}' to Node '{node.name}'. "
+                    f"Failed because node is not a SubflowNodeGroup."
+                )
+                logger.warning(warning_details)
 
         return CreateNodeResultSuccess(
             node_name=node.name,
@@ -2490,7 +2497,6 @@ class NodeManager:
                     node_name=node_name,
                     node_names_to_add=list(node.nodes),
                     metadata=metadata_copy,
-                    is_node_group=True,
                 )
             else:
                 # For non-SubflowNodeGroup, library_details should always be set
@@ -2610,6 +2616,7 @@ class NodeManager:
             element_modification_commands=element_modification_commands,
             node_dependencies=node_dependencies,
             lock_node_command=lock_command,
+            is_node_group=isinstance(node, SubflowNodeGroup),
         )
         details = f"Successfully serialized node '{node_name}' into commands."
         result = SerializeNodeToCommandsResultSuccess(
