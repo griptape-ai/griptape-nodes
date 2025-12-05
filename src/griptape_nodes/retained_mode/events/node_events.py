@@ -55,6 +55,7 @@ class CreateNodeRequest(RequestPayload):
         initial_setup: Skip setup work when loading from file (defaults to False)
         set_as_new_context: Set this node as current context after creation (defaults to False)
         create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
+        node_names_to_add: List of existing node names to add to this node after creation (used by SubflowNodeGroup, defaults to None)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -72,6 +73,8 @@ class CreateNodeRequest(RequestPayload):
     set_as_new_context: bool = False
     # When True, create an Error Proxy node if the requested node type fails to create
     create_error_proxy_on_failure: bool = True
+    # List of node names to add to this node after creation (used by SubflowNodeGroup)
+    node_names_to_add: list[str] | None = None
 
 
 @dataclass
@@ -100,6 +103,12 @@ class CreateNodeResultFailure(ResultPayloadFailure):
     Common causes: invalid node_type, missing library, flow not found,
     no current context, or instantiation errors. Workflow unchanged.
     """
+
+
+# Backwards compatibility for workflows that use the deprecated CreateNodeGroupRequest
+@dataclass
+class CreateNodeGroupRequest:
+    pass
 
 
 @dataclass
@@ -443,10 +452,11 @@ class SerializedNodeCommands:
         set_parameter_value_command: SetParameterValueRequest
         unique_value_uuid: SerializedNodeCommands.UniqueParameterValueUUID
 
-    create_node_command: CreateNodeRequest | CreateNodeGroupRequest
+    create_node_command: CreateNodeRequest
     element_modification_commands: list[RequestPayload]
     node_dependencies: NodeDependencies
     lock_node_command: SetLockNodeStateRequest | None = None
+    is_node_group: bool = False
     node_uuid: NodeUUID = field(default_factory=lambda: SerializedNodeCommands.NodeUUID(str(uuid4())))
 
 
@@ -983,82 +993,6 @@ class RemoveNodeFromNodeGroupResultFailure(ResultPayloadFailure):
 
     Common causes: node not found, NodeGroup not found, node not in group,
     flow not found, no current context.
-    """
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateNodeGroupRequest(RequestPayload):
-    """Create a new NodeGroup node.
-
-    Use when: Need to create a new NodeGroup for organizing nodes, building workflows
-    with grouped nodes programmatically.
-
-    Args:
-        node_group_name: Desired name for the NodeGroup node (None for auto-generated)
-        flow_name: Optional flow name to create the NodeGroup in (None for current context flow)
-        metadata: Initial metadata for the NodeGroup (position, display properties)
-
-    Results: CreateNodeGroupResultSuccess (with assigned name) | CreateNodeGroupResultFailure (creation failed)
-    """
-
-    node_group_name: str | None = None
-    flow_name: str | None = None
-    metadata: dict | None = None
-    node_names_to_add: list[str] = field(default_factory=list)
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """NodeGroup created successfully. NodeGroup is now available for adding nodes.
-
-    Args:
-        node_group_name: Final assigned name (may differ from requested)
-    """
-
-    node_group_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class CreateNodeGroupResultFailure(ResultPayloadFailure):
-    """NodeGroup creation failed.
-
-    Common causes: flow not found, no current context, instantiation errors,
-    NodeGroup node type not available.
-    """
-
-
-@dataclass
-@PayloadRegistry.register
-class DeleteNodeGroupRequest(RequestPayload):
-    """Delete a NodeGroup node.
-
-    Use when: Removing obsolete NodeGroups, cleaning up workflow structure,
-    implementing undo. Handles cascading cleanup of the NodeGroup node.
-
-    Args:
-        node_group_name: Name of the NodeGroup node to delete
-
-    Results: DeleteNodeGroupResultSuccess | DeleteNodeGroupResultFailure (NodeGroup not found, deletion failed)
-    """
-
-    node_group_name: str
-
-
-@dataclass
-@PayloadRegistry.register
-class DeleteNodeGroupResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """NodeGroup deleted successfully. NodeGroup node removed from workflow."""
-
-
-@dataclass
-@PayloadRegistry.register
-class DeleteNodeGroupResultFailure(ResultPayloadFailure):
-    """NodeGroup deletion failed.
-
-    Common causes: NodeGroup not found, deletion cleanup failed, node is not a NodeGroup.
     """
 
 
