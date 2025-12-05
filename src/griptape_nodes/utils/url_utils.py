@@ -108,124 +108,82 @@ def validate_content_type_for_category(
 def load_content_from_url(
     url: str,
     *,
-    timeout: float = DEFAULT_HTTP_TIMEOUT,
     validate_scheme: bool = True,
 ) -> bytes:
     """Load content from a URL (http://, https://, or file://).
 
+    UPath natively supports all protocols through fsspec.
+
     Args:
         url: URL to load from
-        timeout: Timeout in seconds for HTTP requests (ignored for file://)
+        timeout: Timeout in seconds (note: timeout handling depends on fsspec backend)
         validate_scheme: Whether to validate URL scheme before loading
 
     Returns:
         File content as bytes
 
     Raises:
-        ValueError: If URL scheme is invalid or file:// path is not absolute
-        FileNotFoundError: If file:// URL points to non-existent file
-        httpx.HTTPError: If HTTP request fails
+        ValueError: If URL scheme is invalid
+        FileNotFoundError: If file not found
+        Exception: Other fsspec-related errors
     """
     if validate_scheme and not validate_url(url):
         msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(url)
-
-    # Handle file:// URLs - UPath natively supports file:// URIs
-    if parsed.scheme == "file":
-        file_path = Path(url)
-
-        if not file_path.exists():
-            msg = f"File not found: {file_path}"
-            raise FileNotFoundError(msg)
-
-        if not file_path.is_file():
-            msg = f"Path is not a file: {file_path}"
-            raise ValueError(msg)
-
-        return file_path.read_bytes()
-
-    # Handle http:// and https:// URLs
-    if parsed.scheme in ("http", "https"):
-        response = httpx.get(url, timeout=timeout)
-        response.raise_for_status()
-        return response.content
-
-    # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URL scheme: {parsed.scheme}"
-    raise ValueError(msg)
+    # UPath handles all URL schemes through fsspec
+    path = Path(url)
+    return path.read_bytes()
 
 
 async def aload_content_from_url(
     url: str,
     *,
-    timeout: float = DEFAULT_HTTP_TIMEOUT,  # noqa: ASYNC109
     validate_scheme: bool = True,
 ) -> bytes:
     """Load content from a URL asynchronously (http://, https://, or file://).
 
+    UPath natively supports all protocols through fsspec.
+
     Args:
         url: URL to load from
-        timeout: Timeout in seconds for HTTP requests (ignored for file://)
+        timeout: Timeout in seconds (note: timeout handling depends on fsspec backend)
         validate_scheme: Whether to validate URL scheme before loading
 
     Returns:
         File content as bytes
 
     Raises:
-        ValueError: If URL scheme is invalid or file:// path is not absolute
-        FileNotFoundError: If file:// URL points to non-existent file
-        httpx.HTTPError: If HTTP request fails
+        ValueError: If URL scheme is invalid
+        FileNotFoundError: If file not found
+        Exception: Other fsspec-related errors
     """
+    import asyncio
+
     if validate_scheme and not validate_url(url):
         msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(url)
-
-    # Handle file:// URLs - UPath natively supports file:// URIs
-    if parsed.scheme == "file":
-        file_path = Path(url)
-
-        if not file_path.exists():
-            msg = f"File not found: {file_path}"
-            raise FileNotFoundError(msg)
-
-        if not file_path.is_file():
-            msg = f"Path is not a file: {file_path}"
-            raise ValueError(msg)
-
-        return file_path.read_bytes()
-
-    # Handle http:// and https:// URLs asynchronously
-    if parsed.scheme in ("http", "https"):
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-            return response.content
-
-    # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URL scheme: {parsed.scheme}"
-    raise ValueError(msg)
+    # UPath handles all URL schemes through fsspec
+    # Wrap synchronous read_bytes in thread to make it async
+    path = Path(url)
+    return await asyncio.to_thread(path.read_bytes)
 
 
 async def stream_download_to_file(
     url: str,
     destination: Path,
     *,
-    timeout: float = DEFAULT_HTTP_TIMEOUT,  # noqa: ASYNC109
     validate_scheme: bool = True,
 ) -> Path:
-    """Stream download content from URL to a file.
+    """Download content from URL to a file.
 
-    For file:// URLs, simply copies the file.
-    For http:// and https:// URLs, streams the download.
+    UPath natively supports all protocols through fsspec.
 
     Args:
         url: URL to download from
         destination: Destination file path
-        timeout: Timeout in seconds for HTTP requests
+        timeout: Timeout in seconds (note: timeout handling depends on fsspec backend)
         validate_scheme: Whether to validate URL scheme
 
     Returns:
@@ -233,45 +191,23 @@ async def stream_download_to_file(
 
     Raises:
         ValueError: If URL is invalid
-        FileNotFoundError: If source file not found (for file:// URLs)
-        httpx.HTTPError: If HTTP request fails
+        FileNotFoundError: If source file not found
+        Exception: Other fsspec-related errors
     """
+    import asyncio
+
     if validate_scheme and not validate_url(url):
         msg = f"Invalid URL: {url}. Must be http://, https://, or file:// with absolute path"
         raise ValueError(msg)
 
-    parsed = urlparse(url)
+    # UPath handles all URL schemes through fsspec
+    source_path = Path(url)
 
-    # Handle file:// URLs - UPath natively supports file:// URIs
-    if parsed.scheme == "file":
-        source_path = Path(url)
+    # Load and write using async wrapper
+    content = await asyncio.to_thread(source_path.read_bytes)
+    await asyncio.to_thread(destination.write_bytes, content)
 
-        if not source_path.exists():
-            msg = f"File not found: {source_path}"
-            raise FileNotFoundError(msg)
-
-        if not source_path.is_file():
-            msg = f"Path is not a file: {source_path}"
-            raise ValueError(msg)
-
-        # Copy file content
-        destination.write_bytes(source_path.read_bytes())
-        return destination
-
-    # Handle http:// and https:// URLs - stream download
-    if parsed.scheme in ("http", "https"):
-        async with httpx.AsyncClient(timeout=timeout) as client, client.stream("GET", url) as response:
-            response.raise_for_status()
-
-            with destination.open("wb") as f:
-                async for chunk in response.aiter_bytes():
-                    f.write(chunk)
-
-        return destination
-
-    # Should not reach here if validate_scheme is True
-    msg = f"Unsupported URL scheme: {parsed.scheme}"
-    raise ValueError(msg)
+    return destination
 
 
 def get_content_type_from_url(url: str) -> str | None:

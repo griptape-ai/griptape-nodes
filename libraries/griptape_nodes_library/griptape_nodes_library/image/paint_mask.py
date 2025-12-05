@@ -250,7 +250,7 @@ class PaintMask(DataNode):
     def load_pil_from_url(self, url: str) -> Image.Image:
         """Load image from URL/URI using load_content_from_url."""
         # Use load_content_from_url which handles file://, http://, and https:// URLs
-        image_data = load_content_from_url(url, timeout=30.0)
+        image_data = load_content_from_url(url)
         return Image.open(BytesIO(image_data))
 
     def _extract_alpha_from_mask(self, mask_pil: Image.Image) -> Image.Image:

@@ -609,7 +609,7 @@ class ArtifactPathTethering:
         """
         # Load content from URI using centralized loader
         try:
-            content = load_content_from_url(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
+            content = load_content_from_url(url)
         except Exception as e:
             error_msg = f"Failed to load artifact from URI '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
             raise ValueError(error_msg) from e

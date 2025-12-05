@@ -4,7 +4,6 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from upath import UPath as Path
 from typing import Any, NamedTuple
 from urllib.error import URLError
 
@@ -13,6 +12,7 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
+from upath import UPath as Path
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import is_url, load_content_from_url
@@ -260,7 +260,7 @@ def load_pil_from_url(url: str) -> Image.Image:
 
     # URL/URI (http://, https://, file://) - use centralized loader
     try:
-        content = load_content_from_url(url, timeout=DEFAULT_TIMEOUT)
+        content = load_content_from_url(url)
         return Image.open(BytesIO(content))
     except Exception as e:
         msg = f"Failed to load image from URI: {url}\nError: {e}"

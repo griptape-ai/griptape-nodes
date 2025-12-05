@@ -599,6 +599,6 @@ class WanTextToVideoGeneration(SuccessFailureNode):
         Supports http://, https://, and file:// URLs.
         """
         try:
-            return await aload_content_from_url(url, timeout=30.0)
+            return await aload_content_from_url(url)
         except Exception:
             return None

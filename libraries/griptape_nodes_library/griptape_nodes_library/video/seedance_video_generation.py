@@ -407,7 +407,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             return url
 
         try:
-            image_content = load_content_from_url(url, timeout=20.0)
+            image_content = load_content_from_url(url)
             ct = get_content_type_from_extension(url) or "image/jpeg"
             if not ct.startswith("image/"):
                 ct = "image/jpeg"
@@ -727,6 +727,6 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         Supports http://, https://, and file:// URLs.
         """
         try:
-            return load_content_from_url(url, timeout=120.0)
+            return load_content_from_url(url)
         except Exception:
             return None

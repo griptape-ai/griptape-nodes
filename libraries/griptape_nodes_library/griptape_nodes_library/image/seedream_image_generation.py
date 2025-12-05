@@ -890,6 +890,6 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """
         try:
             # Use async_load_content_from_url which handles file://, http://, and https:// URLs
-            return await aload_content_from_url(url, timeout=120.0)
+            return await aload_content_from_url(url)
         except Exception:
             return None

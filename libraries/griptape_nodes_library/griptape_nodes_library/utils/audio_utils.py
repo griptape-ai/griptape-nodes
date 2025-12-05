@@ -2,10 +2,10 @@ import base64
 import tempfile
 import uuid
 from dataclasses import dataclass
-from upath import UPath as Path
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+from upath import UPath as Path
 
 from griptape_nodes.utils import is_url, stream_download_to_file, validate_url
 
@@ -185,7 +185,7 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
 
     try:
         # Use centralized stream download function
-        await stream_download_to_file(url, temp_path, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
+        await stream_download_to_file(url, temp_path)
 
         # Detect format from URL or use default
         detected_format = detect_audio_format({"value": url})

@@ -5,12 +5,12 @@ import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass
-from upath import UPath as Path
 from typing import Any
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+from upath import UPath as Path
 
 from griptape_nodes.utils import is_url, stream_download_to_file, validate_url
 from griptape_nodes.utils.async_utils import subprocess_run
@@ -323,7 +323,7 @@ async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
 
     try:
         # Use centralized stream download function
-        await stream_download_to_file(url, temp_path, timeout=DEFAULT_DOWNLOAD_TIMEOUT)
+        await stream_download_to_file(url, temp_path)
 
         # Detect format from URL or use default
         detected_format = detect_video_format({"value": url})
