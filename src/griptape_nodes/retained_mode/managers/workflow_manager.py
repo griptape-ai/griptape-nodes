@@ -3178,7 +3178,7 @@ class WorkflowManager:
                 field_value = getattr(create_node_request, field.name)
                 if field_value != field.default:
                     # Special handling for node_names_to_add - these are now UUIDs, convert to variable references
-                    if field.name == "node_names_to_add" and field_value:
+                    if field_value is create_node_request.node_names_to_add and field_value:
                         # field_value is now a list of UUIDs (converted in _serialize_package_nodes_for_local_execution)
                         # Convert each UUID to an AST Name node referencing the generated variable
                         node_var_ast_list = []

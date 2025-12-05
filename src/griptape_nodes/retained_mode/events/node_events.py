@@ -105,6 +105,12 @@ class CreateNodeResultFailure(ResultPayloadFailure):
     """
 
 
+# Backwards compatibilty for workflows that use the deprecated CreateNodeGroupRequest
+@dataclass
+class CreateNodeGroupRequest:
+    pass
+
+
 @dataclass
 @PayloadRegistry.register
 class DeleteNodeRequest(RequestPayload):
