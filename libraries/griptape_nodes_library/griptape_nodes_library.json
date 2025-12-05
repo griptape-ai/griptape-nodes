@@ -2165,6 +2165,17 @@
       }
     },
     {
+      "class_name": "StandardSubflowNodeGroup",
+      "file_path": "griptape_nodes_library/engine/standard_subflow_node_group.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Groups multiple nodes together for organization and parallel execution",
+        "display_name": "Subflow Node Group",
+        "icon": "Layers",
+        "is_node_group": true
+      }
+    },
+    {
       "class_name": "AgentToTool",
       "file_path": "griptape_nodes_library/convert/agent_to_tool.py",
       "metadata": {

@@ -72,6 +72,7 @@ class NodeMetadata(BaseModel):
     color: str | None = None
     group: str | None = None
     deprecation: NodeDeprecationMetadata | None = None
+    is_node_group: bool | None = None
 
 
 class CategoryDefinition(BaseModel):
