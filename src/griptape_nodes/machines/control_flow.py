@@ -473,7 +473,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                 node.state = NodeResolutionState.UNRESOLVED
                 # Use proxy node if this node is part of a group, otherwise use original node
                 node_to_add = node
-                disconnected = True
                 # Only add if not already added (proxy might already be in DAG)
                 disconnected = True
                 if node_to_add.name not in dag_builder.node_to_reference:
