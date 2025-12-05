@@ -833,6 +833,15 @@ class NodeManager:
                 details = f"Attempted to delete a Node '{node_name}'. Failed to remove it from the node group: {e}"
                 return DeleteNodeResultFailure(result_details=details)
         # Remove from the owning Flow
+        subflow_name = None
+        if isinstance(node, SubflowNodeGroup):
+            try:
+                subflow_name = node.delete_group()
+            except ValueError as err:
+                details = (
+                    f"Attempted to delete NodeGroup '{request.node_name}'. Failed to remove nodes from group: {err}"
+                )
+                return DeleteNodeResultFailure(result_details=details)
         parent_flow.remove_node(node.name)
 
         # Now remove the record keeping
@@ -842,6 +851,17 @@ class NodeManager:
         # If we were part of the Current Context, pop it.
         if request.node_name is None:
             GriptapeNodes.ContextManager().pop_node()
+
+        # Delete subflow if it has one
+        if subflow_name is not None:
+            from griptape_nodes.retained_mode.events.flow_events import DeleteFlowRequest
+
+            delete_flow_request = DeleteFlowRequest(flow_name=subflow_name)
+            delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
+
+            if delete_flow_result.failed():
+                details = f"Attempted to delete NodeGroup '{request.node_name}'. Failed to delete subflow '{subflow_name}': {delete_flow_result.result_details}"
+                return DeleteNodeResultFailure(result_details=details)
 
         details = f"Successfully deleted Node '{node_name}'."
         return DeleteNodeResultSuccess(result_details=details)
