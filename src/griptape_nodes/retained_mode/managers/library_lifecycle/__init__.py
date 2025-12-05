@@ -22,7 +22,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance 
     LibraryProvenancePackage,
     LibraryProvenanceSandbox,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 __all__ = [
     "EvaluationResult",
@@ -31,6 +31,7 @@ __all__ = [
     "LibraryByType",
     "LibraryDirectory",
     "LibraryEntry",
+    "LibraryFitness",
     "LibraryLifecycleContext",
     "LibraryLifecycleFSM",
     "LibraryLoadedResult",
@@ -40,6 +41,5 @@ __all__ = [
     "LibraryProvenanceLocalFile",
     "LibraryProvenancePackage",
     "LibraryProvenanceSandbox",
-    "LibraryStatus",
     "LifecycleIssue",
 ]

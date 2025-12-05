@@ -17,7 +17,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_lifecycle.library_fsm import LibraryLifecycleContext
@@ -56,7 +56,7 @@ class LibraryProvenanceGitHub(LibraryProvenance):
             issues=[
                 LifecycleIssue(
                     message=f"GitHub inspection not yet implemented for {self.repository_url}",
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 )
             ],
         )
@@ -67,7 +67,7 @@ class LibraryProvenanceGitHub(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="GitHub evaluation not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
         return EvaluationResult(issues=issues)
@@ -78,7 +78,7 @@ class LibraryProvenanceGitHub(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="GitHub installation not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
 
@@ -101,7 +101,7 @@ class LibraryProvenanceGitHub(LibraryProvenance):
         issues.append(
             LifecycleIssue(
                 message="GitHub loading not yet implemented",
-                severity=LibraryStatus.UNUSABLE,
+                severity=LibraryFitness.UNUSABLE,
             )
         )
 

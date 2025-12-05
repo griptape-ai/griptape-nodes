@@ -13,9 +13,15 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import (
+        LibraryFitness,
+        LibraryLifecycleState,
+    )
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
 @dataclass
@@ -204,7 +210,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
         library_path: Path to the library file that failed to load.
         library_name: Name of the library if it could be extracted from the JSON,
                      None if the name couldn't be determined.
-        status: The LibraryStatus enum indicating the type of failure
+        status: The LibraryFitness enum indicating the type of failure
                (MISSING, UNUSABLE, etc.).
         problems: List of specific problems encountered during loading
                  (file not found, JSON parse errors, validation failures, etc.).
@@ -212,7 +218,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     library_path: str
     library_name: str | None
-    status: LibraryStatus
+    status: LibraryFitness
     problems: list[LibraryProblem]
 
 
@@ -515,6 +521,118 @@ class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
     """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesRequest(RequestPayload):
+    """Discover all libraries from configuration.
+
+    Scans configured library paths and creates LibraryInfo entries in 'discovered' state.
+    This does not load any library contents - just identifies what's available.
+
+    Use when: Refreshing library catalog, checking for new libraries, initializing
+    library tracking before selective loading.
+
+    Results: DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Libraries discovered successfully."""
+
+    libraries_discovered: set[Path]  # Library file paths
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library discovery failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessRequest(RequestPayload):
+    """Evaluate a library's fitness (compatibility with current engine).
+
+    Checks version compatibility and determines if the library can be loaded.
+    Does not actually load Python modules - just validates compatibility.
+
+    Args:
+        schema: The loaded LibrarySchema from metadata loading
+
+    Results: EvaluateLibraryFitnessResultSuccess | EvaluateLibraryFitnessResultFailure
+    """
+
+    schema: LibrarySchema
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library fitness evaluation successful.
+
+    Returns fitness and any non-fatal problems (warnings).
+    Caller manages their own lifecycle state.
+    """
+
+    fitness: LibraryFitness
+    problems: list[LibraryProblem]
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library fitness evaluation failed - library is not fit for this engine.
+
+    Returns fitness and problems for caller to update their LibraryInfo.
+    """
+
+    fitness: LibraryFitness
+    problems: list[LibraryProblem]
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryRequest(RequestPayload):
+    """Load a single library by name, progressing it through all lifecycle phases.
+
+    This request will:
+    1. Check if library is already loaded (in LibraryRegistry) → immediate success
+    2. Check if library is discovered (in LibraryInfo tracking)
+    3. If not found and perform_discovery_if_not_found=True, issue DiscoverLibrariesRequest and retry
+    4. Progress library through lifecycle phases: Discovered → Metadata Loaded → Evaluated → Dependencies Installed → Loaded
+    5. Return success once library is in LibraryRegistry, or failure with detailed error
+
+    Args:
+        library_name: Name of library to load (must match library JSON 'name' field)
+        perform_discovery_if_not_found: If True and library not found, trigger discovery first (default: False)
+
+    Results: LoadLibraryResultSuccess | LoadLibraryResultFailure
+    """
+
+    library_name: str
+    perform_discovery_if_not_found: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library loaded successfully."""
+
+    library_info: LibraryManager.LibraryInfo
+    was_already_loaded: bool = False  # True if library was already in registry
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library loading failed."""
+
+    failure_phase: LibraryLifecycleState  # Which lifecycle phase failed
+    library_info: LibraryManager.LibraryInfo | None = None  # May be None if discovery failed
 
 
 @dataclass

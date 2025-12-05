@@ -14,7 +14,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LibraryLoadedResult,
     LifecycleIssue,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
@@ -213,7 +213,7 @@ class InstallingState(State):
 
         # Check if user has disabled this library
         if not context.get_effective_active_state():
-            issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryStatus.FLAWED)]
+            issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryFitness.FLAWED)]
             context.installation_result = InstallationResult(installation_path="", venv_path="", issues=issues)
             logger.info("Library %s installation skipped - disabled by user", context.provenance.get_display_name())
             return InstalledState
@@ -262,7 +262,7 @@ class LoadingState(State):
 
         # Check if user has disabled this library
         if not context.get_effective_active_state():
-            issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryStatus.FLAWED)]
+            issues = [LifecycleIssue(message="Library disabled by user", severity=LibraryFitness.FLAWED)]
             context.library_loaded_result = LibraryLoadedResult(issues=issues)
             logger.info("Library %s loading skipped - disabled by user", context.provenance.get_display_name())
             return LoadedState
@@ -270,7 +270,7 @@ class LoadingState(State):
         # Load the library into the registry using delegation
         schema = context.get_library_schema()
         if schema is None:
-            issues = [LifecycleIssue(message="No schema available for loading", severity=LibraryStatus.UNUSABLE)]
+            issues = [LifecycleIssue(message="No schema available for loading", severity=LibraryFitness.UNUSABLE)]
             context.library_loaded_result = LibraryLoadedResult(issues=issues)
             logger.error("Cannot load library %s - no schema available", context.provenance.get_display_name())
             return LoadedState

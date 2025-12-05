@@ -21,7 +21,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries.ui_options
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.ui_options_field_modified_warning_problem import (
     UiOptionsFieldModifiedWarningProblem,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
     LibraryVersionCompatibilityCheck,
     LibraryVersionCompatibilityIssue,
@@ -62,11 +62,11 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
             return [
                 LibraryVersionCompatibilityIssue(
                     problem=ModifiedParametersSetRemovedProblem(library_engine_version=library_version_str),
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 ),
                 LibraryVersionCompatibilityIssue(
                     problem=UiOptionsFieldModifiedIncompatibleProblem(library_engine_version=library_version_str),
-                    severity=LibraryStatus.UNUSABLE,
+                    severity=LibraryFitness.UNUSABLE,
                 ),
             ]
         if current_engine_version >= semver.VersionInfo(0, 38, 0):
@@ -74,11 +74,11 @@ class ModifiedParametersSetRemovalCheck(LibraryVersionCompatibilityCheck):
             return [
                 LibraryVersionCompatibilityIssue(
                     problem=ModifiedParametersSetDeprecationWarningProblem(library_engine_version=library_version_str),
-                    severity=LibraryStatus.FLAWED,
+                    severity=LibraryFitness.FLAWED,
                 ),
                 LibraryVersionCompatibilityIssue(
                     problem=UiOptionsFieldModifiedWarningProblem(),
-                    severity=LibraryStatus.FLAWED,
+                    severity=LibraryFitness.FLAWED,
                 ),
             ]
 
