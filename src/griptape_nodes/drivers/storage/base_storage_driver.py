@@ -5,6 +5,8 @@ from typing import TypedDict
 
 import httpx
 
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -12,6 +14,7 @@ class CreateSignedUploadUrlResponse(TypedDict):
     """Response type for create_signed_upload_url method."""
 
     url: str
+    file_path: str
     headers: dict
     method: str
 
@@ -28,11 +31,14 @@ class BaseStorageDriver(ABC):
         self.workspace_directory = workspace_directory
 
     @abstractmethod
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+    def create_signed_upload_url(
+        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> CreateSignedUploadUrlResponse:
         """Create a signed upload URL for the given path.
 
         Args:
             path: The path of the file to create a signed URL for.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
 
         Returns:
             CreateSignedUploadUrlResponse: A dictionary containing the signed URL, headers, and operation type.
@@ -69,12 +75,15 @@ class BaseStorageDriver(ABC):
         """
         ...
 
-    def upload_file(self, path: Path, file_content: bytes) -> str:
+    def upload_file(
+        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> str:
         """Upload a file to storage.
 
         Args:
             path: The path of the file to upload.
             file_content: The file content as bytes.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
 
         Returns:
             The URL where the file can be accessed.
@@ -84,7 +93,7 @@ class BaseStorageDriver(ABC):
         """
         try:
             # Get signed upload URL
-            upload_response = self.create_signed_upload_url(path)
+            upload_response = self.create_signed_upload_url(path, existing_file_policy)
 
             # Upload the file using the signed URL
             response = httpx.request(
