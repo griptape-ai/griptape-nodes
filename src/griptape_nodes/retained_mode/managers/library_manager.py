@@ -57,6 +57,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
+    DiscoveredLibrary,
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
     DiscoverLibrariesResultSuccess,
@@ -2459,7 +2460,7 @@ class LibraryManager:
 
     def discover_libraries_request(
         self,
-        request: DiscoverLibrariesRequest,  # noqa: ARG002
+        request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
         """Discover libraries from config and track them in discovered state.
 
@@ -2467,18 +2468,21 @@ class LibraryManager:
         Scans configured library paths and creates LibraryInfo entries in DISCOVERED state.
         """
         try:
-            discovered_paths = set(self._discover_library_files())
+            config_library_paths = set(self._discover_library_files())
         except Exception as e:
             logger.exception("Failed to discover library files")
             return DiscoverLibrariesResultFailure(
                 result_details=f"Failed to discover library files: {e}",
             )
 
-        # Create minimal LibraryInfo entries for libraries not yet tracked
-        for file_path in discovered_paths:
-            file_path_str = str(file_path)
+        discovered_libraries = set()
 
-            # Skip if already tracked (regardless of lifecycle state)
+        # Add config-based libraries
+        for file_path in config_library_paths:
+            discovered_libraries.add(DiscoveredLibrary(path=file_path, is_sandbox=False))
+
+            file_path_str = str(file_path)
+            # Skip if already tracked
             if file_path_str in self._library_file_path_to_info:
                 continue
 
@@ -2491,10 +2495,31 @@ class LibraryManager:
                 library_version=None,
             )
 
+        # Add sandbox library if requested
+        if request.include_sandbox:
+            config_mgr = GriptapeNodes.ConfigManager()
+            sandbox_library_subdir = config_mgr.get_config_value("sandbox_library_directory")
+            if sandbox_library_subdir:
+                sandbox_library_dir = config_mgr.workspace_path / sandbox_library_subdir
+                if sandbox_library_dir.exists():
+                    discovered_libraries.add(DiscoveredLibrary(path=sandbox_library_dir, is_sandbox=True))
+
+                    sandbox_path_str = str(sandbox_library_dir)
+                    # Skip if already tracked
+                    if sandbox_path_str not in self._library_file_path_to_info:
+                        # Create minimal LibraryInfo entry for sandbox
+                        self._library_file_path_to_info[sandbox_path_str] = LibraryManager.LibraryInfo(
+                            lifecycle_state=LibraryLifecycleState.DISCOVERED,
+                            fitness=LibraryFitness.NOT_EVALUATED,
+                            library_path=sandbox_path_str,
+                            library_name=sandbox_library_subdir,  # Use subdir as library name
+                            library_version=None,
+                        )
+
         # Success path at the end
         return DiscoverLibrariesResultSuccess(
-            result_details=ResultDetails(message=f"Discovered {len(discovered_paths)} libraries"),
-            libraries_discovered=discovered_paths,
+            result_details=ResultDetails(message=f"Discovered {len(discovered_libraries)} libraries"),
+            libraries_discovered=discovered_libraries,
         )
 
     def evaluate_library_fitness_request(
@@ -2558,7 +2583,7 @@ class LibraryManager:
             if library_info is None:
                 details = f"Library '{library_name}' is in registry but LibraryInfo is missing"
                 return LoadLibraryResultFailure(
-                    result_details=ResultDetails(message=details, level=logging.ERROR),
+                    result_details=ResultDetails(message=details),
                     failure_phase=LibraryLifecycleState.FAILURE,
                     library_info=None,
                 )
@@ -2585,7 +2610,7 @@ class LibraryManager:
             if request.perform_discovery_if_not_found:
                 details += " (discovery was attempted)"
             return LoadLibraryResultFailure(
-                result_details=ResultDetails(message=details, level=logging.ERROR),
+                result_details=ResultDetails(message=details),
                 failure_phase=LibraryLifecycleState.FAILURE,
                 library_info=None,
             )
@@ -2601,7 +2626,7 @@ class LibraryManager:
                     # Write library_info to dict to track the broken library and what's wrong with it
                     self._library_file_path_to_info[library_info.library_path] = library_info
                     return LoadLibraryResultFailure(
-                        result_details=ResultDetails(message=details, level=logging.ERROR),
+                        result_details=ResultDetails(message=details),
                         failure_phase=LibraryLifecycleState.FAILURE,
                         library_info=library_info,
                     )
@@ -2612,16 +2637,31 @@ class LibraryManager:
                     # Write library_info to dict to track the broken library and what's wrong with it
                     self._library_file_path_to_info[library_info.library_path] = library_info
                     return LoadLibraryResultFailure(
-                        result_details=ResultDetails(message=details, level=logging.ERROR),
+                        result_details=ResultDetails(message=details),
                         failure_phase=LibraryLifecycleState.FAILURE,
                         library_info=library_info,
                     )
 
                 case LibraryLifecycleState.DISCOVERED:
                     # DISCOVERED → METADATA_LOADED
-                    metadata_result = self.load_library_metadata_from_file_request(
-                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                    )
+                    if request.is_sandbox_library:
+                        # Sandbox library: Generate metadata from directory
+                        metadata_result = self._generate_sandbox_library_metadata()
+                        if metadata_result is None:
+                            # No sandbox configured or no files found
+                            details = "Sandbox library configured but no metadata could be generated"
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return LoadLibraryResultFailure(
+                                result_details=ResultDetails(message=details),
+                                failure_phase=LibraryLifecycleState.DISCOVERED,
+                                library_info=library_info,
+                            )
+                    else:
+                        # Config-based library: Load metadata from JSON file
+                        metadata_result = self.load_library_metadata_from_file_request(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
+                        )
+
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
                         # Write library_info to dict to track the broken library and what's wrong with it
                         self._library_file_path_to_info[library_info.library_path] = library_info
@@ -2639,9 +2679,23 @@ class LibraryManager:
                 case LibraryLifecycleState.METADATA_LOADED:
                     # METADATA_LOADED → EVALUATED
                     # Need to load schema to pass to evaluate request
-                    metadata_result = self.load_library_metadata_from_file_request(
-                        LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
-                    )
+                    if request.is_sandbox_library:
+                        # Sandbox library: Re-generate metadata
+                        metadata_result = self._generate_sandbox_library_metadata()
+                        if metadata_result is None:
+                            details = "Sandbox library metadata could not be regenerated"
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return LoadLibraryResultFailure(
+                                result_details=ResultDetails(message=details),
+                                failure_phase=LibraryLifecycleState.METADATA_LOADED,
+                                library_info=library_info,
+                            )
+                    else:
+                        # Config-based library: Reload metadata from JSON file
+                        metadata_result = self.load_library_metadata_from_file_request(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
+                        )
+
                     if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
                         # Write library_info to dict to track the broken library and what's wrong with it
                         self._library_file_path_to_info[library_info.library_path] = library_info
@@ -2688,20 +2742,71 @@ class LibraryManager:
                 case LibraryLifecycleState.DEPENDENCIES_INSTALLED:
                     # DEPENDENCIES_INSTALLED → LOADED
                     # At this phase, we have schema/fitness/dependencies ready, just need to register
-                    register_result = await self.register_library_from_file_request(
-                        RegisterLibraryFromFileRequest(file_path=library_info.library_path)
-                    )
-                    if isinstance(register_result, RegisterLibraryFromFileResultFailure):
-                        # Write library_info to dict to track the broken library and what's wrong with it
-                        self._library_file_path_to_info[library_info.library_path] = library_info
-                        return LoadLibraryResultFailure(
-                            result_details=register_result.result_details,
-                            failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
-                            library_info=library_info,
+                    if request.is_sandbox_library:
+                        # Sandbox library: Use procedural node discovery
+                        # Need to reload metadata to get schema
+                        metadata_result = self._generate_sandbox_library_metadata()
+                        if metadata_result is None:
+                            details = "Sandbox library metadata could not be loaded for registration"
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return LoadLibraryResultFailure(
+                                result_details=ResultDetails(message=details),
+                                failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+                                library_info=library_info,
+                            )
+                        if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return LoadLibraryResultFailure(
+                                result_details=metadata_result.result_details,
+                                failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+                                library_info=library_info,
+                            )
+
+                        # _attempt_generate_sandbox_library_from_schema writes to _library_file_path_to_info
+                        # internally, so we need to reload to get the updated state with problems
+                        await self._attempt_generate_sandbox_library_from_schema(
+                            library_schema=metadata_result.library_schema,
+                            sandbox_directory=library_info.library_path,
                         )
 
-                    # Update local library_info
-                    library_info.lifecycle_state = LibraryLifecycleState.LOADED
+                        # Reload library_info from dict to get updated state with problems
+                        updated_library_info = self._library_file_path_to_info.get(library_info.library_path)
+                        if updated_library_info is None:
+                            details = f"Sandbox library '{library_name}' registration completed but library info was not updated in tracking dict - this indicates an internal error in _attempt_generate_sandbox_library_from_schema"
+                            return LoadLibraryResultFailure(
+                                result_details=ResultDetails(message=details),
+                                failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+                                library_info=library_info,
+                            )
+
+                        # Check if registration failed
+                        if updated_library_info.lifecycle_state == LibraryLifecycleState.FAILURE:
+                            return LoadLibraryResultFailure(
+                                result_details=ResultDetails(
+                                    message=f"Sandbox library failed to load: {updated_library_info.problems}",
+                                    level=logging.ERROR,
+                                ),
+                                failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+                                library_info=updated_library_info,
+                            )
+
+                        # Update local library_info with results from registration
+                        library_info = updated_library_info
+                    else:
+                        # Config-based library: Standard registration
+                        register_result = await self.register_library_from_file_request(
+                            RegisterLibraryFromFileRequest(file_path=library_info.library_path)
+                        )
+                        if isinstance(register_result, RegisterLibraryFromFileResultFailure):
+                            self._library_file_path_to_info[library_info.library_path] = library_info
+                            return LoadLibraryResultFailure(
+                                result_details=register_result.result_details,
+                                failure_phase=LibraryLifecycleState.DEPENDENCIES_INSTALLED,
+                                library_info=library_info,
+                            )
+
+                        # Update local library_info
+                        library_info.lifecycle_state = LibraryLifecycleState.LOADED
 
                     # Exit loop after final phase
                     break
@@ -2719,7 +2824,7 @@ class LibraryManager:
             # Write library_info to dict to track the broken library and what's wrong with it
             self._library_file_path_to_info[library_info.library_path] = library_info
             return LoadLibraryResultFailure(
-                result_details=ResultDetails(message=details, level=logging.ERROR),
+                result_details=ResultDetails(message=details),
                 failure_phase=LibraryLifecycleState.LOADED,
                 library_info=library_info,
             )
@@ -2744,32 +2849,82 @@ class LibraryManager:
         if isinstance(discover_result, DiscoverLibrariesResultFailure):
             return LoadLibrariesResultFailure(result_details=f"Discovery failed: {discover_result.result_details}")
 
-        # Get all library names from discovered libraries
-        library_names = [
-            library_info.library_name
-            for library_info in self._library_file_path_to_info.values()
-            if library_info.library_name
-        ]
+        # Build list of libraries to load from discovery result
+        libraries_to_load = []
+        for discovered_lib in discover_result.libraries_discovered:
+            lib_info = self._library_file_path_to_info.get(str(discovered_lib.path))
+            if lib_info and lib_info.library_name:
+                libraries_to_load.append((lib_info.library_name, discovered_lib.is_sandbox))
 
-        if not library_names:
+        if not libraries_to_load:
             details = "No libraries found in configuration."
             return LoadLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
         # Load each discovered library
         loaded_count = 0
         failed_libraries = []
+        total_libraries = len(libraries_to_load)
 
-        for library_name in library_names:
+        for current_library_index, (library_name, is_sandbox) in enumerate(libraries_to_load, start=1):
+            # Emit loading event
+            GriptapeNodes.EventManager().put_event(
+                AppEvent(
+                    payload=EngineInitializationProgress(
+                        phase=InitializationPhase.LIBRARIES,
+                        item_name=library_name,
+                        status=InitializationStatus.LOADING,
+                        current=current_library_index,
+                        total=total_libraries,
+                    )
+                )
+            )
+
             load_result = await self.load_library_request(
-                LoadLibraryRequest(library_name=library_name, perform_discovery_if_not_found=False)
+                LoadLibraryRequest(
+                    library_name=library_name,
+                    perform_discovery_if_not_found=False,
+                    is_sandbox_library=is_sandbox,
+                )
             )
 
             if isinstance(load_result, LoadLibraryResultSuccess):
                 if not load_result.was_already_loaded:
                     loaded_count += 1
+
+                # Emit success event
+                GriptapeNodes.EventManager().put_event(
+                    AppEvent(
+                        payload=EngineInitializationProgress(
+                            phase=InitializationPhase.LIBRARIES,
+                            item_name=library_name,
+                            status=InitializationStatus.COMPLETE,
+                            current=current_library_index,
+                            total=total_libraries,
+                        )
+                    )
+                )
             else:
                 failed_libraries.append(library_name)
                 logger.warning("Failed to load library '%s': %s", library_name, load_result.result_details)
+
+                # Emit failure event
+                error_message = (
+                    load_result.result_details.result_details[0].message
+                    if isinstance(load_result.result_details, ResultDetails)
+                    else str(load_result.result_details)
+                )
+                GriptapeNodes.EventManager().put_event(
+                    AppEvent(
+                        payload=EngineInitializationProgress(
+                            phase=InitializationPhase.LIBRARIES,
+                            item_name=library_name,
+                            status=InitializationStatus.FAILED,
+                            current=current_library_index,
+                            total=total_libraries,
+                            error=error_message,
+                        )
+                    )
+                )
 
         if loaded_count == 0 and len(failed_libraries) > 0:
             return LoadLibrariesResultFailure(

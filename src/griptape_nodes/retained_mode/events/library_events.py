@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -22,6 +22,13 @@ if TYPE_CHECKING:
         LibraryLifecycleState,
     )
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+
+class DiscoveredLibrary(NamedTuple):
+    """Information about a discovered library."""
+
+    path: Path
+    is_sandbox: bool
 
 
 @dataclass
@@ -537,13 +544,15 @@ class DiscoverLibrariesRequest(RequestPayload):
     Results: DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure
     """
 
+    include_sandbox: bool = True  # Whether to include sandbox library in discovery
+
 
 @dataclass
 @PayloadRegistry.register
 class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Libraries discovered successfully."""
 
-    libraries_discovered: set[Path]  # Library file paths
+    libraries_discovered: set[DiscoveredLibrary]  # Discovered libraries with type info
 
 
 @dataclass
@@ -609,12 +618,14 @@ class LoadLibraryRequest(RequestPayload):
     Args:
         library_name: Name of library to load (must match library JSON 'name' field)
         perform_discovery_if_not_found: If True and library not found, trigger discovery first (default: False)
+        is_sandbox_library: If True, use sandbox library generation instead of standard registration (default: False)
 
     Results: LoadLibraryResultSuccess | LoadLibraryResultFailure
     """
 
     library_name: str
     perform_discovery_if_not_found: bool = False
+    is_sandbox_library: bool = False
 
 
 @dataclass
