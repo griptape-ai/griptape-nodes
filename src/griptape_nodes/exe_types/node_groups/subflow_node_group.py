@@ -497,6 +497,16 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             for outgoing_connection in outgoing_connection_list:
                 proxy_parameter = outgoing_connection.target_parameter
                 remap_connections = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
+
+                # Check if proxy has other incoming connections besides this one
+                # If so, we should keep the proxy and its outgoing connections
+                incoming_to_proxy = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
+                other_incoming_exists = any(
+                    conn.source_node.name != node.name or conn.source_parameter.name != parameter_name
+                    for conn in incoming_to_proxy
+                )
+
+                # Delete the connection from this node to proxy
                 delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=parameter_name,
@@ -509,19 +519,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     msg = f"{self.name}: Failed to delete internal outgoing connection from {node.name}.{parameter_name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
                     raise RuntimeError(msg)
 
+                # Create direct connections from this node to target nodes
                 for connection in remap_connections:
-                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
-                        DeleteConnectionRequest(
-                            source_parameter_name=connection.source_parameter.name,
-                            target_parameter_name=connection.target_parameter.name,
-                            source_node_name=connection.source_node.name,
-                            target_node_name=connection.target_node.name,
-                        )
-                    )
-                    if delete_result.failed():
-                        msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
-                        raise RuntimeError(msg)
-
                     create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=parameter_name,
@@ -534,7 +533,22 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         msg = f"{self.name}: Failed to create direct outgoing connection from {node.name}.{parameter_name} to {connection.target_node.name}.{connection.target_parameter.name}: {create_result.result_details}"
                         raise RuntimeError(msg)
 
-                self._cleanup_proxy_parameter(proxy_parameter, "right_parameters")
+                # Only delete outgoing connections from proxy and clean up if no other incoming connections exist
+                if not other_incoming_exists:
+                    for connection in remap_connections:
+                        delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_parameter_name=connection.source_parameter.name,
+                                target_parameter_name=connection.target_parameter.name,
+                                source_node_name=connection.source_node.name,
+                                target_node_name=connection.target_node.name,
+                            )
+                        )
+                        if delete_result.failed():
+                            msg = f"{self.name}: Failed to delete external connection from proxy {proxy_parameter.name} to {connection.target_node.name}.{connection.target_parameter.name}: {delete_result.result_details}"
+                            raise RuntimeError(msg)
+
+                    self._cleanup_proxy_parameter(proxy_parameter, "right_parameters")
 
     def _remap_incoming_connections(self, node: BaseNode, connections: Connections) -> None:
         """Remap incoming connections that go through proxy parameters.
@@ -550,6 +564,16 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             for incoming_connection in incoming_connection_list:
                 proxy_parameter = incoming_connection.source_parameter
                 remap_connections = connections.get_incoming_connections_to_parameter(self, proxy_parameter)
+
+                # Check if proxy has other outgoing connections besides this one
+                # If so, we should keep the proxy and its incoming connections
+                outgoing_from_proxy = connections.get_outgoing_connections_from_parameter(self, proxy_parameter)
+                other_outgoing_exists = any(
+                    conn.target_node.name != node.name or conn.target_parameter.name != parameter_name
+                    for conn in outgoing_from_proxy
+                )
+
+                # Delete the connection from proxy to this node
                 delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
                     DeleteConnectionRequest(
                         source_parameter_name=proxy_parameter.name,
@@ -562,19 +586,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     msg = f"{self.name}: Failed to delete internal incoming connection from proxy {proxy_parameter.name} to {node.name}.{parameter_name}: {delete_result.result_details}"
                     raise RuntimeError(msg)
 
+                # Create direct connections from source nodes to this node
                 for connection in remap_connections:
-                    delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
-                        DeleteConnectionRequest(
-                            source_parameter_name=connection.source_parameter.name,
-                            target_parameter_name=proxy_parameter.name,
-                            source_node_name=connection.source_node.name,
-                            target_node_name=self.name,
-                        )
-                    )
-                    if delete_result.failed():
-                        msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
-                        raise RuntimeError(msg)
-
                     create_result = GriptapeNodes.FlowManager().on_create_connection_request(
                         CreateConnectionRequest(
                             source_parameter_name=connection.source_parameter.name,
@@ -587,7 +600,22 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                         msg = f"{self.name}: Failed to create direct incoming connection from {connection.source_node.name}.{connection.source_parameter.name} to {node.name}.{parameter_name}: {create_result.result_details}"
                         raise RuntimeError(msg)
 
-                self._cleanup_proxy_parameter(proxy_parameter, "left_parameters")
+                # Only delete incoming connections to proxy and clean up if no other outgoing connections exist
+                if not other_outgoing_exists:
+                    for connection in remap_connections:
+                        delete_result = GriptapeNodes.FlowManager().on_delete_connection_request(
+                            DeleteConnectionRequest(
+                                source_parameter_name=connection.source_parameter.name,
+                                target_parameter_name=proxy_parameter.name,
+                                source_node_name=connection.source_node.name,
+                                target_node_name=self.name,
+                            )
+                        )
+                        if delete_result.failed():
+                            msg = f"{self.name}: Failed to delete external connection from {connection.source_node.name}.{connection.source_parameter.name} to proxy {proxy_parameter.name}: {delete_result.result_details}"
+                            raise RuntimeError(msg)
+
+                    self._cleanup_proxy_parameter(proxy_parameter, "left_parameters")
 
     def remap_to_internal(self, nodes: list[BaseNode], connections: Connections) -> None:
         """Remap connections that are now internal after adding nodes to the group.
@@ -672,22 +700,175 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             connections: Connections object from FlowManager
             node_names_in_group: Set of all node names currently in the group
         """
+        # Group outgoing connections by (source_node, source_parameter) to reuse proxy parameters
+        # Skip connections that already go to the NodeGroup itself (existing proxy parameters)
+        outgoing_by_source: dict[tuple[str, str], list[Connection]] = {}
         for node in nodes:
             outgoing_connections = connections.get_all_outgoing_connections(node)
             for conn in outgoing_connections:
-                if conn.target_node.name not in node_names_in_group:
-                    self.map_external_connection(
-                        conn=conn,
-                        is_incoming=False,
-                    )
+                if conn.target_node.name not in node_names_in_group and conn.target_node.name != self.name:
+                    key = (conn.source_node.name, conn.source_parameter.name)
+                    outgoing_by_source.setdefault(key, []).append(conn)
 
+        # Group incoming connections by (source_node, source_parameter) to reuse proxy parameters
+        # This ensures that when an external node connects to multiple internal nodes,
+        # they share a single proxy parameter
+        # Skip connections that already come from the NodeGroup itself (existing proxy parameters)
+        incoming_by_source: dict[tuple[str, str], list[Connection]] = {}
+        for node in nodes:
             incoming_connections = connections.get_all_incoming_connections(node)
             for conn in incoming_connections:
-                if conn.source_node.name not in node_names_in_group:
-                    self.map_external_connection(
-                        conn=conn,
-                        is_incoming=True,
-                    )
+                if conn.source_node.name not in node_names_in_group and conn.source_node.name != self.name:
+                    key = (conn.source_node.name, conn.source_parameter.name)
+                    incoming_by_source.setdefault(key, []).append(conn)
+
+        # Map outgoing connections - one proxy parameter per source parameter
+        for conn_list in outgoing_by_source.values():
+            self._map_external_connections_group(conn_list, is_incoming=False)
+
+        # Map incoming connections - one proxy parameter per source parameter
+        for conn_list in incoming_by_source.values():
+            self._map_external_connections_group(conn_list, is_incoming=True)
+
+    def _map_external_connections_group(self, conn_list: list[Connection], *, is_incoming: bool) -> None:
+        """Map a group of external connections that share the same external parameter.
+
+        Creates a single proxy parameter and connects all nodes through it.
+        If an existing proxy parameter already handles the same internal source,
+        it will be reused instead of creating a new one.
+
+        Args:
+            conn_list: List of connections sharing the same external parameter
+            is_incoming: True if these are incoming connections to the group
+        """
+        if not conn_list:
+            return
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        # All connections share the same external parameter
+        # For outgoing: the internal (source) parameter is shared
+        # For incoming: the external (source) parameter is shared
+        first_conn = conn_list[0]
+        # Use source_parameter in both cases since we group by source
+        grouped_parameter = first_conn.source_parameter
+
+        # Check if there's an existing proxy parameter we can reuse
+        existing_proxy = self._find_existing_proxy_for_source(
+            first_conn.source_node, first_conn.source_parameter, is_incoming=is_incoming
+        )
+
+        # Delete all original connections first
+        for conn in conn_list:
+            request = DeleteConnectionRequest(
+                conn.source_parameter.name,
+                conn.target_parameter.name,
+                conn.source_node.name,
+                conn.target_node.name,
+            )
+            result = GriptapeNodes.handle_request(request)
+            if not isinstance(result, DeleteConnectionResultSuccess):
+                logger.warning(
+                    "%s failed to delete connection from %s.%s to %s.%s",
+                    self.name,
+                    conn.source_node.name,
+                    conn.source_parameter.name,
+                    conn.target_node.name,
+                    conn.target_parameter.name,
+                )
+
+        # Use existing proxy or create a new one
+        if existing_proxy is not None:
+            proxy_parameter = existing_proxy
+        else:
+            proxy_parameter = self._create_proxy_parameter_for_connection(grouped_parameter, is_incoming=is_incoming)
+
+        # Create connections for all external nodes through the single proxy
+        for conn in conn_list:
+            self._create_connections_for_proxy_single(proxy_parameter, conn, is_incoming=is_incoming)
+
+    def _find_existing_proxy_for_source(
+        self, source_node: BaseNode, source_parameter: Parameter, *, is_incoming: bool
+    ) -> Parameter | None:
+        """Find an existing proxy parameter that already handles the given source.
+
+        For outgoing connections (is_incoming=False):
+            Looks for a right-side proxy that has an incoming connection from the
+            same internal source node/parameter.
+
+        For incoming connections (is_incoming=True):
+            Looks for a left-side proxy that has an incoming connection from the
+            same external source node/parameter.
+
+        Args:
+            source_node: The source node of the connection
+            source_parameter: The source parameter of the connection
+            is_incoming: True if looking for incoming connection proxies
+
+        Returns:
+            The existing proxy parameter if found, None otherwise
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        # Determine which proxy parameters to check based on direction
+        if is_incoming:
+            proxy_param_names = self.metadata.get("left_parameters", [])
+        else:
+            proxy_param_names = self.metadata.get("right_parameters", [])
+
+        for proxy_name in proxy_param_names:
+            proxy_param = self.get_parameter_by_name(proxy_name)
+            if proxy_param is None:
+                continue
+
+            # Check incoming connections to this proxy parameter
+            incoming_to_proxy = connections.get_incoming_connections_to_parameter(self, proxy_param)
+            for conn in incoming_to_proxy:
+                if conn.source_node.name == source_node.name and conn.source_parameter.name == source_parameter.name:
+                    return proxy_param
+
+        return None
+
+    def _create_connections_for_proxy_single(
+        self, proxy_parameter: Parameter, old_connection: Connection, *, is_incoming: bool
+    ) -> None:
+        """Create connections for a single external connection through a proxy parameter.
+
+        Unlike create_connections_for_proxy, this assumes the proxy parameter already exists
+        and is being shared by multiple connections.
+
+        Args:
+            proxy_parameter: The proxy parameter to connect through
+            old_connection: The original connection being remapped
+            is_incoming: True if this is an incoming connection to the group
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        create_first_connection = CreateConnectionRequest(
+            source_parameter_name=old_connection.source_parameter.name,
+            target_parameter_name=proxy_parameter.name,
+            source_node_name=old_connection.source_node.name,
+            target_node_name=self.name,
+            is_node_group_internal=not is_incoming,
+        )
+        create_second_connection = CreateConnectionRequest(
+            source_parameter_name=proxy_parameter.name,
+            target_parameter_name=old_connection.target_parameter.name,
+            source_node_name=self.name,
+            target_node_name=old_connection.target_node.name,
+            is_node_group_internal=is_incoming,
+        )
+
+        # Track connections for cleanup
+        if proxy_parameter.name not in self._proxy_param_to_connections:
+            self._proxy_param_to_connections[proxy_parameter.name] = 2
+        else:
+            self._proxy_param_to_connections[proxy_parameter.name] += 2
+
+        GriptapeNodes.handle_request(create_first_connection)
+        GriptapeNodes.handle_request(create_second_connection)
 
     def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
         """Validate that all nodes are in the group."""
