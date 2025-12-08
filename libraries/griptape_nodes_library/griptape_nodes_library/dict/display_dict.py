@@ -37,9 +37,17 @@ class DisplayDictionary(DataNode):
             )
         self.add_node_element(display_group)
 
-    def process(self) -> None:
-        # Simply output the default value or any updated property value
-        self.parameter_output_values["dictionary_display"] = str(self.parameter_values["dictionary"])
+    def _update_output(self) -> None:
+        """Update the output parameters."""
+        dictionary = self.get_parameter_value("dictionary")
+        self.parameter_output_values["dictionary_display"] = str(dictionary)
+        self.parameter_output_values["dictionary"] = dictionary
 
-        # Convert the dictionary to a string
-        self.parameter_output_values["dictionary"] = self.parameter_values["dictionary"]
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "dictionary":
+            self._update_output()
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        """Process the node during execution."""
+        self._update_output()

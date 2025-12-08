@@ -45,7 +45,8 @@ class MergeKeyValuePairs(DataNode):
             return kv_pairs
         return []
 
-    def process(self) -> None:
+    def _merge_kv_pairs(self) -> None:
+        """Merge all key-value pairs into a single dictionary."""
         input_dicts = self.get_kv_pairs()
 
         merged_dict = {}
@@ -54,3 +55,12 @@ class MergeKeyValuePairs(DataNode):
                 merged_dict.update(input_dict)
 
         self.parameter_output_values["output"] = merged_dict
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "KeyValuePairs":
+            self._merge_kv_pairs()
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        """Process the node during execution."""
+        self._merge_kv_pairs()

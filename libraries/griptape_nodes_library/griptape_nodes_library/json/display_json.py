@@ -169,5 +169,5 @@ class DisplayJson(DataNode):
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        """Process the node by parsing and displaying JSON data."""
+        """Process the node during execution."""
         self._process_json_data()

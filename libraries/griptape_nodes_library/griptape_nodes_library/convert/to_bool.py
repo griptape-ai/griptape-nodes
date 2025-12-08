@@ -42,6 +42,16 @@ class ToBool(DataNode):
     ) -> None:
         pass
 
+    def _convert_to_bool(self) -> None:
+        """Convert the input value to bool and update output."""
+        input_value = self.get_parameter_value("from")
+        self.parameter_output_values["output"] = self.to_bool(input_value)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "from":
+            self._convert_to_bool()
+        return super().after_value_set(parameter, value)
+
     def to_bool(self, input_value: Any) -> bool:
         result = False  # Default return value
 
@@ -83,10 +93,5 @@ class ToBool(DataNode):
         return result
 
     def process(self) -> None:
-        # Get the input value
-        params = self.parameter_values
-
-        input_value = params.get("from", "")
-
-        # Convert the input value to text
-        self.parameter_output_values["output"] = self.to_bool(input_value)
+        """Process the node during execution."""
+        self._convert_to_bool()

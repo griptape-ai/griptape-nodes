@@ -119,7 +119,7 @@ class DisplayImageGrid(ControlNode):
             default_value="#000000",
             tooltip="Background color of the grid (hex color)",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            traits={ColorPicker(format="hexa")},
+            traits={ColorPicker(format="hex")},
         )
         self.add_parameter(self.background_color)
 
