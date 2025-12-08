@@ -9,7 +9,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_
     DuplicateNodeRegistrationProblem,
 )
 from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
-    Requirements# noqa: TC001 (putting this into type checking causes it to not be defined for Pydantic field_validator)
+    Requirements,  # noqa: TC001 (putting this into type checking causes it to not be defined for Pydantic field_validator)
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
