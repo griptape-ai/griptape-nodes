@@ -39,12 +39,12 @@ class ResourceRequirements(BaseModel):
     """Resource requirements for a library.
 
     Specifies what system resources (OS, compute backends) the library needs.
-    Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cpu", "cuda"], "has_all")}
+    Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cuda", "cpu"], "has_all")}
     """
 
-    requirements: Requirements | None = None
+    required: Requirements | None = None
 
-    @field_validator("requirements", mode="before")
+    @field_validator("required", mode="before")
     @classmethod
     def convert_lists_to_tuples(cls, v: Any) -> Any:
         """Convert list values to tuples for requirements loaded from JSON.

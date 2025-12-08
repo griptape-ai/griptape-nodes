@@ -889,7 +889,7 @@ class LibraryManager:
 
         # Check if library requirements are met by the current system
         library_requirements = (
-            library_data.metadata.resources.requirements
+            library_data.metadata.resources.required
             if library_data.metadata.resources is not None
             else None
         )
