@@ -3,18 +3,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
+from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
-    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -48,7 +48,30 @@ class LibraryMetadata(BaseModel):
     is_griptape_nodes_searchable: bool = True
     # Resource requirements for this library. If None, library is assumed to work on any platform and have no explicit requirements.
     # Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cpu", "cuda"], "has_all")}
-    requirements: "Requirements | None" = None
+    requirements: Requirements | None = None
+
+    @field_validator("requirements", mode="before")
+    @classmethod
+    def convert_lists_to_tuples(cls, v: Any) -> Any:
+        """Convert list values to tuples for requirements loaded from JSON.
+
+        JSON arrays become Python lists, but the Requirements type expects tuples
+        for (value, comparator) pairs.
+        """
+        if v is None:
+            return None
+
+        if not isinstance(v, dict):
+            return v
+
+        converted = {}
+        for key, value in v.items():
+            # Check if value is a list with exactly 2 elements where second is a string (comparator)
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[1], str):
+                converted[key] = tuple(value)
+            else:
+                converted[key] = value
+        return converted
 
 
 class IconVariant(BaseModel):

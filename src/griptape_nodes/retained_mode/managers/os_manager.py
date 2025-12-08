@@ -21,7 +21,6 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
-from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -70,8 +69,9 @@ from griptape_nodes.retained_mode.events.resource_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
-from griptape_nodes.retained_mode.managers.resource_types.os_resource import OSResourceType
+from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 
 console = Console()
 
@@ -218,8 +218,13 @@ class OSManager:
                 request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
             )
 
-            # Register for app initialization event to setup system resources
-            event_manager.add_listener_to_app_event(AppInitializationComplete, self.on_app_initialization_complete)
+            # Store event_manager for direct access during resource registration
+            self._event_manager = event_manager
+
+            # Register system resources immediately using the event_manager directly
+            # This must happen before libraries are loaded so they can check requirements
+            # We use event_manager directly to avoid singleton recursion issues
+            self._register_system_resources_direct()
 
     def _get_workspace_path(self) -> Path:
         """Get the workspace path from config."""
@@ -2735,15 +2740,124 @@ class OSManager:
             result_details=f"Directory tree copied successfully: {source_path} -> {destination_path}",
         )
 
-    def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        """Handle app initialization complete event by registering system resources."""
-        self._register_system_resources()
+    # Resource Management Methods
+    def _register_system_resources_direct(self) -> None:
+        """Register OS, CPU, and Compute resource types directly during initialization.
 
-    # NEW Resource Management Methods
+        This method is called during __init__ and uses the event_manager directly
+        to avoid singleton recursion issues with GriptapeNodes.handle_request.
+        """
+        self._attempt_generate_os_resources_direct()
+        self._attempt_generate_cpu_resources_direct()
+        self._attempt_generate_compute_resources_direct()
+
+    def _handle_request_direct(self, request: Any) -> Any:
+        """Handle a request directly through the event_manager during initialization.
+
+        This bypasses GriptapeNodes.handle_request to avoid singleton recursion.
+        """
+        request_type = type(request)
+        callback = self._event_manager._request_type_to_manager.get(request_type)
+        if not callback:
+            msg = f"No manager found to handle request of type '{request_type.__name__}'."
+            raise TypeError(msg)
+        return callback(request)
+
     def _register_system_resources(self) -> None:
-        """Register OS and CPU resource types with ResourceManager and create system instances."""
+        """Register OS, CPU, and Compute resource types with ResourceManager and create system instances."""
         self._attempt_generate_os_resources()
         self._attempt_generate_cpu_resources()
+        self._attempt_generate_compute_resources()
+
+    def _attempt_generate_os_resources_direct(self) -> None:
+        """Register OS resource type and create system OS instance (direct version for init)."""
+        os_resource_type = OSResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=os_resource_type)
+        result = self._handle_request_direct(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register OS resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered OS resource type")
+        self._create_system_os_instance_direct()
+
+    def _attempt_generate_cpu_resources_direct(self) -> None:
+        """Register CPU resource type and create system CPU instance (direct version for init)."""
+        cpu_resource_type = CPUResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=cpu_resource_type)
+        result = self._handle_request_direct(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register CPU resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered CPU resource type")
+        self._create_system_cpu_instance_direct()
+
+    def _attempt_generate_compute_resources_direct(self) -> None:
+        """Register Compute resource type and create system compute instance (direct version for init)."""
+        compute_resource_type = ComputeResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=compute_resource_type)
+        result = self._handle_request_direct(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register Compute resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered Compute resource type")
+        self._create_system_compute_instance_direct()
+
+    def _create_system_os_instance_direct(self) -> None:
+        """Create system OS instance (direct version for init)."""
+        os_capabilities = {
+            "platform": self._get_platform_name(),
+            "arch": self._get_architecture(),
+            "version": self._get_platform_version(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="OSResourceType", capabilities=os_capabilities
+        )
+        result = self._handle_request_direct(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error("Attempted to create system OS resource instance. Failed due to resource instance creation failure")
+            return
+
+        logger.debug("Successfully created system OS instance: %s", result.instance_id)
+
+    def _create_system_cpu_instance_direct(self) -> None:
+        """Create system CPU instance (direct version for init)."""
+        cpu_capabilities = {
+            "cores": os.cpu_count() or 1,
+            "architecture": self._get_architecture(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="CPUResourceType", capabilities=cpu_capabilities
+        )
+        result = self._handle_request_direct(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error("Attempted to create system CPU resource instance. Failed due to resource instance creation failure")
+            return
+
+        logger.debug("Successfully created system CPU instance: %s", result.instance_id)
+
+    def _create_system_compute_instance_direct(self) -> None:
+        """Create system compute instance with detected backends (direct version for init)."""
+        compute_capabilities = {
+            "compute": self._get_available_compute_backends(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="ComputeResourceType", capabilities=compute_capabilities
+        )
+        result = self._handle_request_direct(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error("Attempted to create system Compute resource instance. Failed due to resource instance creation failure")
+            return
+
+        logger.debug("Successfully created system Compute instance: %s", result.instance_id)
 
     def _attempt_generate_os_resources(self) -> None:
         """Register OS resource type and create system OS instance if successful."""
@@ -2814,23 +2928,124 @@ class OSManager:
 
         logger.debug("Successfully created system CPU instance: %s", result.instance_id)
 
+    def _attempt_generate_compute_resources(self) -> None:
+        """Register Compute resource type and create system compute instance if successful."""
+        # Register Compute resource type
+        compute_resource_type = ComputeResourceType()
+        register_request = RegisterResourceTypeRequest(resource_type=compute_resource_type)
+        result = GriptapeNodes.handle_request(register_request)
+
+        if not isinstance(result, RegisterResourceTypeResultSuccess):
+            logger.error("Attempted to register Compute resource type. Failed due to resource type registration failure")
+            return
+
+        logger.debug("Successfully registered Compute resource type")
+        # Registration successful, now create instance
+        self._create_system_compute_instance()
+
+    def _create_system_compute_instance(self) -> None:
+        """Create system compute instance with detected backends."""
+        compute_capabilities = {
+            "compute": self._get_available_compute_backends(),
+        }
+        create_request = CreateResourceInstanceRequest(
+            resource_type_name="ComputeResourceType", capabilities=compute_capabilities
+        )
+        result = GriptapeNodes.handle_request(create_request)
+
+        if not isinstance(result, CreateResourceInstanceResultSuccess):
+            logger.error(
+                "Attempted to create system Compute resource instance. Failed due to resource instance creation failure"
+            )
+            return
+
+        logger.debug("Successfully created system Compute instance: %s", result.instance_id)
+
+    def _get_available_compute_backends(self) -> list[str]:
+        """Detect available compute backends on the system.
+
+        Returns:
+            List of available backends: always includes 'cpu', plus 'cuda' or 'mps' if available.
+        """
+        backends: list[str] = [ComputeBackend.CPU]  # CPU is always available
+
+        # Check for CUDA (NVIDIA GPU)
+        if self._is_cuda_available():
+            backends.append(ComputeBackend.CUDA)
+
+        # Check for MPS (Apple Silicon)
+        if self._is_mps_available():
+            backends.append(ComputeBackend.MPS)
+
+        logger.debug("Detected compute backends: %s", backends)
+        return backends
+
+    def _is_cuda_available(self) -> bool:
+        """Check if CUDA is available by detecting NVIDIA driver.
+
+        Uses nvidia-smi command which is lightweight and doesn't require torch.
+        """
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                logger.debug("CUDA detected via nvidia-smi: %s", result.stdout.strip().split("\n")[0])
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        return False
+
+    def _is_mps_available(self) -> bool:
+        """Check if MPS (Metal Performance Shaders) is available.
+
+        MPS is available on Apple Silicon Macs (arm64 architecture) with macOS 12.3+.
+        """
+        if not self.is_mac():
+            return False
+
+        # Check for Apple Silicon (arm64)
+        arch = self._get_architecture()
+        if arch not in (Architecture.ARM64, Architecture.AARCH64):
+            return False
+
+        # MPS requires macOS 12.3+, but arm64 Macs shipped with 11.0+
+        # and all arm64 Macs can run 12.3+, so if it's arm64 Mac, MPS is available
+        logger.debug("MPS detected: Apple Silicon Mac")
+        return True
+
     def _get_platform_name(self) -> str:
         """Get platform name using existing sys.platform detection."""
         if self.is_windows():
-            return "windows"
+            return Platform.WINDOWS
         if self.is_mac():
-            return "darwin"
+            return Platform.DARWIN
         if self.is_linux():
-            return "linux"
+            return Platform.LINUX
         return sys.platform
 
     def _get_architecture(self) -> str:
-        """Get system architecture."""
-        try:
-            return os.uname().machine.lower()
-        except AttributeError:
-            # Windows doesn't have os.uname(), fallback to environment variable
-            return os.environ.get("PROCESSOR_ARCHITECTURE", "unknown").lower()
+        """Get system architecture, normalized across platforms."""
+        platform = self._get_platform_name()
+        if platform == Platform.WINDOWS:
+            arch = os.environ.get("PROCESSOR_ARCHITECTURE", "unknown").lower()
+        else:
+            arch = os.uname().machine.lower()
+
+        # Normalize architecture names across platforms
+        # Windows reports "amd64", Linux/macOS report "x86_64" - they're the same
+        if arch == "amd64":
+            return Architecture.X86_64
+        if arch == "x86_64":
+            return Architecture.X86_64
+        if arch == "arm64":
+            return Architecture.ARM64
+        if arch == "aarch64":
+            return Architecture.AARCH64
+        return arch
 
     def _get_platform_version(self) -> str:
         """Get platform version."""
