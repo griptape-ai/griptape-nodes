@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,29 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class SupportedOS(str, Enum):
+    """Operating systems that a library can support."""
+
+    WINDOWS = "windows"
+    MACOS = "macos"
+    LINUX = "linux"
+
+
+class ComputeBackend(str, Enum):
+    """Compute backends that a library can require."""
+
+    CPU = "cpu"
+    CUDA = "cuda"
+    MPS = "mps"
+
+
+class ComputeRequirement(BaseModel):
+    """Specifies a compute backend requirement with optional version."""
+
+    backend: ComputeBackend
+    version: str | None = None  # e.g., "11.8" for CUDA
 
 
 class LibraryNameAndVersion(NamedTuple):
@@ -45,6 +69,10 @@ class LibraryMetadata(BaseModel):
     dependencies: Dependencies | None = None
     # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
     is_griptape_nodes_searchable: bool = True
+    # Operating systems supported by this library. If None, library is assumed to support all platforms.
+    supported_os: list[SupportedOS] | None = None
+    # Compute backends required by this library. If None, library is assumed to require CPU only.
+    required_compute: list[ComputeRequirement] | None = None
 
 
 class IconVariant(BaseModel):
@@ -112,7 +140,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.4.0"
 
     name: str
     library_schema_version: str
