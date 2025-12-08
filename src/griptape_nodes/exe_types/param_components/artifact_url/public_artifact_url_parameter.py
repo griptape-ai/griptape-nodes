@@ -107,6 +107,7 @@ class PublicArtifactUrlParameter:
                     )
                 },
                 button_text="Hide this message",
+                hide=False,
             )
         )
         self._node.add_parameter(self._parameter)
