@@ -8,13 +8,15 @@ from pydantic import BaseModel, Field, field_validator
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
+from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
+    Requirements# noqa: TC001 (putting this into type checking causes it to not be defined for Pydantic field_validator)
+)
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
-    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 
 logger = logging.getLogger("griptape_nodes")
 
