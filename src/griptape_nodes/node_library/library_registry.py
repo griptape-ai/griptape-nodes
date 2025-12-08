@@ -39,7 +39,7 @@ class ComputeRequirement(BaseModel):
     """Specifies a compute backend requirement with optional version."""
 
     backend: ComputeBackend
-    version: str | None = None  # e.g., "11.8" for CUDA
+    version: str | None = None  # e.g., "12.8" for CUDA
 
 
 class LibraryNameAndVersion(NamedTuple):
