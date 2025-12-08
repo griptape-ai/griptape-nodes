@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Advanced Media Library",
-  "library_schema_version": "0.3.0",
+  "library_schema_version": "0.4.0",
   "settings": [
     {
       "description": "Configuration settings for the Advanced Media Library temporary file storage",
@@ -71,6 +71,9 @@
         "--preview",
         "--torch-backend=auto"
       ]
+    },
+    "requirements": {
+      "compute": [["cuda", "mps"], "has_any"]
     }
   },
   "categories": [],
