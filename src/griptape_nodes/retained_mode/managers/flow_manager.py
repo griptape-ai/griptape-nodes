@@ -615,7 +615,7 @@ class FlowManager:
                     return result
                 with GriptapeNodes.ContextManager().flow(flow=child_flow):
                     # Delete them.
-                    delete_flow_request = DeleteFlowRequest()
+                    delete_flow_request = DeleteFlowRequest(flow_name=child_flow_name)
                     delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
                     if isinstance(delete_flow_result, DeleteFlowResultFailure):
                         details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Flow '{child_flow.name}'."
