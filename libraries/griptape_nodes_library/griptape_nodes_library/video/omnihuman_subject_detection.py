@@ -7,7 +7,7 @@ import os
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
-import requests
+import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -120,8 +120,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         with contextlib.suppress(Exception):
             logger.info("%s: %s", self.name, message)
 
-    def process(self) -> None:
-        """Process the subject detection request."""
+    async def aprocess(self) -> None:
+        """Process the subject detection request asynchronously."""
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -143,7 +143,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         # Submit detection request
         try:
             public_image_url = self._public_image_url_parameter.get_public_url_for_parameter()
-            self._submit_detection_request(model_id, public_image_url, api_key)
+            await self._submit_detection_request(model_id, public_image_url, api_key)
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
@@ -158,7 +158,7 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_detection_request(self, model_id: str, image_url: str, api_key: str) -> None:
+    async def _submit_detection_request(self, model_id: str, image_url: str, api_key: str) -> None:
         """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -176,22 +176,23 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         try:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-            response = requests.post(
-                post_url,
-                json=provider_params,
-                headers=headers,
-                timeout=300,  # 5 minutes
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    post_url,
+                    json=provider_params,
+                    headers=headers,
+                    timeout=300.0,  # 5 minutes
+                )
 
-            if response.status_code >= 400:  # noqa: PLR2004
-                error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
-                self._log(error_msg)
-                raise RuntimeError(error_msg)
+                if response.status_code >= 400:  # noqa: PLR2004
+                    error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
+                    self._log(error_msg)
+                    raise RuntimeError(error_msg)
 
-            response_json = response.json()
-            self._process_response(response_json)
+                response_json = response.json()
+                self._process_response(response_json)
 
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
             self._log(error_msg)
             raise RuntimeError(error_msg) from e

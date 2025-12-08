@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json as _json
 import logging
 import os
 import time
-from time import monotonic, sleep
+from time import monotonic
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -115,9 +116,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 type="list",
                 output_type="list",
                 default_value=[],
-                tooltip="Optional mask image URLs from subject detection",
+                tooltip="Optional mask image URLs from subject detection (will auto-detect if enabled and not provided)",
                 ui_options={"placeholder_text": "https://example.com/mask1.png"},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="auto_detect_masks",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip="Automatically detect subject masks if none provided (calls subject detection API)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"hide": True},
             )
         )
 
@@ -208,12 +221,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         with contextlib.suppress(Exception):
             logger.info("%s: %s", self.name, message)
 
-    def process(self) -> AsyncResult[None]:
+    async def aprocess(self) -> None:
         """Process video generation asynchronously."""
-        yield lambda: self._process()
-
-    def _process(self) -> None:
-        """Internal processing method."""
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -228,7 +237,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         try:
             # Get and validate parameters
-            params = self._get_parameters()
+            params = await self._get_parameters(api_key)
         except ValueError as e:
             self._public_image_url_parameter.delete_uploaded_artifact()
             self._public_audio_url_parameter.delete_uploaded_artifact()
@@ -239,7 +248,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         # Submit generation request
         try:
-            generation_id = self._submit_generation_request(params, api_key)
+            generation_id = await self._submit_generation_request(params, api_key)
             if not generation_id:
                 self._set_status_results(
                     was_successful=False,
@@ -252,13 +261,13 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             return
 
         # Poll for result
-        self._poll_for_result(generation_id, api_key)
+        await self._poll_for_result(generation_id, api_key)
 
         # Cleanup
         self._public_image_url_parameter.delete_uploaded_artifact()
         self._public_audio_url_parameter.delete_uploaded_artifact()
 
-    def _get_parameters(self) -> dict[str, Any]:
+    async def _get_parameters(self, api_key: str) -> dict[str, Any]:
         """Get and normalize input parameters."""
         image_url = self.get_parameter_value("image_url")
         audio_url = self.get_parameter_value("audio_url")
@@ -283,6 +292,14 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         if hasattr(mask_image_urls, "value"):
             mask_image_urls = mask_image_urls.value
 
+        # Auto-detect masks if enabled and no mask_image_urls provided
+        auto_detect = self.get_parameter_value("auto_detect_masks")
+        if auto_detect and (not mask_image_urls or len(mask_image_urls) == 0):
+            self._log("No masks provided, running subject detection to generate masks")
+            mask_image_urls = await self._auto_detect_masks(image_url, api_key)
+            if mask_image_urls:
+                self._log(f"Auto-detected {len(mask_image_urls)} mask(s)")
+
         body = {
             "req_key": self._get_req_key(model_id),
             "image_url": str(image_url).strip(),
@@ -294,6 +311,47 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         }
         # remove None values
         return {k: v for k, v in body.items() if v is not None}
+
+    async def _auto_detect_masks(self, image_url: str, api_key: str) -> list[str]:
+        """Automatically detect masks by calling the subject detection API."""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        # Build payload for subject detection
+        provider_params = {
+            "req_key": "realman_avatar_object_detection_cv",
+            "image_url": image_url,
+        }
+
+        post_url = urljoin(self._proxy_base, "models/omnihuman-1-5-subject-detection")
+        self._log("Calling subject detection API for auto-mask generation")
+
+        try:
+            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    post_url,
+                    json=provider_params,
+                    headers=headers,
+                    timeout=300.0,
+                )
+
+                if response.status_code >= 400:  # noqa: PLR2004
+                    error_msg = f"Subject detection failed with status {response.status_code}: {response.text}"
+                    self._log(error_msg)
+                    return []
+
+                response_json = response.json()
+                # Extract mask URLs from response
+                resp_data = _json.loads(response_json.get("data", {}).get("resp_data", "{}"))
+                mask_urls = resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
+                return mask_urls if isinstance(mask_urls, list) else []
+
+        except Exception as e:
+            self._log(f"Auto-detection failed: {e}")
+            return []
 
     def _get_req_key(self, model_id: str) -> str:
         """Get the request key based on model_id."""
@@ -312,7 +370,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_generation_request(self, params: dict[str, Any], api_key: str) -> str:
+    async def _submit_generation_request(self, params: dict[str, Any], api_key: str) -> str:
         """Submit the video generation request via Griptape Cloud proxy."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -325,39 +383,39 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._log("Submitting video generation request via proxy")
 
         try:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-            response = requests.post(
-                post_url,
-                json=params,
-                headers=headers,
-                timeout=60,
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    post_url,
+                    json=params,
+                    headers=headers,
+                    timeout=60.0,
+                )
 
-            if response.status_code >= 400:  # noqa: PLR2004
-                self._set_safe_defaults()
-                error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
-                self._log(error_msg)
-                raise RuntimeError(error_msg)
+                if response.status_code >= 400:  # noqa: PLR2004
+                    self._set_safe_defaults()
+                    error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
+                    self._log(error_msg)
+                    raise RuntimeError(error_msg)
 
-            response_json = response.json()
-            generation_id = str(response_json.get("generation_id") or "")
+                response_json = response.json()
+                generation_id = str(response_json.get("generation_id") or "")
 
-            self.parameter_output_values["generation_id"] = generation_id
+                self.parameter_output_values["generation_id"] = generation_id
 
-            if generation_id:
-                self._log(f"Submitted. Generation ID: {generation_id}")
-            else:
-                self._log(f"No generation_id returned from POST response. Response: {response_json}")
+                if generation_id:
+                    self._log(f"Submitted. Generation ID: {generation_id}")
+                else:
+                    self._log(f"No generation_id returned from POST response. Response: {response_json}")
 
-            return generation_id  # noqa: TRY300
+                return generation_id
 
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             self._set_safe_defaults()
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
             self._log(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def _poll_for_result(self, generation_id: str, api_key: str) -> None:
+    async def _poll_for_result(self, generation_id: str, api_key: str) -> None:
         """Poll for the generation result via Griptape Cloud proxy."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -373,63 +431,63 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         last_json = None
 
-        while True:
-            if monotonic() - start_time > timeout_s:
-                self._log("Polling timed out waiting for result")
-                self._set_status_results(
-                    was_successful=False,
-                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
-                )
-                return
+        async with httpx.AsyncClient() as client:
+            while True:
+                if monotonic() - start_time > timeout_s:
+                    self._log("Polling timed out waiting for result")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
+                    )
+                    return
 
-            try:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-                response = requests.get(
-                    get_url,
-                    headers=headers,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                last_json = response.json()
-
-            except Exception as exc:
-                self._log(f"Polling request failed: {exc}")
-                error_msg = f"Failed to poll generation status: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
-
-            attempt += 1
-
-            # Extract provider response
-            provider_response = last_json.get("provider_response", {})
-            if isinstance(provider_response, str):
                 try:
-                    provider_response = _json.loads(provider_response)
-                except Exception:
-                    provider_response = {}
+                    response = await client.get(
+                        get_url,
+                        headers=headers,
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    last_json = response.json()
 
-            status = provider_response.get("data", {}).get("status", "").lower()
+                except Exception as exc:
+                    self._log(f"Polling request failed: {exc}")
+                    error_msg = f"Failed to poll generation status: {exc}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    self._handle_failure_exception(RuntimeError(error_msg))
+                    return
 
-            self._log(f"Polling attempt #{attempt}, status={status}")
+                attempt += 1
 
-            if status == "done":
-                self._handle_completion(last_json, generation_id)
+                # Extract provider response
+                provider_response = last_json.get("provider_response", {})
+                if isinstance(provider_response, str):
+                    try:
+                        provider_response = _json.loads(provider_response)
+                    except Exception:
+                        provider_response = {}
+
+                status = provider_response.get("data", {}).get("status", "").lower()
+
+                self._log(f"Polling attempt #{attempt}, status={status}")
+
+                if status == "done":
+                    await self._handle_completion(last_json, generation_id)
+                    return
+
+                if status not in ["not_found", "expired"]:
+                    await asyncio.sleep(poll_interval_s)
+                    continue
+
+                # Check for completion
+                # Any other status code is an error
+                self._log(f"Generation failed with status: {status}")
+                self.parameter_output_values["video_url"] = None
+                error_details = f"Video generation failed.\nStatus: {status}\nFull response: {last_json}"
+                self._set_status_results(was_successful=False, result_details=error_details)
                 return
 
-            if status not in ["not_found", "expired"]:
-                sleep(poll_interval_s)
-                continue
-
-            # Check for completion
-            # Any other status code is an error
-            self._log(f"Generation failed with status: {status}")
-            self.parameter_output_values["video_url"] = None
-            error_details = f"Video generation failed.\nStatus: {status}\nFull response: {last_json}"
-            self._set_status_results(was_successful=False, result_details=error_details)
-            return
-
-    def _handle_completion(self, response_json: dict[str, Any], _generation_id: str) -> None:
+    async def _handle_completion(self, response_json: dict[str, Any], _generation_id: str) -> None:
         """Handle successful completion of video generation."""
         # Extract provider response
         provider_response = response_json.get("provider_response", {})
@@ -453,7 +511,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
         try:
             self._log("Downloading video bytes from provider URL")
-            video_filename = self._save_video_bytes(video_url)
+            video_filename = await self._save_video_bytes(video_url)
         except Exception as e:
             self._log(f"Failed to download video: {e}")
             video_filename = None
@@ -478,14 +536,15 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         return None
 
     @staticmethod
-    def _save_video_bytes(url: str) -> str | None:
+    async def _save_video_bytes(url: str) -> str | None:
         """Download video bytes from URL."""
         try:
-            response = requests.get(url, timeout=120)
-            response.raise_for_status()
-            video_filename = f"omnihuman_video_{int(time.time())}.mp4"
-            GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
-            return video_filename  # noqa: TRY300
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=120.0)
+                response.raise_for_status()
+                video_filename = f"omnihuman_video_{int(time.time())}.mp4"
+                GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
+                return video_filename
         except Exception:
             return None
 
