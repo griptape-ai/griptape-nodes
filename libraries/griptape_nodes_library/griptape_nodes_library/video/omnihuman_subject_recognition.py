@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json as _json
 import logging
 import os
-from time import monotonic, sleep
+from time import monotonic
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
-import requests
+import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -120,8 +121,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         with contextlib.suppress(Exception):
             logger.info("%s: %s", self.name, message)
 
-    def process(self) -> None:
-        """Process the subject recognition request."""
+    async def aprocess(self) -> None:
+        """Process the subject recognition request asynchronously."""
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -143,9 +144,9 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         # Submit recognition request
         try:
             public_image_url = self._public_image_url_parameter.get_public_url_for_parameter()
-            generation_id = self._submit_recognition_request(model_id, public_image_url, api_key)
+            generation_id = await self._submit_recognition_request(model_id, public_image_url, api_key)
             self.parameter_output_values["generation_id"] = generation_id
-            self._poll_for_result(generation_id, api_key)
+            await self._poll_for_result(generation_id, api_key)
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
@@ -160,7 +161,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_recognition_request(self, model_id: str, image_url: str, api_key: str) -> str:
+    async def _submit_recognition_request(self, model_id: str, image_url: str, api_key: str) -> str:
         """Submit the subject detection request via Griptape Cloud proxy."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -178,33 +179,34 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         try:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-            response = requests.post(
-                post_url,
-                json=provider_params,
-                headers=headers,
-                timeout=60,
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    post_url,
+                    json=provider_params,
+                    headers=headers,
+                    timeout=60.0,
+                )
 
-            if response.status_code >= 400:  # noqa: PLR2004
-                error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
-                self._log(error_msg)
-                raise RuntimeError(error_msg)
+                if response.status_code >= 400:  # noqa: PLR2004
+                    error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
+                    self._log(error_msg)
+                    raise RuntimeError(error_msg)
 
-            response_json = response.json()
-            generation_id = response_json.get("generation_id")
-            if not generation_id:
-                error_msg = f"No generation_id returned from recognition request. Response: {response_json}"
-                self._log(error_msg)
-                raise RuntimeError(error_msg)
+                response_json = response.json()
+                generation_id = response_json.get("generation_id")
+                if not generation_id:
+                    error_msg = f"No generation_id returned from recognition request. Response: {response_json}"
+                    self._log(error_msg)
+                    raise RuntimeError(error_msg)
 
-            return generation_id  # noqa: TRY300
+                return generation_id
 
-        except requests.RequestException as e:
+        except httpx.RequestError as e:
             error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
             self._log(error_msg)
             raise RuntimeError(error_msg) from e
 
-    def _poll_for_result(self, generation_id: str, api_key: str) -> None:
+    async def _poll_for_result(self, generation_id: str, api_key: str) -> None:
         """Poll for the generation result via Griptape Cloud proxy."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -220,72 +222,72 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         last_json = None
 
-        while True:
-            if monotonic() - start_time > timeout_s:
-                self._log("Polling timed out waiting for result")
-                self._set_status_results(
-                    was_successful=False,
-                    result_details=f"Subject recognition timed out after {timeout_s} seconds waiting for result.",
-                )
-                return
+        async with httpx.AsyncClient() as client:
+            while True:
+                if monotonic() - start_time > timeout_s:
+                    self._log("Polling timed out waiting for result")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Subject recognition timed out after {timeout_s} seconds waiting for result.",
+                    )
+                    return
 
-            try:
-                # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-                response = requests.get(
-                    get_url,
-                    headers=headers,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                last_json = response.json()
-
-                # Update generation result with latest data
-                self.parameter_output_values["result_details"] = last_json
-
-            except Exception as exc:
-                self._log(f"Polling request failed: {exc}")
-                error_msg = f"Failed to poll generation status: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
-
-            attempt += 1
-
-            # Extract provider response
-            provider_response = last_json.get("provider_response", {})
-            if isinstance(provider_response, str):
                 try:
-                    provider_response = _json.loads(provider_response)
-                except Exception:
-                    provider_response = {}
+                    response = await client.get(
+                        get_url,
+                        headers=headers,
+                        timeout=60.0,
+                    )
+                    response.raise_for_status()
+                    last_json = response.json()
 
-            status = provider_response.get("data", {}).get("status", "").lower()
+                    # Update generation result with latest data
+                    self.parameter_output_values["result_details"] = last_json
 
-            self._log(f"Polling attempt #{attempt}, status={status}")
+                except Exception as exc:
+                    self._log(f"Polling request failed: {exc}")
+                    error_msg = f"Failed to poll generation status: {exc}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    self._handle_failure_exception(RuntimeError(error_msg))
+                    return
 
-            if status == "done":
-                resp_data = _json.loads(provider_response.get("data", {}).get("resp_data", "{}"))
-                status = resp_data.get("status")
-                contains_human = status == 1
-                self.parameter_output_values["contains_subject"] = contains_human
+                attempt += 1
 
-                result_msg = f"Subject recognition completed successfully. response: {provider_response}. "
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=result_msg,
-                )
+                # Extract provider response
+                provider_response = last_json.get("provider_response", {})
+                if isinstance(provider_response, str):
+                    try:
+                        provider_response = _json.loads(provider_response)
+                    except Exception:
+                        provider_response = {}
+
+                status = provider_response.get("data", {}).get("status", "").lower()
+
+                self._log(f"Polling attempt #{attempt}, status={status}")
+
+                if status == "done":
+                    resp_data = _json.loads(provider_response.get("data", {}).get("resp_data", "{}"))
+                    status = resp_data.get("status")
+                    contains_human = status == 1
+                    self.parameter_output_values["contains_subject"] = contains_human
+
+                    result_msg = f"Subject recognition completed successfully. response: {provider_response}. "
+                    self._set_status_results(
+                        was_successful=True,
+                        result_details=result_msg,
+                    )
+                    return
+
+                if status != "done" and status not in ["not_found", "expired"]:
+                    await asyncio.sleep(poll_interval_s)
+                    continue
+
+                # Check for completion
+                # Any other status code is an error
+                self._log(f"Subject recognition failed with status: {status}")
+                error_details = f"Subject recognition failed.\nStatus: {status}\nFull response: {last_json}"
+                self._set_status_results(was_successful=False, result_details=error_details)
                 return
-
-            if status != "done" and status not in ["not_found", "expired"]:
-                sleep(poll_interval_s)
-                continue
-
-            # Check for completion
-            # Any other status code is an error
-            self._log(f"Subject recognition failed with status: {status}")
-            error_details = f"Subject recognition failed.\nStatus: {status}\nFull response: {last_json}"
-            self._set_status_results(was_successful=False, result_details=error_details)
-            return
 
     def _get_req_key(self, model_id: str) -> str:
         """Get the request key based on model_id."""
