@@ -8,13 +8,13 @@ from pydantic import BaseModel, Field, field_validator
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
-from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
     from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_problem import LibraryProblem
+    from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -59,9 +59,10 @@ class ResourceRequirements(BaseModel):
             return v
 
         converted = {}
+        comparator_tuple_length = 2
         for key, value in v.items():
             # Check if value is a list with exactly 2 elements where second is a string (comparator)
-            if isinstance(value, list) and len(value) == 2 and isinstance(value[1], str):
+            if isinstance(value, list) and len(value) == comparator_tuple_length and isinstance(value[1], str):
                 converted[key] = tuple(value)
             else:
                 converted[key] = value

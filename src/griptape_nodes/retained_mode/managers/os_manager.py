@@ -2802,7 +2802,9 @@ class OSManager:
         result = self._handle_request_direct(register_request)
 
         if not isinstance(result, RegisterResourceTypeResultSuccess):
-            logger.error("Attempted to register Compute resource type. Failed due to resource type registration failure")
+            logger.error(
+                "Attempted to register Compute resource type. Failed due to resource type registration failure"
+            )
             return
 
         logger.debug("Successfully registered Compute resource type")
@@ -2821,7 +2823,9 @@ class OSManager:
         result = self._handle_request_direct(create_request)
 
         if not isinstance(result, CreateResourceInstanceResultSuccess):
-            logger.error("Attempted to create system OS resource instance. Failed due to resource instance creation failure")
+            logger.error(
+                "Attempted to create system OS resource instance. Failed due to resource instance creation failure"
+            )
             return
 
         logger.debug("Successfully created system OS instance: %s", result.instance_id)
@@ -2838,7 +2842,9 @@ class OSManager:
         result = self._handle_request_direct(create_request)
 
         if not isinstance(result, CreateResourceInstanceResultSuccess):
-            logger.error("Attempted to create system CPU resource instance. Failed due to resource instance creation failure")
+            logger.error(
+                "Attempted to create system CPU resource instance. Failed due to resource instance creation failure"
+            )
             return
 
         logger.debug("Successfully created system CPU instance: %s", result.instance_id)
@@ -2854,7 +2860,9 @@ class OSManager:
         result = self._handle_request_direct(create_request)
 
         if not isinstance(result, CreateResourceInstanceResultSuccess):
-            logger.error("Attempted to create system Compute resource instance. Failed due to resource instance creation failure")
+            logger.error(
+                "Attempted to create system Compute resource instance. Failed due to resource instance creation failure"
+            )
             return
 
         logger.debug("Successfully created system Compute instance: %s", result.instance_id)
@@ -2936,7 +2944,9 @@ class OSManager:
         result = GriptapeNodes.handle_request(register_request)
 
         if not isinstance(result, RegisterResourceTypeResultSuccess):
-            logger.error("Attempted to register Compute resource type. Failed due to resource type registration failure")
+            logger.error(
+                "Attempted to register Compute resource type. Failed due to resource type registration failure"
+            )
             return
 
         logger.debug("Successfully registered Compute resource type")
@@ -2985,9 +2995,13 @@ class OSManager:
 
         Uses nvidia-smi command which is lightweight and doesn't require torch.
         """
+        nvidia_smi = shutil.which("nvidia-smi")
+        if nvidia_smi is None:
+            return False
         try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            result = subprocess.run(  # noqa: S603
+                [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -2995,7 +3009,7 @@ class OSManager:
             if result.returncode == 0 and result.stdout.strip():
                 logger.debug("CUDA detected via nvidia-smi: %s", result.stdout.strip().split("\n")[0])
                 return True
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        except (subprocess.TimeoutExpired, OSError):
             pass
         return False
 
