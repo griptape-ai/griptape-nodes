@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.1",
+    "library_version": "0.52.2",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -689,7 +689,7 @@
       "class_name": "OmnihumanSubjectRecognition",
       "file_path": "griptape_nodes_library/video/omnihuman_subject_recognition.py",
       "metadata": {
-        "category": "video",
+        "category": "image",
         "description": "Identify whether an image contains human, human-like, anthropomorphic, or similar subjects using OmniHuman 1.5",
         "display_name": "OmniHuman Subject Recognition",
         "icon": "User",
@@ -700,7 +700,7 @@
       "class_name": "OmnihumanSubjectDetection",
       "file_path": "griptape_nodes_library/video/omnihuman_subject_detection.py",
       "metadata": {
-        "category": "video",
+        "category": "image",
         "description": "Detect and locate subjects in an image, returning masks and bounding boxes using OmniHuman 1.5",
         "display_name": "OmniHuman Subject Detection",
         "icon": "ScanFace",
@@ -2162,6 +2162,17 @@
         "display_name": "ForEach End",
         "icon": "list-end",
         "group": "iteration"
+      }
+    },
+    {
+      "class_name": "StandardSubflowNodeGroup",
+      "file_path": "griptape_nodes_library/engine/standard_subflow_node_group.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Groups multiple nodes together for organization and parallel execution",
+        "display_name": "Subflow Node Group",
+        "icon": "Layers",
+        "is_node_group": true
       }
     },
     {

@@ -332,23 +332,16 @@ class WanAnimateGeneration(SuccessFailureNode):
 
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = time.monotonic()
+        pending_start_time = time.monotonic()
+        running_start_time = None
         last_json = None
         attempt = 0
         poll_interval_s = 5.0
-        timeout_s = video_duration * 20.0
+        pending_timeout_s = 30.0
+        running_timeout_s = video_duration * 30.0
 
         async with httpx.AsyncClient() as client:
             while True:
-                if time.monotonic() - start_time > timeout_s:
-                    self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                    logger.debug("Polling timed out waiting for result")
-                    self._set_status_results(
-                        was_successful=False,
-                        result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
-                    )
-                    return
-
                 try:
                     get_resp = await client.get(get_url, headers=headers, timeout=60)
                     get_resp.raise_for_status()
@@ -361,11 +354,31 @@ class WanAnimateGeneration(SuccessFailureNode):
                     self._handle_failure_exception(RuntimeError(error_msg))
                     return
 
-                status = self._extract_status(last_json) or STATUS_UNKNOWN
                 attempt += 1
+                status = self._extract_status(last_json) or STATUS_UNKNOWN
                 logger.info("Polling attempt #%s status=%s", attempt, status)
 
-                # Check for failure or cancellation
+                if status == STATUS_PENDING and time.monotonic() - pending_start_time > pending_timeout_s:
+                    self.parameter_output_values["video"] = self._extract_video_url(last_json)
+                    logger.debug("Polling timed out waiting for generation to start")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Video generation timed out after {pending_timeout_s} seconds waiting for generation to start.",
+                    )
+                    return
+
+                if status == STATUS_RUNNING:
+                    if not running_start_time:
+                        running_start_time = time.monotonic()
+                    if running_start_time and time.monotonic() - running_start_time > running_timeout_s:
+                        self.parameter_output_values["video"] = self._extract_video_url(last_json)
+                        logger.debug("Polling timed out waiting for result")
+                        self._set_status_results(
+                            was_successful=False,
+                            result_details=f"Video generation timed out after {int(running_timeout_s)} seconds of processing.",
+                        )
+                        return
+
                 if status in {STATUS_FAILED, STATUS_CANCELED}:
                     provider_resp = last_json.get("provider_response") if last_json else {}
                     error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None

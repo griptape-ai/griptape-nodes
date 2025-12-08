@@ -17,11 +17,11 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
     ErrorProxyNode,
     NodeDependencies,
-    NodeGroupNode,
     NodeResolutionState,
     StartNode,
 )
@@ -123,7 +123,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     SetFlowMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
-    CreateNodeGroupRequest,
     CreateNodeRequest,
     DeleteNodeRequest,
     DeleteNodeResultFailure,
@@ -594,22 +593,6 @@ class FlowManager:
 
         # Let this Flow assume the Current Context while we delete everything within it.
         with GriptapeNodes.ContextManager().flow(flow=flow):
-            # Delete all child nodes in this Flow.
-            list_nodes_request = ListNodesInFlowRequest()
-            list_nodes_result = GriptapeNodes.handle_request(list_nodes_request)
-            if not isinstance(list_nodes_result, ListNodesInFlowResultSuccess):
-                details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to get the list of Nodes owned by this Flow."
-                result = DeleteFlowResultFailure(result_details=details)
-                return result
-            node_names = list_nodes_result.node_names
-            for node_name in node_names:
-                delete_node_request = DeleteNodeRequest(node_name=node_name)
-                delete_node_result = GriptapeNodes.handle_request(delete_node_request)
-                if isinstance(delete_node_result, DeleteNodeResultFailure):
-                    details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Node '{node_name}'."
-                    result = DeleteFlowResultFailure(result_details=details)
-                    return result
-
             # Delete all child Flows of this Flow.
             # Note: We use ListFlowsInCurrentContextRequest here instead of ListFlowsInFlowRequest(parent_flow_name=None)
             # because None in ListFlowsInFlowRequest means "get canvas/top-level flows". We want the flows in the
@@ -632,12 +615,27 @@ class FlowManager:
                     return result
                 with GriptapeNodes.ContextManager().flow(flow=child_flow):
                     # Delete them.
-                    delete_flow_request = DeleteFlowRequest()
+                    delete_flow_request = DeleteFlowRequest(flow_name=child_flow_name)
                     delete_flow_result = GriptapeNodes.handle_request(delete_flow_request)
                     if isinstance(delete_flow_result, DeleteFlowResultFailure):
                         details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Flow '{child_flow.name}'."
                         result = DeleteFlowResultFailure(result_details=details)
                         return result
+            # Delete all child nodes in this Flow.
+            list_nodes_request = ListNodesInFlowRequest()
+            list_nodes_result = GriptapeNodes.handle_request(list_nodes_request)
+            if not isinstance(list_nodes_result, ListNodesInFlowResultSuccess):
+                details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to get the list of Nodes owned by this Flow."
+                result = DeleteFlowResultFailure(result_details=details)
+                return result
+            node_names = list_nodes_result.node_names
+            for node_name in node_names:
+                delete_node_request = DeleteNodeRequest(node_name=node_name)
+                delete_node_result = GriptapeNodes.handle_request(delete_node_request)
+                if isinstance(delete_node_result, DeleteNodeResultFailure):
+                    details = f"Attempted to delete Flow '{flow.name}', but failed while attempting to delete child Node '{node_name}'."
+                    result = DeleteFlowResultFailure(result_details=details)
+                    return result
 
             # If we've made it this far, we have deleted all the children Flows and their nodes.
             # Remove the flow from our map.
@@ -917,8 +915,8 @@ class FlowManager:
             details = f"Deleted the previous connection from '{old_source_node_name}.{old_source_param_name}' to '{old_target_node_name}.{old_target_param_name}' to make room for the new connection."
         try:
             # Actually create the Connection.
-            if (isinstance(source_node, NodeGroupNode) and target_node.parent_group == source_node) or (
-                isinstance(target_node, NodeGroupNode) and source_node.parent_group == target_node
+            if (isinstance(source_node, SubflowNodeGroup) and target_node.parent_group == source_node) or (
+                isinstance(target_node, SubflowNodeGroup) and source_node.parent_group == target_node
             ):
                 # Here we're checking if it's an internal connection. (from the NodeGroup to a node within it.)
                 # If that's true, we set that automatically.
@@ -976,7 +974,7 @@ class FlowManager:
         # If source is in a group, this is an outgoing external connection
         if (
             source_parent is not None
-            and isinstance(source_parent, NodeGroupNode)
+            and isinstance(source_parent, SubflowNodeGroup)
             and source_parent not in (target_parent, target_node)
         ):
             success = source_parent.map_external_connection(
@@ -992,7 +990,7 @@ class FlowManager:
         # If target is in a group, this is an incoming external connection
         if (
             target_parent is not None
-            and isinstance(target_parent, NodeGroupNode)
+            and isinstance(target_parent, SubflowNodeGroup)
             and target_parent not in (source_parent, source_node)
         ):
             success = target_parent.map_external_connection(
@@ -1291,15 +1289,15 @@ class FlowManager:
         if isinstance(node_connections_dict, PackageNodesAsSerializedFlowResultFailure):
             return node_connections_dict
 
-        # Step 8: Retrieve NodeGroupNode if node_group_name was provided
-        node_group_node: NodeGroupNode | None = None
+        # Step 8: Retrieve SubflowNodeGroup if node_group_name was provided
+        node_group_node: SubflowNodeGroup | None = None
         if request.node_group_name:
             try:
                 node = GriptapeNodes.NodeManager().get_node_by_name(request.node_group_name)
-                if isinstance(node, NodeGroupNode):
+                if isinstance(node, SubflowNodeGroup):
                     node_group_node = node
             except Exception as e:
-                logger.debug("Failed to retrieve NodeGroupNode '%s': %s", request.node_group_name, e)
+                logger.debug("Failed to retrieve SubflowNodeGroup '%s': %s", request.node_group_name, e)
 
         # Step 9: Create start node with parameters for external incoming connections
         start_node_result = self._create_multi_node_start_node_with_connections(
@@ -1509,7 +1507,7 @@ class FlowManager:
         """
         # Serialize each node using shared unique_parameter_uuid_to_values dictionary for deduplication
         serialized_node_commands = []
-        serialized_node_group_commands = []  # NodeGroupNodes must be added LAST
+        serialized_node_group_commands = []  # SubflowNodeGroups must be added LAST
 
         for node in nodes_to_package:
             # Serialize this node using shared dictionaries for value deduplication
@@ -1527,16 +1525,14 @@ class FlowManager:
 
             # Populate the shared node_name_to_uuid mapping
             create_cmd = serialize_result.serialized_node_commands.create_node_command
-            # Get the node name from the CreateNodeGroupRequest command if necessary.
-            node_name = (
-                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
-            )
+            # Get the node name from the CreateNodeRequest command.
+            node_name = create_cmd.node_name
             if node_name is not None:
                 node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
 
-            # NodeGroupNodes must be serialized LAST because CreateNodeGroupRequest references child node names
+            # SubflowNodeGroups must be serialized LAST because they reference child node names via node_names_to_add
             # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
-            if isinstance(node, NodeGroupNode):
+            if isinstance(node, SubflowNodeGroup):
                 serialized_node_group_commands.append(serialize_result.serialized_node_commands)
             else:
                 serialized_node_commands.append(serialize_result.serialized_node_commands)
@@ -1547,13 +1543,13 @@ class FlowManager:
                     serialize_result.set_parameter_value_commands
                 )
 
-        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # Update SubflowNodeGroup commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
 
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
                     if child_node_name in node_name_to_uuid:
@@ -1648,12 +1644,8 @@ class FlowManager:
             for serialized_node_command in serialized_package_nodes:
                 # We need to get the create commoand.
                 create_cmd = serialized_node_command.create_node_command
-                # In a CreateNodeGroupRequest, the node_name is the node_group_name, so we need to add both.
-                cmd_node_name = (
-                    create_cmd.node_group_name
-                    if isinstance(create_cmd, CreateNodeGroupRequest)
-                    else create_cmd.node_name
-                )
+                # Get the node name from CreateNodeRequest
+                cmd_node_name = create_cmd.node_name
                 if cmd_node_name == package_node.name:
                     serialized_node = serialized_node_command
                     break
@@ -2048,7 +2040,7 @@ class FlowManager:
         external_connections_dict: dict[
             str, ConnectionAnalysis
         ],  # Contains EXTERNAL connections only - used to determine which parameters need start node inputs
-        node_group_node: NodeGroupNode | None = None,
+        node_group_node: SubflowNodeGroup | None = None,
     ) -> PackagingStartNodeResult | PackageNodesAsSerializedFlowResultFailure:
         """Create start node commands and connections for external incoming connections."""
         # Generate UUID and name for start node
@@ -2123,7 +2115,7 @@ class FlowManager:
         # Add control connections to the same list as data connections
         start_to_package_connections.extend(control_connections)
 
-        # Set parameter values from NodeGroupNode if provided
+        # Set parameter values from SubflowNodeGroup if provided
         if node_group_node is not None:
             self._apply_node_group_parameters_to_start_node(
                 node_group_node=node_group_node,
@@ -2156,21 +2148,21 @@ class FlowManager:
 
     def _apply_node_group_parameters_to_start_node(  # noqa: PLR0913
         self,
-        node_group_node: NodeGroupNode,
+        node_group_node: SubflowNodeGroup,
         start_node_library_name: str,
         start_node_type: str,
         start_node_parameter_value_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand],
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
     ) -> None:
-        """Apply parameter values from NodeGroupNode to the StartFlow node.
+        """Apply parameter values from SubflowNodeGroup to the StartFlow node.
 
-        This method reads the execution environment metadata from the NodeGroupNode,
+        This method reads the execution environment metadata from the SubflowNodeGroup,
         extracts parameter values for the specified StartFlow node type, and creates
         set parameter value commands for those parameters.
 
         Args:
-            node_group_node: The NodeGroupNode containing parameter values
+            node_group_node: The SubflowNodeGroup containing parameter values
             start_node_library_name: Name of the library containing the StartFlow node
             start_node_type: Type of the StartFlow node
             start_node_parameter_value_commands: List to append parameter value commands to
@@ -2178,28 +2170,28 @@ class FlowManager:
             serialized_parameter_value_tracker: Tracker for serialized parameter values
 
         Raises:
-            ValueError: If required metadata is missing from NodeGroupNode
+            ValueError: If required metadata is missing from SubflowNodeGroup
         """
-        # Get execution environment metadata from NodeGroupNode
+        # Get execution environment metadata from SubflowNodeGroup
         if not node_group_node.metadata:
-            msg = f"NodeGroupNode '{node_group_node.name}' is missing metadata. Cannot apply parameters to StartFlow node."
+            msg = f"SubflowNodeGroup '{node_group_node.name}' is missing metadata. Cannot apply parameters to StartFlow node."
             raise ValueError(msg)
 
         execution_env_metadata = node_group_node.metadata.get("execution_environment")
         if not execution_env_metadata:
-            msg = f"NodeGroupNode '{node_group_node.name}' metadata is missing 'execution_environment'. Cannot apply parameters to StartFlow node."
+            msg = f"SubflowNodeGroup '{node_group_node.name}' metadata is missing 'execution_environment'. Cannot apply parameters to StartFlow node."
             raise ValueError(msg)
 
         # Find the metadata for the current library
         library_metadata = execution_env_metadata.get(start_node_library_name)
         if library_metadata is None:
-            msg = f"NodeGroupNode '{node_group_node.name}' metadata does not contain library '{start_node_library_name}'. Available libraries: {list(execution_env_metadata.keys())}"
+            msg = f"SubflowNodeGroup '{node_group_node.name}' metadata does not contain library '{start_node_library_name}'. Available libraries: {list(execution_env_metadata.keys())}"
             raise ValueError(msg)
 
         # Verify this is the correct StartFlow node type
         registered_start_flow_node = library_metadata.get("start_flow_node")
         if registered_start_flow_node != start_node_type:
-            msg = f"NodeGroupNode '{node_group_node.name}' has mismatched StartFlow node type. Expected '{start_node_type}', but metadata has '{registered_start_flow_node}'"
+            msg = f"SubflowNodeGroup '{node_group_node.name}' has mismatched StartFlow node type. Expected '{start_node_type}', but metadata has '{registered_start_flow_node}'"
             raise ValueError(msg)
 
         # Get the list of parameter names that belong to this StartFlow node
@@ -2207,15 +2199,15 @@ class FlowManager:
         if not parameter_names:
             # This is not an error - it's valid for a StartFlow node to have no parameters
             logger.debug(
-                "NodeGroupNode '%s' has no parameters registered for StartFlow node '%s'",
+                "SubflowNodeGroup '%s' has no parameters registered for StartFlow node '%s'",
                 node_group_node.name,
                 start_node_type,
             )
             return
 
-        # For each parameter, get its value from the NodeGroupNode and create a set value command
+        # For each parameter, get its value from the SubflowNodeGroup and create a set value command
         for prefixed_param_name in parameter_names:
-            # Get the value from the NodeGroupNode parameter
+            # Get the value from the SubflowNodeGroup parameter
             param_value = node_group_node.get_parameter_value(param_name=prefixed_param_name)
 
             # Skip if no value is set
@@ -2621,7 +2613,7 @@ class FlowManager:
         2. A control node with no incoming control connections, OR
         3. A data node with no outgoing connections
 
-        Nodes that are children of NodeGroupNodes are excluded.
+        Nodes that are children of SubflowNodeGroups are excluded.
 
         Args:
             flow: The flow to search for start nodes
@@ -2988,9 +2980,6 @@ class FlowManager:
         # Collect node types from all nodes in this flow
         for node_cmd in serialized_node_commands:
             create_cmd = node_cmd.create_node_command
-            # Skip NodeGroupNode as it doesn't have node_type/specific_library_name
-            if isinstance(create_cmd, CreateNodeGroupRequest):
-                continue
             node_type = create_cmd.node_type
             library_name = create_cmd.specific_library_name
             if library_name is None:
@@ -3127,7 +3116,7 @@ class FlowManager:
                 create_flow_request = None
 
             serialized_node_commands = []
-            serialized_node_group_commands = []  # NodeGroupNodes must be added LAST
+            serialized_node_group_commands = []  # SubflowNodeGroups must be added LAST
             set_parameter_value_commands_per_node = {}  # Maps a node UUID to a list of set parameter value commands
             set_lock_commands_per_node = {}  # Maps a node UUID to a set Lock command, if it exists.
 
@@ -3164,9 +3153,9 @@ class FlowManager:
                     # Store the serialized node's UUID for correlation to connections and setting parameter values later.
                     node_name_to_uuid[node_name] = serialized_node.node_uuid
 
-                    # NodeGroupNodes must be serialized LAST because CreateNodeGroupRequest references child node names
+                    # SubflowNodeGroups must be serialized LAST because CreateNodeGroupRequest references child node names
                     # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
-                    if isinstance(node, NodeGroupNode):
+                    if isinstance(node, SubflowNodeGroup):
                         serialized_node_group_commands.append(serialized_node)
                     else:
                         serialized_node_commands.append(serialized_node)
@@ -3239,7 +3228,7 @@ class FlowManager:
         # This ensures child nodes exist before their parent NodeGroups are created during deserialization
         serialized_node_commands.extend(serialized_node_group_commands)
 
-        # Update NodeGroupNode commands to use UUIDs instead of names in node_names_to_add
+        # Update SubflowNodeGroup commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
         # Build a complete node name to UUID map including nodes from all subflows
         complete_node_name_to_uuid = dict(node_name_to_uuid)  # Start with current flow's nodes
@@ -3250,10 +3239,8 @@ class FlowManager:
                 for node_cmd in subflow_cmd.serialized_node_commands:
                     # Extract node name from the create command
                     create_cmd = node_cmd.create_node_command
-                    if isinstance(create_cmd, CreateNodeRequest) and create_cmd.node_name:
+                    if create_cmd.node_name:
                         complete_node_name_to_uuid[create_cmd.node_name] = node_cmd.node_uuid
-                    elif isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_group_name:
-                        complete_node_name_to_uuid[create_cmd.node_group_name] = node_cmd.node_uuid
                 # Recursively process nested subflows
                 if subflow_cmd.sub_flows_commands:
                     collect_subflow_node_uuids(subflow_cmd.sub_flows_commands)
@@ -3263,7 +3250,7 @@ class FlowManager:
         for node_group_command in serialized_node_group_commands:
             create_cmd = node_group_command.create_node_command
 
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 # Convert node names to UUIDs using the complete map (including subflows)
                 node_uuids = []
                 for child_node_name in create_cmd.node_names_to_add:
@@ -3382,16 +3369,14 @@ class FlowManager:
         node_uuid_to_deserialized_node_result = {}
         node_name_mappings = {}
         for serialized_node in request.serialized_flow_commands.serialized_node_commands:
-            # Get the node name from the CreateNodeGroupRequest command if necessary
+            # Get the node name from the CreateNodeRequest command
             create_cmd = serialized_node.create_node_command
-            original_node_name = (
-                create_cmd.node_group_name if isinstance(create_cmd, CreateNodeGroupRequest) else create_cmd.node_name
-            )
+            original_node_name = create_cmd.node_name
 
-            # For NodeGroupNodes, remap node_names_to_add from UUIDs to actual node names
+            # For SubflowNodeGroups, remap node_names_to_add from UUIDs to actual node names
             # Create a copy to avoid mutating the original serialized data
             serialized_node_for_deserialization = serialized_node
-            if isinstance(create_cmd, CreateNodeGroupRequest) and create_cmd.node_names_to_add:
+            if create_cmd.node_names_to_add:
                 # Use list comprehension to remap UUIDs to deserialized node names
                 remapped_names = [
                     node_uuid_to_deserialized_node_result[node_uuid].node_name
@@ -3399,10 +3384,17 @@ class FlowManager:
                     if node_uuid in node_uuid_to_deserialized_node_result
                 ]
                 # Create a copy of the command with remapped names instead of mutating original
-                create_cmd_copy = CreateNodeGroupRequest(
-                    node_group_name=create_cmd.node_group_name,
+                create_cmd_copy = CreateNodeRequest(
+                    node_type=create_cmd.node_type,
+                    specific_library_name=create_cmd.specific_library_name,
+                    node_name=create_cmd.node_name,
                     node_names_to_add=remapped_names,
+                    override_parent_flow_name=create_cmd.override_parent_flow_name,
                     metadata=create_cmd.metadata,
+                    resolution=create_cmd.resolution,
+                    initial_setup=create_cmd.initial_setup,
+                    set_as_new_context=create_cmd.set_as_new_context,
+                    create_error_proxy_on_failure=create_cmd.create_error_proxy_on_failure,
                 )
                 # Create a copy of serialized_node with the new command
                 serialized_node_for_deserialization = SerializedNodeCommands(
@@ -3411,6 +3403,7 @@ class FlowManager:
                     element_modification_commands=serialized_node.element_modification_commands,
                     node_dependencies=serialized_node.node_dependencies,
                     lock_node_command=serialized_node.lock_node_command,
+                    is_node_group=serialized_node.is_node_group,
                 )
 
             deserialize_node_request = DeserializeNodeFromCommandsRequest(
@@ -3837,8 +3830,8 @@ class FlowManager:
         control_nodes = []
         cn_mgr = self.get_connections()
         for node in all_nodes:
-            # Skip nodes that are children of a NodeGroupNode - they should not be start nodes
-            if node.parent_group is not None and isinstance(node.parent_group, NodeGroupNode):
+            # Skip nodes that are children of a SubflowNodeGroup - they should not be start nodes
+            if node.parent_group is not None and isinstance(node.parent_group, SubflowNodeGroup):
                 continue
 
             # if it's a start node, start here! Return the first one!
