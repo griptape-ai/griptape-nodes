@@ -888,10 +888,13 @@ class LibraryManager:
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Check if library requirements are met by the current system
-        if library_data.metadata.requirements is not None:
-            requirements_check_result = self._check_library_requirements(
-                library_data.metadata.requirements, library_data.name
-            )
+        library_requirements = (
+            library_data.metadata.resources.requirements
+            if library_data.metadata.resources is not None
+            else None
+        )
+        if library_requirements is not None:
+            requirements_check_result = self._check_library_requirements(library_requirements, library_data.name)
             if requirements_check_result is not None:
                 # Requirements not met
                 self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
@@ -901,7 +904,7 @@ class LibraryManager:
                     status=LibraryStatus.UNUSABLE,
                     problems=[requirements_check_result],
                 )
-                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed because system does not meet library requirements: {library_data.metadata.requirements}"
+                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed because system does not meet library requirements: {library_requirements}"
                 return RegisterLibraryFromFileResultFailure(result_details=details)
 
         # Get the directory containing the JSON file to resolve relative paths

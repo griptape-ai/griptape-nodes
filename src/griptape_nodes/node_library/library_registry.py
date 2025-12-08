@@ -35,19 +35,13 @@ class Dependencies(BaseModel):
     pip_install_flags: list[str] | None = None
 
 
-class LibraryMetadata(BaseModel):
-    """Metadata that explains details about the library, including versioning and search details."""
+class ResourceRequirements(BaseModel):
+    """Resource requirements for a library.
 
-    author: str
-    description: str
-    library_version: str
-    engine_version: str
-    tags: list[str]
-    dependencies: Dependencies | None = None
-    # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
-    is_griptape_nodes_searchable: bool = True
-    # Resource requirements for this library. If None, library is assumed to work on any platform and have no explicit requirements.
-    # Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cpu", "cuda"], "has_all")}
+    Specifies what system resources (OS, compute backends) the library needs.
+    Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cpu", "cuda"], "has_all")}
+    """
+
     requirements: Requirements | None = None
 
     @field_validator("requirements", mode="before")
@@ -72,6 +66,21 @@ class LibraryMetadata(BaseModel):
             else:
                 converted[key] = value
         return converted
+
+
+class LibraryMetadata(BaseModel):
+    """Metadata that explains details about the library, including versioning and search details."""
+
+    author: str
+    description: str
+    library_version: str
+    engine_version: str
+    tags: list[str]
+    dependencies: Dependencies | None = None
+    # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
+    is_griptape_nodes_searchable: bool = True
+    # Resource requirements for this library. If None, library is assumed to work on any platform.
+    resources: ResourceRequirements | None = None
 
 
 class IconVariant(BaseModel):

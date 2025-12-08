@@ -72,8 +72,10 @@
         "--torch-backend=auto"
       ]
     },
-    "requirements": {
-      "compute": [["cuda", "mps"], "has_any"]
+    "resources": {
+      "requirements": {
+        "compute": [["cuda", "mps"], "has_any"]
+      }
     }
   },
   "categories": [],
