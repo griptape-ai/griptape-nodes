@@ -15,6 +15,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -98,6 +99,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         - images (list): Multiple input images (seedream-4.5 supports up to 14, seedream-4.0 up to 10)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
+        - max_images (int): Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
 
     Outputs:
@@ -209,6 +211,20 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
+        # Max images parameter for seedream-4.5 and seedream-4.0
+        self.add_parameter(
+            ParameterInt(
+                name="max_images",
+                tooltip="Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)",
+                default_value=10,
+                slider=True,
+                min_val=1,
+                max_val=15,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=False,
+            )
+        )
+
         # Guidance scale for seedream-3.0-t2i
         self.add_parameter(
             Parameter(
@@ -282,19 +298,22 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "seedream-4.5"
         if default_model in ("seedream-4.5", "seedream-4.0"):
-            # Hide single image input, show images list, hide guidance scale
+            # Hide single image input, show images list, show max_images, hide guidance scale
             self.hide_parameter_by_name("image")
             self.show_parameter_by_name("images")
+            self.show_parameter_by_name("max_images")
             self.hide_parameter_by_name("guidance_scale")
         elif default_model == "seedream-3.0-t2i":
-            # Hide image inputs (not supported), show guidance scale
+            # Hide image inputs (not supported), hide max_images, show guidance scale
             self.hide_parameter_by_name("image")
             self.hide_parameter_by_name("images")
+            self.hide_parameter_by_name("max_images")
             self.show_parameter_by_name("guidance_scale")
         elif default_model == "seededit-3.0-i2i":
-            # Show single image input (required), hide images list, show guidance scale
+            # Show single image input (required), hide images list, hide max_images, show guidance scale
             self.show_parameter_by_name("image")
             self.hide_parameter_by_name("images")
+            self.hide_parameter_by_name("max_images")
             self.show_parameter_by_name("guidance_scale")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
@@ -319,6 +338,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seedream-4.5 and seedream-4.0 models."""
         self.hide_parameter_by_name("image")
         self.show_parameter_by_name("images")
+        self.show_parameter_by_name("max_images")
         self.hide_parameter_by_name("guidance_scale")
 
         if current_size in new_choices:
@@ -332,6 +352,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seedream-3.0-t2i model."""
         self.hide_parameter_by_name("image")
         self.hide_parameter_by_name("images")
+        self.hide_parameter_by_name("max_images")
         self.show_parameter_by_name("guidance_scale")
         self.set_parameter_value("guidance_scale", 2.5)
 
@@ -344,6 +365,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seededit-3.0-i2i model."""
         self.show_parameter_by_name("image")
         self.hide_parameter_by_name("images")
+        self.hide_parameter_by_name("max_images")
         self.show_parameter_by_name("guidance_scale")
 
         image_param = self.get_parameter_by_name("image")
@@ -428,12 +450,15 @@ class SeedreamImageGeneration(SuccessFailureNode):
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
-            "sequential_image_generation": "auto",
         }
 
         # Get image list for seedream-4.5 and seedream-4.0
         if params["model"] in ("seedream-4.5", "seedream-4.0"):
             params["images"] = self.get_parameter_list_value("images") or []
+            params["sequential_image_generation"] = "auto"
+            params["sequential_image_generation_config"] = {
+                "max_images": self.get_parameter_value("max_images"),
+            }
 
         return params
 
@@ -502,6 +527,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Model-specific parameters
         if model in ("seedream-4.5", "seedream-4.0"):
+            # Add sequential image generation configuration
+            payload["sequential_image_generation"] = params["sequential_image_generation"]
+            payload["sequential_image_generation_config"] = params["sequential_image_generation_config"]
+
             # Add multiple images if provided for v4.5/v4.0
             images = params.get("images", [])
             if images:
