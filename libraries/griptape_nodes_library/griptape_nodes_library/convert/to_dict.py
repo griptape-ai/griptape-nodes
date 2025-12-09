@@ -43,10 +43,16 @@ class ToDictionary(DataNode):
     ) -> None:
         pass
 
-    def process(self) -> None:
-        # Get the input value
-        params = self.parameter_values
-
-        input_value = params.get("from", {})
-
+    def _convert_to_dict(self) -> None:
+        """Convert the input value to dict and update output."""
+        input_value = self.get_parameter_value("from")
         self.parameter_output_values["output"] = to_dict(input_value)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "from":
+            self._convert_to_dict()
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        """Process the node during execution."""
+        self._convert_to_dict()

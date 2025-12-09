@@ -37,8 +37,8 @@ class MergeDicts(DataNode):
             )
         )
 
-    def process(self) -> None:
-        """Process the node by merging all dictionaries from the list."""
+    def _merge_dicts(self) -> None:
+        """Merge all dictionaries from the list."""
         # Get the list of dictionaries
         dict_list = self.parameter_values.get("inputs", [])
 
@@ -65,3 +65,12 @@ class MergeDicts(DataNode):
         # Set output values
         self.parameter_output_values["merged_dict"] = result_dict
         self.parameter_values["merged_dict"] = result_dict  # For get_value compatibility
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "inputs":
+            self._merge_dicts()
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        """Process the node during execution."""
+        self._merge_dicts()

@@ -43,14 +43,8 @@ class CompareImages(ControlNode):
             )
         )
 
-    def after_value_set(
-        self,
-        parameter: Parameter,
-        value: Any,
-    ) -> None:
-        if parameter.name not in {"Image_1", "Image_2"}:
-            return super().after_value_set(parameter, value)
-
+    def _update_compare(self) -> None:
+        """Update the Compare parameter with current images."""
         # Get current images
         image_1 = self.get_parameter_value("Image_1")
         image_2 = self.get_parameter_value("Image_2")
@@ -64,7 +58,17 @@ class CompareImages(ControlNode):
         # Update output values for downstream connections
         self.parameter_output_values["Compare"] = result_dict
 
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        if parameter.name not in {"Image_1", "Image_2"}:
+            return super().after_value_set(parameter, value)
+
+        self._update_compare()
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        """Process the node - logic handled in after_value_set."""
+        """Process the node during execution."""
+        self._update_compare()
