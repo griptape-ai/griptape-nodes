@@ -133,7 +133,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 input_types=["bool"],
                 type="bool",
                 default_value=False,
-                tooltip=f"If enabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If disabled, oversized images are skipped with a warning.",
+                tooltip=f"If enabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If disabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
