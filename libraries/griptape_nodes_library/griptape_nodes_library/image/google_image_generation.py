@@ -129,7 +129,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Strict image size validation
         self.add_parameter(
             Parameter(
-                name="strict_image_size",
+                name="disable_auto_image_resize",
                 input_types=["bool"],
                 type="bool",
                 default_value=False,
@@ -287,7 +287,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         image_size = self.get_parameter_value("image_size")
         temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
-        strict_image_size = self.get_parameter_value("strict_image_size")
+        disable_auto_image_resize = self.get_parameter_value("disable_auto_image_resize")
 
         # Get all image lists and combine them
         input_images = self.get_parameter_list_value("input_images") or []
@@ -305,7 +305,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Add all input images
         for img in all_images:
             try:
-                result = await self._process_input_image(img, strict=strict_image_size)
+                result = await self._process_input_image(img, strict=disable_auto_image_resize)
             except ValueError as e:
                 self._set_safe_defaults()
                 self._set_status_results(was_successful=False, result_details=str(e))
