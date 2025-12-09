@@ -456,7 +456,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if params["model"] in ("seedream-4.5", "seedream-4.0"):
             params["images"] = self.get_parameter_list_value("images") or []
             params["sequential_image_generation"] = "auto"
-            params["sequential_image_generation_config"] = {
+            params["sequential_image_generation_options"] = {
                 "max_images": self.get_parameter_value("max_images"),
             }
 
