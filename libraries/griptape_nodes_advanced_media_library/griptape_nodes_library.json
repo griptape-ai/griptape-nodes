@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Advanced Media Library",
-  "library_schema_version": "0.3.0",
+  "library_schema_version": "0.4.0",
   "settings": [
     {
       "description": "Configuration settings for the Advanced Media Library temporary file storage",
@@ -28,8 +28,8 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.62.2",
-    "engine_version": "0.63.0",
+    "library_version": "0.63.0",
+    "engine_version": "0.65.2",
     "tags": [
       "Griptape",
       "AI"
@@ -71,6 +71,11 @@
         "--preview",
         "--torch-backend=auto"
       ]
+    },
+    "resources": {
+      "required": {
+        "compute": [["cuda", "mps"], "has_any"]
+      }
     }
   },
   "categories": [],

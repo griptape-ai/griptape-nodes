@@ -125,6 +125,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileResultFailure,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.resource_events import (
+    GetResourceInstanceStatusRequest,
+    GetResourceInstanceStatusResultSuccess,
+    ListCompatibleResourceInstancesRequest,
+    ListCompatibleResourceInstancesResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     AdvancedLibraryLoadFailureProblem,
@@ -133,6 +139,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
     CreateConfigCategoryProblem,
     DuplicateLibraryProblem,
     EngineVersionErrorProblem,
+    IncompatibleRequirementsProblem,
     InvalidVersionStringProblem,
     LibraryJsonDecodeProblem,
     LibraryLoadExceptionProblem,
@@ -880,6 +887,24 @@ class LibraryManager:
             details = f"Attempted to load Library '{library_data.name}' JSON file from '{json_path}'. Failed because version string '{library_data.metadata.library_version}' wasn't valid. Must be in major.minor.patch format."
             return RegisterLibraryFromFileResultFailure(result_details=details)
 
+        # Check if library requirements are met by the current system
+        library_requirements = (
+            library_data.metadata.resources.required if library_data.metadata.resources is not None else None
+        )
+        if library_requirements is not None:
+            requirements_check_result = self._check_library_requirements(library_requirements, library_data.name)
+            if requirements_check_result is not None:
+                # Requirements not met
+                self._library_file_path_to_info[file_path] = LibraryManager.LibraryInfo(
+                    library_path=file_path,
+                    library_name=library_data.name,
+                    library_version=library_version,
+                    status=LibraryStatus.UNUSABLE,
+                    problems=[requirements_check_result],
+                )
+                details = f"Attempted to load Library '{library_data.name}' from '{json_path}'. Failed because system does not meet library requirements: {library_requirements}"
+                return RegisterLibraryFromFileResultFailure(result_details=details)
+
         # Get the directory containing the JSON file to resolve relative paths
         base_dir = json_path.parent.absolute()
         # Add the directory to the Python path to allow for relative imports
@@ -1163,6 +1188,112 @@ class LibraryManager:
             library_venv_python_path = library_venv_path / "bin" / "python"
 
         return library_venv_python_path
+
+    def _check_library_requirements(
+        self, requirements: dict[str, Any], library_name: str
+    ) -> IncompatibleRequirementsProblem | None:
+        """Check if the current system meets the library's resource requirements.
+
+        Args:
+            requirements: Dictionary of requirements in the format used by resource_instance.Requirements
+            library_name: Name of the library being checked (for logging)
+
+        Returns:
+            IncompatibleRequirementsProblem if requirements are not met, None if they are met
+        """
+        logger.info("Checking requirements for library '%s': %s", library_name, requirements)
+
+        # Split requirements by resource type
+        os_keys = {"platform", "arch", "version"}
+        compute_keys = {"compute"}
+
+        os_requirements = {k: v for k, v in requirements.items() if k in os_keys}
+        compute_requirements = {k: v for k, v in requirements.items() if k in compute_keys}
+
+        # Check OS requirements if any
+        if os_requirements:
+            list_request = ListCompatibleResourceInstancesRequest(
+                resource_type_name="OSResourceType",
+                requirements=os_requirements,
+                include_locked=True,
+            )
+            result = GriptapeNodes.handle_request(list_request)
+
+            if isinstance(result, ListCompatibleResourceInstancesResultSuccess) and not result.instance_ids:
+                system_capabilities = self._get_system_capabilities()
+                logger.warning(
+                    "Library '%s' OS requirements not met. Required: %s, System: %s",
+                    library_name,
+                    os_requirements,
+                    system_capabilities,
+                )
+                return IncompatibleRequirementsProblem(
+                    requirements=requirements,
+                    system_capabilities=system_capabilities,
+                )
+
+        # Check compute requirements if any
+        if compute_requirements:
+            list_request = ListCompatibleResourceInstancesRequest(
+                resource_type_name="ComputeResourceType",
+                requirements=compute_requirements,
+                include_locked=True,
+            )
+            result = GriptapeNodes.handle_request(list_request)
+
+            if isinstance(result, ListCompatibleResourceInstancesResultSuccess) and not result.instance_ids:
+                system_capabilities = self._get_system_capabilities()
+                logger.warning(
+                    "Library '%s' compute requirements not met. Required: %s, System: %s",
+                    library_name,
+                    compute_requirements,
+                    system_capabilities,
+                )
+                return IncompatibleRequirementsProblem(
+                    requirements=requirements,
+                    system_capabilities=system_capabilities,
+                )
+
+        # Requirements met
+        return None
+
+    def _get_system_capabilities(self) -> dict[str, Any]:
+        """Get the current system's capabilities for error reporting.
+
+        Returns:
+            Dictionary of combined OS and compute capabilities or empty dict if unavailable
+        """
+        capabilities: dict[str, Any] = {}
+
+        # Get OS capabilities
+        os_list_request = ListCompatibleResourceInstancesRequest(
+            resource_type_name="OSResourceType",
+            requirements=None,
+            include_locked=True,
+        )
+        os_result = GriptapeNodes.handle_request(os_list_request)
+
+        if isinstance(os_result, ListCompatibleResourceInstancesResultSuccess) and os_result.instance_ids:
+            status_request = GetResourceInstanceStatusRequest(instance_id=os_result.instance_ids[0])
+            status_result = GriptapeNodes.handle_request(status_request)
+            if isinstance(status_result, GetResourceInstanceStatusResultSuccess):
+                capabilities.update(status_result.status.capabilities)
+
+        # Get compute capabilities
+        compute_list_request = ListCompatibleResourceInstancesRequest(
+            resource_type_name="ComputeResourceType",
+            requirements=None,
+            include_locked=True,
+        )
+        compute_result = GriptapeNodes.handle_request(compute_list_request)
+
+        if isinstance(compute_result, ListCompatibleResourceInstancesResultSuccess) and compute_result.instance_ids:
+            status_request = GetResourceInstanceStatusRequest(instance_id=compute_result.instance_ids[0])
+            status_result = GriptapeNodes.handle_request(status_request)
+            if isinstance(status_result, GetResourceInstanceStatusResultSuccess):
+                capabilities.update(status_result.status.capabilities)
+
+        return capabilities
 
     def _get_library_venv_path(self, library_name: str, library_file_path: str | None = None) -> Path:
         """Get the path to the virtual environment directory for a library.

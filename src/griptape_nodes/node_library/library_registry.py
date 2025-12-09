@@ -3,10 +3,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
+)
+from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
+    Requirements,  # noqa: TC001 (putting this into type checking causes it to not be defined for Pydantic field_validator)
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
@@ -34,6 +37,40 @@ class Dependencies(BaseModel):
     pip_install_flags: list[str] | None = None
 
 
+class ResourceRequirements(BaseModel):
+    """Resource requirements for a library.
+
+    Specifies what system resources (OS, compute backends) the library needs.
+    Example: {"platform": (["linux", "windows"], "has_any"), "arch": "x86_64", "compute": (["cuda", "cpu"], "has_all")}
+    """
+
+    required: Requirements | None = None
+
+    @field_validator("required", mode="before")
+    @classmethod
+    def convert_lists_to_tuples(cls, v: Any) -> Any:
+        """Convert list values to tuples for requirements loaded from JSON.
+
+        JSON arrays become Python lists, but the Requirements type expects tuples
+        for (value, comparator) pairs.
+        """
+        if v is None:
+            return None
+
+        if not isinstance(v, dict):
+            return v
+
+        converted = {}
+        comparator_tuple_length = 2
+        for key, value in v.items():
+            # Check if value is a list with exactly 2 elements where second is a string (comparator)
+            if isinstance(value, list) and len(value) == comparator_tuple_length and isinstance(value[1], str):
+                converted[key] = tuple(value)
+            else:
+                converted[key] = value
+        return converted
+
+
 class LibraryMetadata(BaseModel):
     """Metadata that explains details about the library, including versioning and search details."""
 
@@ -45,6 +82,8 @@ class LibraryMetadata(BaseModel):
     dependencies: Dependencies | None = None
     # If True, this library will be surfaced to Griptape Nodes customers when listing Node Libraries available to them.
     is_griptape_nodes_searchable: bool = True
+    # Resource requirements for this library. If None, library is assumed to work on any platform.
+    resources: ResourceRequirements | None = None
 
 
 class IconVariant(BaseModel):
@@ -112,7 +151,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.3.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.4.0"
 
     name: str
     library_schema_version: str

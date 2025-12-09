@@ -1,4 +1,5 @@
 import logging
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal
 
 from griptape_nodes.retained_mode.managers.resource_components.capability_field import (
@@ -12,6 +13,22 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.resource_components.resource_instance import Requirements
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class Platform(StrEnum):
+    """Supported operating system platforms."""
+
+    WINDOWS = "windows"
+    DARWIN = "darwin"  # macOS
+    LINUX = "linux"
+
+
+class Architecture(StrEnum):
+    """Supported system architectures."""
+
+    X86_64 = "x86_64"  # Also known as amd64
+    ARM64 = "arm64"
+    AARCH64 = "aarch64"  # ARM64 on Linux
 
 
 # OS capability field names
