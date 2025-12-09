@@ -57,7 +57,8 @@ class StaticFilesManager:
         from griptape_nodes.servers.static import STATIC_SERVER_URL
 
         base_url_config = config_manager.get_config_value("static_server_base_url")
-        base_url = f"{base_url_config}{STATIC_SERVER_URL}"
+        # Strip trailing slash to avoid double slashes when concatenating with STATIC_SERVER_URL
+        base_url = f"{base_url_config.rstrip('/')}{STATIC_SERVER_URL}"
 
         match self.storage_backend:
             case StorageBackend.GTC:
