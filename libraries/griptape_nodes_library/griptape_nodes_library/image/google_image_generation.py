@@ -574,7 +574,9 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return self._extract_mime_and_base64_from_data_uri(data_uri, auto_image_resize=auto_image_resize)
 
-    def _extract_mime_and_base64_from_data_uri(self, data_uri: str, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
+    def _extract_mime_and_base64_from_data_uri(
+        self, data_uri: str, *, auto_image_resize: bool = True
+    ) -> tuple[str, str] | None:
         """Extract mime type and base64 data from data URI.
 
         Args:
@@ -685,7 +687,9 @@ class GoogleImageGeneration(SuccessFailureNode):
         logger.warning("%s returning original image bytes after downscale attempts", self.name)
         return image_bytes
 
-    def _validate_image_size(self, base64_data: str, mime_type: str, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
+    def _validate_image_size(
+        self, base64_data: str, mime_type: str, *, auto_image_resize: bool = True
+    ) -> tuple[str, str] | None:
         """Validate image size and optionally shrink if too large.
 
         Args:
