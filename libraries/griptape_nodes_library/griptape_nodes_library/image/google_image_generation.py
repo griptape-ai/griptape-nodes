@@ -623,7 +623,10 @@ class GoogleImageGeneration(SuccessFailureNode):
             return None
 
     def _shrink_image(self, image_bytes: bytes) -> bytes:
-        """Best-effort shrink using Pillow to ensure <= byte_limit.
+        """Best-effort shrink using Pillow to ensure <= byte_limit while maximizing quality.
+
+        Uses a strategy that finds the largest file size (best quality) that still
+        fits under the limit, rather than returning the first valid result.
 
         Args:
             image_bytes: Raw image bytes
@@ -638,24 +641,48 @@ class GoogleImageGeneration(SuccessFailureNode):
             target_format = "WEBP"
 
             orig_w, orig_h = img.size
-            scales = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]
-            qualities = [90, 85, 80, 75, 70, 60, 50]
+
+            # Try lossless first (best quality)
+            buf = _io.BytesIO()
+            img.save(buf, format=target_format, lossless=True, method=6)
+            data = buf.getvalue()
+            image_size_bytes = len(data)
+            logger.info(
+                "%s downscale attempt: lossless size=%.2fMB",
+                self.name,
+                image_size_bytes / (1024 * 1024),
+            )
+            if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
+                logger.info("%s shrunk image to %.2fMB (lossless)", self.name, image_size_bytes / (1024 * 1024))
+                return data
+
+            # Finer-grained scales for better quality preservation
+            scales = [1.0, 0.75, 0.5]
+            qualities = [100, 95, 85]
 
             for scale in scales:
                 w = max(1, int(orig_w * scale))
                 h = max(1, int(orig_h * scale))
                 resized = img.resize((w, h)) if (w, h) != (orig_w, orig_h) else img
+
                 for q in qualities:
                     buf = _io.BytesIO()
-                    save_params: dict[str, Any] = {"format": target_format, "quality": q}
-                    if target_format == "WEBP":
-                        save_params["method"] = 6
-                    resized.save(buf, **save_params)
+                    resized.save(buf, format=target_format, quality=q, method=6)
                     data = buf.getvalue()
-                    if len(data) <= MAX_IMAGE_SIZE_BYTES:
+                    image_size_bytes = len(data)
+                    logger.info(
+                        "%s downscale attempt: scale=%.2f quality=%d size=%.2fMB",
+                        self.name,
+                        scale,
+                        q,
+                        image_size_bytes / (1024 * 1024),
+                    )
+                    if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
+                        logger.info("%s shrunk image to %.2fMB (q=%d)", self.name, image_size_bytes / (1024 * 1024), q)
                         return data
         except Exception as e:
             logger.warning("%s downscale failed: %s", self.name, e)
+        logger.warning("%s returning original image bytes after downscale attempts", self.name)
         return image_bytes
 
     def _validate_image_size(self, base64_data: str, mime_type: str, *, strict: bool = False) -> tuple[str, str] | None:
