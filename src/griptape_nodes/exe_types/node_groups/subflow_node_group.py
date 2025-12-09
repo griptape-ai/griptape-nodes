@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
+    PRIVATE_EXECUTION,
     get_library_names_with_publish_handlers,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -298,6 +299,26 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             self.metadata["right_parameters"] = [proxy_param.name]
 
         return proxy_param
+
+    def add_parameter_to_group_settings(self, parameter: Parameter) -> None:
+        """Add a parameter to the Group settings panel.
+
+        Args:
+            parameter: The parameter to add to settings
+        """
+        if ParameterMode.PROPERTY not in parameter.allowed_modes:
+            msg = f"Parameter '{parameter.name}' must allow PROPERTY mode to be added to settings."
+            raise ValueError(msg)
+
+        execution_environment: dict = self.metadata.get("execution_environment", {})
+        if LOCAL_EXECUTION not in execution_environment:
+            execution_environment[LOCAL_EXECUTION] = {"parameter_names": []}
+        if PRIVATE_EXECUTION not in execution_environment:
+            execution_environment[PRIVATE_EXECUTION] = {"parameter_names": []}
+
+        for library in execution_environment:
+            parameter_names = self.metadata["execution_environment"][library].get("parameter_names", [])
+            self.metadata["execution_environment"][library]["parameter_names"] = [parameter.name, *parameter_names]
 
     def get_all_nodes(self) -> dict[str, BaseNode]:
         all_nodes = {}
