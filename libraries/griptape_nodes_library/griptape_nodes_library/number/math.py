@@ -1,7 +1,7 @@
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.traits.options import Options
 
 operations = [
@@ -24,7 +24,13 @@ operations = [
 CHOICES = [f"{op} [{expr}]" for op, expr in operations]
 
 
-class Math(BaseNode):
+class Math(ControlNode):
+    """Math node for performing mathematical operations.
+
+    Extends ControlNode to support control flow, enabling use in For loops
+    and other control flow constructs.
+    """
+
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.add_parameter(
@@ -74,6 +80,7 @@ class Math(BaseNode):
         if parameter.name in ["operation", "A", "B"]:
             result = self.calculate_operation()
             self.parameter_output_values["result"] = result
+            self.publish_update_to_parameter("result", result)
 
             # Update B parameter visibility based on operation
             if parameter.name == "operation":
