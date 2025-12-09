@@ -5,11 +5,11 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.utils.artifact_accessibility_validator import default_extract_url_from_artifact_value
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
-    default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (

@@ -4,11 +4,11 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.retained_mode.utils.artifact_accessibility_validator import default_extract_url_from_artifact_value
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
-    default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.three_d_utils import dict_to_three_d_url_artifact
 

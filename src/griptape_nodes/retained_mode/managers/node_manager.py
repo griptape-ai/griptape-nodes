@@ -4,6 +4,8 @@ import pickle
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
+from griptape.artifacts import ImageUrlArtifact, VideoUrlArtifact
+
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -178,6 +180,12 @@ from griptape_nodes.retained_mode.events.validation_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from griptape_nodes.retained_mode.utils.artifact_accessibility_validator import (
+    check_file_accessibility,
+    check_url_accessibility,
+    default_extract_url_from_artifact_value,
+    is_image_or_video_url_artifact,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -2050,6 +2058,43 @@ class NodeManager:
         except Exception as err:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because Exception: {err}"
             return SetParameterValueResultFailure(result_details=details)
+
+        # Validate artifact file path/URL accessibility during initial setup (flow loading)
+        if request.initial_setup and is_image_or_video_url_artifact(finalized_value):
+            try:
+                extracted_url = default_extract_url_from_artifact_value(
+                    finalized_value, (ImageUrlArtifact, VideoUrlArtifact)
+                )
+                if extracted_url:
+                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                    is_accessible = True
+
+                    if extracted_url.startswith(("http://", "https://")):
+                        is_accessible = check_url_accessibility(extracted_url)
+                    else:
+                        is_accessible = check_file_accessibility(extracted_url, workspace_path)
+
+                    if not is_accessible:
+                        logger.warning(
+                            "%s parameter '%s' has inaccessible artifact: %s",
+                            node_name,
+                            request.parameter_name,
+                            extracted_url,
+                        )
+                        node.make_node_unresolved(
+                            current_states_to_trigger_change_event=set({NodeResolutionState.RESOLVED})
+                        )
+                        GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
+                        return SetParameterValueResultFailure(
+                            result_details=f"Parameter '{node_name}.{request.parameter_name}' has inaccessible artifact: {extracted_url}"
+                        )
+            except (ValueError, AttributeError):
+                # If extraction fails, continue with unresolving everything.
+                GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
+                return SetParameterValueResultFailure(
+                    result_details=f"Parameter '{node_name}.{request.parameter_name}' has inaccessible artifact: {extracted_url}"
+                )
+
         if not request.initial_setup and modified:
             try:
                 GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(node)
