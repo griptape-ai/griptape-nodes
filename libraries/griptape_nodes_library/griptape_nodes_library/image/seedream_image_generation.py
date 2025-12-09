@@ -105,8 +105,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
-        - image_url (ImageUrlArtifact): First generated image as URL artifact (for backwards compatibility)
-        - output_images (list[ImageUrlArtifact]): All generated images as URL artifacts
+        - image_1 (ImageUrlArtifact): First generated image (always visible)
+        - image_2, image_3, ..., image_N (ImageUrlArtifact): Additional images (shown when API returns multiple images)
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -260,29 +260,20 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
-                tooltip="Generated image as URL artifact",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+        # Create all image output parameters upfront (1-15) so they render in one block
+        # Only image_1 is visible initially; others are shown when API returns multiple images
+        for i in range(1, 16):
+            self.add_parameter(
+                Parameter(
+                    name=f"image_{i}",
+                    output_type="ImageUrlArtifact",
+                    type="ImageUrlArtifact",
+                    tooltip=f"Generated image {i}",
+                    allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                    settable=False,
+                    ui_options={"is_full_width": True, "pulse_on_run": True, "hide": i > 1},
+                )
             )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="output_images",
-                output_type="list[ImageUrlArtifact]",
-                type="list[ImageUrlArtifact]",
-                tooltip="All generated images (seedream-4.0 and seedream-4.5 only)",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
-            )
-        )
 
         # Create status parameters for success/failure tracking (at the end)
         self._create_status_parameters(
@@ -293,6 +284,22 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Initialize parameter visibility based on default model (seedream-4.5)
         self._initialize_parameter_visibility()
+
+    def _show_image_output_parameters(self, count: int) -> None:
+        """Show image output parameters based on actual result count.
+
+        All 15 image parameters are created during initialization but hidden except image_1.
+        This method shows the appropriate number based on the API response.
+
+        Args:
+            count: Total number of images returned from API (1-15)
+        """
+        for i in range(1, 16):
+            param_name = f"image_{i}"
+            if i <= count:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
@@ -308,7 +315,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self.hide_parameter_by_name("image")
             self.hide_parameter_by_name("images")
             self.hide_parameter_by_name("max_images")
-            self.show_parameter_by_name("guidance_scale")
+            self.hide_parameter_by_name("guidance_scale")
         elif default_model == "seededit-3.0-i2i":
             # Show single image input (required), hide images list, hide max_images, show guidance scale
             self.show_parameter_by_name("image")
@@ -317,7 +324,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self.show_parameter_by_name("guidance_scale")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Update size options and parameter visibility based on model selection."""
+        """Update size options and parameter visibility based on parameter changes."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
         return super().after_value_set(parameter, value)
@@ -762,9 +769,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
             return
 
-        # Set output parameters
-        self.parameter_output_values["image_url"] = image_artifacts[0]
-        self.parameter_output_values["output_images"] = image_artifacts
+        # Show the appropriate number of image output parameters based on actual image count
+        self._show_image_output_parameters(len(image_artifacts))
+
+        # Set individual image output parameters
+        for idx, artifact in enumerate(image_artifacts, start=1):
+            param_name = f"image_{idx}"
+            self.parameter_output_values[param_name] = artifact
 
         # Set success status
         count = len(image_artifacts)
@@ -944,8 +955,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
-        self.parameter_output_values["image_url"] = None
-        self.parameter_output_values["output_images"] = []
+
+        # Clear all image output parameters (all 15 are created during initialization)
+        for i in range(1, 16):
+            self.parameter_output_values[f"image_{i}"] = None
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
