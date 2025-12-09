@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.2",
+    "library_version": "0.52.3",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
