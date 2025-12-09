@@ -129,11 +129,11 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Strict image size validation
         self.add_parameter(
             Parameter(
-                name="disable_auto_image_resize",
+                name="auto_image_resize",
                 input_types=["bool"],
                 type="bool",
-                default_value=False,
-                tooltip=f"If enabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If disabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
+                default_value=True,
+                tooltip=f"If disabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If enabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -287,7 +287,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         image_size = self.get_parameter_value("image_size")
         temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
-        disable_auto_image_resize = self.get_parameter_value("disable_auto_image_resize")
+        enabled_auto_image_resize = self.get_parameter_value("enabled_auto_image_resize")
 
         # Get all image lists and combine them
         input_images = self.get_parameter_list_value("input_images") or []
@@ -305,7 +305,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Add all input images
         for img in all_images:
             try:
-                result = await self._process_input_image(img, strict=disable_auto_image_resize)
+                result = await self._process_input_image(img, strict=enabled_auto_image_resize)
             except ValueError as e:
                 self._set_safe_defaults()
                 self._set_status_results(was_successful=False, result_details=str(e))
