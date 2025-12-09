@@ -572,20 +572,20 @@ class GoogleImageGeneration(SuccessFailureNode):
         if not data_uri:
             return None
 
-        return self._extract_mime_and_base64_from_data_uri(data_uri, strict=strict)
+        return self._extract_mime_and_base64_from_data_uri(data_uri, auto_image_resize=auto_image_resize)
 
-    def _extract_mime_and_base64_from_data_uri(self, data_uri: str, *, strict: bool = False) -> tuple[str, str] | None:
+    def _extract_mime_and_base64_from_data_uri(self, data_uri: str, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
         """Extract mime type and base64 data from data URI.
 
         Args:
             data_uri: The data URI string to extract from
-            strict: If True, raises ValueError for oversized images instead of returning None
+            auto_image_resize: If False, raises ValueError for oversized images instead of auto-resizing
 
         Returns:
             Tuple of (mime_type, base64_data) or None if extraction fails
 
         Raises:
-            ValueError: If strict is True and the image exceeds the size limit
+            ValueError: If auto_image_resize is False and the image exceeds the size limit
         """
         if not data_uri.startswith("data:image/"):
             return None
@@ -606,7 +606,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         if not base64_data:
             return None
 
-        return self._validate_image_size(base64_data, mime_type, strict=strict)
+        return self._validate_image_size(base64_data, mime_type, auto_image_resize=auto_image_resize)
 
     def _parse_mime_type_from_header(self, mime_part: str) -> str | None:
         """Parse mime type from data URI header.
@@ -685,19 +685,19 @@ class GoogleImageGeneration(SuccessFailureNode):
         logger.warning("%s returning original image bytes after downscale attempts", self.name)
         return image_bytes
 
-    def _validate_image_size(self, base64_data: str, mime_type: str, *, strict: bool = False) -> tuple[str, str] | None:
+    def _validate_image_size(self, base64_data: str, mime_type: str, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
         """Validate image size and optionally shrink if too large.
 
         Args:
             base64_data: Base64 encoded image data
             mime_type: Original MIME type of the image
-            strict: If True, raises ValueError for oversized images instead of shrinking
+            auto_image_resize: If False, raises ValueError for oversized images instead of auto-resizing
 
         Returns:
             Tuple of (mime_type, base64_data) - possibly shrunk, or None if decode fails
 
         Raises:
-            ValueError: If strict is True and the image exceeds the size limit
+            ValueError: If auto_image_resize is False and the image exceeds the size limit
         """
         try:
             image_bytes = base64.b64decode(base64_data)
@@ -713,7 +713,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         size_mb = image_size / (1024 * 1024)
         max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
 
-        if strict:
+        if not auto_image_resize:
             msg = f"{self.name} input image exceeds maximum size of {max_mb:.0f}MB (image is {size_mb:.2f}MB)"
             raise ValueError(msg)
 
