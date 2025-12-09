@@ -287,7 +287,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         image_size = self.get_parameter_value("image_size")
         temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
-        enabled_auto_image_resize = self.get_parameter_value("enabled_auto_image_resize")
+        auto_image_resize = self.get_parameter_value("auto_image_resize")
 
         # Get all image lists and combine them
         input_images = self.get_parameter_list_value("input_images") or []
@@ -305,7 +305,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         # Add all input images
         for img in all_images:
             try:
-                result = await self._process_input_image(img, strict=enabled_auto_image_resize)
+                result = await self._process_input_image(img, auto_image_resize=auto_image_resize)
             except ValueError as e:
                 self._set_safe_defaults()
                 self._set_status_results(was_successful=False, result_details=str(e))
@@ -548,18 +548,18 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
 
-    async def _process_input_image(self, image_input: Any, *, strict: bool = False) -> tuple[str, str] | None:
+    async def _process_input_image(self, image_input: Any, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
         """Process input image and convert to base64 with mime type.
 
         Args:
             image_input: The image input to process
-            strict: If True, raises ValueError for oversized images instead of returning None
+            auto_image_resize: If False, raises ValueError for oversized images instead of auto-resizing
 
         Returns:
             Tuple of (mime_type, base64_data) or None if processing fails
 
         Raises:
-            ValueError: If strict is True and the image exceeds the size limit
+            ValueError: If auto_image_resize is False and the image exceeds the size limit
         """
         if not image_input:
             return None
