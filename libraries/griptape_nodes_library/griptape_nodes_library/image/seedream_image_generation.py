@@ -529,7 +529,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if model in ("seedream-4.5", "seedream-4.0"):
             # Add sequential image generation configuration
             payload["sequential_image_generation"] = params["sequential_image_generation"]
-            payload["sequential_image_generation_config"] = params["sequential_image_generation_config"]
+            payload["sequential_image_generation_options"] = params["sequential_image_generation_options"]
 
             # Add multiple images if provided for v4.5/v4.0
             images = params.get("images", [])
