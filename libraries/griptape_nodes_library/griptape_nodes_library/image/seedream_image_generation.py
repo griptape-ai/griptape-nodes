@@ -103,7 +103,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
-        - image_url (ImageUrlArtifact): Generated image as URL artifact
+        - image_url (ImageUrlArtifact): First generated image as URL artifact (for backwards compatibility)
+        - output_images (list[ImageUrlArtifact]): All generated images as URL artifacts
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -249,6 +250,18 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 output_type="ImageUrlArtifact",
                 type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"is_full_width": True, "pulse_on_run": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="output_images",
+                output_type="list[ImageUrlArtifact]",
+                type="list[ImageUrlArtifact]",
+                tooltip="All generated images (seedream-4.0 and seedream-4.5 only)",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
                 ui_options={"is_full_width": True, "pulse_on_run": True},
@@ -415,6 +428,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
             "watermark": False,
+            "sequential_image_generation": "auto",
         }
 
         # Get image list for seedream-4.5 and seedream-4.0
@@ -671,75 +685,100 @@ class SeedreamImageGeneration(SuccessFailureNode):
             response = await client.get(result_url, headers=headers, timeout=60)
             response.raise_for_status()
             result_json = response.json()
-
-            # Update provider_response with the final result
-            self.parameter_output_values["provider_response"] = result_json
-
-            # Extract image data (expecting single image)
-            data = result_json.get("data", [])
-            if not data:
-                self._log("No image data in result")
-                self.parameter_output_values["image_url"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Generation completed but no image data was found in the response.",
-                )
-                return
-
-            # Take first image from response
-            image_data = data[0]
-
-            # Always using URL format
-            image_url = image_data.get("url")
-            if image_url:
-                await self._save_image_from_url(image_url, generation_id)
-            else:
-                self._log("No image URL in result")
-                self.parameter_output_values["image_url"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Generation completed but no image URL was found in the response.",
-                )
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
             self._set_safe_defaults()
             error_msg = f"Failed to fetch generation result: HTTP {e.response.status_code}"
             self._set_status_results(was_successful=False, result_details=error_msg)
+            return
         except Exception as e:
             self._log(f"Error fetching result: {e}")
             self._set_safe_defaults()
             error_msg = f"Failed to fetch generation result: {e}"
             self._set_status_results(was_successful=False, result_details=error_msg)
+            return
 
-    async def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
-        """Download and save the image from the provided URL."""
-        try:
-            self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if image_bytes:
-                filename = (
-                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved image to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
-                )
-        except Exception as e:
-            self._log(f"Failed to save image from URL: {e}")
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+        # Update provider_response with the final result
+        self.parameter_output_values["provider_response"] = result_json
+
+        # Extract image data
+        data = result_json.get("data", [])
+        if not data:
+            self._log("No image data in result")
+            self._set_safe_defaults()
             self._set_status_results(
-                was_successful=True,
-                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
+                was_successful=False,
+                result_details="Generation completed but no image data was found in the response.",
             )
+            return
+
+        # Process all images from the response
+        image_artifacts = []
+        for idx, image_data in enumerate(data):
+            image_url = image_data.get("url")
+            if not image_url:
+                self._log(f"No URL found for image {idx}")
+                continue
+
+            artifact = await self._save_single_image_from_url(image_url, generation_id, idx)
+            if artifact:
+                image_artifacts.append(artifact)
+
+        if not image_artifacts:
+            self._log("No images could be saved")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no image URLs were found in the response.",
+            )
+            return
+
+        # Set output parameters
+        self.parameter_output_values["image_url"] = image_artifacts[0]
+        self.parameter_output_values["output_images"] = image_artifacts
+
+        # Set success status
+        count = len(image_artifacts)
+        filenames = [artifact.name for artifact in image_artifacts]
+        if count == 1:
+            details = f"Image generated successfully and saved as {filenames[0]}."
+        else:
+            details = f"Generated {count} images successfully: {', '.join(filenames)}."
+        self._set_status_results(was_successful=True, result_details=details)
+
+    async def _save_single_image_from_url(
+        self, image_url: str, generation_id: str | None = None, index: int = 0
+    ) -> ImageUrlArtifact | None:
+        """Download and save a single image from the provided URL.
+
+        Args:
+            image_url: URL of the image to download
+            generation_id: Optional generation ID for filename
+            index: Index of the image in multi-image response
+
+        Returns:
+            ImageUrlArtifact with saved image, or None if download/save fails
+        """
+        try:
+            self._log(f"Downloading image {index} from URL")
+            image_bytes = await self._download_bytes_from_url(image_url)
+            if not image_bytes:
+                self._log(f"Could not download image {index}, using provider URL")
+                return ImageUrlArtifact(value=image_url)
+
+            if generation_id:
+                filename = f"seedream_image_{generation_id}_{index}.jpg"
+            else:
+                filename = f"seedream_image_{int(time.time())}_{index}.jpg"
+
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            self._log(f"Saved image {index} to static storage as {filename}")
+            return ImageUrlArtifact(value=saved_url, name=filename)
+
+        except Exception as e:
+            self._log(f"Failed to save image {index} from URL: {e}")
+            return ImageUrlArtifact(value=image_url)
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
@@ -877,6 +916,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["image_url"] = None
+        self.parameter_output_values["output_images"] = []
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
