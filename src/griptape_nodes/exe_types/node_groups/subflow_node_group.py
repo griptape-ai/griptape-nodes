@@ -951,67 +951,59 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        try:
-            subflow = self.metadata.get("subflow_name")
-            if subflow is not None and isinstance(subflow, str):
-                result = await GriptapeNodes.FlowManager().on_start_local_subflow_request(
-                    StartLocalSubflowRequest(flow_name=subflow)
-                )
+        subflow = self.metadata.get("subflow_name")
+        if subflow is not None and isinstance(subflow, str):
+            result = await GriptapeNodes.FlowManager().on_start_local_subflow_request(
+                StartLocalSubflowRequest(flow_name=subflow)
+            )
 
-                if isinstance(result, StartLocalSubflowResultFailure):
-                    msg = f"{self.name} subflow execution failed: {result.result_details}"
-                    raise RuntimeError(msg)  # noqa: TRY301
+            if isinstance(result, StartLocalSubflowResultFailure):
+                logger.error("%s: %s", self.name, result.result_details)
+                # Store error for debugging
+                if self.metadata is None:
+                    self.metadata = {}
+                self.metadata["last_error"] = result.result_details
+                # Clear partial outputs to prevent inconsistent state
+                self.parameter_output_values.clear()
+                # Re-raise the error message directly without wrapping
+                msg = result.result_details
+                raise RuntimeError(msg)
 
-            # After subflow execution, collect output values from internal nodes
-            # and set them on the NodeGroup's output (right) proxy parameters
-            connections = GriptapeNodes.FlowManager().get_connections()
+        # After subflow execution, collect output values from internal nodes
+        # and set them on the NodeGroup's output (right) proxy parameters
+        connections = GriptapeNodes.FlowManager().get_connections()
 
-            # Get all right parameters (output parameters)
-            right_params = self.metadata.get("right_parameters", [])
-            for proxy_param_name in right_params:
-                proxy_param = self.get_parameter_by_name(proxy_param_name)
-                if proxy_param is None:
+        # Get all right parameters (output parameters)
+        right_params = self.metadata.get("right_parameters", [])
+        for proxy_param_name in right_params:
+            proxy_param = self.get_parameter_by_name(proxy_param_name)
+            if proxy_param is None:
+                continue
+
+            # Find the internal node connected to this proxy parameter
+            # The internal connection goes: InternalNode -> ProxyParameter
+            incoming_connections = connections.get_incoming_connections_to_parameter(self, proxy_param)
+            if not incoming_connections:
+                continue
+
+            # Get the first connection (there should only be one internal connection)
+            for connection in incoming_connections:
+                if not connection.is_node_group_internal:
                     continue
 
-                # Find the internal node connected to this proxy parameter
-                # The internal connection goes: InternalNode -> ProxyParameter
-                incoming_connections = connections.get_incoming_connections_to_parameter(self, proxy_param)
-                if not incoming_connections:
-                    continue
+                # Get the value from the internal node's output parameter
+                internal_node = connection.source_node
+                internal_param = connection.source_parameter
 
-                # Get the first connection (there should only be one internal connection)
-                for connection in incoming_connections:
-                    if not connection.is_node_group_internal:
-                        continue
+                if internal_param.name in internal_node.parameter_output_values:
+                    value = internal_node.parameter_output_values[internal_param.name]
+                else:
+                    value = internal_node.get_parameter_value(internal_param.name)
 
-                    # Get the value from the internal node's output parameter
-                    internal_node = connection.source_node
-                    internal_param = connection.source_parameter
-
-                    if internal_param.name in internal_node.parameter_output_values:
-                        value = internal_node.parameter_output_values[internal_param.name]
-                    else:
-                        value = internal_node.get_parameter_value(internal_param.name)
-
-                    # Set the value on the NodeGroup's proxy parameter output
-                    if value is not None:
-                        self.parameter_output_values[proxy_param_name] = value
-                    break
-
-        except Exception as e:
-            logger.exception("%s subflow execution failed", self.name)
-
-            # Store error for debugging
-            if self.metadata is None:
-                self.metadata = {}
-            self.metadata["last_error"] = str(e)
-
-            # Clear partial outputs to prevent inconsistent state
-            self.parameter_output_values.clear()
-
-            # Re-raise with context
-            msg = f"{self.name} subflow execution failed: {e}"
-            raise RuntimeError(msg) from e
+                # Set the value on the NodeGroup's proxy parameter output
+                if value is not None:
+                    self.parameter_output_values[proxy_param_name] = value
+                break
 
     @abstractmethod
     async def aprocess(self) -> None:

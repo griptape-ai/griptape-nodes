@@ -1,6 +1,16 @@
+from enum import StrEnum
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+
+
+class WorkflowState(StrEnum):
+    """Workflow execution states."""
+
+    NO_ERROR = "no_error"
+    WORKFLOW_COMPLETE = "workflow_complete"
+    ERRORED = "errored"
+    CANCELED = "canceled"
 
 
 class State:
