@@ -271,7 +271,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                     tooltip=f"Generated image {i}",
                     allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                     settable=False,
-                    ui_options={"is_full_width": True, "pulse_on_run": True, "hide": i > 1},
+                    ui_options={"pulse_on_run": True, "hide": i > 1},
                 )
             )
 
