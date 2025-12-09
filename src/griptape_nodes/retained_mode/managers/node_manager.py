@@ -2060,6 +2060,7 @@ class NodeManager:
             return SetParameterValueResultFailure(result_details=details)
 
         # Validate artifact file path/URL accessibility during initial setup (flow loading)
+        # This happens on flow setup, because that's when we could be receiving artifacts that we don't have access to.
         if request.initial_setup and is_image_or_video_url_artifact(finalized_value):
             try:
                 extracted_url = default_extract_url_from_artifact_value(
