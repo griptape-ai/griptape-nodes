@@ -28,7 +28,6 @@ class DiscoveredLibrary(NamedTuple):
     """Information about a discovered library."""
 
     path: Path
-    is_sandbox: bool
 
 
 @dataclass
@@ -270,6 +269,48 @@ class LoadMetadataForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPa
     This indicates a systemic failure (e.g., configuration access issues)
     rather than individual library loading failures, which are captured
     in the success result's failed_libraries list.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSandboxDirectoryRequest(RequestPayload):
+    """Scan sandbox directory and generate/update library metadata.
+
+    This request triggers a scan of a sandbox directory,
+    discovers Python files, and either creates a new library schema or
+    merges with an existing griptape_nodes_library.json if present.
+
+    Use when: Manually triggering sandbox refresh, testing sandbox setup,
+    forcing regeneration of sandbox library metadata.
+
+    Args:
+        directory_path: Path to sandbox directory to scan (required).
+
+    Results: ScanSandboxDirectoryResultSuccess | ScanSandboxDirectoryResultFailure
+    """
+
+    directory_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSandboxDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Sandbox directory scanned successfully.
+
+    Args:
+        library_schema: The generated or merged LibrarySchema
+    """
+
+    library_schema: LibrarySchema
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSandboxDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Sandbox directory scan failed.
+
+    Common causes: directory doesn't exist, no Python files found, internal error.
     """
 
 
@@ -606,26 +647,29 @@ class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayload
 @dataclass
 @PayloadRegistry.register
 class LoadLibraryRequest(RequestPayload):
-    """Load a single library by name, progressing it through all lifecycle phases.
+    """Load a single library by name or path, progressing it through all lifecycle phases.
+
+    This request supports lazy loading - if LibraryInfo doesn't exist in tracking dict,
+    it will be created during loading.
 
     This request will:
     1. Check if library is already loaded (in LibraryRegistry) → immediate success
-    2. Check if library is discovered (in LibraryInfo tracking)
+    2. Look up or create LibraryInfo in tracking dict (by name or path)
     3. If not found and perform_discovery_if_not_found=True, issue DiscoverLibrariesRequest and retry
     4. Progress library through lifecycle phases: Discovered → Metadata Loaded → Evaluated → Dependencies Installed → Loaded
     5. Return success once library is in LibraryRegistry, or failure with detailed error
 
     Args:
-        library_name: Name of library to load (must match library JSON 'name' field)
+        library_name: Name of library to load (must match library JSON 'name' field). If not provided, must provide library_path.
+        library_path: Path to library JSON file. If provided, will load metadata to get library_name.
         perform_discovery_if_not_found: If True and library not found, trigger discovery first (default: False)
-        is_sandbox_library: If True, use sandbox library generation instead of standard registration (default: False)
 
     Results: LoadLibraryResultSuccess | LoadLibraryResultFailure
     """
 
-    library_name: str
+    library_name: str | None = None
+    library_path: str | None = None
     perform_discovery_if_not_found: bool = False
-    is_sandbox_library: bool = False
 
 
 @dataclass
