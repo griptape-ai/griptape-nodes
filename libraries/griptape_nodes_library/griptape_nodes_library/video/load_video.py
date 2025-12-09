@@ -4,10 +4,10 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.retained_mode.utils.artifact_accessibility_validator import default_extract_url_from_artifact_value
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
-    default_extract_url_from_artifact_value,
 )
 from griptape_nodes_library.utils.video_utils import SUPPORTED_VIDEO_EXTENSIONS, dict_to_video_url_artifact
 
