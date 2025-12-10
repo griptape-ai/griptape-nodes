@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
@@ -17,6 +18,18 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class FlowMetadataExtractionFailureReason(StrEnum):
+    """Reasons why flow metadata extraction from image failed."""
+
+    FILE_NOT_FOUND = "file_not_found"
+    FILE_READ_ERROR = "file_read_error"
+    INVALID_IMAGE_FORMAT = "invalid_image_format"
+    NO_FLOW_METADATA = "no_flow_metadata"
+    INVALID_BASE64 = "invalid_base64"
+    INVALID_PICKLE = "invalid_pickle"
+    DESERIALIZATION_FAILED = "deserialization_failed"
 
 
 @dataclass(kw_only=True)
@@ -286,6 +299,66 @@ class DeserializeFlowFromCommandsResultSuccess(WorkflowAlteredMixin, ResultPaylo
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsResultFailure(ResultPayloadFailure):
     pass
+
+
+@dataclass
+@PayloadRegistry.register
+class ExtractFlowCommandsFromImageMetadataRequest(RequestPayload):
+    """Extract flow commands from PNG image metadata.
+
+    This request reads a PNG image file, extracts the embedded workflow metadata
+    (specifically the gtn_flow_commands field), decodes it from base64, unpickles it,
+    and returns the SerializedFlowCommands object. Optionally, it can automatically
+    deserialize the flow by calling DeserializeFlowFromCommandsRequest.
+
+    Use when: Loading flow commands from an exported image, inspecting workflow
+    structure before deserialization, extracting flows shared as PNG files.
+
+    Args:
+        file_url_or_path: Path to the PNG image file (absolute or relative) or URL
+        deserialize: If True, automatically deserialize the flow after extraction (default: False)
+
+    Results:
+        ExtractFlowCommandsFromImageMetadataResultSuccess - Commands extracted (and optionally deserialized)
+        ExtractFlowCommandsFromImageMetadataResultFailure - Extraction or deserialization failed
+    """
+
+    file_url_or_path: str
+    deserialize: bool = False
+
+
+@dataclass(kw_only=True)
+@PayloadRegistry.register
+class ExtractFlowCommandsFromImageMetadataResultSuccess(ResultPayloadSuccess):
+    """Flow commands extracted successfully from image metadata.
+
+    Args:
+        serialized_flow_commands: The extracted and decoded SerializedFlowCommands object
+        metadata_keys: List of all metadata keys found in the image (for debugging)
+        flow_name: Name of the deserialized flow (only present if deserialize=True)
+        node_name_mappings: Mapping from original to deserialized node names (only present if deserialize=True)
+        altered_workflow_state: Whether the workflow state was altered (True if deserialized, False otherwise)
+    """
+
+    serialized_flow_commands: SerializedFlowCommands
+    metadata_keys: list[str] = field(default_factory=list)
+    flow_name: str | None = None
+    node_name_mappings: dict[str, str] = field(default_factory=dict)
+    altered_workflow_state: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class ExtractFlowCommandsFromImageMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Flow commands extraction failed.
+
+    Args:
+        failure_reason: Specific reason for failure
+        file_path: The file path that was attempted (for error context)
+    """
+
+    failure_reason: FlowMetadataExtractionFailureReason
+    file_path: str
 
 
 @dataclass

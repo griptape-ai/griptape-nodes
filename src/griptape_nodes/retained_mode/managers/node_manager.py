@@ -3289,6 +3289,7 @@ class NodeManager:
         create_node_request: CreateNodeRequest,
         *,
         use_pickling: bool = False,
+        serialize_all_parameter_values: bool = False,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -3307,6 +3308,7 @@ class NodeManager:
             serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
             create_node_request (CreateNodeRequest): The node creation request that will be modified if serialization fails
             use_pickling (bool): If True, use pickle-based serialization; if False, use deep copy
+            serialize_all_parameter_values (bool): If True, save all parameter values regardless of whether they were explicitly set or match defaults
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map

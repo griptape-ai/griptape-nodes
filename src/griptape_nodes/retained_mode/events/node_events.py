@@ -553,6 +553,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
         node_name: Name of the node to serialize (None for current context node)
         unique_parameter_uuid_to_values: Mapping of UUIDs to unique parameter values (modified in-place)
         serialized_parameter_value_tracker: Tracks serialization state of parameter values
+        serialize_all_parameter_values: If True, save all parameter values regardless of whether they were explicitly set or match defaults (defaults to False for backward compatibility)
 
     Results: SerializeNodeToCommandsResultSuccess (with commands) | SerializeNodeToCommandsResultFailure (serialization error)
     """
@@ -565,6 +566,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
         default_factory=SerializedParameterValueTracker
     )
     use_pickling: bool = False
+    serialize_all_parameter_values: bool = False
 
 
 @dataclass

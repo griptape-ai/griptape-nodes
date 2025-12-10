@@ -1819,6 +1819,28 @@
       }
     },
     {
+      "class_name": "WriteImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/write_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Write custom key-value metadata to PNG images using PNG text chunks",
+        "display_name": "Write Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "ReadImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/read_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Read custom metadata from images (EXIF for JPEG/TIFF/MPO, PNG chunks for PNG)",
+        "display_name": "Read Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
       "metadata": {
@@ -1991,6 +2013,17 @@
         "description": "Log messages to the console with configurable log levels, timestamps, and formatting",
         "display_name": "Logger",
         "icon": "file-text",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "MapNode",
+      "file_path": "griptape_nodes_library/misc/map_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Display location on a map using latitude and longitude coordinates",
+        "display_name": "Map",
+        "icon": "map",
         "group": "create"
       }
     },

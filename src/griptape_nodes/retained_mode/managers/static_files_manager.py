@@ -224,6 +224,7 @@ class StaticFilesManager:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
         use_direct_save: bool = False,
+        skip_metadata_injection: bool = False,
     ) -> str:
         """Saves a static file to the workspace directory.
 
@@ -238,6 +239,8 @@ class StaticFilesManager:
                 - FAIL: Raise FileExistsError if file exists
             use_direct_save: If True, use direct storage driver save (new behavior).
                 If False, use presigned URL upload (legacy behavior). Defaults to False for backward compatibility.
+            skip_metadata_injection: If True, skip automatic workflow metadata injection.
+                Defaults to False. Used by nodes that handle metadata explicitly (e.g., WriteImageMetadataNode).
 
         Returns:
             The URL of the saved file for UI display (with cache-busting). Note: the actual filename
@@ -251,6 +254,22 @@ class StaticFilesManager:
         resolved_directory = self._get_static_files_directory()
         file_path = Path(resolved_directory) / file_name
 
+        # Inject workflow metadata if enabled (only when not using direct save)
+        if (
+            not use_direct_save
+            and self.config_manager.get_config_value("auto_inject_workflow_metadata", default=True)
+            and not skip_metadata_injection
+        ):
+            try:
+                from griptape_nodes.retained_mode.managers.image_metadata_injector import (
+                    inject_workflow_metadata_if_image,
+                )
+
+                data = inject_workflow_metadata_if_image(data, file_name)
+            except Exception as e:
+                logger.warning("Failed to inject workflow metadata into %s: %s", file_name, e)
+
+        # NEW BEHAVIOR: Direct save via storage driver
         if use_direct_save:
             try:
                 saved_path = self.storage_driver.save_file(file_path, data, existing_file_policy)
