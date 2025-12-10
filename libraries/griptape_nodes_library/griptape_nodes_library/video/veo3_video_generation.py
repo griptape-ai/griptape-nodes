@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json as _json
 import logging
 import os
-import time
 from contextlib import suppress
 from copy import deepcopy
-from time import monotonic, sleep
 from typing import Any
 from urllib.parse import urljoin
 
@@ -15,7 +14,7 @@ import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -63,7 +62,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         base_slash = base if base.endswith("/") else base + "/"
         api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
+        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -356,16 +355,16 @@ class Veo3VideoGeneration(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
+    async def aprocess(self) -> None:
+        """Main async processing entry point."""
+        await self._process()
 
-    def _process(self) -> None:
-        # Clear execution status at the start
+    async def _process(self) -> None:
+        """Core processing logic with three phases: submit, poll, fetch."""
+        # Phase 0: Clear execution status
         self._clear_execution_status()
 
-        # Get parameters and validate API key
-        params = self._get_parameters()
-
+        # Phase 0.5: Validate API key
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
@@ -373,6 +372,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
+
+        # Get parameters
+        params = self._get_parameters()
 
         # Validate model-specific parameter support
         try:
@@ -383,26 +385,29 @@ class Veo3VideoGeneration(SuccessFailureNode):
             self._handle_failure_exception(e)
             return
 
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
 
-        # Build and submit request
+        # Phase 1: Submit request to get generation_id
         try:
-            generation_id = self._submit_request(params, headers)
+            generation_id = await self._submit_request(params, headers)
             if not generation_id:
-                self.parameter_output_values["result"] = None
-                self.parameter_output_values["video_url"] = None
+                self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
+                    result_details="No generation_id returned from API",
                 )
                 return
         except RuntimeError as e:
+            self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
-        # Poll for result
-        self._poll_for_result(generation_id, headers)
+        # Phase 2 & 3: Poll for completion and fetch result
+        await self._poll_and_fetch(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
         generate_audio = self.get_parameter_value("generate_audio")
@@ -568,47 +573,44 @@ class Veo3VideoGeneration(SuccessFailureNode):
         else:
             return {"bytesBase64Encoded": base64_data, "mimeType": mime_type}
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
-        post_url = urljoin(self._proxy_base, f"models/{params['model_id']}")
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
+        """Phase 1: Submit generation request and get generation_id."""
+        model_id = params["model_id"]
         payload = self._build_payload(params)
 
-        self._log(f"Submitting request to proxy model={params['model_id']}")
-        self._log_request(post_url, headers, payload)
+        # Construct v2 proxy URL
+        proxy_url = urljoin(self._proxy_base, f"models/{model_id}")
+
+        logger.info(f"{self.name}: Submitting request to model proxy with model: {model_id}")
+        self._log_request(proxy_url, headers, payload)
 
         try:
-            with httpx.Client(timeout=60.0) as client:
-                post_resp = client.post(post_url, json=payload, headers=headers)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    proxy_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                response_json = response.json()
+        except httpx.HTTPStatusError as e:
+            # Extract error details from response
+            error_msg = self._extract_error_from_response(e.response)
+            raise RuntimeError(error_msg) from e
         except Exception as e:
-            self._set_safe_defaults()
-            msg = f"Failed to connect to proxy API: {e}"
-            raise RuntimeError(msg) from e
+            error_msg = f"{self.name} request failed: {e}"
+            raise RuntimeError(error_msg) from e
 
-        if post_resp.status_code >= 400:  # noqa: PLR2004
-            self._set_safe_defaults()
-            self._log(
-                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
-            )
-            try:
-                error_json = post_resp.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
-            raise RuntimeError(msg)
-
-        post_json = post_resp.json()
-        generation_id = str(post_json.get("generation_id") or "")
-        provider_response = post_json.get("provider_response")
-
-        self.parameter_output_values["generation_id"] = generation_id
-        self.parameter_output_values["provider_response"] = provider_response
-
+        # Extract generation_id
+        generation_id = response_json.get("generation_id")
         if generation_id:
-            self._log(f"Submitted. generation_id={generation_id}")
-        else:
-            self._log("No generation_id returned from POST response")
+            self.parameter_output_values["generation_id"] = str(generation_id)
+            logger.info(f"{self.name}: Submitted, generation_id={generation_id}")
+            return str(generation_id)
 
-        return generation_id
+        logger.warning(f"{self.name}: No generation_id in response")
+        return None
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: C901, PLR0912
         # Build instances object with prompt
@@ -679,37 +681,6 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         return {"instances": [instance], "parameters": parameters}
 
-    def _prepare_image_url(self, image_input: Any) -> str | None:
-        """Convert image input to a usable URL, handling inlining of external URLs."""
-        if not image_input:
-            return None
-
-        image_url = self._coerce_image_url_or_data_uri(image_input)
-        if not image_url:
-            return None
-
-        return self._inline_external_url(image_url)
-
-    def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            return url
-
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.get(url)
-                resp.raise_for_status()
-
-            ct = (resp.headers.get("content-type") or "image/jpeg").split(";")[0]
-            if not ct.startswith("image/"):
-                ct = "image/jpeg"
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            self._log("Image URL converted to data URI for proxy")
-        except Exception as e:
-            self._log(f"Warning: failed to inline image URL: {e}")
-            return url
-        else:
-            return f"data:{ct};base64,{b64}"
-
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:  # noqa: C901
         def _sanitize_body(b: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
             try:
@@ -747,76 +718,166 @@ class Veo3VideoGeneration(SuccessFailureNode):
             sanitized["bytesBase64Encoded"] = f"<redacted base64 length={len(b64_data)}>"
         return sanitized
 
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
+    async def _poll_and_fetch(self, generation_id: str, headers: dict[str, str]) -> None:
+        """Phase 2 & 3: Poll for completion, then fetch result."""
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = monotonic()
-        last_json = None
-        attempt = 0
-        poll_interval_s = 5.0
-        timeout_s = 600.0
+        max_attempts = 120  # 10 minutes with 5s intervals
+        poll_interval = 5
 
-        while True:
-            if monotonic() - start_time > timeout_s:
-                self.parameter_output_values["video_url"] = self._extract_video_url(last_json)
-                self._log("Polling timed out waiting for result")
-                self._set_status_results(
-                    was_successful=False,
-                    result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
-                )
-                return
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_attempts):
+                try:
+                    logger.debug(f"{self.name}: Polling attempt #{attempt + 1} for generation {generation_id}")
 
-            try:
-                with httpx.Client(timeout=60.0) as client:
-                    get_resp = client.get(get_url, headers=headers)
-                    get_resp.raise_for_status()
+                    # Poll for status
+                    response = await client.get(get_url, headers=headers, timeout=60)
+                    response.raise_for_status()
+                    result_json = response.json()
 
-                    # Check if response is the video itself (application/octet-stream)
-                    content_type = get_resp.headers.get("content-type", "")
-                    if "application/octet-stream" in content_type:
-                        self._log("Received video as application/octet-stream")
-                        video_bytes = get_resp.content
-                        self._handle_video_bytes_completion(video_bytes, generation_id)
+                    # Log the generation status response
+                    logger.info("%s: Generation status response:\n%s", self.name, _json.dumps(result_json, indent=2))
+
+                    # Update provider_response with latest polling data
+                    self.parameter_output_values["provider_response"] = result_json
+
+                    status = result_json.get("status", "unknown")
+                    logger.debug("%s: Status=%s", self.name, status)
+
+                    if status == "COMPLETED":
+                        # Fetch final result
+                        await self._fetch_result(generation_id, headers, client)
                         return
 
-                    # Otherwise, parse as JSON and continue polling
-                    last_json = get_resp.json()
-                # Update provider_response with latest polling data
-                self.parameter_output_values["provider_response"] = last_json
-            except Exception as exc:
-                self._log(f"GET generation failed: {exc}")
-                error_msg = f"Failed to poll generation status: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
+                    if status in ["FAILED", "ERROR"]:
+                        logger.error(f"{self.name}: Generation failed: {status}")
+                        self._set_safe_defaults()
+                        error_details = self._extract_error_details(result_json)
+                        self._set_status_results(was_successful=False, result_details=error_details)
+                        return
 
-            with suppress(Exception):
-                self._log(f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}")
+                    # Still processing (QUEUED or RUNNING)
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(poll_interval)
 
-            # Check if done
-            is_done = self._is_done(last_json)
-            status = self._extract_status(last_json) or "running"
-            attempt += 1
-            self._log(f"Polling attempt #{attempt} status={status} done={is_done}")
+                except httpx.HTTPStatusError as e:
+                    logger.error(f"{self.name}: HTTP error while polling: {e.response.status_code}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        self._set_status_results(
+                            was_successful=False,
+                            result_details=f"Polling failed: HTTP {e.response.status_code}",
+                        )
+                        return
+                except Exception as e:
+                    logger.error(f"{self.name}: Polling error: {e}")
+                    if attempt == max_attempts - 1:
+                        self._set_safe_defaults()
+                        self._set_status_results(
+                            was_successful=False,
+                            result_details=f"Polling failed: {e}",
+                        )
+                        return
 
-            # Check for explicit failure statuses
-            if status.lower() in {"failed", "error"}:
-                self._log(f"Generation failed with status: {status}")
-                self.parameter_output_values["video_url"] = None
-                error_details = self._extract_error_details(last_json)
-                self._set_status_results(was_successful=False, result_details=error_details)
-                return
+            # Timeout reached
+            logger.error(f"{self.name}: Polling timed out")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Generation timed out after {max_attempts * poll_interval}s",
+            )
 
-            if is_done or status.lower() in {"succeeded", "success", "completed"}:
-                self._handle_completion(last_json, generation_id)
-                return
+    async def _fetch_result(
+        self,
+        generation_id: str,
+        headers: dict[str, str],
+        client: httpx.AsyncClient,
+    ) -> None:
+        """Phase 3: Fetch final result from /result endpoint."""
+        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
+        logger.info(f"{self.name}: Fetching result from {result_url}")
 
-            sleep(poll_interval_s)
+        try:
+            response = await client.get(result_url, headers=headers, timeout=60)
+            response.raise_for_status()
+            result_json = response.json()
 
-    def _is_done(self, obj: dict[str, Any] | None) -> bool:
-        """Check if the generation is done based on the 'done' field."""
-        if not isinstance(obj, dict):
-            return False
-        return obj.get("done", False) is True
+            # Log the generation result response
+            logger.info("%s: Generation result response:\n%s", self.name, _json.dumps(result_json, indent=2))
+        except httpx.HTTPStatusError as e:
+            logger.error(f"{self.name}: HTTP error fetching result: {e.response.status_code}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to fetch result: HTTP {e.response.status_code}",
+            )
+            return
+        except Exception as e:
+            logger.error(f"{self.name}: Error fetching result: {e}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to fetch result: {e}",
+            )
+            return
+
+        # Update provider_response with final result
+        self.parameter_output_values["provider_response"] = result_json
+
+        # Check for RAI (Responsible AI) filtering or rejection
+        rai_rejection_reason = self._extract_rai_rejection_reason(result_json)
+        if rai_rejection_reason:
+            self.parameter_output_values["video_url"] = None
+            self._set_status_results(was_successful=False, result_details=rai_rejection_reason)
+            return
+
+        # Extract video URL from the result
+        extracted_url = self._extract_video_url(result_json)
+        if not extracted_url:
+            logger.warning(f"{self.name}: No video URL in result")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no video URL found in response",
+            )
+            return
+
+        # Download and save to static storage
+        artifact = await self._save_video(extracted_url, generation_id)
+        if not artifact:
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Failed to save video",
+            )
+            return
+
+        # Set success outputs
+        self.parameter_output_values["video_url"] = artifact
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Video generated successfully: {artifact.name}",
+        )
+
+    async def _save_video(self, url: str, generation_id: str) -> VideoUrlArtifact | None:
+        """Download video from URL and save to static storage."""
+        try:
+            logger.info(f"{self.name}: Downloading video from provider URL")
+            video_bytes = await self._download_bytes_from_url(url)
+            if not video_bytes:
+                logger.warning(f"{self.name}: Could not download video, using provider URL")
+                return VideoUrlArtifact(value=url)
+
+            # Save to static storage
+            filename = f"veo3_video_{generation_id}.mp4"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+
+            logger.info(f"{self.name}: Saved video as {filename}")
+            return VideoUrlArtifact(value=saved_url, name=filename)
+
+        except Exception as e:
+            logger.error(f"{self.name}: Failed to save video: {e}")
+            return VideoUrlArtifact(value=url)
 
     def _extract_rai_rejection_reason(self, obj: dict[str, Any] | None) -> str | None:
         """Extract RAI (Responsible AI) filtering/rejection reasons from the response.
@@ -848,152 +909,42 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         return None
 
-    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
-        # Check for RAI (Responsible AI) filtering or rejection
-        rai_rejection_reason = self._extract_rai_rejection_reason(last_json)
-        if rai_rejection_reason:
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(was_successful=False, result_details=rai_rejection_reason)
-            return
-
-        extracted_url = self._extract_video_url(last_json)
-        if not extracted_url:
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no video URL was found in the response.",
-            )
-            return
-
-        try:
-            self._log("Downloading video bytes from provider URL")
-            video_bytes = self._download_bytes_from_url(extracted_url)
-        except Exception as e:
-            self._log(f"Failed to download video: {e}")
-            video_bytes = None
-
-        if video_bytes:
-            try:
-                filename = f"veo3_video_{generation_id}.mp4" if generation_id else f"veo3_video_{int(time.time())}.mp4"
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                self._log(f"Failed to save to static storage: {e}, using provider URL")
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
-        else:
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
-            self._set_status_results(
-                was_successful=True,
-                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
-            )
-
-    def _handle_video_bytes_completion(self, video_bytes: bytes, generation_id: str | None = None) -> None:
-        """Handle completion when video bytes are received directly in the response."""
-        if not video_bytes:
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no video data was received.",
-            )
-            return
-
-        try:
-            filename = f"veo3_video_{generation_id}.mp4" if generation_id else f"veo3_video_{int(time.time())}.mp4"
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved video to static storage as {filename}")
-            self._set_status_results(
-                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-            )
-        except Exception as e:
-            self._log(f"Failed to save video to static storage: {e}")
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Video was generated but could not be saved to static storage: {e}",
-            )
-
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response."""
+        """Extract detailed error message from API response.
+
+        The v2 API provides errors in status_detail field.
+        """
         if not response_json:
-            return f"{self.name} failed with no error details provided by API."
+            return f"{self.name}: Generation failed with no error details"
 
+        # Check v2 API status_detail first (for FAILED/ERROR statuses)
+        status_detail = response_json.get("status_detail")
+        if status_detail:
+            return f"{self.name}: Generation failed\n\n{_json.dumps(status_detail, indent=2)}"
+
+        # Check top-level error field
         top_level_error = response_json.get("error")
-        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
-
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
         if top_level_error:
-            return self._format_top_level_error(top_level_error)
+            if isinstance(top_level_error, dict):
+                return f"{self.name}: {_json.dumps(top_level_error, indent=2)}"
+            return f"{self.name}: {top_level_error}"
 
         # Final fallback
         status = self._extract_status(response_json) or "unknown"
-        return f"{self.name} failed with status '{status}'.\n\nFull API response:\n{response_json}"
+        return f"{self.name}: Generation failed with status '{status}'"
 
-    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
-        """Parse provider_response if it's a JSON string."""
-        if isinstance(provider_response, str):
-            try:
-                return _json.loads(provider_response)
-            except Exception:
-                return None
-        if isinstance(provider_response, dict):
-            return provider_response
-        return None
-
-    def _format_provider_error(
-        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
-    ) -> str | None:
-        """Format error message from parsed provider response."""
-        if not parsed_provider_response:
-            return None
-
-        provider_error = parsed_provider_response.get("error")
-        if not provider_error:
-            return None
-
-        if isinstance(provider_error, dict):
-            error_message = provider_error.get("message", "")
-            details = f"{self.name}: {error_message}"
-
-            if error_code := provider_error.get("code"):
-                details += f"\nError Code: {error_code}"
-            if error_type := provider_error.get("type"):
-                details += f"\nError Type: {error_type}"
-            if top_level_error:
-                details = f"{top_level_error}\n\n{details}"
-            return details
-
-        error_msg = str(provider_error)
-        if top_level_error:
-            return f"{self.name}: {top_level_error}\n\nProvider error: {error_msg}"
-        return f"{self.name} failed. Provider error: {error_msg}"
-
-    def _format_top_level_error(self, top_level_error: Any) -> str:
-        """Format error message from top-level error field."""
-        if isinstance(top_level_error, dict):
-            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
-            return f"{self.name} failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
-        return f"{self.name} failed with error: {top_level_error!s}"
+    def _extract_error_from_response(self, response: httpx.Response) -> str:
+        """Extract error message from HTTP error response."""
+        try:
+            error_json = response.json()
+            return self._extract_error_details(error_json)
+        except Exception:
+            return f"{self.name}: API error: {response.status_code} - {response.text}"
 
     def _set_safe_defaults(self) -> None:
+        """Set safe default values for all outputs on error."""
         self.parameter_output_values["generation_id"] = ""
-        self.parameter_output_values["result"] = None
-        self.parameter_output_values["status"] = "error"
+        self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video_url"] = None
 
     @staticmethod
@@ -1007,7 +958,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
     def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
         """Extract video URL from Veo3 response.
 
-        Expected path: response.generateVideoResponse.generatedSamples[0].video_uri
+        Expected path: response.generateVideoResponse.generatedSamples[0].video.uri
         """
         if not obj or not isinstance(obj, dict):
             return None
@@ -1023,8 +974,15 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 return None
 
             first_sample = generated_samples[0]
-            video_uri = first_sample.get("video_uri") if isinstance(first_sample, dict) else None
+            if not isinstance(first_sample, dict):
+                return None
 
+            # Extract video.uri from the sample
+            video_obj = first_sample.get("video")
+            if not isinstance(video_obj, dict):
+                return None
+
+            video_uri = video_obj.get("uri")
             if isinstance(video_uri, str) and video_uri.startswith("http"):
                 return video_uri
 
@@ -1034,37 +992,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
         return None
 
     @staticmethod
-    def _coerce_image_url_or_data_uri(val: Any) -> str | None:
-        if val is None:
-            return None
-
-        # String handling
-        if isinstance(val, str):
-            v = val.strip()
-            if not v:
-                return None
-            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
-
-        # Artifact-like objects
+    async def _download_bytes_from_url(url: str) -> bytes | None:
+        """Download bytes from a URL."""
         try:
-            # ImageUrlArtifact: .value holds URL string
-            v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
-                return v
-            # ImageArtifact: .base64 holds raw or data-URI
-            b64 = getattr(val, "base64", None)
-            if isinstance(b64, str) and b64:
-                return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
-        except Exception:  # noqa: S110
-            pass
-
-        return None
-
-    @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
-        try:
-            with httpx.Client(timeout=120.0) as client:
-                resp = client.get(url)
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=300)  # 5 minutes
                 resp.raise_for_status()
                 return resp.content
         except Exception:
