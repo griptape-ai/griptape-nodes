@@ -76,6 +76,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             "start_flow_node": "StartFlow",
             "parameter_names": {},
         }
+        self.metadata["executable"] = True
 
         # Don't create subflow in __init__ - it will be created on-demand when nodes are added
         # or restored during deserialization
@@ -945,14 +946,25 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         Can be called by concrete subclasses in their aprocess() implementation.
         """
-        from griptape_nodes.retained_mode.events.execution_events import StartLocalSubflowRequest
+        from griptape_nodes.retained_mode.events.execution_events import (
+            StartLocalSubflowRequest,
+            StartLocalSubflowResultFailure,
+        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         subflow = self.metadata.get("subflow_name")
         if subflow is not None and isinstance(subflow, str):
-            await GriptapeNodes.FlowManager().on_start_local_subflow_request(
+            result = await GriptapeNodes.FlowManager().on_start_local_subflow_request(
                 StartLocalSubflowRequest(flow_name=subflow)
             )
+
+            if isinstance(result, StartLocalSubflowResultFailure):
+                logger.error("%s: %s", self.name, result.result_details)
+                # Clear partial outputs to prevent inconsistent state
+                self.parameter_output_values.clear()
+                # Re-raise the error message directly without wrapping
+                msg = result.result_details
+                raise RuntimeError(msg)
 
         # After subflow execution, collect output values from internal nodes
         # and set them on the NodeGroup's output (right) proxy parameters

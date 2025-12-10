@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.fsm import FSM, State, WorkflowState
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -42,10 +42,14 @@ class Focus:
 class ResolutionContext:
     focus_stack: list[Focus]
     paused: bool
+    error_message: str | None
+    workflow_state: WorkflowState
 
     def __init__(self) -> None:
         self.focus_stack = []
         self.paused = False
+        self.error_message = None
+        self.workflow_state = WorkflowState.NO_ERROR
 
     @property
     def current_node(self) -> BaseNode:
@@ -62,6 +66,8 @@ class ResolutionContext:
             node.clear_node()
         self.focus_stack.clear()
         self.paused = False
+        self.error_message = None
+        self.workflow_state = WorkflowState.NO_ERROR
 
 
 class InitializeSpotlightState(State):
@@ -260,7 +266,10 @@ class ExecuteNodeState(State):
 
         exceptions = current_node.validate_before_node_run()
         if exceptions:
-            msg = f"Canceling flow run. Node '{current_node.name}' encountered problems: {exceptions}"
+            msg = f"Node '{current_node.name}' encountered problems: {exceptions}"
+            logger.error("Canceling flow run. %s", msg)
+            context.error_message = msg
+            context.workflow_state = WorkflowState.ERRORED
             # Mark the node as unresolved, broadcasting to everyone.
             raise RuntimeError(msg)
         if not context.paused:
@@ -268,7 +277,7 @@ class ExecuteNodeState(State):
         return None
 
     @staticmethod
-    async def on_update(context: ResolutionContext) -> type[State] | None:
+    async def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Once everything has been set
@@ -305,10 +314,21 @@ class ExecuteNodeState(State):
                         wrapped_event=ExecutionEvent(payload=NodeFinishProcessEvent(node_name=current_node.name))
                     )
                 )
+                msg = f"Node '{current_node.name}' encountered a problem that cancelled the task."
+                context.error_message = msg
+                context.workflow_state = WorkflowState.ERRORED
+                # Mark the node as unresolved, broadcasting to everyone.
+                current_node.make_node_unresolved(
+                    current_states_to_trigger_change_event=set(
+                        {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                    )
+                )
                 return CompleteState
             except Exception as e:
                 logger.exception("Error processing node '%s", current_node.name)
                 msg = f"Node '{current_node.name}' encountered a problem: {e}"
+                context.error_message = msg
+                context.workflow_state = WorkflowState.ERRORED
                 # Mark the node as unresolved, broadcasting to everyone.
                 current_node.make_node_unresolved(
                     current_states_to_trigger_change_event=set(
@@ -448,6 +468,12 @@ class SequentialResolutionMachine(FSM[ResolutionContext]):
 
     def is_started(self) -> bool:
         return self._current_state is not None
+
+    def is_errored(self) -> bool:
+        return self._context.workflow_state == WorkflowState.ERRORED
+
+    def get_error_message(self) -> str | None:
+        return self._context.error_message
 
     # Unused argument but necessary for parallel_resolution because of futures ending during cancel but not reset.
     def reset_machine(self, *, cancel: bool = False) -> None:  # noqa: ARG002

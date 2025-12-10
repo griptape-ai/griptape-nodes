@@ -2542,11 +2542,22 @@ class FlowManager:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             return StartFlowResultFailure(validation_exceptions=[e], result_details=details)
 
+        if self._global_control_flow_machine:
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            if resolution_machine.is_errored():
+                error_message = resolution_machine.get_error_message()
+                result_details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {error_message} "
+                exception = RuntimeError(error_message)
+                # Pass through the error message without adding extra wrapping
+                return StartFlowResultFailure(
+                    validation_exceptions=[exception] if error_message else [], result_details=result_details
+                )
+
         details = f"Successfully kicked off flow with name {flow_name}"
 
         return StartFlowResultSuccess(result_details=details)
 
-    async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911
+    async def on_start_flow_from_node_request(self, request: StartFlowFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
         # which flow
         flow_name = request.flow_name
         if not flow_name:
@@ -2600,6 +2611,15 @@ class FlowManager:
         except Exception as e:
             details = f"Failed to kick off flow with name {flow_name}. Exception occurred: {e} "
             return StartFlowFromNodeResultFailure(validation_exceptions=[e], result_details=details)
+
+        if self._global_control_flow_machine:
+            resolution_machine = self._global_control_flow_machine.resolution_machine
+            if resolution_machine.is_errored():
+                error_message = resolution_machine.get_error_message()
+                # Pass through the error message without adding extra wrapping
+                return StartFlowFromNodeResultFailure(
+                    validation_exceptions=[], result_details=error_message or "Flow execution failed"
+                )
 
         details = f"Successfully kicked off flow with name {flow_name}"
 
@@ -2710,7 +2730,24 @@ class FlowManager:
 
         return start_nodes + control_nodes + valid_data_nodes
 
-    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:
+    def _validate_and_get_start_node(
+        self, flow_name: str, start_node_name: str | None, flow: ControlFlow
+    ) -> BaseNode | StartLocalSubflowResultFailure:
+        """Validate and get the start node for subflow execution."""
+        if start_node_name is None:
+            start_nodes = self.get_start_nodes_in_flow(flow)
+            if not start_nodes:
+                details = f"Cannot start subflow '{flow_name}'. No start nodes found in flow."
+                return StartLocalSubflowResultFailure(result_details=details)
+            return start_nodes[0]
+
+        try:
+            return GriptapeNodes.NodeManager().get_node_by_name(start_node_name)
+        except ValueError as err:
+            details = f"Cannot start subflow '{flow_name}'. Start node '{start_node_name}' not found: {err}"
+            return StartLocalSubflowResultFailure(result_details=details)
+
+    async def on_start_local_subflow_request(self, request: StartLocalSubflowRequest) -> ResultPayload:  # noqa: C901, PLR0911
         flow_name = request.flow_name
         if not flow_name:
             details = "Must provide flow name to start a flow."
@@ -2726,19 +2763,32 @@ class FlowManager:
             msg = "There must be a flow going to start a Subflow"
             return StartLocalSubflowResultFailure(result_details=msg)
 
-        start_node_name = request.start_node
-        if start_node_name is None:
-            start_nodes = self.get_start_nodes_in_flow(flow)
-            if not start_nodes:
-                details = f"Cannot start subflow '{flow_name}'. No start nodes found in flow."
-                return StartLocalSubflowResultFailure(result_details=details)
-            start_node = start_nodes[0]
-        else:
-            try:
-                start_node = GriptapeNodes.NodeManager().get_node_by_name(start_node_name)
-            except ValueError as err:
-                details = f"Cannot start subflow '{flow_name}'. Start node '{start_node_name}' not found: {err}"
-                return StartLocalSubflowResultFailure(result_details=details)
+        start_node = self._validate_and_get_start_node(flow_name, request.start_node, flow)
+        if isinstance(start_node, StartLocalSubflowResultFailure):
+            return start_node
+
+        # Run validation before starting the subflow
+        validation_result = await self.on_validate_flow_dependencies_request(
+            ValidateFlowDependenciesRequest(flow_name=flow_name, flow_node_name=start_node.name if start_node else None)
+        )
+        if validation_result.failed():
+            # Extract error details from the failed validation result
+            details = (
+                validation_result.result_details
+                if hasattr(validation_result, "result_details")
+                else f"Subflow '{flow_name}' validation failed"
+            )
+            return StartLocalSubflowResultFailure(result_details=details)
+
+        validation_result = cast("ValidateFlowDependenciesResultSuccess", validation_result)
+        if not validation_result.validation_succeeded:
+            # Build detailed error message with all validation exceptions
+            details_lines = []
+            if validation_result.exceptions:
+                for exception in validation_result.exceptions:
+                    details_lines.append(str(exception))  # noqa: PERF401 keeping in for loop for clarity.
+            details = "\n".join(details_lines) if details_lines else f"Subflow '{flow_name}' validation failed"
+            return StartLocalSubflowResultFailure(result_details=details)
 
         subflow_machine = ControlFlowMachine(
             flow.name,
@@ -2746,7 +2796,16 @@ class FlowManager:
             is_isolated=True,
         )
 
-        await subflow_machine.start_flow(start_node)
+        try:
+            await subflow_machine.start_flow(start_node)
+        except Exception as err:
+            msg = f"Failed to run flow {flow_name}. Error: {err}"
+            return StartLocalSubflowResultFailure(result_details=msg)
+
+        if subflow_machine.resolution_machine.is_errored():
+            error_message = subflow_machine.resolution_machine.get_error_message()
+            # Pass through the error message directly without wrapping
+            return StartLocalSubflowResultFailure(result_details=error_message or "Subflow errored during execution")
 
         return StartLocalSubflowResultSuccess(result_details=f"Successfully executed local subflow '{flow_name}'")
 
@@ -3686,6 +3745,20 @@ class FlowManager:
                 if self.check_for_existing_running_flow():
                     await self.cancel_flow_run()
                 raise RuntimeError(e) from e
+
+            if resolution_machine.is_errored():
+                error_message = resolution_machine.get_error_message()
+                logger.error("Node '%s' failed: %s", node.name, error_message)
+                self._global_single_node_resolution = False
+                self._global_control_flow_machine.context.current_nodes = []
+                GriptapeNodes.EventManager().put_event(
+                    ExecutionGriptapeNodeEvent(
+                        wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[]))
+                    )
+                )
+                # Re-raise with the original error message
+                raise RuntimeError(error_message or "Node resolution failed")
+
             if resolution_machine.is_complete():
                 self._global_single_node_resolution = False
                 self._global_control_flow_machine.context.current_nodes = []

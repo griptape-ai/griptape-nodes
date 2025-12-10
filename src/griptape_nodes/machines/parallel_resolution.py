@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
@@ -14,7 +13,7 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
-from griptape_nodes.machines.fsm import FSM, State
+from griptape_nodes.machines.fsm import FSM, State, WorkflowState
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -41,15 +40,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("griptape_nodes")
 
 
-class WorkflowState(StrEnum):
-    """Workflow execution states."""
-
-    NO_ERROR = "no_error"
-    WORKFLOW_COMPLETE = "workflow_complete"
-    ERRORED = "errored"
-    CANCELED = "canceled"
-
-
 class ParallelResolutionContext:
     paused: bool
     flow_name: str
@@ -59,7 +49,6 @@ class ParallelResolutionContext:
     async_semaphore: asyncio.Semaphore
     task_to_node: dict[asyncio.Task, DagNode]
     dag_builder: DagBuilder | None
-    last_resolved_node: BaseNode | None  # Track the last node that was resolved
     last_resolved_node: BaseNode | None  # Track the last node that was resolved
 
     def __init__(
@@ -354,7 +343,7 @@ class ExecuteDagState(State):
                     )
                 )
                 if isinstance(result, SetParameterValueResultFailure):
-                    msg = f"Failed to set value for parameter '{parameter.name}' on node '{current_node.name}': {result.result_details}"
+                    msg = f"Failed to set parameter value for node '{current_node.name}' and parameter '{parameter.name}'. Details: {result.result_details}"
                     logger.error(msg)
                     raise RuntimeError(msg)
 
@@ -481,8 +470,10 @@ class ExecuteDagState(State):
             node_reference.node_reference.parameter_output_values.silent_clear()
             exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
-                msg = f"Canceling flow run. Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
-                logger.error(msg)
+                msg = f"Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
+                logger.error("Canceling flow run. %s", msg)
+                context.error_message = msg
+                context.workflow_state = WorkflowState.ERRORED
                 return ErrorState
 
             # We've set up the node for success completely. Now we check and handle accordingly if it's a for-each-start node
@@ -497,6 +488,8 @@ class ExecuteDagState(State):
                         f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
                     )
                     logger.error(msg)
+                    context.error_message = msg
+                    context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
                 # We're going to skip straight to the end node here instead.
                 # Set end node to node reference
@@ -551,18 +544,12 @@ class ExecuteDagState(State):
                     exc = task.exception()
                     dag_node = context.task_to_node.get(task)
                     node_name = dag_node.node_reference.name if dag_node else "Unknown"
-                    node_type = dag_node.node_reference.__class__.__name__ if dag_node else "Unknown"
 
-                    logger.exception(
-                        "Task execution failed for node '%s' (type: %s) in flow '%s'. Exception: %s",
-                        node_name,
-                        node_type,
-                        context.flow_name,
-                        exc,
-                    )
+                    logger.exception("Error processing node '%s'", node_name)
+                    msg = f"Node '{node_name}' encountered a problem: {exc}"
 
                     context.task_to_node.pop(task)
-                    context.error_message = f"Task execution failed for node '{node_name}': {exc}"
+                    context.error_message = msg
                     context.workflow_state = WorkflowState.ERRORED
                     return ErrorState
                 context.task_to_node.pop(task)
@@ -578,9 +565,6 @@ class ExecuteDagState(State):
 class ErrorState(State):
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
-        if context.error_message:
-            logger.error("DAG execution error: %s", context.error_message)
-
         for node in context.node_to_reference.values():
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
@@ -676,3 +660,9 @@ class ParallelResolutionMachine(FSM[ParallelResolutionContext]):
     def get_last_resolved_node(self) -> BaseNode | None:
         """Get the last node that was resolved in the DAG execution."""
         return self._context.last_resolved_node
+
+    def is_errored(self) -> bool:
+        return self._context.workflow_state == WorkflowState.ERRORED
+
+    def get_error_message(self) -> str | None:
+        return self._context.error_message
