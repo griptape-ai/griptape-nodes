@@ -2206,7 +2206,19 @@ class FlowManager:
             return
 
         # For each parameter, get its value from the SubflowNodeGroup and create a set value command
+        class_name_prefix = start_node_type.lower()
         for prefixed_param_name in parameter_names:
+            # Skip parameters that don't have the expected prefix for this StartFlow node.
+            # These are group-level settings that control the group's behavior
+            # but shouldn't be passed to the StartFlow node of each iteration.
+            if not prefixed_param_name.startswith(f"{class_name_prefix}_"):
+                logger.debug(
+                    "Skipping group-level parameter '%s' - not a StartFlow parameter (expected prefix '%s_')",
+                    prefixed_param_name,
+                    class_name_prefix,
+                )
+                continue
+
             # Get the value from the SubflowNodeGroup parameter
             param_value = node_group_node.get_parameter_value(param_name=prefixed_param_name)
 
@@ -2215,7 +2227,6 @@ class FlowManager:
                 continue
 
             # Strip the prefix to get the original parameter name for the StartFlow node
-            class_name_prefix = start_node_type.lower()
             original_param_name = prefixed_param_name.removeprefix(f"{class_name_prefix}_")
 
             # Create unique parameter UUID for this value
