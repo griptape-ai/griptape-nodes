@@ -1111,6 +1111,18 @@ class LibraryManager:
                     lib_info.library_name = library_name
                     lib_info.library_version = metadata_result.library_schema.metadata.library_version
                     lib_info.lifecycle_state = LibraryLifecycleState.METADATA_LOADED
+                else:
+                    # Create new LibraryInfo since it doesn't exist yet
+                    lib_info = LibraryManager.LibraryInfo(
+                        lifecycle_state=LibraryLifecycleState.METADATA_LOADED,
+                        library_path=file_path,
+                        is_sandbox=False,
+                        library_name=library_name,
+                        library_version=metadata_result.library_schema.metadata.library_version,
+                        fitness=LibraryFitness.NOT_EVALUATED,
+                        problems=[],
+                    )
+                    self._library_file_path_to_info[file_path] = lib_info
             else:
                 library_name = lib_info.library_name
 
