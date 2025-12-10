@@ -268,31 +268,29 @@ class DisplayList(ControlNode):
             return builtin_type_map[item_type]
 
         # Artifact types - check in order of likelihood
+        result = ParameterTypeBuiltin.ANY.value
+
         # Image artifacts (most common)
         if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            return "ImageUrlArtifact"
-
+            result = "ImageUrlArtifact"
         # Video artifacts
-        if is_video_url_artifact(item):
-            return "VideoUrlArtifact"
-
+        elif is_video_url_artifact(item):
+            result = "VideoUrlArtifact"
         # Audio artifacts
-        if is_audio_url_artifact(item) or isinstance(item, AudioArtifact):
-            return "AudioUrlArtifact"
-
+        elif is_audio_url_artifact(item) or isinstance(item, AudioArtifact):
+            result = "AudioUrlArtifact"
         # 3D artifacts
-        if isinstance(item, (ThreeDUrlArtifact, ThreeDArtifact)):
-            return "ThreeDUrlArtifact"
-
+        elif isinstance(item, (ThreeDUrlArtifact, ThreeDArtifact)):
+            result = "ThreeDUrlArtifact"
         # GLTF artifacts - check class name (handles different implementations)
-        if hasattr(item, "__class__"):
+        elif hasattr(item, "__class__"):
             class_name = item.__class__.__name__
             if "GLTFUrlArtifact" in class_name:
-                return "GLTFUrlArtifact"
-            if "GLTFArtifact" in class_name:
-                return "GLTFArtifact"
+                result = "GLTFUrlArtifact"
+            elif "GLTFArtifact" in class_name:
+                result = "GLTFArtifact"
 
-        return ParameterTypeBuiltin.ANY.value
+        return result
 
     def _validate_and_remove_incompatible_connections(self, parameter_name: str, new_output_type: str) -> None:
         """Validate and remove incompatible outgoing connections when output type changes.
