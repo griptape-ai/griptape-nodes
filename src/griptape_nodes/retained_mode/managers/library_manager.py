@@ -1395,6 +1395,7 @@ class LibraryManager:
                         await self._attempt_generate_sandbox_library_from_schema(
                             library_schema=generate_result.library_schema,
                             sandbox_directory=str(sandbox_directory),
+                            library_info=library_info,
                         )
                         # Function handles registration and updates library_info with problems
                         # lifecycle_state set to LOADED by _attempt_load_nodes_from_library
@@ -2656,11 +2657,13 @@ class LibraryManager:
         library_info.lifecycle_state = LibraryLifecycleState.LOADED
 
     async def _attempt_generate_sandbox_library_from_schema(
-        self, library_schema: LibrarySchema, sandbox_directory: str
+        self,
+        library_schema: LibrarySchema,
+        sandbox_directory: str,
+        library_info: LibraryInfo,
     ) -> None:
         """Generate sandbox library using an existing schema, loading actual node classes."""
         sandbox_library_dir = Path(sandbox_directory)
-        sandbox_library_dir_as_posix = sandbox_library_dir.as_posix()
 
         problems = []
 
@@ -2752,33 +2755,17 @@ class LibraryManager:
             )
 
         except KeyError as err:
-            # Library already exists
-            self._library_file_path_to_info[sandbox_library_dir_as_posix] = LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryLifecycleState.FAILURE,
-                library_path=sandbox_library_dir_as_posix,
-                is_sandbox=True,
-                library_name=library_data.name,
-                library_version=library_data.metadata.library_version,
-                fitness=LibraryFitness.UNUSABLE,
-                problems=[DuplicateLibraryProblem()],
-            )
+            # Library already exists - update existing library_info
+            library_info.lifecycle_state = LibraryLifecycleState.FAILURE
+            library_info.fitness = LibraryFitness.UNUSABLE
+            library_info.problems.append(DuplicateLibraryProblem())
 
             details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
             logger.error(details)
             return
 
-        # Create LibraryInfo for tracking this sandbox library
-        library_info = LibraryManager.LibraryInfo(
-            lifecycle_state=LibraryLifecycleState.DISCOVERED,
-            library_path=sandbox_library_dir_as_posix,
-            is_sandbox=True,
-            library_name=library_data.name,
-            library_version=library_data.metadata.library_version,
-            fitness=LibraryFitness.NOT_EVALUATED,
-            problems=problems,  # Include any problems collected during schema generation
-        )
-
         # Load nodes into the library (modifies library_info in place)
+        # Note: library_info is passed as parameter from lifecycle handler
         await asyncio.to_thread(
             self._attempt_load_nodes_from_library,
             library_data=library_data,
@@ -2786,7 +2773,6 @@ class LibraryManager:
             base_dir=sandbox_library_dir,
             library_info=library_info,
         )
-        self._library_file_path_to_info[sandbox_library_dir_as_posix] = library_info
 
     def _find_files_in_dir(self, directory: Path, extension: str) -> list[Path]:
         """Find all files with given extension in directory, excluding common non-source directories."""
