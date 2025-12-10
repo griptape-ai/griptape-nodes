@@ -34,6 +34,7 @@ class WanImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameter
         self._node.add_parameter(
             Parameter(
                 name="input_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Input image for video generation",
             )
@@ -65,9 +66,9 @@ class WanImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameter
         self._node.add_parameter(
             Parameter(
                 name="num_frames",
-                default_value=33,
+                default_value=81,
                 type="int",
-                tooltip="Number of frames to generate (model-specific)",
+                tooltip="Number of frames to generate",
             )
         )
         self._node.add_parameter(
