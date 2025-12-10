@@ -581,7 +581,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Construct v2 proxy URL
         proxy_url = urljoin(self._proxy_base, f"models/{model_id}")
 
-        logger.info(f"{self.name}: Submitting request to model proxy with model: {model_id}")
+        logger.info("%s: Submitting generation request for model: %s", self.name, model_id)
+
+        # Log full request at debug level
         self._log_request(proxy_url, headers, payload)
 
         try:
@@ -606,10 +608,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
         generation_id = response_json.get("generation_id")
         if generation_id:
             self.parameter_output_values["generation_id"] = str(generation_id)
-            logger.info(f"{self.name}: Submitted, generation_id={generation_id}")
+            logger.info("%s: Submitted, generation_id=%s", self.name, generation_id)
             return str(generation_id)
 
-        logger.warning(f"{self.name}: No generation_id in response")
+        logger.warning("%s: No generation_id in response", self.name)
         return None
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: C901, PLR0912
@@ -706,7 +708,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
         with suppress(Exception):
-            self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(_sanitize_body(payload), indent=2)}")
+            logger.debug(
+                "%s: POST %s\nheaders=%s\nbody=%s",
+                self.name,
+                url,
+                dbg_headers,
+                _json.dumps(_sanitize_body(payload), indent=2),
+            )
 
     def _sanitize_base64_image_dict(self, image_dict: dict[str, str]) -> dict[str, str]:
         """Sanitize base64 image dict for logging by redacting the base64 data."""
@@ -727,21 +735,34 @@ class Veo3VideoGeneration(SuccessFailureNode):
         async with httpx.AsyncClient() as client:
             for attempt in range(max_attempts):
                 try:
-                    logger.debug(f"{self.name}: Polling attempt #{attempt + 1} for generation {generation_id}")
+                    logger.debug(
+                        "%s: Polling attempt #%s for generation %s",
+                        self.name,
+                        attempt + 1,
+                        generation_id,
+                    )
 
                     # Poll for status
                     response = await client.get(get_url, headers=headers, timeout=60)
                     response.raise_for_status()
                     result_json = response.json()
 
-                    # Log the generation status response
-                    logger.info("%s: Generation status response:\n%s", self.name, _json.dumps(result_json, indent=2))
-
                     # Update provider_response with latest polling data
                     self.parameter_output_values["provider_response"] = result_json
 
                     status = result_json.get("status", "unknown")
-                    logger.debug("%s: Status=%s", self.name, status)
+
+                    # Log status at info level
+                    logger.info(
+                        "%s: Generation status: %s (attempt %s/%s)", self.name, status, attempt + 1, max_attempts
+                    )
+
+                    # Log full response body at debug level
+                    logger.debug(
+                        "%s: Generation status response:\n%s",
+                        self.name,
+                        _json.dumps(result_json, indent=2),
+                    )
 
                     if status == "COMPLETED":
                         # Fetch final result
@@ -749,7 +770,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                         return
 
                     if status in ["FAILED", "ERROR"]:
-                        logger.error(f"{self.name}: Generation failed: {status}")
+                        logger.error("%s: Generation failed: %s", self.name, status)
                         self._set_safe_defaults()
                         error_details = self._extract_error_details(result_json)
                         self._set_status_results(was_successful=False, result_details=error_details)
@@ -760,7 +781,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
                         await asyncio.sleep(poll_interval)
 
                 except httpx.HTTPStatusError as e:
-                    logger.error(f"{self.name}: HTTP error while polling: {e.response.status_code}")
+                    logger.error(
+                        "%s: HTTP error while polling: %s",
+                        self.name,
+                        e.response.status_code,
+                    )
                     if attempt == max_attempts - 1:
                         self._set_safe_defaults()
                         self._set_status_results(
@@ -769,7 +794,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                         )
                         return
                 except Exception as e:
-                    logger.error(f"{self.name}: Polling error: {e}")
+                    logger.error("%s: Polling error: %s", self.name, e)
                     if attempt == max_attempts - 1:
                         self._set_safe_defaults()
                         self._set_status_results(
@@ -779,7 +804,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                         return
 
             # Timeout reached
-            logger.error(f"{self.name}: Polling timed out")
+            logger.error("%s: Polling timed out", self.name)
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -794,17 +819,27 @@ class Veo3VideoGeneration(SuccessFailureNode):
     ) -> None:
         """Phase 3: Fetch final result from /result endpoint."""
         result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
-        logger.info(f"{self.name}: Fetching result from {result_url}")
+        logger.info("%s: Fetching final result for generation: %s", self.name, generation_id)
 
         try:
             response = await client.get(result_url, headers=headers, timeout=60)
             response.raise_for_status()
             result_json = response.json()
 
-            # Log the generation result response
-            logger.info("%s: Generation result response:\n%s", self.name, _json.dumps(result_json, indent=2))
+            logger.info("%s: Result fetched successfully", self.name)
+
+            # Log full response body at debug level
+            logger.debug(
+                "%s: Generation result response:\n%s",
+                self.name,
+                _json.dumps(result_json, indent=2),
+            )
         except httpx.HTTPStatusError as e:
-            logger.error(f"{self.name}: HTTP error fetching result: {e.response.status_code}")
+            logger.error(
+                "%s: HTTP error fetching result: %s",
+                self.name,
+                e.response.status_code,
+            )
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -812,7 +847,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
             return
         except Exception as e:
-            logger.error(f"{self.name}: Error fetching result: {e}")
+            logger.error("%s: Error fetching result: %s", self.name, e)
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -833,7 +868,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Extract video URL from the result
         extracted_url = self._extract_video_url(result_json)
         if not extracted_url:
-            logger.warning(f"{self.name}: No video URL in result")
+            logger.warning("%s: No video URL in result", self.name)
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -861,10 +896,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
     async def _save_video(self, url: str, generation_id: str) -> VideoUrlArtifact | None:
         """Download video from URL and save to static storage."""
         try:
-            logger.info(f"{self.name}: Downloading video from provider URL")
+            logger.info("%s: Downloading video from provider URL", self.name)
             video_bytes = await self._download_bytes_from_url(url)
             if not video_bytes:
-                logger.warning(f"{self.name}: Could not download video, using provider URL")
+                logger.warning(
+                    "%s: Could not download video, using provider URL",
+                    self.name,
+                )
                 return VideoUrlArtifact(value=url)
 
             # Save to static storage
@@ -872,11 +910,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
 
-            logger.info(f"{self.name}: Saved video as {filename}")
+            logger.info("%s: Saved video as %s", self.name, filename)
             return VideoUrlArtifact(value=saved_url, name=filename)
 
         except Exception as e:
-            logger.error(f"{self.name}: Failed to save video: {e}")
+            logger.error("%s: Failed to save video: %s", self.name, e)
             return VideoUrlArtifact(value=url)
 
     def _extract_rai_rejection_reason(self, obj: dict[str, Any] | None) -> str | None:
