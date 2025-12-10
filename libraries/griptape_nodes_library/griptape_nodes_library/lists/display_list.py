@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes_library.utils.video_utils import is_video_url_artifact
 
 
 class DisplayList(ControlNode):
@@ -142,6 +143,8 @@ class DisplayList(ControlNode):
         # Set UI options based on type
         if item_specific_type == "ImageUrlArtifact":
             parameter.ui_options = {"display": "image"}
+        if item_specific_type in ["VideoUrlArtifact", "VideoArtifact"]:
+            parameter.ui_options = {"display": "video"}
         elif item_specific_type == "dict":
             parameter.ui_options = {"multiline": True}
 
@@ -174,6 +177,8 @@ class DisplayList(ControlNode):
         # Set UI options based on type
         if item_specific_type == "ImageUrlArtifact":
             new_child.ui_options = {"display": "image"}
+        elif item_specific_type in ["VideoUrlArtifact", "VideoArtifact"]:
+            new_child.ui_options = {"display": "video"}
         elif item_specific_type == "dict":
             new_child.ui_options = {"multiline": True}
 
@@ -247,6 +252,8 @@ class DisplayList(ControlNode):
             result = "dict"
         elif isinstance(item, (ImageUrlArtifact, ImageArtifact)):
             result = "ImageUrlArtifact"
+        elif is_video_url_artifact(item):
+            result = "VideoUrlArtifact"
         return result
 
     def _validate_and_remove_incompatible_connections(self, parameter_name: str, new_output_type: str) -> None:
