@@ -37,6 +37,7 @@ class GetFromList(ControlNode):
             tooltip="Index to get the item from",
             input_types=["int", "float"],
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            default_value=0,
         )
         self.add_parameter(self.index)
 
@@ -108,3 +109,4 @@ class GetFromList(ControlNode):
     def process(self) -> None:
         item = self._get_item()
         self.parameter_output_values["item"] = item
+        self.publish_update_to_parameter("item", item)
