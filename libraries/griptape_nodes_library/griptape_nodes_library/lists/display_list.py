@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from griptape.artifacts import AudioArtifact, ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
     Parameter,
@@ -13,6 +13,8 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes_library.three_d.three_d_artifact import ThreeDArtifact, ThreeDUrlArtifact
+from griptape_nodes_library.utils.audio_utils import is_audio_url_artifact
 from griptape_nodes_library.utils.video_utils import is_video_url_artifact
 
 
@@ -143,8 +145,12 @@ class DisplayList(ControlNode):
         # Set UI options based on type
         if item_specific_type == "ImageUrlArtifact":
             parameter.ui_options = {"display": "image"}
-        if item_specific_type in ["VideoUrlArtifact", "VideoArtifact"]:
+        elif item_specific_type in ["VideoUrlArtifact", "VideoArtifact"]:
             parameter.ui_options = {"display": "video"}
+        elif item_specific_type in ["AudioUrlArtifact", "AudioArtifact"]:
+            parameter.ui_options = {"display": "audio"}
+        elif item_specific_type in ["ThreeDUrlArtifact", "ThreeDArtifact", "GLTFUrlArtifact", "GLTFArtifact"]:
+            parameter.ui_options = {"display": "3d"}
         elif item_specific_type == "dict":
             parameter.ui_options = {"multiline": True}
 
@@ -179,6 +185,10 @@ class DisplayList(ControlNode):
             new_child.ui_options = {"display": "image"}
         elif item_specific_type in ["VideoUrlArtifact", "VideoArtifact"]:
             new_child.ui_options = {"display": "video"}
+        elif item_specific_type in ["AudioUrlArtifact", "AudioArtifact"]:
+            new_child.ui_options = {"display": "audio"}
+        elif item_specific_type in ["ThreeDUrlArtifact", "ThreeDArtifact", "GLTFUrlArtifact", "GLTFArtifact"]:
+            new_child.ui_options = {"display": "3d"}
         elif item_specific_type == "dict":
             new_child.ui_options = {"multiline": True}
 
@@ -227,6 +237,12 @@ class DisplayList(ControlNode):
             ui_options["placeholder_text"] = "The dictionary content will be displayed here."
         elif item_type == "ImageUrlArtifact":
             ui_options["display"] = "image"
+        elif item_type in ["VideoUrlArtifact", "VideoArtifact"]:
+            ui_options["display"] = "video"
+        elif item_type in ["AudioUrlArtifact", "AudioArtifact"]:
+            ui_options["display"] = "audio"
+        elif item_type in ["ThreeDUrlArtifact", "ThreeDArtifact", "GLTFUrlArtifact", "GLTFArtifact"]:
+            ui_options["display"] = "3d"
 
         # We have to change all three because parameters are created with all three initialized.
         self.items_list.type = item_type
@@ -239,22 +255,44 @@ class DisplayList(ControlNode):
 
     def _determine_item_type(self, item: Any) -> str:
         """Determine the type of an item for parameter type assignment."""
-        result = ParameterTypeBuiltin.ANY.value
-        if isinstance(item, bool):
-            result = ParameterTypeBuiltin.BOOL.value
-        elif isinstance(item, str):
-            result = ParameterTypeBuiltin.STR.value
-        elif isinstance(item, int):
-            result = ParameterTypeBuiltin.INT.value
-        elif isinstance(item, float):
-            result = ParameterTypeBuiltin.FLOAT.value
-        elif isinstance(item, dict):
-            result = "dict"
-        elif isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            result = "ImageUrlArtifact"
-        elif is_video_url_artifact(item):
-            result = "VideoUrlArtifact"
-        return result
+        # Builtin types - use type mapping for efficiency
+        builtin_type_map = {
+            bool: ParameterTypeBuiltin.BOOL.value,
+            str: ParameterTypeBuiltin.STR.value,
+            int: ParameterTypeBuiltin.INT.value,
+            float: ParameterTypeBuiltin.FLOAT.value,
+            dict: "dict",
+        }
+        item_type = type(item)
+        if item_type in builtin_type_map:
+            return builtin_type_map[item_type]
+
+        # Artifact types - check in order of likelihood
+        # Image artifacts (most common)
+        if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
+            return "ImageUrlArtifact"
+
+        # Video artifacts
+        if is_video_url_artifact(item):
+            return "VideoUrlArtifact"
+
+        # Audio artifacts
+        if is_audio_url_artifact(item) or isinstance(item, AudioArtifact):
+            return "AudioUrlArtifact"
+
+        # 3D artifacts
+        if isinstance(item, (ThreeDUrlArtifact, ThreeDArtifact)):
+            return "ThreeDUrlArtifact"
+
+        # GLTF artifacts - check class name (handles different implementations)
+        if hasattr(item, "__class__"):
+            class_name = item.__class__.__name__
+            if "GLTFUrlArtifact" in class_name:
+                return "GLTFUrlArtifact"
+            if "GLTFArtifact" in class_name:
+                return "GLTFArtifact"
+
+        return ParameterTypeBuiltin.ANY.value
 
     def _validate_and_remove_incompatible_connections(self, parameter_name: str, new_output_type: str) -> None:
         """Validate and remove incompatible outgoing connections when output type changes.
