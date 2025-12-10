@@ -7,7 +7,6 @@ from abc import abstractmethod
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    ControlParameterInput,
     Parameter,
     ParameterMode,
     ParameterTypeBuiltin,
@@ -93,14 +92,6 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         )
         self.add_parameter(self.new_item_to_add)
 
-        # Break loop control input - when triggered, stops iteration (only works in sequential mode)
-        self.break_loop = ControlParameterInput(
-            tooltip="Trigger to stop iteration early (only works in sequential mode)",
-            name="break_loop",
-        )
-        self.break_loop.ui_options = {"display_name": "Break Loop"}
-        self.add_parameter(self.break_loop)
-
         self.results = Parameter(
             name="results",
             tooltip="Collected results from all iterations",
@@ -112,7 +103,7 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         # Track right parameters for UI layout
         if "right_parameters" not in self.metadata:
             self.metadata["right_parameters"] = []
-        self.metadata["right_parameters"].extend(["new_item_to_add", "break_loop", "results"])
+        self.metadata["right_parameters"].extend(["new_item_to_add", "results"])
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes."""

@@ -207,10 +207,8 @@ class _IterativeGroupEndNodeAdapter:
         self.package_result = package_result
         self.executor = executor
         self._result_parameter_name: str | None = None
-        self._break_parameter_name: str | None = None
-        # Cache the result and break parameter names
+        # Cache the result parameter name
         self._result_parameter_name = executor._get_result_parameter_name_for_group(group, package_result)
-        self._break_parameter_name = executor._get_break_parameter_name_for_group(group, package_result)
 
     @property
     def name(self) -> str:
@@ -219,10 +217,6 @@ class _IterativeGroupEndNodeAdapter:
     def get_result_parameter_name(self) -> str | None:
         """Return the EndFlow parameter name for collecting results."""
         return self._result_parameter_name
-
-    def get_break_parameter_name(self) -> str | None:
-        """Return the EndFlow parameter name for break signal."""
-        return self._break_parameter_name
 
 
 class NodeExecutor:
@@ -818,18 +812,16 @@ class NodeExecutor:
 
         end_node._output_results_list()
 
-    def _should_break_loop(  # noqa: PLR0911
+    def _should_break_loop(
         self,
         node_name_mappings: dict[str, str],
         package_result: PackageNodesAsSerializedFlowResultSuccess,
-        end_loop_node: IterativeEndNodeProtocol | None = None,
     ) -> bool:
         """Check if the loop should break based on the end node's control output.
 
         Args:
             node_name_mappings: Mapping from original to deserialized node names
             package_result: The package result containing parameter mappings
-            end_loop_node: Optional end node or adapter (for iterative groups)
 
         Returns:
             True if the end node signaled a break, False otherwise
@@ -852,29 +844,17 @@ class NodeExecutor:
             logger.warning("Could not find deserialized End node instance for %s", packaged_end_node_name)
             return False
 
-        # Check if this is a BaseIterativeEndNode (traditional ForEach/ForLoop)
-        if isinstance(deserialized_end_node, BaseIterativeEndNode):
-            # Check if end node would emit break_loop_signal_output
-            next_control_output = deserialized_end_node.get_next_control_output()
-            if next_control_output is None:
-                return False
-            # Check if it's the break signal
-            return next_control_output == deserialized_end_node.break_loop_signal_output
+        # Check if this is a BaseIterativeEndNode
+        if not isinstance(deserialized_end_node, BaseIterativeEndNode):
+            return False
 
-        # Check if this is an iterative group adapter
-        if isinstance(end_loop_node, _IterativeGroupEndNodeAdapter):
-            break_param_name = end_loop_node.get_break_parameter_name()
-            if break_param_name is None:
-                # No break parameter connected
-                return False
+        # Check if end node would emit break_loop_signal_output
+        next_control_output = deserialized_end_node.get_next_control_output()
+        if next_control_output is None:
+            return False
 
-            # Check if the break parameter was triggered in the deserialized EndFlow node
-            # The break parameter is a control parameter, so check if it was the entry point
-            if break_param_name in deserialized_end_node.parameter_output_values:
-                break_value = deserialized_end_node.parameter_output_values[break_param_name]
-                return bool(break_value)
-
-        return False
+        # Check if it's the break signal
+        return next_control_output == deserialized_end_node.break_loop_signal_output
 
     async def _execute_loop_iterations_sequentially(  # noqa: PLR0915
         self,
@@ -999,7 +979,7 @@ class NodeExecutor:
                 logger.info("Completed sequential iteration %d/%d", iteration_index + 1, total_iterations)
 
                 # Check if the end node signaled a break
-                if self._should_break_loop(node_name_mappings, package_result, end_loop_node):
+                if self._should_break_loop(node_name_mappings, package_result):
                     logger.info(
                         "Loop break detected at iteration %d/%d - stopping execution early",
                         iteration_index + 1,
@@ -1741,54 +1721,6 @@ class NodeExecutor:
 
         if source_node_name is None or source_param_name is None:
             logger.info("No connection found to new_item_to_add parameter on group '%s'", node.name)
-            return None
-
-        # Get the End node's parameter mappings
-        end_node_mapping = self.get_node_parameter_mappings(package_result, "end")
-        end_node_param_mappings = end_node_mapping.parameter_mappings
-
-        # Find the EndFlow parameter that corresponds to the source node/param
-        for endflow_param_name, original_node_param in end_node_param_mappings.items():
-            if (
-                original_node_param.node_name == source_node_name
-                and original_node_param.parameter_name == source_param_name
-            ):
-                return endflow_param_name
-
-        return None
-
-    def _get_break_parameter_name_for_group(
-        self, node: BaseIterativeNodeGroup, package_result: PackageNodesAsSerializedFlowResultSuccess
-    ) -> str | None:
-        """Find the EndFlow parameter name that corresponds to break_loop.
-
-        Args:
-            node: The iterative node group
-            package_result: The packaged flow result
-
-        Returns:
-            The EndFlow parameter name for break signal, or None if not found
-        """
-        # Get incoming connections to the group's break_loop parameter
-        list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
-        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            logger.warning("Failed to list connections for group %s", node.name)
-            return None
-
-        incoming_connections = list_connections_result.incoming_connections
-
-        # Find the connection to break_loop
-        source_node_name = None
-        source_param_name = None
-        for conn in incoming_connections:
-            if conn.target_parameter_name == "break_loop":
-                source_node_name = conn.source_node_name
-                source_param_name = conn.source_parameter_name
-                break
-
-        if source_node_name is None or source_param_name is None:
-            # No break_loop connection - that's fine, break is optional
             return None
 
         # Get the End node's parameter mappings
