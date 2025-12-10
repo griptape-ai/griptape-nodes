@@ -30,7 +30,7 @@ from griptape_nodes.retained_mode.managers.library_lifecycle.data_models import 
     LifecycleIssue,
 )
 from griptape_nodes.retained_mode.managers.library_lifecycle.library_provenance.base import LibraryProvenance
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
+from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness, LibraryLifecycleState
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.utils.async_utils import subprocess_run
 
@@ -326,21 +326,30 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
         # Add the directory to the Python path to allow for relative imports
         sys.path.insert(0, str(base_dir))
 
-        # Attempt to load nodes from the library
-        library_load_results = library_manager._attempt_load_nodes_from_library(
+        # Create LibraryInfo for tracking this library load
+        library_info = library_manager.LibraryInfo(
+            lifecycle_state=LibraryLifecycleState.DISCOVERED,
+            library_path=file_path,
+            is_sandbox=False,
+            library_name=library_data.name,
+            library_version=library_version,
+            fitness=LibraryFitness.NOT_EVALUATED,
+            problems=[],
+        )
+
+        # Attempt to load nodes from the library (modifies library_info in place)
+        library_manager._attempt_load_nodes_from_library(
             library_data=library_data,
             library=library,
             base_dir=base_dir,
-            library_file_path=file_path,
-            library_version=library_version,
-            problems=[],  # We'll handle problems through issues instead
+            library_info=library_info,
         )
 
-        # Convert any problems from library_load_results to issues
-        if library_load_results.problems:
+        # Convert any problems from library_info to issues
+        if library_info.problems:
             # Group problems by type and collate them for display
             problems_by_type = defaultdict(list)
-            for problem in library_load_results.problems:
+            for problem in library_info.problems:
                 problems_by_type[type(problem)].append(problem)
 
             # Collate each group
@@ -353,7 +362,7 @@ class LibraryProvenanceLocalFile(LibraryProvenance):
             issues.append(
                 LifecycleIssue(
                     message=collated_problems,
-                    severity=library_load_results.fitness,
+                    severity=library_info.fitness,
                 )
             )
 

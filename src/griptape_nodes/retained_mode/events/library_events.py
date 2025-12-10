@@ -17,17 +17,19 @@ if TYPE_CHECKING:
 
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import (
-        LibraryFitness,
-        LibraryLifecycleState,
-    )
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryFitness
 
 
 class DiscoveredLibrary(NamedTuple):
-    """Information about a discovered library."""
+    """Information about a discovered library.
+
+    Attributes:
+        path: Absolute path to the library JSON file or sandbox directory
+        is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
+    """
 
     path: Path
+    is_sandbox: bool
 
 
 @dataclass
@@ -317,19 +319,29 @@ class ScanSandboxDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 @dataclass
 @PayloadRegistry.register
 class RegisterLibraryFromFileRequest(RequestPayload):
-    """Register a library from a JSON file.
+    """Register a library by name or path, progressing through all lifecycle phases.
+
+    This request handles the complete library loading lifecycle:
+    DISCOVERED → METADATA_LOADED → EVALUATED → DEPENDENCIES_INSTALLED → LOADED
+
+    The handler automatically creates LibraryInfo if not already tracked, making it suitable
+    for both internal use (from load_all_libraries_from_config) and external use (scripts, tests, API).
 
     Use when: Loading custom libraries, adding new node types,
     registering development libraries, extending node capabilities.
 
     Args:
-        file_path: Path to the library JSON file to register
-        load_as_default_library: Whether to load as the default library (default: False)
+        library_name: Name of library to load (must match library JSON 'name' field). Either library_name OR file_path required (not both).
+        file_path: Path to library JSON file. Either library_name OR file_path required (not both).
+        perform_discovery_if_not_found: If True and library not found, trigger discovery (default: False)
+        load_as_default_library: Whether to mark this library as the default (default: False)
 
     Results: RegisterLibraryFromFileResultSuccess (with library name) | RegisterLibraryFromFileResultFailure (load error)
     """
 
-    file_path: str
+    library_name: str | None = None
+    file_path: str | None = None
+    perform_discovery_if_not_found: bool = False
     load_as_default_library: bool = False
 
 
@@ -642,52 +654,6 @@ class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayload
 
     fitness: LibraryFitness
     problems: list[LibraryProblem]
-
-
-@dataclass
-@PayloadRegistry.register
-class LoadLibraryRequest(RequestPayload):
-    """Load a single library by name or path, progressing it through all lifecycle phases.
-
-    This request supports lazy loading - if LibraryInfo doesn't exist in tracking dict,
-    it will be created during loading.
-
-    This request will:
-    1. Check if library is already loaded (in LibraryRegistry) → immediate success
-    2. Look up or create LibraryInfo in tracking dict (by name or path)
-    3. If not found and perform_discovery_if_not_found=True, issue DiscoverLibrariesRequest and retry
-    4. Progress library through lifecycle phases: Discovered → Metadata Loaded → Evaluated → Dependencies Installed → Loaded
-    5. Return success once library is in LibraryRegistry, or failure with detailed error
-
-    Args:
-        library_name: Name of library to load (must match library JSON 'name' field). If not provided, must provide library_path.
-        library_path: Path to library JSON file. If provided, will load metadata to get library_name.
-        perform_discovery_if_not_found: If True and library not found, trigger discovery first (default: False)
-
-    Results: LoadLibraryResultSuccess | LoadLibraryResultFailure
-    """
-
-    library_name: str | None = None
-    library_path: str | None = None
-    perform_discovery_if_not_found: bool = False
-
-
-@dataclass
-@PayloadRegistry.register
-class LoadLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Library loaded successfully."""
-
-    library_info: LibraryManager.LibraryInfo
-    was_already_loaded: bool = False  # True if library was already in registry
-
-
-@dataclass
-@PayloadRegistry.register
-class LoadLibraryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Library loading failed."""
-
-    failure_phase: LibraryLifecycleState  # Which lifecycle phase failed
-    library_info: LibraryManager.LibraryInfo | None = None  # May be None if discovery failed
 
 
 @dataclass
