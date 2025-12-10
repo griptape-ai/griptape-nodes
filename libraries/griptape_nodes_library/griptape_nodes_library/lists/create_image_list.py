@@ -10,7 +10,7 @@ class CreateImageList(BaseCreateListNode):
         super().__init__(
             name,
             metadata,
-            input_types=["ImageUrlArtifact"],
+            input_types=["ImageUrlArtifact", "str"],
             output_type="list",
             default_value=None,
             items_tooltip="List of image items to add to",
