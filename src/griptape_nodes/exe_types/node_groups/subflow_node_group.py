@@ -76,6 +76,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             "start_flow_node": "StartFlow",
             "parameter_names": {},
         }
+        self.metadata["executable"] = True
 
         # Don't create subflow in __init__ - it will be created on-demand when nodes are added
         # or restored during deserialization
