@@ -6,7 +6,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.directed_graph import DirectedGraph
-from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
+from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
+from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
 
@@ -53,8 +54,31 @@ class DagBuilder:
         self.graph_to_nodes = {}
         self.start_node_candidates = {}
 
+    def _get_nodes_to_exclude_for_iterative_end(self, node: BaseNode, connections: Connections) -> set[str]:
+        """Get nodes to exclude when collecting dependencies for BaseIterativeEndNode.
+
+        Args:
+            node: The node being processed
+            connections: The connections manager
+
+        Returns:
+            Set of node names to exclude (empty if not BaseIterativeEndNode)
+
+        Raises:
+            ValueError: If node is BaseIterativeEndNode but start_node is None
+        """
+        if not isinstance(node, BaseIterativeEndNode):
+            return set()
+
+        if node.start_node is None:
+            error_msg = f"Error: {node.name} is not properly connected to a start node"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        return self.collect_loop_body_nodes(node.start_node, node, connections)
+
     # Complex with the inner recursive method, but it needs connections and added_nodes.
-    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:
+    def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -65,6 +89,9 @@ class DagBuilder:
             graph = DirectedGraph()
             self.graphs[graph_name] = graph
             self.graph_to_nodes[graph_name] = set()
+
+        # Get nodes to exclude for BaseIterativeEndNode (loop body nodes)
+        nodes_to_exclude = self._get_nodes_to_exclude_for_iterative_end(node, connections)
 
         def _add_node_recursive(current_node: BaseNode, visited: set[str], graph: DirectedGraph) -> None:
             # Skip if already visited or already in DAG
@@ -102,6 +129,10 @@ class DagBuilder:
 
                 upstream_node, _ = upstream_connection
 
+                # Skip nodes in exclusion set (for BaseIterativeEndNode loop body)
+                if upstream_node.name in nodes_to_exclude:
+                    continue
+
                 # Skip already resolved nodes
                 if upstream_node.state == NodeResolutionState.RESOLVED:
                     continue
@@ -113,6 +144,14 @@ class DagBuilder:
                 graph.add_edge(upstream_node.name, current_node.name)
 
         _add_node_recursive(node, set(), graph)
+
+        # Special handling for BaseIterativeEndNode: add start_node as dependency
+        if isinstance(node, BaseIterativeEndNode) and node.start_node is not None:
+            # Add start_node and its dependencies
+            _add_node_recursive(node.start_node, set(), graph)
+            # Add edge from start_node to end_node
+            if node.start_node.name in graph.nodes() and node.name in graph.nodes():
+                graph.add_edge(node.start_node.name, node.name)
 
         return added_nodes
 
@@ -169,6 +208,13 @@ class DagBuilder:
 
                     # Skip if the root node is the same as the target node - it can't reach itself
                     if root_node == node.node_reference:
+                        continue
+
+                    # Skip if the root node is the end node of a start node. It's technically not downstream.
+                    if (
+                        isinstance(node.node_reference, BaseIterativeStartNode)
+                        and root_node == node.node_reference.end_node
+                    ):
                         continue
 
                     # Check if the target node is in the forward path from this root
@@ -249,6 +295,49 @@ class DagBuilder:
                                     to_visit.append(next_node)
 
         return nodes_in_path
+
+    @staticmethod
+    def collect_loop_body_nodes(
+        start_node: BaseIterativeStartNode, end_node: BaseIterativeEndNode, connections: Connections
+    ) -> set[str]:
+        """Collect all nodes in the loop body between start_node and end_node.
+
+        This walks through all outgoing connections from start_node and stops when
+        reaching end_node, collecting all intermediate nodes.
+
+        Args:
+            start_node: The iterative start node
+            end_node: The iterative end node
+            connections: The connections manager
+
+        Returns:
+            Set of node names in the loop body (between start and end, exclusive)
+        """
+        loop_body_nodes: set[str] = set()
+        to_visit = []
+        to_visit.append(start_node)
+        visited = set()
+        while to_visit:
+            current_node = to_visit.pop(0)
+
+            if current_node.name in visited:
+                continue
+            visited.add(current_node.name)
+            # Don't add start or end nodes themselves
+            if current_node not in (start_node, end_node):
+                loop_body_nodes.add(current_node.name)
+            # Stop traversal if we've reached the end node
+            if current_node == end_node:
+                continue
+            for param in current_node.parameters:
+                downstream_connection = connections.get_connected_node(
+                    current_node, param, direction=Direction.DOWNSTREAM, include_internal=False
+                )
+                if downstream_connection:
+                    next_node = downstream_connection.node
+                    if next_node.name not in visited:
+                        to_visit.append(next_node)
+        return loop_body_nodes
 
     @staticmethod
     def collect_data_dependencies_for_node(

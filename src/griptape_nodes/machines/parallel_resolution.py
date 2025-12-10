@@ -216,7 +216,8 @@ class ExecuteDagState(State):
         if network is None:
             msg = f"Network {network_name} not found in DAG builder"
             raise ValueError(msg)
-        if flow_manager.global_single_node_resolution:
+        is_isolated = context.dag_builder is not flow_manager.global_dag_builder
+        if flow_manager.global_single_node_resolution and not is_isolated:
             # Clean up nodes from emptied graphs in single node resolution mode
             if len(network) == 0 and context.dag_builder is not None:
                 context.dag_builder.cleanup_empty_graph_nodes(network_name)
