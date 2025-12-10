@@ -935,7 +935,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             node_names_in_group = set(self.nodes.keys())
             self._map_external_connections_for_nodes(remaining_nodes, connections, node_names_in_group)
 
-    async def execute_subflow(self) -> None:  # noqa: C901
+    async def execute_subflow(self) -> None:
         """Execute the subflow and propagate output values.
 
         This helper method:
@@ -959,10 +959,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
             if isinstance(result, StartLocalSubflowResultFailure):
                 logger.error("%s: %s", self.name, result.result_details)
-                # Store error for debugging
-                if self.metadata is None:
-                    self.metadata = {}
-                self.metadata["last_error"] = result.result_details
                 # Clear partial outputs to prevent inconsistent state
                 self.parameter_output_values.clear()
                 # Re-raise the error message directly without wrapping
