@@ -64,7 +64,7 @@ class DisplayMask(DataNode):
         return self._output_param_name
 
     def process(self) -> None:
-        # Get input image and channel
+        """Process the node during execution."""
         input_image = self.get_parameter_value("input_image")
         channel = self.get_parameter_value("channel")
 

@@ -25,11 +25,17 @@ class DisplayInteger(DataNode):
             )
         )
 
+    def _update_output(self) -> None:
+        """Update the output parameter."""
+        int_value = self.get_parameter_value("integer")
+        self.parameter_output_values["integer"] = int_value
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if "integer" in parameter.name:
-            self.parameter_output_values["integer"] = value
+            self._update_output()
             self.publish_update_to_parameter("integer", value)
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        self.parameter_output_values["integer"] = self.parameter_values.get("integer")
+        """Process the node during execution."""
+        self._update_output()

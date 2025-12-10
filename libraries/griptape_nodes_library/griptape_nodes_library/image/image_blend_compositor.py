@@ -252,13 +252,17 @@ class ImageBlendCompositor(BaseImageProcessor):
 
         # Apply blend mode
         if blend_mode == "normal":
-            # Simple alpha compositing
+            # Simple alpha compositing - multiply existing alpha by opacity
+            # to preserve gradient masks (like blurred edges)
             if opacity < 1.0:
-                # Apply opacity to blend image
-                blend_pil.putalpha(int(255 * opacity))
+                alpha = blend_pil.getchannel("A")
+                # Scale alpha by opacity factor, preserving the gradient
+                alpha = alpha.point(lambda a: int(a * opacity))
+                blend_pil = blend_pil.copy()
+                blend_pil.putalpha(alpha)
             blended_image = blend_pil
         else:
-            # Apply custom blend mode
+            # Apply custom blend mode with proper alpha compositing
             blended_image = self._apply_blend_mode(image_pil, blend_pil, blend_mode, opacity)
 
         # Apply the blended image with proper alpha handling
@@ -274,20 +278,32 @@ class ImageBlendCompositor(BaseImageProcessor):
         *,
         preserve_alpha: bool,
     ) -> Image.Image:
-        """Apply the blended image to the result with proper alpha handling."""
-        if preserve_alpha:
-            # Use the blended image's alpha channel as a mask for proper transparency
-            if blended_image.mode == "RGBA":
-                result.paste(blended_image, position, blended_image)
-            else:
-                result.paste(blended_image, position)
+        """Apply the blended image to the result with proper alpha compositing.
+
+        Uses Porter-Duff "over" compositing via alpha_composite for correct
+        handling of semi-transparent areas (like blurred mask edges).
+        """
+        if preserve_alpha and blended_image.mode == "RGBA":
+            # Use alpha_composite for proper Porter-Duff "over" compositing
+            # This correctly handles semi-transparent areas without darkening
+            # Create a transparent canvas the same size as result
+            overlay = Image.new("RGBA", result.size, (0, 0, 0, 0))
+            overlay.paste(blended_image, position)
+            result = Image.alpha_composite(result, overlay)
+        elif blended_image.mode == "RGBA" and not preserve_alpha:
+            # Paste RGB only, ignoring alpha
+            result.paste(blended_image.convert("RGB"), position)
         else:
-            # Paste without alpha (ignore transparency)
             result.paste(blended_image, position)
         return result
 
     def _apply_blend_mode(self, base: Image.Image, blend: Image.Image, mode: str, opacity: float) -> Image.Image:
-        """Apply a specific blend mode to two images."""
+        """Apply a specific blend mode to two images.
+
+        Returns the blend result with alpha channel set (blend's alpha * opacity).
+        The actual compositing onto the base is done by _apply_blended_image.
+        This avoids double-application of alpha which causes darkening artifacts.
+        """
         # Ensure both images are the same size for blending
         if base.size != blend.size:
             blend = blend.resize(base.size, Image.Resampling.LANCZOS)
@@ -297,23 +313,22 @@ class ImageBlendCompositor(BaseImageProcessor):
         blend_rgb = blend.convert("RGB")
 
         # Apply the blend mode using a mapping approach
-        result = self._get_blend_result(base_rgb, blend_rgb, mode)
+        blend_result = self._get_blend_result(base_rgb, blend_rgb, mode)
 
-        # Apply opacity by blending the result with the base image
-        if opacity < 1.0:
-            # Blend the result with the original base image at the specified opacity
-            result = Image.blend(base_rgb, result, opacity)
+        # Convert to RGBA
+        result_rgba = blend_result.convert("RGBA")
 
-        # Convert result back to RGBA to preserve alpha channel support
-        result_rgba = result.convert("RGBA")
-
-        # Apply the blend image's alpha channel to the result
+        # Set alpha channel: blend's alpha multiplied by opacity
+        # This preserves gradient masks (like blurred edges)
         if blend.mode == "RGBA":
             blend_alpha = blend.getchannel("A")
+            if opacity < 1.0:
+                # Scale alpha by opacity factor, preserving the gradient
+                blend_alpha = blend_alpha.point(lambda a: int(a * opacity))
             result_rgba.putalpha(blend_alpha)
         else:
-            # If blend image has no alpha, create a fully opaque alpha channel
-            result_rgba.putalpha(255)
+            # No alpha in blend image, use opacity as uniform alpha
+            result_rgba.putalpha(int(255 * opacity))
 
         return result_rgba
 

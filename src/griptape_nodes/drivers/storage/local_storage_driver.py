@@ -6,6 +6,8 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -38,24 +40,59 @@ class LocalStorageDriver(BaseStorageDriver):
         else:
             self.base_url = base_url
 
-    def create_signed_upload_url(self, path: Path) -> CreateSignedUploadUrlResponse:
+    def create_signed_upload_url(
+        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> CreateSignedUploadUrlResponse:
+        # on_write_file_request seems to work most reliably with an absolute path.
+        absolute_path = path if path.is_absolute() else self.workspace_directory / path
+
+        # Always delegate to OSManager for file path resolution and policy handling.
+        # Creating an empty file before the upload url gives us a chance to claim ownership
+        # of that particular file when creating the upload url. The file policy is not
+        # checked when actually uploading the file, it will always overwrite.
+        os_manager = GriptapeNodes.OSManager()
+        write_request = WriteFileRequest(
+            file_path=str(absolute_path),
+            content=b"",  # Empty content for URL generation
+            existing_file_policy=existing_file_policy,
+        )
+        result = os_manager.on_write_file_request(write_request)
+
+        if not result.succeeded():
+            msg = f"WriteFileRequest failed: {result.result_details}"
+            raise FileExistsError(msg)
+
+        # Use the resolved filename from OSManager
+        # Type checker: result is WriteFileResultSuccess when succeeded() is True
+        resolved_path = Path(result.final_file_path)  # type: ignore[attr-defined]
+
+        # WriteFileRequest always returns an absolute path, but the url needs
+        # to be workspace relative if passed in path was workspace relative.
+        if not path.is_absolute():
+            resolved_path = resolved_path.relative_to(self.workspace_directory)
+
         static_url = urljoin(self.base_url, "/static-upload-urls")
         try:
-            response = httpx.post(static_url, json={"file_path": str(path)})
+            response = httpx.post(static_url, json={"file_path": str(resolved_path)})
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create upload URL for file {path}: {e}"
+            msg = f"Failed to create upload URL for file {resolved_path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
         response_data = response.json()
         url = response_data.get("url")
         if url is None:
-            msg = f"Failed to get upload URL for file {path}: {response_data}"
+            msg = f"Failed to get upload URL for file {resolved_path}: {response_data}"
             logger.error(msg)
             raise ValueError(msg)
 
-        return {"url": url, "headers": response_data.get("headers", {}), "method": "PUT"}
+        return {
+            "url": url,
+            "headers": response_data.get("headers", {}),
+            "method": "PUT",
+            "file_path": str(resolved_path),
+        }
 
     def create_signed_download_url(self, path: Path) -> str:
         # The base_url already includes the /static path, so just append the path

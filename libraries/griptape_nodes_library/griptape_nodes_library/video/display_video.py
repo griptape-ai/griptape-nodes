@@ -29,6 +29,16 @@ class DisplayVideo(DataNode):
             )
         )
 
+    def _update_output(self) -> None:
+        """Update the output parameter."""
+        video = self.get_parameter_value("video")
+        self.parameter_output_values["video"] = video
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        if parameter.name == "video":
+            self._update_output()
+        return super().after_value_set(parameter, value)
+
     def process(self) -> None:
-        # Simply output the input video
-        self.parameter_output_values["video"] = self.parameter_values.get("video")
+        """Process the node during execution."""
+        self._update_output()

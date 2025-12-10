@@ -180,6 +180,7 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.output)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        # Handle UI visibility changes
         if parameter.name == "layout_style":
             if value == "masonry":
                 self.hide_parameter_by_name("grid_justification")
@@ -203,6 +204,26 @@ class DisplayImageGrid(ControlNode):
                 "transparent_bg", False
             )  # TODO(griptape): Remove this when we know updates are working consistently: https://github.com/griptape-ai/griptape-nodes/issues/1843
             self.show_parameter_by_name("background_color")
+
+        # Update grid when any visual parameter changes
+        visual_parameters = {
+            "images",
+            "layout_style",
+            "grid_justification",
+            "columns",
+            "spacing",
+            "border_radius",
+            "crop_to_fit",
+            "transparent_bg",
+            "background_color",
+            "output_image_size",
+            "output_preset",
+            "output_image_width",
+            "output_format",
+        }
+        if parameter.name in visual_parameters:
+            self._process_sync()
+
         return super().after_value_set(parameter, value)
 
     def validate_before_node_run(self) -> list[Exception] | None:

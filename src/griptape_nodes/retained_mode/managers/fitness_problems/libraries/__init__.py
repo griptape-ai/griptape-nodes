@@ -9,6 +9,7 @@ from .deprecated_node_warning_problem import DeprecatedNodeWarningProblem
 from .duplicate_library_problem import DuplicateLibraryProblem
 from .duplicate_node_registration_problem import DuplicateNodeRegistrationProblem
 from .engine_version_error_problem import EngineVersionErrorProblem
+from .incompatible_requirements_problem import IncompatibleRequirementsProblem
 from .insufficient_disk_space_problem import InsufficientDiskSpaceProblem
 from .invalid_version_string_problem import InvalidVersionStringProblem
 from .library_json_decode_problem import LibraryJsonDecodeProblem
@@ -39,6 +40,7 @@ __all__ = [
     "DuplicateLibraryProblem",
     "DuplicateNodeRegistrationProblem",
     "EngineVersionErrorProblem",
+    "IncompatibleRequirementsProblem",
     "InsufficientDiskSpaceProblem",
     "InvalidVersionStringProblem",
     "LibraryJsonDecodeProblem",
