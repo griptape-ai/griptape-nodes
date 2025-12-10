@@ -105,8 +105,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
-        - image_1 (ImageUrlArtifact): First generated image (always visible)
-        - image_2, image_3, ..., image_N (ImageUrlArtifact): Additional images (shown when API returns multiple images)
+        - image_url (ImageUrlArtifact): First generated image (always visible, backwards compatible)
+        - image_url_2, image_url_3, ..., image_url_N (ImageUrlArtifact): Additional images (shown when API returns multiple images)
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -261,11 +261,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
         )
 
         # Create all image output parameters upfront (1-15) so they render in one block
-        # Only image_1 is visible initially; others are shown when API returns multiple images
+        # First parameter is 'image_url' for backwards compatibility, rest are 'image_url_2' through 'image_url_15'
+        # Only image_url is visible initially; others are shown when API returns multiple images
         for i in range(1, 16):
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
             self.add_parameter(
                 Parameter(
-                    name=f"image_{i}",
+                    name=param_name,
                     output_type="ImageUrlArtifact",
                     type="ImageUrlArtifact",
                     tooltip=f"Generated image {i}",
@@ -288,14 +290,14 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def _show_image_output_parameters(self, count: int) -> None:
         """Show image output parameters based on actual result count.
 
-        All 15 image parameters are created during initialization but hidden except image_1.
+        All 15 image parameters are created during initialization but hidden except image_url.
         This method shows the appropriate number based on the API response.
 
         Args:
             count: Total number of images returned from API (1-15)
         """
         for i in range(1, 16):
-            param_name = f"image_{i}"
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
             if i <= count:
                 self.show_parameter_by_name(param_name)
             else:
@@ -774,7 +776,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Set individual image output parameters
         for idx, artifact in enumerate(image_artifacts, start=1):
-            param_name = f"image_{idx}"
+            param_name = "image_url" if idx == 1 else f"image_url_{idx}"
             self.parameter_output_values[param_name] = artifact
 
         # Set success status
@@ -958,7 +960,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Clear all image output parameters (all 15 are created during initialization)
         for i in range(1, 16):
-            self.parameter_output_values[f"image_{i}"] = None
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
+            self.parameter_output_values[param_name] = None
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
