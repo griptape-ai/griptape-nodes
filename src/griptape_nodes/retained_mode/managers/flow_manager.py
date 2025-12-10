@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import base64
 import logging
+import pickle
 from enum import StrEnum
+from io import BytesIO
+from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from urllib.request import urlopen
 from uuid import uuid4
+
+from PIL import Image
 
 from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
@@ -92,6 +99,10 @@ from griptape_nodes.retained_mode.events.flow_events import (
     DeserializeFlowFromCommandsRequest,
     DeserializeFlowFromCommandsResultFailure,
     DeserializeFlowFromCommandsResultSuccess,
+    ExtractFlowCommandsFromImageMetadataRequest,
+    ExtractFlowCommandsFromImageMetadataResultFailure,
+    ExtractFlowCommandsFromImageMetadataResultSuccess,
+    FlowMetadataExtractionFailureReason,
     GetFlowDetailsRequest,
     GetFlowDetailsResultFailure,
     GetFlowDetailsResultSuccess,
@@ -267,6 +278,9 @@ class FlowManager:
         event_manager.assign_manager_to_request_type(SerializeFlowToCommandsRequest, self.on_serialize_flow_to_commands)
         event_manager.assign_manager_to_request_type(
             DeserializeFlowFromCommandsRequest, self.on_deserialize_flow_from_commands
+        )
+        event_manager.assign_manager_to_request_type(
+            ExtractFlowCommandsFromImageMetadataRequest, self.on_extract_flow_commands_from_image_metadata
         )
         event_manager.assign_manager_to_request_type(
             PackageNodesAsSerializedFlowRequest, self.on_package_nodes_as_serialized_flow_request
@@ -3599,6 +3613,136 @@ class FlowManager:
             raise
         GriptapeNodes.EventManager().put_event(
             ExecutionGriptapeNodeEvent(wrapped_event=ExecutionEvent(payload=InvolvedNodesEvent(involved_nodes=[])))
+        )
+
+    def on_extract_flow_commands_from_image_metadata(  # noqa: PLR0911, C901
+        self, request: ExtractFlowCommandsFromImageMetadataRequest
+    ) -> ResultPayload:
+        """Extract flow commands from PNG image metadata.
+
+        Args:
+            request: ExtractFlowCommandsFromImageMetadataRequest with file path or URL
+
+        Returns:
+            ExtractFlowCommandsFromImageMetadataResultSuccess if successful
+            ExtractFlowCommandsFromImageMetadataResultFailure if any step fails
+        """
+        file_url_or_path = request.file_url_or_path
+
+        # Check if input is a URL or file path
+        is_url = file_url_or_path.startswith(("http://", "https://"))
+
+        if is_url:
+            # Handle URL: download the image
+            try:
+                with urlopen(file_url_or_path) as response:  # noqa: S310
+                    image_data = response.read()
+                    pil_image = Image.open(BytesIO(image_data))
+            except Exception as e:
+                return ExtractFlowCommandsFromImageMetadataResultFailure(
+                    result_details=f"Failed to download or open image from URL: {e}",
+                    failure_reason=FlowMetadataExtractionFailureReason.FILE_READ_ERROR,
+                    file_path=file_url_or_path,
+                )
+        else:
+            # Handle file path: validate and open
+            path_obj = Path(file_url_or_path)
+            if not path_obj.exists():
+                return ExtractFlowCommandsFromImageMetadataResultFailure(
+                    result_details=f"File not found: {file_url_or_path}",
+                    failure_reason=FlowMetadataExtractionFailureReason.FILE_NOT_FOUND,
+                    file_path=file_url_or_path,
+                )
+
+            if not path_obj.is_file():
+                return ExtractFlowCommandsFromImageMetadataResultFailure(
+                    result_details=f"Path is not a file: {file_url_or_path}",
+                    failure_reason=FlowMetadataExtractionFailureReason.FILE_READ_ERROR,
+                    file_path=file_url_or_path,
+                )
+
+            # Read PNG image and extract metadata
+            try:
+                pil_image = Image.open(file_url_or_path)
+            except Exception as e:
+                return ExtractFlowCommandsFromImageMetadataResultFailure(
+                    result_details=f"Failed to open image file: {e}",
+                    failure_reason=FlowMetadataExtractionFailureReason.INVALID_IMAGE_FORMAT,
+                    file_path=file_url_or_path,
+                )
+
+        # Validation: Check if image has metadata
+        if not hasattr(pil_image, "info") or not pil_image.info:
+            return ExtractFlowCommandsFromImageMetadataResultFailure(
+                result_details=f"Image has no metadata: {file_url_or_path}",
+                failure_reason=FlowMetadataExtractionFailureReason.NO_FLOW_METADATA,
+                file_path=file_url_or_path,
+            )
+
+        metadata = pil_image.info
+        metadata_keys = list(metadata.keys())
+
+        # Validation: Check if flow commands metadata exists
+        flow_commands_key = "gtn_flow_commands"
+        if flow_commands_key not in metadata:
+            return ExtractFlowCommandsFromImageMetadataResultFailure(
+                result_details=f"No flow commands metadata found in image. Available keys: {metadata_keys}",
+                failure_reason=FlowMetadataExtractionFailureReason.NO_FLOW_METADATA,
+                file_path=file_url_or_path,
+            )
+
+        encoded_flow_commands = metadata[flow_commands_key]
+
+        # Decode base64
+        try:
+            pickled_data = base64.b64decode(encoded_flow_commands)
+        except Exception as e:
+            return ExtractFlowCommandsFromImageMetadataResultFailure(
+                result_details=f"Failed to decode base64 flow commands: {e}",
+                failure_reason=FlowMetadataExtractionFailureReason.INVALID_BASE64,
+                file_path=file_url_or_path,
+            )
+
+        # Unpickle SerializedFlowCommands
+        try:
+            serialized_flow_commands = pickle.loads(pickled_data)  # noqa: S301
+        except Exception as e:
+            return ExtractFlowCommandsFromImageMetadataResultFailure(
+                result_details=f"Failed to unpickle flow commands: {e}",
+                failure_reason=FlowMetadataExtractionFailureReason.INVALID_PICKLE,
+                file_path=file_url_or_path,
+            )
+
+        # Check if we should also deserialize the flow
+        if request.deserialize:
+            # Deserialize the flow
+            deserialize_request = DeserializeFlowFromCommandsRequest(serialized_flow_commands=serialized_flow_commands)
+            deserialize_result = GriptapeNodes.handle_request(deserialize_request)
+
+            # Validation: Check if deserialization succeeded
+            if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
+                return ExtractFlowCommandsFromImageMetadataResultFailure(
+                    result_details=f"Failed to deserialize flow from image metadata: {deserialize_result.result_details}",
+                    failure_reason=FlowMetadataExtractionFailureReason.DESERIALIZATION_FAILED,
+                    file_path=file_url_or_path,
+                )
+
+            # Success path: Return with deserialization info
+            return ExtractFlowCommandsFromImageMetadataResultSuccess(
+                result_details=f"Successfully extracted and deserialized flow '{deserialize_result.flow_name}' from image metadata",
+                serialized_flow_commands=serialized_flow_commands,
+                metadata_keys=metadata_keys,
+                flow_name=deserialize_result.flow_name,
+                node_name_mappings=deserialize_result.node_name_mappings,
+                altered_workflow_state=True,
+            )
+
+        # Success path: Return the extracted commands for user inspection (no deserialization)
+        return ExtractFlowCommandsFromImageMetadataResultSuccess(
+            result_details="Successfully extracted flow commands from image metadata",
+            serialized_flow_commands=serialized_flow_commands,
+            metadata_keys=metadata_keys,
+            altered_workflow_state=False,
         )
 
     def check_for_existing_running_flow(self) -> bool:

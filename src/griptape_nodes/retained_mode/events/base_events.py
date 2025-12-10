@@ -71,6 +71,34 @@ class ResultDetails:
 class Payload(ABC):  # noqa: B024
     """Base class for all payload types. Customers will derive from this."""
 
+    def to_json(self, **kwargs) -> str:
+        """Serialize this payload to JSON string.
+
+        Returns:
+            JSON string representation of the payload
+        """
+
+        # Custom encoder matching BaseEvent.json() logic
+        def default_encoder(obj: Any) -> Any:
+            if isinstance(obj, SerializableMixin):
+                return obj.to_dict()
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            try:
+                return json.JSONEncoder().default(obj)
+            except TypeError:
+                return str(obj)
+
+        # Convert payload to dict
+        if is_dataclass(self):
+            payload_dict = asdict(self)
+        elif hasattr(self, "__dict__"):
+            payload_dict = self.__dict__
+        else:
+            payload_dict = str(self)
+
+        return json.dumps(payload_dict, default=default_encoder, **kwargs)
+
 
 # Request payload base class with optional request ID
 @dataclass(kw_only=True)
