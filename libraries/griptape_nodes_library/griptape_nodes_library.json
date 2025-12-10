@@ -785,8 +785,6 @@
       }
     },
     {
-=======
->>>>>>> 5c04a8e0 (impl)
       "class_name": "SplitVideo",
       "file_path": "griptape_nodes_library/video/split_video.py",
       "metadata": {
