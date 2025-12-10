@@ -15,6 +15,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -98,12 +99,14 @@ class SeedreamImageGeneration(SuccessFailureNode):
         - images (list): Multiple input images (seedream-4.5 supports up to 14, seedream-4.0 up to 10)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
+        - max_images (int): Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
 
     Outputs:
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim provider response from the model proxy
-        - image_url (ImageUrlArtifact): Generated image as URL artifact
+        - image_url (ImageUrlArtifact): First generated image (always visible, backwards compatible)
+        - image_url_2, image_url_3, ..., image_url_N (ImageUrlArtifact): Additional images (shown when API returns multiple images)
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -208,6 +211,20 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
+        # Max images parameter for seedream-4.5 and seedream-4.0
+        self.add_parameter(
+            ParameterInt(
+                name="max_images",
+                tooltip="Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)",
+                default_value=10,
+                slider=True,
+                min_val=1,
+                max_val=15,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=False,
+            )
+        )
+
         # Guidance scale for seedream-3.0-t2i
         self.add_parameter(
             Parameter(
@@ -243,17 +260,22 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
-                tooltip="Generated image as URL artifact",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+        # Create all image output parameters upfront (1-15) so they render in one block
+        # First parameter is 'image_url' for backwards compatibility, rest are 'image_url_2' through 'image_url_15'
+        # Only image_url is visible initially; others are shown when API returns multiple images
+        for i in range(1, 16):
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
+            self.add_parameter(
+                Parameter(
+                    name=param_name,
+                    output_type="ImageUrlArtifact",
+                    type="ImageUrlArtifact",
+                    tooltip=f"Generated image {i}",
+                    allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                    settable=False,
+                    ui_options={"pulse_on_run": True, "hide": i > 1},
+                )
             )
-        )
 
         # Create status parameters for success/failure tracking (at the end)
         self._create_status_parameters(
@@ -265,27 +287,46 @@ class SeedreamImageGeneration(SuccessFailureNode):
         # Initialize parameter visibility based on default model (seedream-4.5)
         self._initialize_parameter_visibility()
 
+    def _show_image_output_parameters(self, count: int) -> None:
+        """Show image output parameters based on actual result count.
+
+        All 15 image parameters are created during initialization but hidden except image_url.
+        This method shows the appropriate number based on the API response.
+
+        Args:
+            count: Total number of images returned from API (1-15)
+        """
+        for i in range(1, 16):
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
+            if i <= count:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
+
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "seedream-4.5"
         if default_model in ("seedream-4.5", "seedream-4.0"):
-            # Hide single image input, show images list, hide guidance scale
+            # Hide single image input, show images list, show max_images, hide guidance scale
             self.hide_parameter_by_name("image")
             self.show_parameter_by_name("images")
+            self.show_parameter_by_name("max_images")
             self.hide_parameter_by_name("guidance_scale")
         elif default_model == "seedream-3.0-t2i":
-            # Hide image inputs (not supported), show guidance scale
+            # Hide image inputs (not supported), hide max_images, show guidance scale
             self.hide_parameter_by_name("image")
             self.hide_parameter_by_name("images")
-            self.show_parameter_by_name("guidance_scale")
+            self.hide_parameter_by_name("max_images")
+            self.hide_parameter_by_name("guidance_scale")
         elif default_model == "seededit-3.0-i2i":
-            # Show single image input (required), hide images list, show guidance scale
+            # Show single image input (required), hide images list, hide max_images, show guidance scale
             self.show_parameter_by_name("image")
             self.hide_parameter_by_name("images")
+            self.hide_parameter_by_name("max_images")
             self.show_parameter_by_name("guidance_scale")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Update size options and parameter visibility based on model selection."""
+        """Update size options and parameter visibility based on parameter changes."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
         return super().after_value_set(parameter, value)
@@ -306,6 +347,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seedream-4.5 and seedream-4.0 models."""
         self.hide_parameter_by_name("image")
         self.show_parameter_by_name("images")
+        self.show_parameter_by_name("max_images")
         self.hide_parameter_by_name("guidance_scale")
 
         if current_size in new_choices:
@@ -319,6 +361,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seedream-3.0-t2i model."""
         self.hide_parameter_by_name("image")
         self.hide_parameter_by_name("images")
+        self.hide_parameter_by_name("max_images")
         self.show_parameter_by_name("guidance_scale")
         self.set_parameter_value("guidance_scale", 2.5)
 
@@ -331,6 +374,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Configure UI for seededit-3.0-i2i model."""
         self.show_parameter_by_name("image")
         self.hide_parameter_by_name("images")
+        self.hide_parameter_by_name("max_images")
         self.show_parameter_by_name("guidance_scale")
 
         image_param = self.get_parameter_by_name("image")
@@ -420,6 +464,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
         # Get image list for seedream-4.5 and seedream-4.0
         if params["model"] in ("seedream-4.5", "seedream-4.0"):
             params["images"] = self.get_parameter_list_value("images") or []
+            params["sequential_image_generation"] = "auto"
+            params["sequential_image_generation_options"] = {
+                "max_images": self.get_parameter_value("max_images"),
+            }
 
         return params
 
@@ -488,6 +536,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Model-specific parameters
         if model in ("seedream-4.5", "seedream-4.0"):
+            # Add sequential image generation configuration
+            payload["sequential_image_generation"] = params["sequential_image_generation"]
+            payload["sequential_image_generation_options"] = params["sequential_image_generation_options"]
+
             # Add multiple images if provided for v4.5/v4.0
             images = params.get("images", [])
             if images:
@@ -671,75 +723,104 @@ class SeedreamImageGeneration(SuccessFailureNode):
             response = await client.get(result_url, headers=headers, timeout=60)
             response.raise_for_status()
             result_json = response.json()
-
-            # Update provider_response with the final result
-            self.parameter_output_values["provider_response"] = result_json
-
-            # Extract image data (expecting single image)
-            data = result_json.get("data", [])
-            if not data:
-                self._log("No image data in result")
-                self.parameter_output_values["image_url"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Generation completed but no image data was found in the response.",
-                )
-                return
-
-            # Take first image from response
-            image_data = data[0]
-
-            # Always using URL format
-            image_url = image_data.get("url")
-            if image_url:
-                await self._save_image_from_url(image_url, generation_id)
-            else:
-                self._log("No image URL in result")
-                self.parameter_output_values["image_url"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Generation completed but no image URL was found in the response.",
-                )
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
             self._set_safe_defaults()
             error_msg = f"Failed to fetch generation result: HTTP {e.response.status_code}"
             self._set_status_results(was_successful=False, result_details=error_msg)
+            return
         except Exception as e:
             self._log(f"Error fetching result: {e}")
             self._set_safe_defaults()
             error_msg = f"Failed to fetch generation result: {e}"
             self._set_status_results(was_successful=False, result_details=error_msg)
+            return
 
-    async def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
-        """Download and save the image from the provided URL."""
-        try:
-            self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if image_bytes:
-                filename = (
-                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved image to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
-                )
-        except Exception as e:
-            self._log(f"Failed to save image from URL: {e}")
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+        # Update provider_response with the final result
+        self.parameter_output_values["provider_response"] = result_json
+
+        # Extract image data
+        data = result_json.get("data", [])
+        if not data:
+            self._log("No image data in result")
+            self._set_safe_defaults()
             self._set_status_results(
-                was_successful=True,
-                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
+                was_successful=False,
+                result_details="Generation completed but no image data was found in the response.",
             )
+            return
+
+        # Process all images from the response
+        image_artifacts = []
+        for idx, image_data in enumerate(data):
+            image_url = image_data.get("url")
+            if not image_url:
+                self._log(f"No URL found for image {idx}")
+                continue
+
+            artifact = await self._save_single_image_from_url(image_url, generation_id, idx)
+            if artifact:
+                image_artifacts.append(artifact)
+
+        if not image_artifacts:
+            self._log("No images could be saved")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no image URLs were found in the response.",
+            )
+            return
+
+        # Show the appropriate number of image output parameters based on actual image count
+        self._show_image_output_parameters(len(image_artifacts))
+
+        # Set individual image output parameters
+        for idx, artifact in enumerate(image_artifacts, start=1):
+            param_name = "image_url" if idx == 1 else f"image_url_{idx}"
+            self.parameter_output_values[param_name] = artifact
+
+        # Set success status
+        count = len(image_artifacts)
+        filenames = [artifact.name for artifact in image_artifacts]
+        if count == 1:
+            details = f"Image generated successfully and saved as {filenames[0]}."
+        else:
+            details = f"Generated {count} images successfully: {', '.join(filenames)}."
+        self._set_status_results(was_successful=True, result_details=details)
+
+    async def _save_single_image_from_url(
+        self, image_url: str, generation_id: str | None = None, index: int = 0
+    ) -> ImageUrlArtifact | None:
+        """Download and save a single image from the provided URL.
+
+        Args:
+            image_url: URL of the image to download
+            generation_id: Optional generation ID for filename
+            index: Index of the image in multi-image response
+
+        Returns:
+            ImageUrlArtifact with saved image, or None if download/save fails
+        """
+        try:
+            self._log(f"Downloading image {index} from URL")
+            image_bytes = await self._download_bytes_from_url(image_url)
+            if not image_bytes:
+                self._log(f"Could not download image {index}, using provider URL")
+                return ImageUrlArtifact(value=image_url)
+
+            if generation_id:
+                filename = f"seedream_image_{generation_id}_{index}.jpg"
+            else:
+                filename = f"seedream_image_{int(time.time())}_{index}.jpg"
+
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            self._log(f"Saved image {index} to static storage as {filename}")
+            return ImageUrlArtifact(value=saved_url, name=filename)
+
+        except Exception as e:
+            self._log(f"Failed to save image {index} from URL: {e}")
+            return ImageUrlArtifact(value=image_url)
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
@@ -876,7 +957,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
-        self.parameter_output_values["image_url"] = None
+
+        # Clear all image output parameters (all 15 are created during initialization)
+        for i in range(1, 16):
+            param_name = "image_url" if i == 1 else f"image_url_{i}"
+            self.parameter_output_values[param_name] = None
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
