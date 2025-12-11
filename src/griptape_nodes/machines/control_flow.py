@@ -480,14 +480,15 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
                     # Figure out which graph the data node belongs to, if it belongs to a graph.
                     for graph_start_node_name in dag_builder.graphs:
                         graph_start_node = node_manager.get_node_by_name(graph_start_node_name)
-                        correct_graph = flow_manager.is_node_connected(graph_start_node, node)
+                        # Get boundary nodes (empty list if not connected)
+                        boundary_nodes = flow_manager.is_node_connected(graph_start_node, node)
                         # This means this node is in the downstream connection of one of this graph.
-                        if correct_graph:
+                        if boundary_nodes:
                             # Is the node connected to a graph?
                             disconnected = False
                             if node.name not in dag_builder.start_node_candidates:
-                                dag_builder.start_node_candidates[node.name] = set()
-                            dag_builder.start_node_candidates[node.name].add(graph_start_node_name)
+                                dag_builder.start_node_candidates[node.name] = {}
+                            dag_builder.start_node_candidates[node.name][graph_start_node_name] = set(boundary_nodes)
                     if disconnected:
                         # If the node is not connected to any graph, we can add it as it's own graph here.
                         # It will not cause any overlapping confusion with existing graphs.

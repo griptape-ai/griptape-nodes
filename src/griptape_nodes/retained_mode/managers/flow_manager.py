@@ -4087,9 +4087,38 @@ class FlowManager:
                         queue.put(next_node)
         return list(processed.keys())
 
-    def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> bool:
-        nodes = self.get_all_connected_nodes(start_node)
-        return node in nodes
+    def is_node_connected(self, start_node: BaseNode, node: BaseNode) -> list[str]:
+        """Check if node is in the forward control path from start_node, returning boundary nodes if connected.
+
+        Returns:
+            list[str]: Names of nodes that have direct connections to 'node' and are in the forward control path,
+                      or empty list if not in forward path.
+        """
+        connections = self.get_connections()
+
+        # Check if node is in the forward control path from start_node
+        if not connections.is_node_in_forward_control_path(start_node, node):
+            return []
+
+        # Node is in forward path - find boundary nodes that connect to it
+        boundary_nodes = []
+
+        # Check incoming connections to the target node
+        if node.name in connections.incoming_index:
+            incoming_params = connections.incoming_index[node.name]
+            for connection_ids in incoming_params.values():
+                for connection_id in connection_ids:
+                    connection = connections.connections[connection_id]
+                    source_node_name = connection.source_node.name
+
+                    # Only include if source node is also in the forward control path from start_node
+                    if (
+                        connections.is_node_in_forward_control_path(start_node, connection.source_node)
+                        and source_node_name not in boundary_nodes
+                    ):
+                        boundary_nodes.append(source_node_name)
+
+        return boundary_nodes
 
     def get_node_dependencies(self, flow: ControlFlow, node: BaseNode) -> list[BaseNode]:
         """Get all upstream nodes that the given node depends on.

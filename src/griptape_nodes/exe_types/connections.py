@@ -403,3 +403,45 @@ class Connections:
                 for conn_id in connection_ids:
                     connections.append(self.connections[conn_id])  # noqa: PERF401, Keeping loop for understanding.
         return connections
+
+    def is_node_in_forward_control_path(
+        self, start_node: BaseNode, target_node: BaseNode, visited: set[str] | None = None
+    ) -> bool:
+        """Check if target_node is reachable from start_node through control flow connections.
+
+        Args:
+            start_node: The node to start traversal from
+            target_node: The node to check if reachable
+            visited: Set of already visited node names (used internally for recursion)
+
+        Returns:
+            True if target_node is in the forward control path from start_node, False otherwise
+        """
+        if visited is None:
+            visited = set()
+
+        if start_node.name in visited:
+            return False
+        visited.add(start_node.name)
+
+        # Check ALL outgoing control connections
+        # This handles IfElse nodes that have multiple possible control outputs
+        if start_node.name in self.outgoing_index:
+            for param_name, connection_ids in self.outgoing_index[start_node.name].items():
+                # Find the parameter to check if it's a control type
+                param = start_node.get_parameter_by_name(param_name)
+                if param and param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
+                    # This is a control parameter - check all its connections
+                    for connection_id in connection_ids:
+                        if connection_id in self.connections:
+                            connection = self.connections[connection_id]
+                            next_node = connection.target_node
+
+                            if next_node.name == target_node.name:
+                                return True
+
+                            # Recursively check the forward path
+                            if self.is_node_in_forward_control_path(next_node, target_node, visited):
+                                return True
+
+        return False
