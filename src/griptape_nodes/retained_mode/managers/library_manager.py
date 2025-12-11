@@ -250,6 +250,10 @@ class LibraryManager:
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
     LIBRARY_CONFIG_GLOB_PATTERN = "griptape[_-]nodes[_-]library.json"
 
+    # Sandbox library constants
+    UNRESOLVED_SANDBOX_CLASS_NAME = "<NOT YET RESOLVED>"
+    SANDBOX_CATEGORY_NAME = "Griptape Nodes Sandbox"
+
     _library_file_path_to_info: dict[str, LibraryInfo]
 
     @dataclass
@@ -808,13 +812,13 @@ class LibraryManager:
             node_definitions = []
             for candidate in sandbox_node_candidates:
                 # Use placeholder class name to make it obvious when discovery hasn't run yet
-                class_name = "<NOT YET RESOLVED>"
+                class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
                 file_name = candidate.name
 
                 # Create a placeholder node definition - we can't get the actual class metadata
                 # without importing, so we use defaults
                 node_metadata = NodeMetadata(
-                    category="Griptape Nodes Sandbox",
+                    category=self.SANDBOX_CATEGORY_NAME,
                     description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
                     display_name=file_name,
                     icon="square-dashed",
@@ -863,7 +867,7 @@ class LibraryManager:
                 is_griptape_nodes_searchable=False,
             )
             categories = [
-                {"Griptape Nodes Sandbox": sandbox_category},
+                {self.SANDBOX_CATEGORY_NAME: sandbox_category},
             ]
             library_name = LibraryManager.SANDBOX_LIBRARY_NAME
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
@@ -952,11 +956,11 @@ class LibraryManager:
 
             if discovered_file_path not in existing_file_paths:
                 # Create placeholder node definition for new file
-                class_name = "<NOT YET RESOLVED>"
+                class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
                 file_name = discovered_file.name
 
                 node_metadata = NodeMetadata(
-                    category="Griptape Nodes Sandbox",
+                    category=self.SANDBOX_CATEGORY_NAME,
                     description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
                     display_name=file_name,
                     icon="square-dashed",
@@ -2718,7 +2722,7 @@ class LibraryManager:
                     node_color = getattr(obj, "COLOR", None)
 
                     node_metadata = NodeMetadata(
-                        category="Griptape Nodes Sandbox",
+                        category=self.SANDBOX_CATEGORY_NAME,
                         description=node_description,
                         display_name=class_name,
                         icon=node_icon,
