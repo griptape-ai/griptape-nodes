@@ -57,8 +57,6 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.category = "API Nodes"
-        self.description = "Generate video via Google Veo3 through Griptape Cloud model proxy"
 
         # Compute API base once
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
