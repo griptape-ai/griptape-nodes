@@ -89,6 +89,19 @@ class WriteImageMetadataNode(SuccessFailureNode):
             self._handle_failure_exception(TypeError(error_msg))
             return
 
+        # Check for reserved gtn_* namespace
+        reserved_keys = [key for key in metadata_dict if str(key).startswith("gtn_")]
+        if reserved_keys:
+            error_msg = (
+                f"{self.name}: Cannot write metadata keys starting with 'gtn_' "
+                f"(reserved for auto-injected workflow metadata). "
+                f"Offending keys: {', '.join(reserved_keys)}"
+            )
+            logger.warning(error_msg)
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            self._handle_failure_exception(ValueError(error_msg))
+            return
+
         # Load PIL image
         try:
             if isinstance(image, ImageUrlArtifact):
@@ -129,7 +142,7 @@ class WriteImageMetadataNode(SuccessFailureNode):
         try:
             filename = generate_filename(self.name, suffix="_with_metadata", extension="png")
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(image_bytes, filename, skip_metadata_injection=True)
 
             output_artifact = ImageUrlArtifact(value=saved_url, name=filename)
             self.parameter_output_values["output_image"] = output_artifact

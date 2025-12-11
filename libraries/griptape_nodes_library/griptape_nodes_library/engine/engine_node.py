@@ -868,6 +868,28 @@ class EngineNode(SuccessFailureNode):
         optional_args_count = 2
         return len(args) == optional_args_count and type(None) in args
 
+    def _get_dataclass_type(self, python_type: Any) -> type | None:
+        """Extract the dataclass type from a type annotation, handling Optional and Union types.
+
+        Args:
+            python_type: The type annotation to inspect
+
+        Returns:
+            The dataclass type if found, None otherwise
+        """
+        # Handle Union types (including Optional)
+        if self._is_union_type(python_type):
+            for arg in python_type.__args__:
+                if arg is not type(None) and dataclasses.is_dataclass(arg):
+                    return arg
+            return None
+
+        # Handle direct dataclass types
+        if dataclasses.is_dataclass(python_type):
+            return python_type
+
+        return None
+
     def _execute_request(self, request_class: type, request_kwargs: dict) -> None:
         """Execute the request and handle the result."""
         try:

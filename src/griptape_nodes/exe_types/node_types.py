@@ -834,6 +834,7 @@ class BaseNode(ABC):
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         for child in parameter.find_elements_by_type(Parameter):
+            GriptapeNodes.NodeManager().remove_parameter_from_node()
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
     def get_parameter_value(self, param_name: str) -> Any:
