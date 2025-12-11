@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterList, Parame
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.slider import Slider
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -40,12 +41,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
         - person_generation (str): Person generation policy (default: allow_adult, options: allow_all, allow_adult, dont_allow)
         - generate_audio (bool): Generate audio for the video (default: True, supported by all veo3* models)
         - seed (int): Random seed for reproducible results (default: -1, -1 means don't specify a seed, 0 or above will be sent)
+        - sample_count (int): Number of videos to generate (default: 1, range: 1-4)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (initial POST)
-        - video_url (VideoUrlArtifact): Saved static video URL
+        - video_url (VideoUrlArtifact): Saved static video URL(s) - up to 4 video outputs based on sample_count
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -256,6 +258,20 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
         )
 
+        # Sample count (number of videos to generate)
+        self.add_parameter(
+            Parameter(
+                name="sample_count",
+                input_types=["int"],
+                type="int",
+                default_value=1,
+                tooltip="Number of videos to generate (1-4)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "sample count"},
+                traits={Slider(min_val=1, max_val=4)},
+            )
+        )
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -277,17 +293,20 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
-                tooltip="Saved video as URL artifact for downstream display",
-                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+        # Create video output parameters (up to 4)
+        for i in range(1, 5):
+            param_name = "video_url" if i == 1 else f"video_url_{i}"
+            self.add_parameter(
+                Parameter(
+                    name=param_name,
+                    output_type="VideoUrlArtifact",
+                    type="VideoUrlArtifact",
+                    tooltip=f"Saved video {i} as URL artifact for downstream display",
+                    allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                    settable=False,
+                    ui_options={"is_full_width": True, "pulse_on_run": True, "hide": i > 1},
+                )
             )
-        )
 
         # Create status parameters for success/failure tracking
         self._create_status_parameters(
@@ -350,6 +369,19 @@ class Veo3VideoGeneration(SuccessFailureNode):
                     "%s: Setting duration to 8 seconds (required when reference images are provided)", self.name
                 )
                 self.set_parameter_value("duration_seconds", "8")
+
+    def _show_video_output_parameters(self, count: int) -> None:
+        """Show/hide video output parameters based on how many videos were generated.
+
+        Args:
+            count: Number of videos generated (1-4)
+        """
+        for i in range(1, 5):
+            param_name = "video_url" if i == 1 else f"video_url_{i}"
+            if i <= count:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
@@ -418,6 +450,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if seed is None:
             seed = -1
 
+        sample_count = self.get_parameter_value("sample_count")
+        if sample_count is None:
+            sample_count = 1
+
         return {
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": self.get_parameter_value("model_id") or "veo-3.1-generate-preview",
@@ -432,6 +468,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             "person_generation": self.get_parameter_value("person_generation") or "allow_adult",
             "seed": seed,
             "generate_audio": generate_audio,
+            "sample_count": sample_count,
         }
 
     def _validate_api_key(self) -> str:
@@ -681,6 +718,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if params.get("generate_audio") is not None:
             parameters["generateAudio"] = bool(params["generate_audio"])
 
+        # Add sampleCount if provided
+        sample_count = params.get("sample_count")
+        if sample_count is not None and sample_count > 0:
+            parameters["sampleCount"] = int(sample_count)
+
         return {"instances": [instance], "parameters": parameters}
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:  # noqa: C901
@@ -726,6 +768,23 @@ class Veo3VideoGeneration(SuccessFailureNode):
             sanitized["bytesBase64Encoded"] = f"<redacted base64 length={len(b64_data)}>"
         return sanitized
 
+    def _sanitize_result_json(self, result_json: dict[str, Any]) -> dict[str, Any]:
+        """Sanitize result JSON by redacting base64-encoded video data."""
+        try:
+            sanitized = deepcopy(result_json)
+            response = sanitized.get("response", {})
+            if isinstance(response, dict):
+                videos = response.get("videos", [])
+                if isinstance(videos, list):
+                    for video in videos:
+                        if isinstance(video, dict) and "bytesBase64Encoded" in video:
+                            b64_data = video["bytesBase64Encoded"]
+                            video["bytesBase64Encoded"] = f"<redacted base64 length={len(b64_data)}>"
+        except Exception:
+            return result_json
+        else:
+            return sanitized
+
     async def _poll_and_fetch(self, generation_id: str, headers: dict[str, str]) -> None:
         """Phase 2 & 3: Poll for completion, then fetch result."""
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
@@ -769,7 +828,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                         await self._fetch_result(generation_id, headers, client)
                         return
 
-                    if status in ["FAILED", "ERROR"]:
+                    if status in ["FAILED", "ERRORED"]:
                         logger.error("%s: Generation failed: %s", self.name, status)
                         self._set_safe_defaults()
                         error_details = self._extract_error_details(result_json)
@@ -817,23 +876,64 @@ class Veo3VideoGeneration(SuccessFailureNode):
         headers: dict[str, str],
         client: httpx.AsyncClient,
     ) -> None:
-        """Phase 3: Fetch final result from /result endpoint."""
+        """Phase 3: Fetch final result from /result endpoint.
+
+        The v2 API returns JSON with base64-encoded video(s) in response.videos[] array.
+        """
         result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
         logger.info("%s: Fetching final result for generation: %s", self.name, generation_id)
 
+        # Fetch the result
+        result_json = await self._fetch_result_json(result_url, headers, client)
+        if result_json is None:
+            return
+
+        # Check for RAI rejection
+        rai_filtered_count = result_json.get("response", {}).get("raiMediaFilteredCount", 0)
+        if rai_filtered_count > 0:
+            logger.warning("%s: %s video(s) filtered by RAI", self.name, rai_filtered_count)
+
+        # Extract videos array from response
+        videos_array = result_json.get("response", {}).get("videos", [])
+        if not videos_array:
+            logger.warning("%s: No videos in result", self.name)
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no videos received",
+            )
+            return
+
+        # Process all videos
+        video_artifacts = self._process_videos_from_result(videos_array, generation_id)
+
+        # Check if we got any videos
+        if not video_artifacts:
+            logger.warning("%s: No videos could be processed", self.name)
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Failed to process any videos from result",
+            )
+            return
+
+        # Set output parameters
+        self._set_video_output_parameters(video_artifacts)
+
+    async def _fetch_result_json(
+        self,
+        result_url: str,
+        headers: dict[str, str],
+        client: httpx.AsyncClient,
+    ) -> dict[str, Any] | None:
+        """Fetch result JSON from the API.
+
+        Returns the JSON response or None if an error occurred.
+        """
         try:
-            response = await client.get(result_url, headers=headers, timeout=60)
+            response = await client.get(result_url, headers=headers, timeout=300)
             response.raise_for_status()
             result_json = response.json()
-
-            logger.info("%s: Result fetched successfully", self.name)
-
-            # Log full response body at debug level
-            logger.debug(
-                "%s: Generation result response:\n%s",
-                self.name,
-                _json.dumps(result_json, indent=2),
-            )
         except httpx.HTTPStatusError as e:
             logger.error(
                 "%s: HTTP error fetching result: %s",
@@ -845,7 +945,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 was_successful=False,
                 result_details=f"Failed to fetch result: HTTP {e.response.status_code}",
             )
-            return
+            return None
         except Exception as e:
             logger.error("%s: Error fetching result: %s", self.name, e)
             self._set_safe_defaults()
@@ -853,99 +953,91 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 was_successful=False,
                 result_details=f"Failed to fetch result: {e}",
             )
-            return
-
-        # Update provider_response with final result
-        self.parameter_output_values["provider_response"] = result_json
-
-        # Check for RAI (Responsible AI) filtering or rejection
-        rai_rejection_reason = self._extract_rai_rejection_reason(result_json)
-        if rai_rejection_reason:
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(was_successful=False, result_details=rai_rejection_reason)
-            return
-
-        # Extract video URL from the result
-        extracted_url = self._extract_video_url(result_json)
-        if not extracted_url:
-            logger.warning("%s: No video URL in result", self.name)
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no video URL found in response",
+            return None
+        else:
+            logger.info("%s: Result fetched successfully", self.name)
+            logger.debug(
+                "%s: Result response:\n%s",
+                self.name,
+                _json.dumps(self._sanitize_result_json(result_json), indent=2),
             )
-            return
+            return result_json
 
-        # Download and save to static storage
-        artifact = await self._save_video(extracted_url, generation_id)
-        if not artifact:
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="Failed to save video",
-            )
-            return
+    def _process_videos_from_result(
+        self,
+        videos_array: list[dict[str, Any]],
+        generation_id: str,
+    ) -> list[VideoUrlArtifact]:
+        """Process all videos from the result array.
 
-        # Set success outputs
-        self.parameter_output_values["video_url"] = artifact
-        self._set_status_results(
-            was_successful=True,
-            result_details=f"Video generated successfully: {artifact.name}",
-        )
+        Returns a list of VideoUrlArtifact objects.
+        """
+        video_artifacts = []
+        static_files_manager = GriptapeNodes.StaticFilesManager()
 
-    async def _save_video(self, url: str, generation_id: str) -> VideoUrlArtifact | None:
-        """Download video from URL and save to static storage."""
+        for idx, video_data in enumerate(videos_array, start=1):
+            artifact = self._process_single_video(video_data, generation_id, idx, static_files_manager)
+            if artifact:
+                video_artifacts.append(artifact)
+
+        return video_artifacts
+
+    def _process_single_video(
+        self,
+        video_data: dict[str, Any],
+        generation_id: str,
+        idx: int,
+        static_files_manager: Any,
+    ) -> VideoUrlArtifact | None:
+        """Process a single video from base64 data.
+
+        Returns a VideoUrlArtifact or None if processing failed.
+        """
         try:
-            logger.info("%s: Downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url(url)
-            if not video_bytes:
-                logger.warning(
-                    "%s: Could not download video, using provider URL",
-                    self.name,
-                )
-                return VideoUrlArtifact(value=url)
+            base64_data = video_data.get("bytesBase64Encoded")
+            mime_type = video_data.get("mimeType", "video/mp4")
+
+            if not base64_data:
+                logger.warning("%s: Video %s missing base64 data", self.name, idx)
+                return None
+
+            # Decode base64
+            video_bytes = base64.b64decode(base64_data)
+
+            # Determine file extension from mime type
+            extension = "mp4"
+            if "/" in mime_type:
+                extension = mime_type.split("/")[1]
 
             # Save to static storage
-            filename = f"veo3_video_{generation_id}.mp4"
-            static_files_manager = GriptapeNodes.StaticFilesManager()
+            filename = f"veo3_video_{generation_id}_{idx}.{extension}"
             saved_url = static_files_manager.save_static_file(video_bytes, filename)
 
-            logger.info("%s: Saved video as %s", self.name, filename)
+            logger.info("%s: Saved video %s as %s (%s bytes)", self.name, idx, filename, len(video_bytes))
+
             return VideoUrlArtifact(value=saved_url, name=filename)
 
         except Exception as e:
-            logger.error("%s: Failed to save video: %s", self.name, e)
-            return VideoUrlArtifact(value=url)
-
-    def _extract_rai_rejection_reason(self, obj: dict[str, Any] | None) -> str | None:
-        """Extract RAI (Responsible AI) filtering/rejection reasons from the response.
-
-        Google's API returns rejection reasons in response.generateVideoResponse.raiMediaFilteredReasons
-        when content is filtered by safety systems.
-        """
-        if not isinstance(obj, dict):
+            logger.error("%s: Failed to process video %s: %s", self.name, idx, e)
             return None
 
-        try:
-            # Navigate to the generateVideoResponse object
-            response = obj.get("response")
-            generate_video_response = response.get("generateVideoResponse") if isinstance(response, dict) else None
-            if not isinstance(generate_video_response, dict):
-                return None
+    def _set_video_output_parameters(self, video_artifacts: list[VideoUrlArtifact]) -> None:
+        """Set output parameters for all generated videos."""
+        # Show appropriate number of output parameters
+        self._show_video_output_parameters(len(video_artifacts))
 
-            # Check for filtered reasons and count
-            filtered_count = generate_video_response.get("raiMediaFilteredCount", 0)
-            filtered_reasons = generate_video_response.get("raiMediaFilteredReasons")
+        # Set individual output parameters
+        for idx, artifact in enumerate(video_artifacts, start=1):
+            param_name = "video_url" if idx == 1 else f"video_url_{idx}"
+            self.parameter_output_values[param_name] = artifact
 
-            # Format the rejection message if reasons exist
-            if filtered_count > 0 and isinstance(filtered_reasons, list) and filtered_reasons:
-                reasons_text = "\n\n".join(f"- {reason}" for reason in filtered_reasons if isinstance(reason, str))
-                if reasons_text:
-                    return f"{self.name}: Video generation rejected by Google's safety filters.\n\n{reasons_text}"
-        except Exception as e:
-            logger.warning("Failed to extract RAI rejection reason: %s", e)
-
-        return None
+        # Set success status
+        video_count = len(video_artifacts)
+        result_message = f"Generated {video_count} video{'s' if video_count > 1 else ''} successfully"
+        self._set_status_results(
+            was_successful=True,
+            result_details=result_message,
+        )
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
         """Extract detailed error message from API response.
@@ -983,7 +1075,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
         """Set safe default values for all outputs on error."""
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
-        self.parameter_output_values["video_url"] = None
+        # Clear all video output parameters
+        for i in range(1, 5):
+            param_name = "video_url" if i == 1 else f"video_url_{i}"
+            self.parameter_output_values[param_name] = None
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:
@@ -991,51 +1086,3 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if not obj or not isinstance(obj, dict):
             return None
         return obj.get("status") if isinstance(obj.get("status"), str) else None
-
-    @staticmethod
-    def _extract_video_url(obj: dict[str, Any] | None) -> str | None:
-        """Extract video URL from Veo3 response.
-
-        Expected path: response.generateVideoResponse.generatedSamples[0].video.uri
-        """
-        if not obj or not isinstance(obj, dict):
-            return None
-
-        try:
-            response = obj.get("response")
-            generate_video_response = response.get("generateVideoResponse") if isinstance(response, dict) else None
-            generated_samples = (
-                generate_video_response.get("generatedSamples") if isinstance(generate_video_response, dict) else None
-            )
-
-            if not (isinstance(generated_samples, list) and len(generated_samples) > 0):
-                return None
-
-            first_sample = generated_samples[0]
-            if not isinstance(first_sample, dict):
-                return None
-
-            # Extract video.uri from the sample
-            video_obj = first_sample.get("video")
-            if not isinstance(video_obj, dict):
-                return None
-
-            video_uri = video_obj.get("uri")
-            if isinstance(video_uri, str) and video_uri.startswith("http"):
-                return video_uri
-
-        except Exception as e:
-            logger.warning("Failed to extract video URL from Veo3 response: %s", e)
-
-        return None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=300)  # 5 minutes
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
