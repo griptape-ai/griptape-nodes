@@ -380,7 +380,13 @@ class ArtifactPathTethering:
         try:
             # Process the path (URL or file) - reuse existing path logic
             if is_url(path_value):
-                download_url = self._download_and_upload_url(path_value)
+                # Check if it's a file:// URI pointing to workspace staticfiles
+                # If so, no need to re-download/upload - just pass through
+                if self._is_workspace_staticfiles_uri(path_value):
+                    download_url = path_value
+                else:
+                    # External URL or file outside workspace - download and upload
+                    download_url = self._download_and_upload_url(path_value)
             else:
                 # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
                 sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_value)
@@ -507,6 +513,46 @@ class ArtifactPathTethering:
         domain = re.sub(self.SAFE_FILENAME_PATTERN, "_", domain)
         unique_id = str(uuid.uuid4())[:8]
         return f"{domain}_{unique_id}.{self.config.default_extension}"
+
+    def _is_workspace_staticfiles_uri(self, url: str) -> bool:
+        """Check if a file:// URI points to a file already in the workspace staticfiles directory.
+
+        Args:
+            url: The URL to check (should be a file:// URI)
+
+        Returns:
+            True if the file:// URI points to workspace staticfiles, False otherwise
+        """
+        if not url.startswith("file://"):
+            return False
+
+        # Decode the file:// URI to a path
+        from urllib.request import url2pathname
+
+        parsed = urlparse(url)
+        file_path = Path(url2pathname(unquote(parsed.path)))
+
+        # Check if it's in the workspace
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        try:
+            if not file_path.is_relative_to(workspace_path):
+                return False
+        except ValueError:
+            return False
+
+        # Check if it's in the staticfiles directory (or a workflow-specific staticfiles subdirectory)
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value(
+            "static_files_directory", default="staticfiles"
+        )
+
+        try:
+            relative_path = file_path.relative_to(workspace_path)
+        except ValueError:
+            return False
+
+        # Check if the path contains the staticfiles directory anywhere in its hierarchy
+        # This handles both "staticfiles/image.png" and "myflow/staticfiles/image.png"
+        return static_files_dir in relative_path.parts
 
     def _download_and_upload_url(self, url: str) -> str:
         """Download artifact from URL and upload to static storage, return file:// URI."""

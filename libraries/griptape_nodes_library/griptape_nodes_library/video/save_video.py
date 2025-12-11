@@ -300,6 +300,9 @@ class SaveVideo(SuccessFailureNode):
         """Report success with download info if applicable."""
         output_file = self.get_parameter_value("output_path") or DEFAULT_FILENAME
 
+        # Update output_path with the actual saved file:// URI
+        self.parameter_output_values["output_path"] = saved_path
+
         result_details = f"Video saved successfully\nRequested filename: {output_file}\nSaved to: {saved_path}"
 
         # Add download info if available
