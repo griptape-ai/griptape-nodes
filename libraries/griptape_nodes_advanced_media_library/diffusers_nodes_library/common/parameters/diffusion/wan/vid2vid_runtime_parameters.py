@@ -27,6 +27,7 @@ class WanVideoToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameter
         self._node.add_parameter(
             Parameter(
                 name="input_video",
+                input_types=["VideoArtifact", "VideoUrlArtifact"],
                 type="VideoUrlArtifact",
                 tooltip="Input video for video-to-video generation",
             )
