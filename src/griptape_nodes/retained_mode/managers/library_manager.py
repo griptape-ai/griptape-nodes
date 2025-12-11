@@ -1074,7 +1074,7 @@ class LibraryManager:
         )
         return result
 
-    async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915 (complex logic needs branches)
+    async def register_library_from_file_request(self, request: RegisterLibraryFromFileRequest) -> ResultPayload:  # noqa: PLR0911 (result determination needs returns)
         """Register a library by name or path, progressing through all lifecycle phases.
 
         Supports loading by library_name OR file_path (mutually exclusive), with optional
@@ -1102,7 +1102,170 @@ class LibraryManager:
         library_info = prereq_result.library_info
         file_path = prereq_result.file_path
 
-        # Phase 2: Progress through lifecycle phases until reaching LOADED state
+        # Phase 2: Progress through lifecycle phases
+        progression_result = await self._progress_library_through_lifecycle(
+            library_info=library_info, file_path=file_path, request=request
+        )
+
+        # FAILURE CHECK
+        if isinstance(progression_result, RegisterLibraryFromFileResultFailure):
+            return progression_result
+
+        # Phase 3: Return appropriate result based on fitness
+        # At this point, library_name must be set (it's set during METADATA_LOADED phase)
+        if library_info.library_name is None:
+            details = "Library loaded but library_name was not set during metadata loading"
+            return RegisterLibraryFromFileResultFailure(result_details=details)
+
+        match library_info.fitness:
+            case LibraryFitness.GOOD:
+                details = f"Successfully loaded Library '{library_info.library_name}' from JSON file at {file_path}"
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_info.library_name,
+                    result_details=ResultDetails(message=details, level=logging.INFO),
+                )
+            case LibraryFitness.FLAWED:
+                details = f"Successfully loaded Library JSON file from '{file_path}', but one or more nodes failed to load. Check the log for more details."
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_info.library_name,
+                    result_details=ResultDetails(message=details, level=logging.WARNING),
+                )
+            case LibraryFitness.UNUSABLE:
+                details = f"Attempted to load Library JSON file from '{file_path}'. Failed because no nodes were loaded. Check the log for more details."
+                return RegisterLibraryFromFileResultFailure(result_details=details)
+            case _:
+                details = f"Attempted to load Library JSON file from '{file_path}'. Failed because an unknown/unexpected fitness '{library_info.fitness}' was returned."
+                return RegisterLibraryFromFileResultFailure(result_details=details)
+
+    async def _establish_register_library_prerequisites(  # noqa: C901, PLR0911, PLR0912 (prerequisite validation needs branches)
+        self, request: RegisterLibraryFromFileRequest
+    ) -> (
+        LibraryManager.RegisterLibraryPrerequisites
+        | RegisterLibraryFromFileResultSuccess
+        | RegisterLibraryFromFileResultFailure
+    ):
+        """Validate request and establish library identity.
+
+        Returns:
+            RegisterLibraryPrerequisites: Ready for lifecycle progression
+            RegisterLibraryFromFileResultSuccess: Library already loaded (early exit)
+            RegisterLibraryFromFileResultFailure: Validation or lookup failed
+        """
+        # Validate request has either library_name or file_path (but not both)
+        if not request.library_name and not request.file_path:
+            return RegisterLibraryFromFileResultFailure(
+                result_details="Attempted to register a library. Failed because neither library name nor file path were specified."
+            )
+
+        if request.library_name and request.file_path:
+            return RegisterLibraryFromFileResultFailure(
+                result_details="Attempted to register a library. Failed because both library name and file path were specified."
+            )
+
+        library_name = request.library_name
+        file_path = request.file_path
+
+        # If file_path provided but not library_name, load metadata to get the name
+        if file_path and not library_name:
+            lib_info = self._library_file_path_to_info.get(file_path)
+
+            # If we don't have LibraryInfo yet, load metadata to get the name
+            if not lib_info or not lib_info.library_name:
+                metadata_result = self.load_library_metadata_from_file_request(
+                    LoadLibraryMetadataFromFileRequest(file_path=file_path)
+                )
+
+                if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
+                    return RegisterLibraryFromFileResultFailure(result_details=metadata_result.result_details)
+
+                library_name = metadata_result.library_schema.name
+
+                # Update or create LibraryInfo
+                if lib_info:
+                    lib_info.library_name = library_name
+                    lib_info.library_version = metadata_result.library_schema.metadata.library_version
+                    lib_info.lifecycle_state = LibraryLifecycleState.METADATA_LOADED
+                else:
+                    # Create new LibraryInfo since it doesn't exist yet
+                    lib_info = LibraryManager.LibraryInfo(
+                        lifecycle_state=LibraryLifecycleState.METADATA_LOADED,
+                        library_path=file_path,
+                        is_sandbox=False,
+                        library_name=library_name,
+                        library_version=metadata_result.library_schema.metadata.library_version,
+                        fitness=LibraryFitness.NOT_EVALUATED,
+                        problems=[],
+                    )
+                    self._library_file_path_to_info[file_path] = lib_info
+            else:
+                library_name = lib_info.library_name
+
+        # At this point, library_name must be set (either from request or from metadata)
+        if not library_name:
+            return RegisterLibraryFromFileResultFailure(result_details="Failed to determine library name")
+
+        # Check if already loaded in registry
+        try:
+            LibraryRegistry.get_library(name=library_name)
+            return RegisterLibraryFromFileResultSuccess(
+                library_name=library_name,
+                result_details=f"Library '{library_name}' already loaded",
+            )
+        except KeyError:
+            pass  # Not loaded, continue
+
+        # Look up LibraryInfo by library_name (supports lazy loading)
+        library_info = self.get_library_info_by_library_name(library_name)
+
+        # If not found and discovery is allowed, try discovery
+        if library_info is None and request.perform_discovery_if_not_found:
+            discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
+            if isinstance(discover_result, DiscoverLibrariesResultSuccess):
+                library_info = self.get_library_info_by_library_name(library_name)
+
+        # If still not found, fail
+        if library_info is None:
+            details = f"Library '{library_name}' not found"
+            if request.perform_discovery_if_not_found:
+                details += " (discovery was attempted)"
+            return RegisterLibraryFromFileResultFailure(result_details=details)
+
+        file_path = library_info.library_path
+
+        # Check if already loaded in registry (by name if we have it)
+        if library_info.library_name:
+            try:
+                LibraryRegistry.get_library(name=library_info.library_name)
+            except KeyError:
+                # Library not in registry, continue with loading
+                pass
+            else:
+                # Already loaded and good to go
+                return RegisterLibraryFromFileResultSuccess(
+                    library_name=library_info.library_name,
+                    result_details=f"Library '{library_info.library_name}' already loaded",
+                )
+
+        # Prerequisites established - ready for lifecycle progression
+        return LibraryManager.RegisterLibraryPrerequisites(library_info=library_info, file_path=file_path)
+
+    async def _progress_library_through_lifecycle(  # noqa: C901, PLR0911, PLR0912, PLR0915 (lifecycle state machine needs branches/statements/returns)
+        self,
+        library_info: LibraryManager.LibraryInfo,
+        file_path: str,
+        request: RegisterLibraryFromFileRequest,
+    ) -> None | RegisterLibraryFromFileResultFailure:
+        """Progress library through lifecycle states until LOADED.
+
+        Advances library_info through states: DISCOVERED → METADATA_LOADED →
+        EVALUATED → DEPENDENCIES_INSTALLED → LOADED.
+
+        Modifies library_info in place as it progresses through states.
+
+        Returns:
+            None: Successfully progressed to LOADED state
+            RegisterLibraryFromFileResultFailure: Failed during progression
+        """
         while True:
             current_state = library_info.lifecycle_state
 
@@ -1350,143 +1513,8 @@ class LibraryManager:
                     msg = f"Library '{library_info.library_name}' in unexpected lifecycle state: {current_state}"
                     raise ValueError(msg)
 
-        # Step 3: Return appropriate result based on fitness
-        # At this point, library_name must be set (it's set during METADATA_LOADED phase)
-        if library_info.library_name is None:
-            details = "Library loaded but library_name was not set during metadata loading"
-            return RegisterLibraryFromFileResultFailure(result_details=details)
-
-        match library_info.fitness:
-            case LibraryFitness.GOOD:
-                details = f"Successfully loaded Library '{library_info.library_name}' from JSON file at {file_path}"
-                return RegisterLibraryFromFileResultSuccess(
-                    library_name=library_info.library_name,
-                    result_details=ResultDetails(message=details, level=logging.INFO),
-                )
-            case LibraryFitness.FLAWED:
-                details = f"Successfully loaded Library JSON file from '{file_path}', but one or more nodes failed to load. Check the log for more details."
-                return RegisterLibraryFromFileResultSuccess(
-                    library_name=library_info.library_name,
-                    result_details=ResultDetails(message=details, level=logging.WARNING),
-                )
-            case LibraryFitness.UNUSABLE:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed because no nodes were loaded. Check the log for more details."
-                return RegisterLibraryFromFileResultFailure(result_details=details)
-            case _:
-                details = f"Attempted to load Library JSON file from '{file_path}'. Failed because an unknown/unexpected fitness '{library_info.fitness}' was returned."
-                return RegisterLibraryFromFileResultFailure(result_details=details)
-
-    async def _establish_register_library_prerequisites(  # noqa: C901, PLR0911, PLR0912 (prerequisite validation needs branches)
-        self, request: RegisterLibraryFromFileRequest
-    ) -> (
-        LibraryManager.RegisterLibraryPrerequisites
-        | RegisterLibraryFromFileResultSuccess
-        | RegisterLibraryFromFileResultFailure
-    ):
-        """Validate request and establish library identity.
-
-        Returns:
-            RegisterLibraryPrerequisites: Ready for lifecycle progression
-            RegisterLibraryFromFileResultSuccess: Library already loaded (early exit)
-            RegisterLibraryFromFileResultFailure: Validation or lookup failed
-        """
-        # Validate request has either library_name or file_path (but not both)
-        if not request.library_name and not request.file_path:
-            return RegisterLibraryFromFileResultFailure(
-                result_details="Attempted to register a library. Failed because neither library name nor file path were specified."
-            )
-
-        if request.library_name and request.file_path:
-            return RegisterLibraryFromFileResultFailure(
-                result_details="Attempted to register a library. Failed because both library name and file path were specified."
-            )
-
-        library_name = request.library_name
-        file_path = request.file_path
-
-        # If file_path provided but not library_name, load metadata to get the name
-        if file_path and not library_name:
-            lib_info = self._library_file_path_to_info.get(file_path)
-
-            # If we don't have LibraryInfo yet, load metadata to get the name
-            if not lib_info or not lib_info.library_name:
-                metadata_result = self.load_library_metadata_from_file_request(
-                    LoadLibraryMetadataFromFileRequest(file_path=file_path)
-                )
-
-                if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
-                    return RegisterLibraryFromFileResultFailure(result_details=metadata_result.result_details)
-
-                library_name = metadata_result.library_schema.name
-
-                # Update or create LibraryInfo
-                if lib_info:
-                    lib_info.library_name = library_name
-                    lib_info.library_version = metadata_result.library_schema.metadata.library_version
-                    lib_info.lifecycle_state = LibraryLifecycleState.METADATA_LOADED
-                else:
-                    # Create new LibraryInfo since it doesn't exist yet
-                    lib_info = LibraryManager.LibraryInfo(
-                        lifecycle_state=LibraryLifecycleState.METADATA_LOADED,
-                        library_path=file_path,
-                        is_sandbox=False,
-                        library_name=library_name,
-                        library_version=metadata_result.library_schema.metadata.library_version,
-                        fitness=LibraryFitness.NOT_EVALUATED,
-                        problems=[],
-                    )
-                    self._library_file_path_to_info[file_path] = lib_info
-            else:
-                library_name = lib_info.library_name
-
-        # At this point, library_name must be set (either from request or from metadata)
-        if not library_name:
-            return RegisterLibraryFromFileResultFailure(result_details="Failed to determine library name")
-
-        # Check if already loaded in registry
-        try:
-            LibraryRegistry.get_library(name=library_name)
-            return RegisterLibraryFromFileResultSuccess(
-                library_name=library_name,
-                result_details=f"Library '{library_name}' already loaded",
-            )
-        except KeyError:
-            pass  # Not loaded, continue
-
-        # Look up LibraryInfo by library_name (supports lazy loading)
-        library_info = self.get_library_info_by_library_name(library_name)
-
-        # If not found and discovery is allowed, try discovery
-        if library_info is None and request.perform_discovery_if_not_found:
-            discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
-            if isinstance(discover_result, DiscoverLibrariesResultSuccess):
-                library_info = self.get_library_info_by_library_name(library_name)
-
-        # If still not found, fail
-        if library_info is None:
-            details = f"Library '{library_name}' not found"
-            if request.perform_discovery_if_not_found:
-                details += " (discovery was attempted)"
-            return RegisterLibraryFromFileResultFailure(result_details=details)
-
-        file_path = library_info.library_path
-
-        # Check if already loaded in registry (by name if we have it)
-        if library_info.library_name:
-            try:
-                LibraryRegistry.get_library(name=library_info.library_name)
-            except KeyError:
-                # Library not in registry, continue with loading
-                pass
-            else:
-                # Already loaded and good to go
-                return RegisterLibraryFromFileResultSuccess(
-                    library_name=library_info.library_name,
-                    result_details=f"Library '{library_info.library_name}' already loaded",
-                )
-
-        # Prerequisites established - ready for lifecycle progression
-        return LibraryManager.RegisterLibraryPrerequisites(library_info=library_info, file_path=file_path)
+        # Success - progressed to LOADED state
+        return None
 
     async def register_library_from_requirement_specifier_request(
         self, request: RegisterLibraryFromRequirementSpecifierRequest
