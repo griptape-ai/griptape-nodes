@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -46,7 +47,7 @@ class DagBuilder:
     graphs: dict[str, DirectedGraph]  # Str is the name of the start node associated here.
     node_to_reference: dict[str, DagNode]
     graph_to_nodes: dict[str, set[str]]  # Track which nodes belong to which graph
-    start_node_candidates: dict[str, set[str]]
+    start_node_candidates: dict[str, dict[str, set[str]]]  # {data_node: {graph: {boundary_nodes}}}
 
     def __init__(self) -> None:
         self.graphs = {}
@@ -218,7 +219,7 @@ class DagBuilder:
                         continue
 
                     # Check if the target node is in the forward path from this root
-                    if self._is_node_in_forward_path(root_node, node.node_reference, connections):
+                    if connections.is_node_in_forward_control_path(root_node, node.node_reference):
                         return False  # This graph could still reach the target node
 
         # Otherwise, return true at the end of the function
@@ -391,39 +392,6 @@ class DagBuilder:
 
         return dependencies
 
-    def _is_node_in_forward_path(
-        self, start_node: BaseNode, target_node: BaseNode, connections: Connections, visited: set[str] | None = None
-    ) -> bool:
-        """Check if target_node is reachable from start_node through control flow connections."""
-        if visited is None:
-            visited = set()
-
-        if start_node.name in visited:
-            return False
-        visited.add(start_node.name)
-
-        # Check ALL outgoing control connections, not just get_next_control_output()
-        # This handles IfElse nodes that have multiple possible control outputs
-        if start_node.name in connections.outgoing_index:
-            for param_name, connection_ids in connections.outgoing_index[start_node.name].items():
-                # Find the parameter to check if it's a control type
-                param = start_node.get_parameter_by_name(param_name)
-                if param and param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
-                    # This is a control parameter - check all its connections
-                    for connection_id in connection_ids:
-                        if connection_id in connections.connections:
-                            connection = connections.connections[connection_id]
-                            next_node = connection.target_node
-
-                            if next_node.name == target_node.name:
-                                return True
-
-                            # Recursively check the forward path
-                            if self._is_node_in_forward_path(next_node, target_node, connections, visited):
-                                return True
-
-        return False
-
     def cleanup_empty_graph_nodes(self, graph_name: str) -> None:
         """Remove nodes from node_to_reference when their graph becomes empty (only in single node resolution)."""
         if graph_name in self.graph_to_nodes:
@@ -431,21 +399,30 @@ class DagBuilder:
                 self.node_to_reference.pop(node_name, None)
             self.graph_to_nodes.pop(graph_name, None)
 
-    def remove_graph_from_dependencies(self) -> list[str]:
-        # Check all start node candidates and return those whose dependent graphs are all empty
-        start_nodes = []
-        # copy because we will be removing as iterating.
-        for start_node_name, graph_deps in self.start_node_candidates.copy().items():
-            # Check if all graphs this start node depends on are now empty
-            all_deps_empty = True
-            for graph_deps_name in graph_deps:
-                # Check if this graph exists and has nodes
-                if graph_deps_name in self.graphs and len(self.graphs[graph_deps_name].nodes()) > 0:
-                    all_deps_empty = False
-                    break
+    def remove_node_from_dependencies(self, completed_node: str, graph_name: str) -> list[str]:
+        """Remove completed node from all dependencies, return nodes ready to execute.
 
-            # If all dependent graphs are empty, this start node can be queued
-            if all_deps_empty:
-                del self.start_node_candidates[start_node_name]
-                start_nodes.append(start_node_name)
-        return start_nodes
+        Args:
+            completed_node: Name of the node that just completed
+            graph_name: Name of the graph the node completed in
+
+        Returns:
+            List of data node names that are now ready to execute
+        """
+        newly_available = []
+
+        for data_node, graph_deps in copy.deepcopy(list(self.start_node_candidates.items())):
+            if graph_name in graph_deps:
+                # Remove the completed node from this graph's boundary nodes
+                graph_deps[graph_name].discard(completed_node)
+
+                # If all boundary nodes from this graph have completed, remove the graph dependency
+                if len(graph_deps[graph_name]) == 0:
+                    del graph_deps[graph_name]
+
+                # If all graph dependencies are satisfied, the data node is ready
+                if len(graph_deps) == 0:
+                    del self.start_node_candidates[data_node]
+                    newly_available.append(data_node)
+
+        return newly_available

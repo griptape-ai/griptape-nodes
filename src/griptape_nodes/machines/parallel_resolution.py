@@ -105,7 +105,21 @@ class ParallelResolutionContext:
 
 class ExecuteDagState(State):
     @staticmethod
-    async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:  # noqa: C901
+    def check_for_new_start_nodes(
+        context: ParallelResolutionContext, current_node_name: str, network_name: str
+    ) -> None:
+        # Remove this node from dependencies and get newly available nodes
+        if context.dag_builder is not None:
+            newly_available = context.dag_builder.remove_node_from_dependencies(current_node_name, network_name)
+            for data_node_name in newly_available:
+                data_node = GriptapeNodes.NodeManager().get_node_by_name(data_node_name)
+                added_nodes = context.dag_builder.add_node_with_dependencies(data_node, data_node_name)
+                if added_nodes:
+                    for added_node in added_nodes:
+                        ExecuteDagState._try_queue_waiting_node(context, added_node.name)
+
+    @staticmethod
+    async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:
         current_node = done_node.node_reference
 
         # Check if node was already resolved (shouldn't happen)
@@ -183,13 +197,7 @@ class ExecuteDagState(State):
         )
         # Now the final thing to do, is to take their directed graph and update it.
         ExecuteDagState.get_next_control_graph(context, current_node, network_name)
-        graph = context.networks[network_name]
-        if len(graph.nodes()) == 0 and context.dag_builder is not None:
-            # remove from dependencies. This is so we can potentially queue the data node.
-            data_start_nodes = context.dag_builder.remove_graph_from_dependencies()
-            for data_start_node_name in data_start_nodes:
-                data_start_node = GriptapeNodes.NodeManager().get_node_by_name(data_start_node_name)
-                context.dag_builder.add_node_with_dependencies(data_start_node, network_name)
+        ExecuteDagState.check_for_new_start_nodes(context, current_node.name, network_name)
 
     @staticmethod
     def get_next_control_graph(context: ParallelResolutionContext, node: BaseNode, network_name: str) -> None:
@@ -380,7 +388,9 @@ class ExecuteDagState(State):
         networks = context.networks
         handled_nodes = set()  # Track nodes we've already processed to avoid duplicates
 
-        for network_name, network in networks.items():
+        # Create a copy of items to avoid "dictionary changed size during iteration" error
+        # This is necessary because handle_done_nodes can add new networks via the DAG builder
+        for network_name, network in list(networks.items()):
             # Check and see if there are leaf nodes that are cancelled.
             # Reinitialize leaf nodes since maybe we changed things up.
             # We removed nodes from the network. There may be new leaf nodes.
