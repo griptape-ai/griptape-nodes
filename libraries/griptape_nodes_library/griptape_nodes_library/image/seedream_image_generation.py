@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -604,15 +605,18 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if image_value.startswith("data:image/"):
             return image_value
 
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
+        # If it's a URL/URI (http://, https://, or file://), download and convert to base64
+        if is_url(image_value):
             return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix
         return f"data:image/png;base64,{image_value}"
 
     async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 data URI."""
+        """Download image from URL/URI and encode as base64 data URI.
+
+        Supports http://, https://, and file:// URLs.
+        """
         try:
             image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
@@ -722,7 +726,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         try:
             response = await client.get(result_url, headers=headers, timeout=60)
             response.raise_for_status()
-            result_json = response.json()
+            response.json()
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
             self._set_safe_defaults()
@@ -736,20 +740,44 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_msg)
             return
 
-        # Update provider_response with the final result
-        self.parameter_output_values["provider_response"] = result_json
-
-        # Extract image data
-        data = result_json.get("data", [])
-        if not data:
-            self._log("No image data in result")
-            self._set_safe_defaults()
+    async def _save_image_from_url(self, image_url: str, generation_id: str | None = None) -> None:
+        """Download and save the image from the provided URL."""
+        try:
+            self._log("Downloading image from URL")
+            image_bytes = await self._download_bytes_from_url(image_url)
+            if image_bytes:
+                filename = (
+                    f"seedream_image_{generation_id}.jpg" if generation_id else f"seedream_image_{int(time.time())}.jpg"
+                )
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved image to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+                )
+            else:
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+                )
+        except Exception as e:
+            self._log(f"Failed to save image from URL: {e}")
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
             self._set_status_results(
                 was_successful=False,
                 result_details="Generation completed but no image data was found in the response.",
             )
             return
 
+    async def _save_images_from_urls(self, data: list[dict], generation_id: str | None = None) -> None:
+        """Process and save multiple images from response data.
+
+        Args:
+            data: List of image data dictionaries containing URLs
+            generation_id: Optional generation ID for filenames
+        """
         # Process all images from the response
         image_artifacts = []
         for idx, image_data in enumerate(data):
@@ -967,9 +995,6 @@ class SeedreamImageGeneration(SuccessFailureNode):
     async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
+            return await GriptapeNodes.FileManager().aread_file(url)
+        except ValueError:
             return None

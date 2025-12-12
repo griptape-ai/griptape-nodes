@@ -12,12 +12,12 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils import validate_url
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     dict_to_video_url_artifact,
     to_video_artifact,
-    validate_url,
 )
 
 
@@ -308,7 +308,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
 
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(suffix, format_extension)
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+        url = GriptapeNodes.FileManager().write_file(video_bytes, filename)
         return VideoUrlArtifact(url)
 
     def _run_ffmpeg_command(self, cmd: list[str], timeout: int = 300) -> None:

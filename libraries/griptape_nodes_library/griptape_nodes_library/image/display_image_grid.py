@@ -277,7 +277,7 @@ class DisplayImageGrid(ControlNode):
             suffix="_placeholder",
             extension=output_format,
         )
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+        static_url = GriptapeNodes.FileManager().write_file(
             image_to_bytes(placeholder_image, output_format),
             filename,
         )
@@ -427,9 +427,7 @@ class DisplayImageGrid(ControlNode):
                 suffix="_grid",
                 extension=output_format,
             )
-            static_url = GriptapeNodes.StaticFilesManager().save_static_file(
-                image_to_bytes(grid_image, output_format), filename
-            )
+            static_url = GriptapeNodes.FileManager().write_file(image_to_bytes(grid_image, output_format), filename)
             url_artifact = ImageUrlArtifact(value=static_url)
             self.publish_update_to_parameter("output", url_artifact)
 

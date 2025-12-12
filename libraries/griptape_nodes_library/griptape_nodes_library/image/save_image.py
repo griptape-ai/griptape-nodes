@@ -213,6 +213,9 @@ class SaveImage(SuccessFailureNode):
             self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
             return
 
+        # Update output_path with the actual saved file:// URI
+        self.parameter_output_values["output_path"] = saved_path
+
         # Success case with path method info
         path_method = "filesystem" if output_path.is_absolute() else "static storage"
         success_details = f"Image saved successfully via {path_method}"
@@ -386,7 +389,7 @@ class SaveImage(SuccessFailureNode):
 
         # Save to static storage
         try:
-            return GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, output_file)
+            return GriptapeNodes.FileManager().write_file(image_bytes, output_file)
         except Exception as e:
             error_details = f"Failed to save image to static storage: {e!s}"
             raise RuntimeError(error_details) from e

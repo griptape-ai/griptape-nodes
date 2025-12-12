@@ -6,7 +6,6 @@ import diffusers  # type: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image  # type: ignore[reportMissingImports]
-import requests
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
@@ -20,6 +19,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.url_utils import strip_file_scheme
 
 logger = logging.getLogger("sam2_nodes_library")
 
@@ -102,7 +102,8 @@ class DinoSam2VideoDetector(ControlNode):
 
     def get_video_frames_pil(self) -> list[PIL.Image.Image]:
         """Get the input video frames as a list of PIL Image objects."""
-        return diffusers.utils.load_video(self.get_video_mp4())
+        # Convert file:// URI to path for diffusers compatibility
+        return diffusers.utils.load_video(strip_file_scheme(self.get_video_mp4()))
 
     def get_prompt(self) -> str:
         """Get the prompt text for object detection."""
@@ -228,8 +229,8 @@ class DinoSam2VideoDetector(ControlNode):
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "input_video.mp4"
 
-            # 1. Download the video
-            video_data = requests.get(self.get_video_mp4(), timeout=30).content
+            # 1. Download the video (handles file://, http://, and https:// URLs)
+            video_data = GriptapeNodes.FileManager().read_file(self.get_video_mp4())
             with Path(video_path).open("wb") as f:
                 f.write(video_data)
 
@@ -321,5 +322,5 @@ class DinoSam2VideoDetector(ControlNode):
         import uuid
 
         filename = f"{uuid.uuid4()}{video_path.suffix}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), filename)
         self.parameter_output_values["output_video"] = VideoUrlArtifact(url)

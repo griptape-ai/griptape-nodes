@@ -543,7 +543,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 response = await client.get(url, timeout=120.0)
                 response.raise_for_status()
                 video_filename = f"omnihuman_video_{int(time.time())}.mp4"
-                GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
+                GriptapeNodes.FileManager().write_file(response.content, video_filename)
                 return video_filename
         except Exception:
             return None

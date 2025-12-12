@@ -20,6 +20,7 @@ from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters impo
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.url_utils import strip_file_scheme
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -203,7 +204,8 @@ class WanVacePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             return []
 
         # Use diffusers loading utilities to convert video URL to frames
-        return diffusers.utils.load_video(video_artifact.value)
+        # Convert file:// URI to path for diffusers compatibility
+        return diffusers.utils.load_video(strip_file_scheme(video_artifact.value))
 
     def latents_to_video_mp4(self, pipe: diffusers.WanVACEPipeline, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""
@@ -250,7 +252,7 @@ class WanVacePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         try:
             preview_video_path = self.latents_to_video_mp4(pipe, latents)
             filename = f"preview_{uuid.uuid4()}.mp4"
-            url = GriptapeNodes.StaticFilesManager().save_static_file(preview_video_path.read_bytes(), filename)
+            url = GriptapeNodes.FileManager().write_file(preview_video_path.read_bytes(), filename)
             self._node.publish_update_to_parameter("output_video", VideoUrlArtifact(url))
         except Exception as e:
             logger.warning("Failed to generate video preview from latents: %s", e)
@@ -261,5 +263,5 @@ class WanVacePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def publish_output_video(self, video_path: Path) -> None:
         filename = f"{uuid.uuid4()}{video_path.suffix}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
+        url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), filename)
         self._node.parameter_output_values["output_video"] = VideoUrlArtifact(url)

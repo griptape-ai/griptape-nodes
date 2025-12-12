@@ -1,7 +1,6 @@
 from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
@@ -9,6 +8,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -138,10 +138,9 @@ class ApplyMask(DataNode):
             self._apply_mask_to_input(input_image, input_mask, channel)
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using httpx."""
-        response = httpx.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))
+        """Load image from URL using read_file helper."""
+        image_data = GriptapeNodes.FileManager().read_file(url)
+        return Image.open(BytesIO(image_data))
 
     def _create_edge_mask(self, size: tuple[int, int], fade_distance: float) -> Image.Image:
         """Create an edge mask that fades from transparent at edges to opaque at center.

@@ -155,13 +155,13 @@ class FirstLastFrameToVideoWanVaceAux(ControlNode):
         try:
             # Save video
             video_filename = f"{uuid.uuid4()}.mp4"
-            video_url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), video_filename)
+            video_url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), video_filename)
             self.set_parameter_value("output_video", VideoUrlArtifact(video_url))
             self.parameter_output_values["output_video"] = VideoUrlArtifact(video_url)
 
             # Save mask
             mask_filename = f"{uuid.uuid4()}.mp4"
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_path.read_bytes(), mask_filename)
+            mask_url = GriptapeNodes.FileManager().write_file(mask_path.read_bytes(), mask_filename)
             self.set_parameter_value("output_mask", VideoUrlArtifact(mask_url))
             self.parameter_output_values["output_mask"] = VideoUrlArtifact(mask_url)
 

@@ -16,13 +16,13 @@ from griptape.tasks import PromptTask
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.utils import validate_url
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     sanitize_filename,
     seconds_to_ts,
     smpte_to_seconds,
     to_video_artifact,
-    validate_url,
 )
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -591,7 +591,7 @@ If no title is provided, just use "Segment X:" format.
                 )
 
                 # Save to static files
-                url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+                url = GriptapeNodes.FileManager().write_file(video_bytes, filename)
 
                 # Create output artifact
                 video_artifact = VideoUrlArtifact(url)

@@ -26,7 +26,7 @@ def upload_and_get_local_file_path(path: Path) -> str:
     from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # type: ignore[reportMissingImports]
 
     filename = f"{uuid.uuid4()}{path.suffix}"
-    GriptapeNodes.StaticFilesManager().save_static_file(path.read_bytes(), filename)
+    GriptapeNodes.FileManager().write_file(path.read_bytes(), filename)
     config_manager = GriptapeNodes.ConfigManager()
     static_dir = config_manager.workspace_path / config_manager.merged_config["static_files_directory"]
     return str(static_dir / filename)

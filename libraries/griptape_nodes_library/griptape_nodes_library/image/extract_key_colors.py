@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -116,12 +117,12 @@ class ExtractKeyColors(DataNode):
         try:
             # Handle dictionary format (serialized artifacts)
             if isinstance(image_artifact, dict):
-                # Convert dict to ImageUrlArtifact first
                 image_url_artifact = dict_to_image_url_artifact(image_artifact)
-                return image_url_artifact.to_bytes()
-            # Handle artifact objects directly
-            if isinstance(image_artifact, (ImageArtifact, ImageUrlArtifact)):
-                return image_artifact.to_bytes()
+                return GriptapeNodes.FileManager().read_file(image_url_artifact.value)
+            if isinstance(image_artifact, ImageUrlArtifact):
+                return GriptapeNodes.FileManager().read_file(image_artifact.value)
+            if isinstance(image_artifact, ImageArtifact):
+                return image_artifact.value
             # Try to convert to bytes if it's a different artifact type
             return image_artifact.to_bytes()
 

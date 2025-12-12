@@ -514,9 +514,6 @@ class QwenImageGeneration(SuccessFailureNode):
     async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
+            return await GriptapeNodes.FileManager().aread_file(url)
+        except ValueError:
             return None

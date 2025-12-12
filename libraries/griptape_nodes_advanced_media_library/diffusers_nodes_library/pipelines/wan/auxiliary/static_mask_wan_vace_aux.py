@@ -16,6 +16,7 @@ from utils.image_utils import load_image_from_url_artifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.url_utils import strip_file_scheme
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -78,7 +79,8 @@ class StaticMaskWanVaceAux(ControlNode):
         mask_image = self.get_parameter_value("mask_image")
 
         # Load video frames
-        video_frames = diffusers.utils.load_video(input_video.value)
+        # Convert file:// URI to path for diffusers compatibility
+        video_frames = diffusers.utils.load_video(strip_file_scheme(input_video.value))
 
         if not video_frames:
             msg = "Could not load frames from input video"
@@ -118,13 +120,13 @@ class StaticMaskWanVaceAux(ControlNode):
         try:
             # Save original video
             video_filename = f"{uuid.uuid4()}.mp4"
-            video_url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), video_filename)
+            video_url = GriptapeNodes.FileManager().write_file(video_path.read_bytes(), video_filename)
             self.set_parameter_value("output_video", VideoUrlArtifact(video_url))
             self.parameter_output_values["output_video"] = VideoUrlArtifact(video_url)
 
             # Save mask
             mask_filename = f"{uuid.uuid4()}.mp4"
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_path.read_bytes(), mask_filename)
+            mask_url = GriptapeNodes.FileManager().write_file(mask_path.read_bytes(), mask_filename)
             self.set_parameter_value("output_mask", VideoUrlArtifact(mask_url))
             self.parameter_output_values["output_mask"] = VideoUrlArtifact(mask_url)
 

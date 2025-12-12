@@ -4,25 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
-
-import httpx
+from urllib.parse import unquote, urlparse
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
-from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
-from griptape_nodes.retained_mode.events.static_file_events import (
-    CreateStaticFileDownloadUrlRequest,
-    CreateStaticFileDownloadUrlResultFailure,
-    CreateStaticFileDownloadUrlResultSuccess,
-    CreateStaticFileUploadUrlRequest,
-    CreateStaticFileUploadUrlResultFailure,
-    CreateStaticFileUploadUrlResultSuccess,
-)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.utils.video_utils import validate_url
+from griptape_nodes.utils import get_content_type_from_extension, is_url, validate_url
 
 
 def default_extract_url_from_artifact_value(
@@ -119,7 +108,7 @@ class ArtifactPathValidator(Trait):
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
             # Check if it's a URL
-            if ArtifactPathTethering._is_url(path_str):
+            if is_url(path_str):
                 valid = validate_url(path_str)
                 if not valid:
                     error_msg = f"Invalid URL: '{path_str}'"
@@ -390,8 +379,14 @@ class ArtifactPathTethering:
 
         try:
             # Process the path (URL or file) - reuse existing path logic
-            if self._is_url(path_value):
-                download_url = self._download_and_upload_url(path_value)
+            if is_url(path_value):
+                # Check if it's a file:// URI pointing to workspace staticfiles
+                # If so, no need to re-download/upload - just pass through
+                if self._is_workspace_staticfiles_uri(path_value):
+                    download_url = path_value
+                else:
+                    # External URL or file outside workspace - download and upload
+                    download_url = self._download_and_upload_url(path_value)
             else:
                 # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
                 sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_value)
@@ -444,11 +439,6 @@ class ArtifactPathTethering:
             return artifact
         return value
 
-    @staticmethod
-    def _is_url(path: str) -> bool:
-        """Check if the path is a URL."""
-        return path.startswith(("http://", "https://"))
-
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""
         path = Path(file_path)
@@ -483,100 +473,17 @@ class ArtifactPathTethering:
 
         return path.name
 
-    def _create_upload_url(self, file_name_for_storage: str) -> CreateStaticFileUploadUrlResultSuccess:
-        """Create and validate upload URL for static storage."""
-        upload_request = CreateStaticFileUploadUrlRequest(file_name=file_name_for_storage)
-        upload_result = GriptapeNodes.handle_request(upload_request)
-
-        if isinstance(upload_result, CreateStaticFileUploadUrlResultFailure):
-            error_msg = f"Failed to create upload URL for file '{file_name_for_storage}': {upload_result.error}"
-            raise TypeError(error_msg)
-
-        if not isinstance(upload_result, CreateStaticFileUploadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(upload_result).__name__} (expected: CreateStaticFileUploadUrlResultSuccess, file: '{file_name_for_storage}')"
-            raise TypeError(error_msg)
-
-        return upload_result
-
-    def _read_file_data(self, path: Path, file_path: str) -> tuple[bytes, int]:
-        """Read file data using ReadFileRequest with thumbnail generation disabled.
-
-        Uses OSManager's ReadFileRequest flow to ensure:
-        - Path sanitization (shell escapes, quotes)
-        - Windows long path support (paths >260 chars)
-        - Consistent security/permission checks
-        - Workspace boundary validation
-
-        Note: Thumbnail generation is disabled (should_transform_image_content_to_thumbnail=False)
-        because we need the original file bytes for uploading to static storage.
-        """
-        read_request = ReadFileRequest(
-            file_path=str(path),
-            workspace_only=False,
-            should_transform_image_content_to_thumbnail=False,  # Need original bytes, not thumbnail
-        )
-        read_result = GriptapeNodes.handle_request(read_request)
-
-        if not isinstance(read_result, ReadFileResultSuccess):
-            error_msg = f"Failed to read file '{file_path}': {read_result.result_details}"
-            raise RuntimeError(error_msg)  # noqa: TRY004
-
-        # ReadFileRequest may return str for text files, bytes for binary
-        # We need bytes for uploading, so convert if necessary
-        if isinstance(read_result.content, str):
-            file_data = read_result.content.encode(read_result.encoding or "utf-8")
-        else:
-            file_data = read_result.content
-
-        file_size = read_result.file_size
-        return file_data, file_size
-
-    def _upload_file_data(
-        self, upload_result: CreateStaticFileUploadUrlResultSuccess, file_data: bytes, file_size: int, file_path: str
-    ) -> None:
-        """Upload file data to static storage with specific exception handling."""
-        try:
-            response = httpx.request(
-                upload_result.method,
-                upload_result.url,
-                content=file_data,
-                headers=upload_result.headers,
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            error_msg = f"Failed to upload file '{file_path}' to static storage (HTTP {e.response.status_code}, method: {upload_result.method}, size: {file_size} bytes): {e}"
-            raise ValueError(error_msg) from e
-        except httpx.RequestError as e:
-            error_msg = f"Failed to upload file '{file_path}' to static storage (network error, method: {upload_result.method}, size: {file_size} bytes): {e}"
-            raise ValueError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Unexpected error uploading file '{file_path}' to static storage (method: {upload_result.method}, size: {file_size} bytes): {e}"
-            raise ValueError(error_msg) from e
-
-    def _create_download_url(self, file_name_for_storage: str) -> CreateStaticFileDownloadUrlResultSuccess:
-        """Create and validate download URL for static storage."""
-        download_request = CreateStaticFileDownloadUrlRequest(file_name=file_name_for_storage)
-        download_result = GriptapeNodes.handle_request(download_request)
-
-        if isinstance(download_result, CreateStaticFileDownloadUrlResultFailure):
-            error_msg = f"Failed to create download URL for file '{file_name_for_storage}': {download_result.error}"
-            raise TypeError(error_msg)
-
-        if not isinstance(download_result, CreateStaticFileDownloadUrlResultSuccess):
-            error_msg = f"Static file API returned unexpected result type: {type(download_result).__name__} (expected: CreateStaticFileDownloadUrlResultSuccess, file: '{file_name_for_storage}')"
-            raise TypeError(error_msg)
-
-        return download_result
-
     def _upload_file_to_static_storage(self, file_path: str) -> str:
-        """Upload file to static storage and return download URL."""
+        """Upload file to static storage and return file:// URI."""
         path = self._resolve_file_path(file_path)
         file_name_for_storage = self._determine_storage_filename(path)
-        upload_result = self._create_upload_url(file_name_for_storage)
-        file_data, file_size = self._read_file_data(path, file_path)
-        self._upload_file_data(upload_result, file_data, file_size, file_path)
-        download_result = self._create_download_url(file_name_for_storage)
-        return download_result.url
+
+        # Read file data
+        file_data = GriptapeNodes.FileManager().read_file(str(path), workspace_only=False)
+
+        # Write to workspace and get file:// URI
+        file_uri = GriptapeNodes.FileManager().write_file(file_data, file_name_for_storage)
+        return file_uri
 
     def _generate_filename_from_url(self, url: str) -> str:
         """Generate a reasonable filename from a URL."""
@@ -607,20 +514,67 @@ class ArtifactPathTethering:
         unique_id = str(uuid.uuid4())[:8]
         return f"{domain}_{unique_id}.{self.config.default_extension}"
 
-    def _download_and_upload_url(self, url: str) -> str:
-        """Download artifact from URL and upload to static storage, return download URL."""
-        try:
-            response = httpx.get(url, timeout=self.URL_DOWNLOAD_TIMEOUT)
-            response.raise_for_status()
-        except Exception as e:
-            error_msg = f"Failed to download artifact from URL '{url}' (timeout: {self.URL_DOWNLOAD_TIMEOUT}s): {e}"
-            raise ValueError(error_msg) from e
+    def _is_workspace_staticfiles_uri(self, url: str) -> bool:
+        """Check if a file:// URI points to a file already in the workspace staticfiles directory.
 
-        # Validate content type
-        content_type = response.headers.get("content-type", "")
+        Args:
+            url: The URL to check (should be a file:// URI)
+
+        Returns:
+            True if the file:// URI points to workspace staticfiles, False otherwise
+        """
+        if not url.startswith("file://"):
+            return False
+
+        # Decode the file:// URI to a path
+        from urllib.request import url2pathname
+
+        parsed = urlparse(url)
+        file_path = Path(url2pathname(unquote(parsed.path)))
+
+        # Check if it's in the workspace
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        try:
+            if not file_path.is_relative_to(workspace_path):
+                return False
+        except ValueError:
+            return False
+
+        # Check if it's in the staticfiles directory (or a workflow-specific staticfiles subdirectory)
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value(
+            "static_files_directory", default="staticfiles"
+        )
+
+        try:
+            relative_path = file_path.relative_to(workspace_path)
+        except ValueError:
+            return False
+
+        # Check if the path contains the staticfiles directory anywhere in its hierarchy
+        # This handles both "staticfiles/image.png" and "myflow/staticfiles/image.png"
+        return static_files_dir in relative_path.parts
+
+    def _download_and_upload_url(self, url: str) -> str:
+        """Download artifact from URL and upload to static storage, return file:// URI."""
+        # Read file from URL (supports http://, https://, file://)
+        content = GriptapeNodes.FileManager().read_file(url, workspace_only=False)
+
+        # Validate content type by checking file extension or URL
+        content_type = get_content_type_from_extension(url)
+        if not content_type:
+            parsed = urlparse(url)
+            if parsed.scheme == "file":
+                file_path = Path(unquote(parsed.path))
+                content_type = get_content_type_from_extension(file_path)
+
+            if not content_type:
+                error_msg = f"Unable to determine content type from URI '{url}'"
+                raise ValueError(error_msg)
+
+        # Validate content type matches expected prefix
         if not content_type.startswith(self.config.url_content_type_prefix):
             artifact_type = self.config.url_content_type_prefix.rstrip("/")
-            error_msg = f"URL '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
+            error_msg = f"URI '{url}' content-type '{content_type}' does not match expected '{self.config.url_content_type_prefix}*' for {artifact_type} artifacts"
             raise ValueError(error_msg)
 
         # Generate filename from URL
@@ -630,32 +584,13 @@ class ArtifactPathTethering:
         if "." in filename and filename.count(".") > 0:
             extension = f".{filename.split('.')[-1].lower()}"
             if extension not in self.config.supported_extensions:
-                # Replace with default extension if unsupported
                 filename = f"{filename.rsplit('.', 1)[0]}.{self.config.default_extension}"
         else:
-            # No extension found, add default
             filename = f"{filename}.{self.config.default_extension}"
 
-        # Request presigned upload URL from static storage API
-        upload_result = self._create_upload_url(filename)
-
-        # Upload the downloaded artifact data to the presigned URL
-        try:
-            upload_response = httpx.request(
-                upload_result.method,
-                upload_result.url,
-                content=response.content,
-                headers=upload_result.headers,
-            )
-            upload_response.raise_for_status()
-        except Exception as e:
-            content_size = len(response.content)
-            error_msg = f"Failed to upload downloaded artifact from '{url}' to static storage (method: {upload_result.method}, size: {content_size} bytes): {e}"
-            raise ValueError(error_msg) from e
-
-        # Request download URL from static storage API
-        download_result = self._create_download_url(filename)
-        return download_result.url
+        # Write to workspace and return file:// URI
+        file_uri = GriptapeNodes.FileManager().write_file(content, filename)
+        return file_uri
 
     @staticmethod
     def create_path_parameter(

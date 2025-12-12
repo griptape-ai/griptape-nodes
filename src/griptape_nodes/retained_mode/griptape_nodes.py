@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
+    from griptape_nodes.retained_mode.managers.file_manager import FileManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
     from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
@@ -87,6 +88,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _workflow_variables_manager: VariablesManager
     _arbitrary_code_exec_manager: ArbitraryCodeExecManager
     _operation_depth_manager: OperationDepthManager
+    _file_manager: FileManager
     _static_files_manager: StaticFilesManager
     _agent_manager: AgentManager
     _version_compatibility_manager: VersionCompatibilityManager
@@ -107,6 +109,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
+        from griptape_nodes.retained_mode.managers.file_manager import FileManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
         from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
@@ -153,6 +156,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._workflow_variables_manager = VariablesManager(self._event_manager)
             self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
             self._operation_depth_manager = OperationDepthManager(self._config_manager)
+            self._file_manager = FileManager(self._config_manager)
             self._static_files_manager = StaticFilesManager(
                 self._config_manager, self._secrets_manager, self._event_manager
             )
@@ -297,6 +301,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def OperationDepthManager(cls) -> OperationDepthManager:
         return GriptapeNodes.get_instance()._operation_depth_manager
+
+    @classmethod
+    def FileManager(cls) -> FileManager:
+        return GriptapeNodes.get_instance()._file_manager
 
     @classmethod
     def StaticFilesManager(cls) -> StaticFilesManager:
