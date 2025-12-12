@@ -67,6 +67,8 @@ if TYPE_CHECKING:
         VersionCompatibilityManager,
     )
     from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
+    from griptape_nodes.retained_mode.managers.timeline_manager import TimelineManager
+    from griptape_nodes.retained_mode.managers.block_manager import BlockManager
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -97,6 +99,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _sync_manager: SyncManager
     _user_manager: UserManager
     _project_manager: ProjectManager
+    _timeline_manager: TimelineManager
+    _block_manager: BlockManager
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -135,6 +139,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
+        from griptape_nodes.retained_mode.managers.timeline_manager import TimelineManager
+        from griptape_nodes.retained_mode.managers.block_manager import BlockManager
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
@@ -164,6 +170,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
+            self._timeline_manager = TimelineManager(self._event_manager)
+            self._block_manager = BlockManager(self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -277,6 +285,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def WorkflowManager(cls) -> WorkflowManager:
         return GriptapeNodes.get_instance()._workflow_manager
+
+    @classmethod
+    def TimelineManager(cls) -> TimelineManager:
+        return GriptapeNodes.get_instance()._timeline_manager
+
+    @classmethod
+    def BlockManager(cls) -> BlockManager:
+        return GriptapeNodes.get_instance()._block_manager
 
     @classmethod
     def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
