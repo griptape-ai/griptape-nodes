@@ -15,6 +15,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -23,24 +24,33 @@ logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["Veo3VideoGeneration"]
 
+# Model mapping from human-friendly names to API model IDs
+MODEL_MAPPING = {
+    "Veo 3.1": "veo-3.1-generate-preview",
+    "Veo 3.1 Fast": "veo-3.1-fast-generate-preview",
+    "Veo 3.0": "veo-3.0-generate-001",
+    "Veo 3.0 Fast": "veo-3.0-fast-generate-001",
+}
+
 
 class Veo3VideoGeneration(SuccessFailureNode):
     """Generate a video using Google's Veo3 model via Griptape Cloud model proxy.
 
     Inputs:
         - prompt (str): Text prompt for the video
-        - model_id (str): Provider model id (default: veo-3.1-generate-preview)
+        - model_id (str): Provider model (default: Veo 3.1, options: Veo 3.1, Veo 3.1 Fast, Veo 3.0, Veo 3.0 Fast)
         - negative_prompt (str): Negative prompt to avoid certain content
         - image (ImageArtifact|ImageUrlArtifact|str): Optional start frame image (supported by all models)
-        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image (only veo-3.1-generate-preview and veo-3.1-fast-generate-preview)
-        - reference_images (list[ImageArtifact]|list[ImageUrlArtifact]|list[str]): Optional reference images (only veo-3.1-generate-preview, max 3 for asset, max 1 for style)
+        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image (only Veo 3.1 and Veo 3.1 Fast)
+        - reference_images (list[ImageArtifact]|list[ImageUrlArtifact]|list[str]): Optional reference images (only Veo 3.1, max 3 for asset, max 1 for style)
         - reference_type (str): Reference type (default: asset, options: asset, style)
         - aspect_ratio (str): Output aspect ratio (default: 16:9, options: 16:9, 9:16)
         - resolution (str): Output resolution (default: 720p, options: 720p, 1080p)
         - duration_seconds (str): Video duration in seconds (default: 6, options: 4, 6, 8; must be 8 when referenceImages provided)
         - person_generation (str): Person generation policy (default: allow_adult, options: allow_all, allow_adult, dont_allow)
         - generate_audio (bool): Generate audio for the video (default: True, supported by all veo3* models)
-        - seed (int): Random seed for reproducible results (default: -1, -1 means don't specify a seed, 0 or above will be sent)
+        - randomize_seed (bool): If true, randomize the seed on each run (default: False)
+        - seed (int): Random seed for reproducible results (default: 42)
         - sample_count (int): Number of videos to generate (default: 1, range: 1-4)
         (Always polls for result: 5s interval, 10 min timeout)
 
@@ -70,7 +80,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 name="model_id",
                 input_types=["str"],
                 type="str",
-                default_value="veo-3.1-generate-preview",
+                default_value="Veo 3.1",
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
@@ -80,10 +90,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 traits={
                     Options(
                         choices=[
-                            "veo-3.1-generate-preview",
-                            "veo-3.1-fast-generate-preview",
-                            "veo-3.0-generate-001",
-                            "veo-3.0-fast-generate-001",
+                            "Veo 3.1",
+                            "Veo 3.1 Fast",
+                            "Veo 3.0",
+                            "Veo 3.0 Fast",
                         ]
                     )
                 },
@@ -124,7 +134,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Image parameters
         self.add_parameter(
             Parameter(
-                name="image",
+                name="start_frame",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
                 default_value=None,
@@ -243,18 +253,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Seed for reproducibility
-        self.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int", "str"],
-                type="int",
-                default_value=-1,
-                tooltip="Random seed for reproducible results (-1 to not specify a seed)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "seed"},
-            )
-        )
+        # Initialize SeedParameter component (adds randomize_seed and seed parameters)
+        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter.add_input_parameters()
 
         # Sample count (number of videos to generate)
         self.add_parameter(
@@ -316,9 +317,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Set initial parameter visibility based on default model
         self._initialize_parameter_visibility()
 
+    def _get_api_model_id(self, friendly_name: str) -> str:
+        """Map friendly model name to API model ID."""
+        return MODEL_MAPPING.get(friendly_name, friendly_name)
+
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model_id") or "veo-3.1-generate-preview"
+        default_model = self.get_parameter_value("model_id") or "Veo 3.1"
         self._update_parameter_visibility_for_model(default_model)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
@@ -337,14 +342,17 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
     def _update_parameter_visibility_for_model(self, model_id: str) -> None:
         """Update parameter visibility based on selected model."""
+        # Map friendly name to API model ID for comparison
+        api_model_id = self._get_api_model_id(model_id)
+
         # last_frame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
-        if model_id in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+        if api_model_id in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
             self.show_parameter_by_name("last_frame")
         else:
             self.hide_parameter_by_name("last_frame")
 
         # reference_images and reference_type are only supported by veo-3.1-generate-preview
-        if model_id == "veo-3.1-generate-preview":
+        if api_model_id == "veo-3.1-generate-preview":
             self.show_parameter_by_name("reference_images")
             self.show_parameter_by_name("reference_type")
         else:
@@ -393,6 +401,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
         """Core processing logic with three phases: submit, poll, fetch."""
         # Phase 0: Clear execution status
         self._clear_execution_status()
+
+        # Preprocess seed parameter
+        self._seed_parameter.preprocess()
 
         # Phase 0.5: Validate API key
         try:
@@ -444,17 +455,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if generate_audio is None:
             generate_audio = True
 
-        seed = self.get_parameter_value("seed")
-        if seed is None:
-            seed = -1
-
         sample_count = self.get_parameter_value("sample_count")
         if sample_count is None:
             sample_count = 1
 
         return {
             "prompt": self.get_parameter_value("prompt") or "",
-            "model_id": self.get_parameter_value("model_id") or "veo-3.1-generate-preview",
+            "model_id": self.get_parameter_value("model_id") or "Veo 3.1",
             "negative_prompt": self.get_parameter_value("negative_prompt") or "",
             "image": self.get_parameter_value("image"),
             "last_frame": self.get_parameter_value("last_frame"),
@@ -464,7 +471,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             "resolution": self.get_parameter_value("resolution") or "720p",
             "duration_seconds": self.get_parameter_value("duration_seconds") or "6",
             "person_generation": self.get_parameter_value("person_generation") or "allow_adult",
-            "seed": seed,
+            "seed": self._seed_parameter.get_seed(),
             "generate_audio": generate_audio,
             "sample_count": sample_count,
         }
@@ -483,18 +490,20 @@ class Veo3VideoGeneration(SuccessFailureNode):
         Raises ValueError if invalid parameter combinations are detected.
         """
         model_id = params["model_id"]
+        # Map friendly name to API model ID for validation
+        api_model_id = self._get_api_model_id(model_id)
 
         # lastFrame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
-        if params.get("last_frame") and model_id not in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
-            msg = f"{self.name}: lastFrame parameter is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview models. Current model: {model_id}"
+        if params.get("last_frame") and api_model_id not in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+            msg = f"{self.name}: lastFrame parameter is only supported by Veo 3.1 and Veo 3.1 Fast models. Current model: {model_id}"
             raise ValueError(msg)
 
         # referenceImages are only supported by veo-3.1-generate-preview
         reference_images = params.get("reference_images", [])
         has_reference_images = reference_images and len(reference_images) > 0
         if has_reference_images:
-            if model_id != "veo-3.1-generate-preview":
-                msg = f"{self.name}: referenceImages parameter is only supported by veo-3.1-generate-preview model. Current model: {model_id}"
+            if api_model_id != "veo-3.1-generate-preview":
+                msg = f"{self.name}: referenceImages parameter is only supported by Veo 3.1 model. Current model: {model_id}"
                 raise ValueError(msg)
 
             # When referenceImages are provided, duration must be 8 seconds
@@ -611,10 +620,12 @@ class Veo3VideoGeneration(SuccessFailureNode):
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
         """Phase 1: Submit generation request and get generation_id."""
         model_id = params["model_id"]
+        # Map friendly model name to API model ID
+        api_model_id = self._get_api_model_id(model_id)
         payload = self._build_payload(params)
 
-        # Construct v2 proxy URL
-        proxy_url = urljoin(self._proxy_base, f"models/{model_id}")
+        # Construct v2 proxy URL with API model ID
+        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
 
         logger.info("%s: Submitting generation request for model: %s", self.name, model_id)
 
@@ -707,9 +718,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
         if params["person_generation"]:
             parameters["personGeneration"] = params["person_generation"]
 
-        # Add seed if >= 0 (-1 means don't specify)
-        seed = params.get("seed", -1)
-        if seed is not None and seed >= 0:
+        # Add seed
+        seed = params.get("seed")
+        if seed is not None:
             parameters["seed"] = int(seed)
 
         # Add generateAudio if provided
