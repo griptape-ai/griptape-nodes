@@ -2668,7 +2668,7 @@ class LibraryManager:
         # Update lifecycle state to LOADED
         library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.LOADED
 
-    async def _attempt_generate_sandbox_library_from_schema(
+    async def _attempt_generate_sandbox_library_from_schema(  # noqa: C901
         self,
         library_schema: LibrarySchema,
         sandbox_directory: str,
@@ -2710,20 +2710,29 @@ class LibraryManager:
                     details = f"Found node '{class_name}' in sandbox library '{candidate_path}'."
                     logger.debug(details)
 
-                    # Get metadata from class attributes if they exist, otherwise use defaults
-                    node_icon = getattr(obj, "ICON", "square-dashed")
-                    node_description = getattr(
-                        obj, "DESCRIPTION", f"'{class_name}' (loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME})."
-                    )
-                    node_color = getattr(obj, "COLOR", None)
+                    # Look for existing node definition to preserve user-edited metadata
+                    existing_node = None
+                    for existing_node_def in library_schema.nodes:
+                        if (
+                            existing_node_def.file_path == str(candidate_path)
+                            and existing_node_def.class_name == class_name
+                        ):
+                            existing_node = existing_node_def
+                            break
 
-                    node_metadata = NodeMetadata(
-                        category=self.SANDBOX_CATEGORY_NAME,
-                        description=node_description,
-                        display_name=class_name,
-                        icon=node_icon,
-                        color=node_color,
-                    )
+                    if existing_node:
+                        # PRESERVE existing metadata - user may have customized it
+                        node_metadata = existing_node.metadata
+                        logger.debug("Preserving existing metadata for node '%s'", class_name)
+                    else:
+                        # NEW node - create default metadata
+                        node_metadata = NodeMetadata(
+                            category=self.SANDBOX_CATEGORY_NAME,
+                            description=f"'{class_name}' (loaded from the {LibraryManager.SANDBOX_LIBRARY_NAME}).",
+                            display_name=class_name,
+                        )
+                        logger.debug("Creating new metadata for node '%s'", class_name)
+
                     node_definition = NodeDefinition(
                         class_name=class_name,
                         file_path=str(candidate_path),
