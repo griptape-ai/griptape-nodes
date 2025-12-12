@@ -494,7 +494,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
         api_model_id = self._get_api_model_id(model_id)
 
         # lastFrame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
-        if params.get("last_frame") and api_model_id not in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+        if params.get("last_frame") and api_model_id not in [
+            "veo-3.1-generate-preview",
+            "veo-3.1-fast-generate-preview",
+        ]:
             msg = f"{self.name}: lastFrame parameter is only supported by Veo 3.1 and Veo 3.1 Fast models. Current model: {model_id}"
             raise ValueError(msg)
 
