@@ -741,6 +741,17 @@
       }
     },
     {
+      "class_name": "Veo3VideoGeneration",
+      "file_path": "griptape_nodes_library/video/veo3_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate video using Google Veo 3 models via Griptape Cloud model proxy",
+        "display_name": "Veo 3 Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "WanImageToVideoGeneration",
       "file_path": "griptape_nodes_library/video/wan_image_to_video_generation.py",
       "metadata": {
