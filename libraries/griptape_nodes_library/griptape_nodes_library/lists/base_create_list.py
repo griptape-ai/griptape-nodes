@@ -32,6 +32,7 @@ class BaseCreateListNode(ControlNode):
             input_types=input_types,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=default_value,
+            ui_options={"hide_property": True},
         )
         self.add_parameter(self.items_list)
 
