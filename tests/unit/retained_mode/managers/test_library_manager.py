@@ -28,18 +28,15 @@ class TestLibraryManagerLoadLibraries:
 
         # Mock that libraries are already loaded and discovered libraries match loaded ones
         from griptape_nodes.node_library.library_registry import LibraryRegistry
-        from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import (
-            LibraryFitness,
-            LibraryLifecycleState,
-        )
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
         mock_lib_info = library_manager.LibraryInfo(
-            lifecycle_state=LibraryLifecycleState.LOADED,
+            lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,
             library_path="some_lib",
             is_sandbox=False,
             library_name="SomeLib",
             library_version="1.0.0",
-            fitness=LibraryFitness.GOOD,
+            fitness=LibraryManager.LibraryFitness.GOOD,
             problems=[],
         )
         mock_load_config = AsyncMock()
