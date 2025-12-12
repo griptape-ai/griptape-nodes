@@ -1076,6 +1076,16 @@
       }
     },
     {
+      "class_name": "ToList",
+      "file_path": "griptape_nodes_library/convert/to_list.py",
+      "metadata": {
+        "category": "convert",
+        "description": "Converts any input to a list",
+        "display_name": "To List",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "Dictionary",
       "file_path": "griptape_nodes_library/dict/create_dict.py",
       "metadata": {
