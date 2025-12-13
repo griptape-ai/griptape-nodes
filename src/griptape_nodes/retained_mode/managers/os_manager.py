@@ -3203,3 +3203,152 @@ class OSManager:
         except AttributeError:
             # Windows doesn't have os.uname(), return basic platform info
             return sys.platform
+
+    def write_file(
+        self,
+        file_path: str,
+        content: str | bytes,
+        encoding: str = "utf-8",
+        append: bool = False,  # noqa: FBT001, FBT002
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+    ) -> str:
+        """Write file contents and return the final file path.
+
+        Convenience method that wraps WriteFileRequest for writing files.
+
+        Args:
+            file_path: Path to write to (absolute or workspace-relative)
+            content: File content as string or bytes
+            encoding: Text encoding (default: 'utf-8'). Ignored for bytes.
+            append: If True, append to file instead of overwriting
+            existing_file_policy: How to handle existing files (default: OVERWRITE)
+                - OVERWRITE: Replace existing file
+                - CREATE_NEW: Auto-generate unique filename (file_1.ext, file_2.ext)
+                - FAIL: Raise error if file exists
+
+        Returns:
+            Final file path that was written (may differ from input if CREATE_NEW policy used)
+
+        Raises:
+            ValueError: If file write fails
+
+        Example:
+            >>> final_path = GriptapeNodes.OSManager().write_file("output.txt", "Hello")
+        """
+        result = GriptapeNodes.handle_request(
+            WriteFileRequest(
+                file_path=file_path,
+                content=content,
+                encoding=encoding,
+                append=append,
+                existing_file_policy=existing_file_policy,
+            )
+        )
+
+        if isinstance(result, WriteFileResultSuccess):
+            return result.final_file_path
+
+        error_msg = f"Failed to write file {file_path}: {result.result_details}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    def read_file(
+        self,
+        file_path: str,
+        encoding: str = "utf-8",
+        workspace_only: bool | None = False,  # noqa: FBT001, FBT002
+        should_transform_image_content_to_thumbnail: bool = False,  # noqa: FBT001, FBT002
+    ) -> bytes:
+        """Read file contents and return as bytes.
+
+        Convenience method that wraps ReadFileRequest for reading files.
+        Text files are automatically encoded to bytes using the specified encoding.
+
+        Args:
+            file_path: Path to the file to read (absolute or workspace-relative)
+            encoding: Text encoding for text files (default: 'utf-8')
+            workspace_only: If True, restrict to workspace directory.
+                           If False (default), allow system-wide access.
+                           If None, no workspace constraints (cloud).
+            should_transform_image_content_to_thumbnail: If True, convert images
+                           to thumbnail data URLs. Default False for raw file access.
+
+        Returns:
+            File content as bytes
+
+        Raises:
+            ValueError: If file cannot be read (not found, permission denied, etc.)
+
+        Example:
+            >>> content = GriptapeNodes.OSManager().read_file("config.json")
+            >>> image_bytes = GriptapeNodes.OSManager().read_file("image.png")
+        """
+        result = GriptapeNodes.handle_request(
+            ReadFileRequest(
+                file_path=file_path,
+                encoding=encoding,
+                workspace_only=workspace_only,
+                should_transform_image_content_to_thumbnail=should_transform_image_content_to_thumbnail,
+            )
+        )
+
+        if isinstance(result, ReadFileResultSuccess):
+            # Convert str to bytes if needed (text files)
+            if isinstance(result.content, str):
+                return result.content.encode(encoding)
+            return result.content
+
+        error_msg = f"Failed to read file {file_path}: {result.result_details}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    async def aread_file(
+        self,
+        file_path: str,
+        encoding: str = "utf-8",
+        workspace_only: bool | None = False,  # noqa: FBT001, FBT002
+        should_transform_image_content_to_thumbnail: bool = False,  # noqa: FBT001, FBT002
+    ) -> bytes:
+        """Read file contents asynchronously and return as bytes.
+
+        Async version of read_file(). Convenience method that wraps ReadFileRequest
+        for reading files. Text files are automatically encoded to bytes using the
+        specified encoding.
+
+        Args:
+            file_path: Path to the file to read (absolute or workspace-relative)
+            encoding: Text encoding for text files (default: 'utf-8')
+            workspace_only: If True, restrict to workspace directory.
+                           If False (default), allow system-wide access.
+                           If None, no workspace constraints (cloud).
+            should_transform_image_content_to_thumbnail: If True, convert images
+                           to thumbnail data URLs. Default False for raw file access.
+
+        Returns:
+            File content as bytes
+
+        Raises:
+            ValueError: If file cannot be read (not found, permission denied, etc.)
+
+        Example:
+            >>> content = await GriptapeNodes.OSManager().aread_file("config.json")
+            >>> image_bytes = await GriptapeNodes.OSManager().aread_file("image.png")
+        """
+        result = await GriptapeNodes.ahandle_request(
+            ReadFileRequest(
+                file_path=file_path,
+                encoding=encoding,
+                workspace_only=workspace_only,
+                should_transform_image_content_to_thumbnail=should_transform_image_content_to_thumbnail,
+            )
+        )
+
+        if isinstance(result, ReadFileResultSuccess):
+            # Convert str to bytes if needed (text files)
+            if isinstance(result.content, str):
+                return result.content.encode(encoding)
+            return result.content
+
+        error_msg = f"Failed to read file {file_path}: {result.result_details}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
