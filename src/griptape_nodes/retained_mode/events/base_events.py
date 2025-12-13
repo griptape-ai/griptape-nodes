@@ -353,10 +353,6 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         else:
             result["request"] = str(self.request)
 
-        # Filter request fields marked omit_from_result
-        if is_dataclass(self.request) and isinstance(result["request"], dict):
-            result["request"] = self._filter_omit_from_result(self.request, result["request"])
-
         # Handle result payload
         if is_dataclass(self.result):
             try:
@@ -367,32 +363,10 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
             result["result"] = self.result.__dict__
         else:
             result["result"] = str(self.result)
-
-        # Filter result fields marked omit_from_result
-        if is_dataclass(self.result) and isinstance(result["result"], dict):
-            result["result"] = self._filter_omit_from_result(self.result, result["result"])
-
         if self.retained_mode:
             result["retained_mode"] = self.retained_mode
 
         return result
-
-    def _filter_omit_from_result(self, dataclass_instance: Any, dict_data: dict[str, Any]) -> dict[str, Any]:
-        """Remove fields marked with omit_from_result metadata from dict.
-
-        Args:
-            dataclass_instance: The dataclass instance to check for field metadata
-            dict_data: The dictionary representation to filter
-
-        Returns:
-            Filtered dictionary with omit_from_result fields removed
-        """
-        filtered = dict_data.copy()
-        for field_info in fields(dataclass_instance):
-            if field_info.metadata.get("omit_from_result", False):
-                filtered.pop(field_info.name, None)
-
-        return filtered
 
     def get_request(self) -> P:
         """Get the request payload for this event.
