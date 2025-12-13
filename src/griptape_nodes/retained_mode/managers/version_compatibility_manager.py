@@ -32,7 +32,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows.deprecated
 from griptape_nodes.retained_mode.managers.fitness_problems.workflows.node_type_not_found_problem import (
     NodeTypeNotFoundProblem,
 )
-from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import BaseNode
@@ -54,7 +54,7 @@ class LibraryVersionCompatibilityIssue(NamedTuple):
     """Represents a library version compatibility issue found in a library."""
 
     problem: LibraryProblem
-    severity: LibraryStatus
+    severity: LibraryManager.LibraryFitness
 
 
 class LibraryVersionCompatibilityCheck(ABC):
@@ -208,7 +208,7 @@ class VersionCompatibilityManager:
                     removal_version=node.metadata.deprecation.removal_version,
                     deprecation_message=node.metadata.deprecation.deprecation_message,
                 ),
-                severity=LibraryStatus.FLAWED,
+                severity=LibraryManager.LibraryFitness.FLAWED,
             )
             for node in library_data.nodes
             if node.metadata.deprecation is not None

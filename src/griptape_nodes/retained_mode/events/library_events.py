@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -13,9 +13,23 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
-    from griptape_nodes.retained_mode.managers.library_lifecycle.library_status import LibraryStatus
+    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+
+class DiscoveredLibrary(NamedTuple):
+    """Information about a discovered library.
+
+    Attributes:
+        path: Absolute path to the library JSON file or sandbox directory
+        is_sandbox: True if this is a sandbox library (user-created nodes in workspace), False for regular libraries
+    """
+
+    path: Path
+    is_sandbox: bool
 
 
 @dataclass
@@ -204,7 +218,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
         library_path: Path to the library file that failed to load.
         library_name: Name of the library if it could be extracted from the JSON,
                      None if the name couldn't be determined.
-        status: The LibraryStatus enum indicating the type of failure
+        status: The LibraryFitness enum indicating the type of failure
                (MISSING, UNUSABLE, etc.).
         problems: List of specific problems encountered during loading
                  (file not found, JSON parse errors, validation failures, etc.).
@@ -212,7 +226,7 @@ class LoadLibraryMetadataFromFileResultFailure(WorkflowNotAlteredMixin, ResultPa
 
     library_path: str
     library_name: str | None
-    status: LibraryStatus
+    status: LibraryManager.LibraryFitness
     problems: list[LibraryProblem]
 
 
@@ -262,20 +276,72 @@ class LoadMetadataForAllLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPa
 
 @dataclass
 @PayloadRegistry.register
+class ScanSandboxDirectoryRequest(RequestPayload):
+    """Scan sandbox directory and generate/update library metadata.
+
+    This request triggers a scan of a sandbox directory,
+    discovers Python files, and either creates a new library schema or
+    merges with an existing griptape_nodes_library.json if present.
+
+    Use when: Manually triggering sandbox refresh, testing sandbox setup,
+    forcing regeneration of sandbox library metadata.
+
+    Args:
+        directory_path: Path to sandbox directory to scan (required).
+
+    Results: ScanSandboxDirectoryResultSuccess | ScanSandboxDirectoryResultFailure
+    """
+
+    directory_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSandboxDirectoryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Sandbox directory scanned successfully.
+
+    Args:
+        library_schema: The generated or merged LibrarySchema
+    """
+
+    library_schema: LibrarySchema
+
+
+@dataclass
+@PayloadRegistry.register
+class ScanSandboxDirectoryResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Sandbox directory scan failed.
+
+    Common causes: directory doesn't exist, no Python files found, internal error.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
 class RegisterLibraryFromFileRequest(RequestPayload):
-    """Register a library from a JSON file.
+    """Register a library by name or path, progressing through all lifecycle phases.
+
+    This request handles the complete library loading lifecycle:
+    DISCOVERED → METADATA_LOADED → EVALUATED → DEPENDENCIES_INSTALLED → LOADED
+
+    The handler automatically creates LibraryInfo if not already tracked, making it suitable
+    for both internal use (from load_all_libraries_from_config) and external use (scripts, tests, API).
 
     Use when: Loading custom libraries, adding new node types,
     registering development libraries, extending node capabilities.
 
     Args:
-        file_path: Path to the library JSON file to register
-        load_as_default_library: Whether to load as the default library (default: False)
+        library_name: Name of library to load (must match library JSON 'name' field). Either library_name OR file_path required (not both).
+        file_path: Path to library JSON file. Either library_name OR file_path required (not both).
+        perform_discovery_if_not_found: If True and library not found, trigger discovery (default: False)
+        load_as_default_library: Whether to mark this library as the default (default: False)
 
     Results: RegisterLibraryFromFileResultSuccess (with library name) | RegisterLibraryFromFileResultFailure (load error)
     """
 
-    file_path: str
+    library_name: str | None = None
+    file_path: str | None = None
+    perform_discovery_if_not_found: bool = False
     load_as_default_library: bool = False
 
 
@@ -515,6 +581,79 @@ class ReloadAllLibrariesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class ReloadAllLibrariesResultFailure(ResultPayloadFailure):
     """Library reload failed. Common causes: library loading errors, system constraints, initialization failures."""
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesRequest(RequestPayload):
+    """Discover all libraries from configuration.
+
+    Scans configured library paths and creates LibraryInfo entries in 'discovered' state.
+    This does not load any library contents - just identifies what's available.
+
+    Use when: Refreshing library catalog, checking for new libraries, initializing
+    library tracking before selective loading.
+
+    Results: DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure
+    """
+
+    include_sandbox: bool = True  # Whether to include sandbox library in discovery
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Libraries discovered successfully."""
+
+    libraries_discovered: set[DiscoveredLibrary]  # Discovered libraries with type info
+
+
+@dataclass
+@PayloadRegistry.register
+class DiscoverLibrariesResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library discovery failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessRequest(RequestPayload):
+    """Evaluate a library's fitness (compatibility with current engine).
+
+    Checks version compatibility and determines if the library can be loaded.
+    Does not actually load Python modules - just validates compatibility.
+
+    Args:
+        schema: The loaded LibrarySchema from metadata loading
+
+    Results: EvaluateLibraryFitnessResultSuccess | EvaluateLibraryFitnessResultFailure
+    """
+
+    schema: LibrarySchema
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Library fitness evaluation successful.
+
+    Returns fitness and any non-fatal problems (warnings).
+    Caller manages their own lifecycle state.
+    """
+
+    fitness: LibraryManager.LibraryFitness
+    problems: list[LibraryProblem]
+
+
+@dataclass
+@PayloadRegistry.register
+class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Library fitness evaluation failed - library is not fit for this engine.
+
+    Returns fitness and problems for caller to update their LibraryInfo.
+    """
+
+    fitness: LibraryManager.LibraryFitness
+    problems: list[LibraryProblem]
 
 
 @dataclass
