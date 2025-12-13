@@ -42,6 +42,19 @@ class TestBaseStorageDriverUploadFile:
             """Mock implementation of abstract method."""
             return []
 
+        def get_asset_url(self, path: Path) -> str:
+            """Mock implementation of abstract method."""
+            return f"http://test.com/assets/{path.name}"
+
+        def save_file(
+            self,
+            path: Path,
+            _file_content: bytes,
+            _existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        ) -> str:
+            """Mock implementation of abstract method."""
+            return str(path)
+
     @pytest.fixture
     def base_storage_driver(self) -> ConcreteStorageDriver:
         """Create a concrete BaseStorageDriver instance for testing."""

@@ -27,6 +27,7 @@ from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import start_static_server
+from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -158,24 +159,37 @@ class StaticFilesManager:
         """Handle the request to create a presigned URL for downloading a static file.
 
         Args:
-            request: The request object containing the file name.
+            request: The request object containing the file name or file URL.
 
         Returns:
             A result object indicating success or failure.
         """
-        file_name = request.file_name
-
         resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / file_name
+        file_name = request.file_name
+        file_url = request.file_url
+
+        if file_name is not None:
+            full_file_path = Path(resolved_directory) / file_name
+        elif file_url is not None:
+            full_file_path = Path(uri_to_path(file_url))
+        else:
+            return CreateStaticFileDownloadUrlResultFailure(
+                error="Either file_name or file_url must be provided.",
+                result_details="Invalid request parameters.",
+            )
 
         try:
+            # TODO: use the driver appropriate for the file format. i.e. If local path use LocalStorageDriver, if GTC path use GriptapeCloudStorageDriver https://github.com/griptape-ai/griptape-nodes/issues/3739
             url = self.storage_driver.create_signed_download_url(full_file_path)
         except Exception as e:
-            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            identifier = file_name if file_name is not None else file_url
+            msg = f"Failed to create presigned URL for file {identifier}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
-            url=url, result_details="Successfully created static file download URL"
+            url=url,
+            file_url=self.storage_driver.get_asset_url(full_file_path),
+            result_details="Successfully created static file download URL",
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -184,7 +198,12 @@ class StaticFilesManager:
             threading.Thread(target=start_static_server, daemon=True, name="static-server").start()
 
     def save_static_file(
-        self, data: bytes, file_name: str, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        data: bytes,
+        file_name: str,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        use_direct_save: bool = False,
     ) -> str:
         """Saves a static file to the workspace directory.
 
@@ -197,20 +216,34 @@ class StaticFilesManager:
                 - OVERWRITE: Replace existing file content (default)
                 - CREATE_NEW: Auto-generate unique filename (e.g., file_1.txt, file_2.txt)
                 - FAIL: Raise FileExistsError if file exists
+            use_direct_save: If True, use direct storage driver save (new behavior).
+                If False, use presigned URL upload (legacy behavior). Defaults to False for backward compatibility.
 
         Returns:
-            The URL of the saved file. Note: the actual filename may differ from the requested
-            file_name when using CREATE_NEW policy.
+            The URL of the saved file for UI display (with cache-busting). Note: the actual filename
+            may differ from the requested file_name when using CREATE_NEW policy.
 
         Raises:
             FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file write fails (new behavior).
+            ValueError: If file upload fails (legacy behavior).
         """
         resolved_directory = self._get_static_files_directory()
         file_path = Path(resolved_directory) / file_name
 
-        # Pass the existing_file_policy to the storage driver
-        response = self.storage_driver.create_signed_upload_url(file_path, existing_file_policy)
+        if use_direct_save:
+            try:
+                saved_path = self.storage_driver.save_file(file_path, data, existing_file_policy)
+            except FileExistsError:
+                raise
+            except Exception as e:
+                msg = f"Failed to save static file {file_name}: {e}"
+                logger.error(msg)
+                raise RuntimeError(msg) from e
+            return saved_path
 
+        # OLD BEHAVIOR: Presigned URL upload
+        response = self.storage_driver.create_signed_upload_url(file_path, existing_file_policy)
         resolved_file_path = Path(response["file_path"])
 
         try:
