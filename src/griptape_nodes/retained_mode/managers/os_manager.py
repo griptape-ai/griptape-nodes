@@ -1142,7 +1142,7 @@ class OSManager:
             logger.warning(msg)
             return "text/plain"
 
-    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912
+    def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Handle a request to list directory contents."""
         try:
             # Get the directory path to list
