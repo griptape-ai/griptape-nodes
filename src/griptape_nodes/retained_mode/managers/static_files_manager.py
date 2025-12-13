@@ -27,6 +27,8 @@ from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import start_static_server
+from griptape_nodes.utils import resolve_workspace_path
+from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -163,10 +165,19 @@ class StaticFilesManager:
         Returns:
             A result object indicating success or failure.
         """
-        file_name = request.file_name
-
         resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / file_name
+        file_name = request.file_name
+        file_path = request.file_path
+
+        if file_name is not None:
+            full_file_path = Path(resolved_directory) / file_name
+        elif file_path is not None:
+            full_file_path = Path(uri_to_path(file_path))
+        else:
+            return CreateStaticFileDownloadUrlResultFailure(
+                error="Either file_name or file_path must be provided.",
+                result_details="Invalid request parameters.",
+            )
 
         try:
             url = self.storage_driver.create_signed_download_url(full_file_path)
@@ -174,8 +185,13 @@ class StaticFilesManager:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
+        # Resolve path, treating relative paths as workspace-relative
+        absolute_file_path = resolve_workspace_path(full_file_path, self.config_manager.workspace_path)
+
         return CreateStaticFileDownloadUrlResultSuccess(
-            url=url, result_details="Successfully created static file download URL"
+            url=url,
+            file_url=str(absolute_file_path),
+            result_details="Successfully created static file download URL",
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
