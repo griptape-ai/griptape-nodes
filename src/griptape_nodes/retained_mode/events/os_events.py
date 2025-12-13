@@ -62,10 +62,10 @@ class FileSystemEntry:
     name: str
     path: str  # Workspace-relative path (for portability)
     is_dir: bool
-    size: int
-    modified_time: float
-    absolute_path: str  # Absolute resolved path
-    mime_type: str | None = None  # None for directories, mimetype for files
+    size: int = 0  # File size in bytes (0 if not included)
+    modified_time: float = 0.0  # Modification timestamp (0.0 if not included)
+    absolute_path: str = ""  # Absolute resolved path (empty if not included)
+    mime_type: str | None = None  # None for directories, mimetype for files (None if not included)
 
 
 @dataclass
@@ -122,6 +122,10 @@ class ListDirectoryRequest(RequestPayload):
                         If None, workspace constraints don't apply (e.g., cloud environments).
         pattern: Optional glob pattern to filter entries (e.g., "*.txt", "file_*.json").
                  Only matches against file/directory names, not full paths.
+        include_size: If True, include file size in results (default: True). Set to False for faster listing.
+        include_modified_time: If True, include modified time in results (default: True). Set to False for faster listing.
+        include_mime_type: If True, include MIME type in results (default: True). Set to False for faster listing.
+        include_absolute_path: If True, include absolute resolved path in results (default: True). Set to False for faster listing.
 
     Results: ListDirectoryResultSuccess (with entries) | ListDirectoryResultFailure (access denied, not found)
     """
@@ -130,6 +134,10 @@ class ListDirectoryRequest(RequestPayload):
     show_hidden: bool = False
     workspace_only: bool | None = True
     pattern: str | None = None
+    include_size: bool = True
+    include_modified_time: bool = True
+    include_mime_type: bool = True
+    include_absolute_path: bool = True
 
 
 @dataclass
