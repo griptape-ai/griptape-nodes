@@ -463,7 +463,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": self.get_parameter_value("model_id") or "Veo 3.1",
             "negative_prompt": self.get_parameter_value("negative_prompt") or "",
-            "image": self.get_parameter_value("image"),
+            "image": self.get_parameter_value("start_frame"),
             "last_frame": self.get_parameter_value("last_frame"),
             "reference_images": self.get_parameter_value("reference_images") or [],
             "reference_type": self.get_parameter_value("reference_type") or "asset",
