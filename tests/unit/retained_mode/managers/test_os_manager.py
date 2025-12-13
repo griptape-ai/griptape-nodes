@@ -497,7 +497,9 @@ class TestListDirectoryRequest:
         os_manager = griptape_nodes.OSManager()
         request = ListDirectoryRequest(directory_path=str(temp_dir), workspace_only=False)
 
-        with patch.object(Path, "iterdir", side_effect=PermissionError("Permission denied")):
+        # Mock os.scandir() instead of Path.iterdir() since we now use os.scandir() for better performance
+        # os.scandir() is used as a context manager, so we need to make it raise PermissionError when called
+        with patch("griptape_nodes.retained_mode.managers.os_manager.os.scandir", side_effect=PermissionError("Permission denied")):
             result = os_manager.on_list_directory_request(request)
 
         assert isinstance(result, ListDirectoryResultFailure)
