@@ -84,6 +84,49 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         return response_data["url"]
 
+    def save_file(
+        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> str:
+        """Save a file to cloud storage via HTTP upload.
+
+        Args:
+            path: The path of the file to save.
+            file_content: The file content as bytes.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+
+        Returns:
+            The file path (as string) for the saved file.
+
+        Raises:
+            RuntimeError: If file upload fails.
+        """
+        if existing_file_policy != ExistingFilePolicy.OVERWRITE:
+            logger.warning(
+                "GriptapeCloudStorageDriver only supports OVERWRITE policy, got %s. "
+                "The file will be overwritten if it exists.",
+                existing_file_policy,
+            )
+
+        # Get signed upload URL
+        upload_response = self.create_signed_upload_url(path, existing_file_policy)
+
+        # Upload the file using the signed URL
+        try:
+            response = httpx.request(
+                upload_response["method"],
+                upload_response["url"],
+                content=file_content,
+                headers=upload_response["headers"],
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            msg = f"Failed to upload file {path}: {e}"
+            logger.error(msg)
+            raise RuntimeError(msg) from e
+
+        # Return the file path as string
+        return str(path)
+
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
         try:

@@ -4,7 +4,6 @@ import logging
 import threading
 from pathlib import Path
 
-import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage import StorageBackend
@@ -215,32 +214,29 @@ class StaticFilesManager:
                 - FAIL: Raise FileExistsError if file exists
 
         Returns:
-            The URL of the saved file. Note: the actual filename may differ from the requested
-            file_name when using CREATE_NEW policy.
+            The URL of the saved file for UI display (with cache-busting). Note: the actual filename
+            may differ from the requested file_name when using CREATE_NEW policy.
 
         Raises:
             FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file write fails.
         """
         resolved_directory = self._get_static_files_directory()
         file_path = Path(resolved_directory) / file_name
 
-        # Pass the existing_file_policy to the storage driver
-        response = self.storage_driver.create_signed_upload_url(file_path, existing_file_policy)
-
-        resolved_file_path = Path(response["file_path"])
-
+        # Check failure cases first
         try:
-            upload_response = httpx.request(
-                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
-            )
-            upload_response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e.response.json()) if hasattr(e, "response") else str(e)
+            # Save file and get absolute path
+            saved_path = self.storage_driver.save_file(file_path, data, existing_file_policy)
+        except FileExistsError:
+            # Re-raise FileExistsError for FAIL policy
+            raise
+        except Exception as e:
+            msg = f"Failed to save static file {file_name}: {e}"
             logger.error(msg)
-            raise ValueError(msg) from e
+            raise RuntimeError(msg) from e
 
-        url = self.storage_driver.create_signed_download_url(resolved_file_path)
-        return url
+        return saved_path
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.
