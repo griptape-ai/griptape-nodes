@@ -95,6 +95,47 @@ class LocalStorageDriver(BaseStorageDriver):
             "file_path": str(resolved_path),
         }
 
+    def save_file(
+        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> str:
+        """Save a file to local storage by writing directly to disk.
+
+        Args:
+            path: The path of the file to save.
+            file_content: The file content as bytes.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+
+        Returns:
+            The absolute file path where the file was saved.
+
+        Raises:
+            FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file write fails.
+        """
+        # Resolve to absolute if relative
+        absolute_path = path if path.is_absolute() else self.workspace_directory / path
+
+        # Write file using OSManager with policy handling
+        os_manager = GriptapeNodes.OSManager()
+        write_request = WriteFileRequest(
+            file_path=str(absolute_path),
+            content=file_content,
+            existing_file_policy=existing_file_policy,
+        )
+        result = os_manager.on_write_file_request(write_request)
+
+        # Check failure cases first
+        if not result.succeeded():
+            details = str(result.result_details)
+            if "already exists" in details:
+                raise FileExistsError(details)
+            msg = f"Failed to write file {path}: {details}"
+            raise RuntimeError(msg)
+
+        # Success path: return the resolved absolute file path
+        # Type checker: result is WriteFileResultSuccess when succeeded() is True
+        return result.final_file_path  # type: ignore[attr-defined]
+
     def create_signed_download_url(self, path: Path) -> str:
         # Resolve path, treating relative paths as workspace-relative
         absolute_path = resolve_workspace_path(path, self.workspace_directory)
