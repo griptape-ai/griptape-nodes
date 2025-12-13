@@ -106,12 +106,18 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
     enabling temporary download links, controlling file access permissions.
 
     Args:
-        file_name: Name of the file to be downloaded
+        file_name: Name of the file to be downloaded (deprecated, use file_path)
+        file_path: Path to the file (absolute or workspace-relative). If relative,
+                   resolved relative to workspace root. If outside workspace, file
+                   will be copied to staticfiles directory.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
+
+    Note: Exactly one of file_name or file_path must be provided.
     """
 
-    file_name: str
+    file_name: str | None = None
+    file_path: str | None = None
 
 
 @dataclass
@@ -121,9 +127,11 @@ class CreateStaticFileDownloadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPa
 
     Args:
         url: Presigned URL for downloading the file
+        file_url: File URI (file://) for the absolute path to the file that was used to create the download URL
     """
 
     url: str
+    file_url: str = ""
 
 
 @dataclass

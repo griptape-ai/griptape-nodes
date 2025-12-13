@@ -8,6 +8,7 @@ import httpx
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils import resolve_workspace_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -95,8 +96,21 @@ class LocalStorageDriver(BaseStorageDriver):
         }
 
     def create_signed_download_url(self, path: Path) -> str:
-        # The base_url already includes the /static path, so just append the path
-        url = f"{self.base_url}/{path.as_posix()}"
+        # Resolve path, treating relative paths as workspace-relative
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
+
+        # Automatically determine if the file is external to the workspace
+        try:
+            workspace_relative_path = absolute_path.relative_to(self.workspace_directory.resolve())
+            # Internal files: use workspace-relative path
+            url = f"{self.base_url}/{workspace_relative_path.as_posix()}"
+        except ValueError:
+            # For external files, use /external path and strip leading slash from absolute path
+            path_str = str(absolute_path).removeprefix("/")
+            # Build URL with /external prefix, replacing the /workspace part of base_url
+            base_without_workspace = self.base_url.rsplit("/workspace", 1)[0]
+            url = f"{base_without_workspace}/external/{path_str}"
+
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
