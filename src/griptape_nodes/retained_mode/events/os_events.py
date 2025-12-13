@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
@@ -196,7 +196,7 @@ class ReadFileRequest(RequestPayload):
 class ReadFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """File contents read successfully."""
 
-    content: str | bytes  # String for text files, bytes for binary files
+    content: str | bytes = field(metadata={"omit_from_result": True})  # String for text files, bytes for binary files
     file_size: int
     mime_type: str  # e.g., "text/plain", "image/png", "application/pdf"
     encoding: str | None  # Text encoding used (None for binary files)
@@ -426,7 +426,7 @@ class WriteFileRequest(RequestPayload):
     """
 
     file_path: str | MacroPath
-    content: str | bytes
+    content: str | bytes = field(metadata={"omit_from_result": True})
     encoding: str = "utf-8"  # Ignored for bytes
     append: bool = False
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
