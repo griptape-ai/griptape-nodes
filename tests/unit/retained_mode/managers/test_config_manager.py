@@ -122,3 +122,85 @@ class TestConfigManager:
                 # Verify workspace path was reassigned to the env var value
                 assert manager.workspace_path == override_workspace.resolve()
                 assert manager.get_config_value("workspace_directory") == str(override_workspace)
+
+    def test_coerce_to_type_bool_from_string(self) -> None:
+        """Test that _coerce_to_type correctly converts string values to bool."""
+        manager = ConfigManager()
+
+        # Truthy string values
+        assert manager._coerce_to_type("true", bool) is True
+        assert manager._coerce_to_type("True", bool) is True
+        assert manager._coerce_to_type("TRUE", bool) is True
+        assert manager._coerce_to_type("yes", bool) is True
+        assert manager._coerce_to_type("1", bool) is True
+        assert manager._coerce_to_type("anything", bool) is True
+
+        # Falsy string values
+        assert manager._coerce_to_type("false", bool) is False
+        assert manager._coerce_to_type("False", bool) is False
+        assert manager._coerce_to_type("FALSE", bool) is False
+        assert manager._coerce_to_type("no", bool) is False
+        assert manager._coerce_to_type("No", bool) is False
+        assert manager._coerce_to_type("0", bool) is False
+        assert manager._coerce_to_type("", bool) is False
+
+    def test_coerce_to_type_bool_from_bool(self) -> None:
+        """Test that _coerce_to_type returns bool values unchanged."""
+        manager = ConfigManager()
+
+        assert manager._coerce_to_type(True, bool) is True
+        assert manager._coerce_to_type(False, bool) is False
+
+    def test_coerce_to_type_int(self) -> None:
+        """Test that _coerce_to_type correctly converts string values to int."""
+        manager = ConfigManager()
+
+        assert manager._coerce_to_type("42", int) == int("42")
+        assert manager._coerce_to_type("0", int) == int("0")
+        assert manager._coerce_to_type("-10", int) == int("-10")
+
+    def test_coerce_to_type_float(self) -> None:
+        """Test that _coerce_to_type correctly converts string values to float."""
+        manager = ConfigManager()
+
+        assert manager._coerce_to_type("3.14", float) == float("3.14")
+        assert manager._coerce_to_type("0.0", float) == float("0.0")
+        assert manager._coerce_to_type("-2.5", float) == float("-2.5")
+        assert manager._coerce_to_type("42", float) == float("42")
+
+    def test_coerce_to_type_str(self) -> None:
+        """Test that _coerce_to_type returns string values unchanged."""
+        manager = ConfigManager()
+
+        assert manager._coerce_to_type("hello", str) == "hello"
+        assert manager._coerce_to_type("", str) == ""
+
+    def test_get_config_value_with_cast_type_bool(self) -> None:
+        """Test get_config_value with cast_type=bool for env var string values."""
+        with patch.dict(os.environ, {"GTN_CONFIG_ENABLE_FEATURE": "false"}, clear=True):
+            manager = ConfigManager()
+            manager.load_configs()
+
+            # Without cast_type, returns the string "false" (truthy)
+            value_no_cast = manager.get_config_value("enable_feature")
+            assert value_no_cast == "false"
+            assert bool(value_no_cast) is True  # String "false" is truthy!
+
+            # With cast_type=bool, returns False
+            value_with_cast = manager.get_config_value("enable_feature", cast_type=bool)
+            assert value_with_cast is False
+
+    def test_get_config_value_with_cast_type_int(self) -> None:
+        """Test get_config_value with cast_type=int for env var string values."""
+        with patch.dict(os.environ, {"GTN_CONFIG_MAX_COUNT": "100"}, clear=True):
+            manager = ConfigManager()
+            manager.load_configs()
+
+            # Without cast_type, returns the string "100"
+            value_no_cast = manager.get_config_value("max_count")
+            assert value_no_cast == "100"
+
+            # With cast_type=int, returns 100
+            value_with_cast = manager.get_config_value("max_count", cast_type=int)
+            assert value_with_cast == int("100")
+            assert isinstance(value_with_cast, int)

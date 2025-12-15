@@ -170,7 +170,9 @@ class SyncManager:
             self._get_cloud_storage_driver()
 
             # Check if file watching is enabled before starting it
-            enable_file_watching = self._config_manager.get_config_value("enable_workspace_file_watching", default=True)
+            enable_file_watching = self._config_manager.get_config_value(
+                "enable_workspace_file_watching", default=True, cast_type=bool
+            )
             if enable_file_watching:
                 # Start file watching after successful sync
                 self._start_file_watching()
