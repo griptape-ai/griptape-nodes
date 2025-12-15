@@ -76,6 +76,18 @@ class BaseStorageDriver(ABC):
         ...
 
     @abstractmethod
+    def get_asset_url(self, path: Path) -> str:
+        """Get the permanent unsigned URL for an asset.
+
+        Args:
+            path: The path of the file
+
+        Returns:
+            Permanent URL for accessing the asset
+        """
+        ...
+
+    @abstractmethod
     def save_file(
         self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> str:

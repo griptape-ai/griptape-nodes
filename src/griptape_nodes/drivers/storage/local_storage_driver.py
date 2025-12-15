@@ -192,3 +192,17 @@ class LocalStorageDriver(BaseStorageDriver):
 
         response_data = response.json()
         return response_data.get("files", [])
+
+    def get_asset_url(self, path: Path) -> str:
+        """Get the permanent URL for a local asset.
+
+        Returns the absolute file path.
+
+        Args:
+            path: The path of the file
+
+        Returns:
+            Absolute file path as a string
+        """
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
+        return str(absolute_path)

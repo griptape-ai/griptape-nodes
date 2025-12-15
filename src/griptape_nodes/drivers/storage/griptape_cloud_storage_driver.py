@@ -7,6 +7,7 @@ import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.utils.path_utils import get_workspace_relative_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -42,22 +43,24 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
     def create_signed_upload_url(
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> CreateSignedUploadUrlResponse:
+        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+
         if existing_file_policy != ExistingFilePolicy.OVERWRITE:
             logger.warning(
                 "Griptape Cloud storage only supports OVERWRITE policy. "
                 "Requested policy '%s' will be ignored for file: %s",
                 existing_file_policy.value,
-                path,
+                normalized_path,
             )
 
-        self._create_asset(path.as_posix())
+        self._create_asset(normalized_path.as_posix())
 
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = httpx.post(url, json={"operation": "PUT"}, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned upload URL for file {path}: {e}"
+            msg = f"Failed to create presigned upload URL for file {normalized_path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
@@ -67,16 +70,17 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             "url": response_data["url"],
             "headers": response_data.get("headers", {}),
             "method": "PUT",
-            "file_path": str(path),
+            "file_path": str(normalized_path),
         }
 
     def create_signed_download_url(self, path: Path) -> str:
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{path.as_posix()}")
+        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to create presigned download URL for file {path}: {e}"
+            msg = f"Failed to create presigned download URL for file {normalized_path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
@@ -95,11 +99,13 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
 
         Returns:
-            The file path (as string) for the saved file.
+            The full asset URL for the saved file.
 
         Raises:
             RuntimeError: If file upload fails.
         """
+        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+
         if existing_file_policy != ExistingFilePolicy.OVERWRITE:
             logger.warning(
                 "GriptapeCloudStorageDriver only supports OVERWRITE policy, got %s. "
@@ -120,12 +126,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to upload file {path}: {e}"
+            msg = f"Failed to upload file {normalized_path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
 
-        # Return the file path as string
-        return str(path)
+        # Return the full asset URL
+        return urljoin(self.base_url, f"/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")
@@ -203,6 +209,20 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         return file_names
 
+    def get_asset_url(self, path: Path) -> str:
+        """Get the permanent unsigned URL for a cloud asset.
+
+        Returns the permanent public URL for the asset (not the presigned URL).
+
+        Args:
+            path: The path of the file
+
+        Returns:
+            Permanent cloud asset URL
+        """
+        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        return urljoin(self.base_url, f"/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
+
     @staticmethod
     def list_buckets(*, base_url: str, api_key: str) -> list[dict]:
         """List all buckets in Griptape Cloud.
@@ -233,12 +253,13 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Args:
             path: The path of the file to delete.
         """
-        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{path.as_posix()}")
+        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
         try:
             response = httpx.delete(url, headers=self.headers)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            msg = f"Failed to delete file {path}: {e}"
+            msg = f"Failed to delete file {normalized_path}: {e}"
             logger.error(msg)
             raise RuntimeError(msg) from e
