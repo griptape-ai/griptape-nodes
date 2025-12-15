@@ -690,6 +690,7 @@ class LibraryManager:
         except GitRemoteError as e:
             logger.debug("Failed to get git remote for %s: %s", library_dir, e)
             git_remote = None
+
         try:
             git_ref = get_current_ref(library_dir)
         except GitRefError as e:
