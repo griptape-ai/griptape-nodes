@@ -1144,7 +1144,7 @@ class NodeExecutor:
             return
 
         # Check if we should run in parallel (default is sequential/False)
-        run_in_parallel = start_node.get_parameter_value("run_in_parallel")
+        run_in_parallel = start_node.is_parallel
         if not run_in_parallel:
             # Sequential execution - run iterations one at a time in the main execution flow
             await self._handle_sequential_loop_execution(start_node, node)
