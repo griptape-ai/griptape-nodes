@@ -83,4 +83,7 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
                 script_path=tmp_script_path,
                 args=args,
                 cwd=Path(tmpdir),
+                env={
+                    "GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false",
+                },
             )
