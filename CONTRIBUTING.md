@@ -220,6 +220,17 @@ This will start a local webserver (usually at `http://127.0.0.1:8000/`). The sit
 
 ## Making a Release (Maintainers)
 
+Griptape Nodes uses [**trunk-based development**](https://trunkbaseddevelopment.com/), where the `main` branch is the primary development branch. There are two types of releases:
+
+- **Regular releases**: Cut from `main` for new features and regular development cycles
+- **Patch releases**: Cut from release branches for bug fixes to specific versions
+
+When you publish a regular release, a release branch (e.g., `release/v0.65`) is automatically created. Patch releases are made from these branches.
+
+### Regular Releases (from main)
+
+Use this process for minor and major version bumps that include new features or regular development work:
+
 1. Check out the `main` branch locally:
 
     ```shell
@@ -227,24 +238,108 @@ This will start a local webserver (usually at `http://127.0.0.1:8000/`). The sit
     git pull origin main
     ```
 
-1. Bump the new release version:
+1. Bump the version:
 
     ```shell
-    # e.g. bumping 0.8.0 to 0.8.1
+    # For patch releases (e.g., 0.65.2 → 0.65.3)
     make version/patch
     ```
 
     or:
 
     ```shell
-    # e.g. bumping 0.8.0 to 0.9.0
+    # For minor releases (e.g., 0.65.0 → 0.66.0)
     make version/minor
     ```
 
-1. Publish the release (creates and pushes tags to Github):
+1. Publish the release:
 
     ```shell
     make version/publish
     ```
+
+    This creates and pushes:
+
+    - A version tag (e.g., `v0.66.0`)
+    - An updated `stable` tag
+    - A release branch (e.g., `release/v0.66`) for future patch releases
+
+### Patch Releases (from release branches)
+
+Use this process to release bug fixes for a specific version without including newer features from `main`:
+
+1. **Identify the base version** - Find the last stable tag to patch:
+
+    ```shell
+    # List recent version tags
+    git tag -l 'v*' --sort=-version:refname | head -5
+    ```
+
+1. **Create or checkout the release branch** - Release branches follow the pattern `release/v{major.minor}`:
+
+    If the release branch doesn't exist yet, create it from the tag:
+
+    ```shell
+    # Example: Creating release/v0.65 from tag v0.65.2
+    git checkout -b release/v0.65 v0.65.2
+    git push -u origin release/v0.65
+    ```
+
+    If the release branch already exists, check it out:
+
+    ```shell
+    git checkout release/v0.65
+    git pull origin release/v0.65
+    ```
+
+1. **Cherry-pick commits from main** - Identify the bug fix commits to backport:
+
+    ```shell
+    # View recent commits on main to find the ones you need
+    git log main --oneline
+
+    # Cherry-pick specific commits (replace with actual commit hashes)
+    git cherry-pick abc123
+    git cherry-pick def456
+    ```
+
+    If you encounter conflicts, resolve them and continue:
+
+    ```shell
+    # After resolving conflicts in your editor
+    git add .
+    git cherry-pick --continue
+    ```
+
+1. **Bump the patch version**:
+
+    ```shell
+    make version/patch
+    ```
+
+    This bumps the version (e.g., `0.65.2` → `0.65.3`) and automatically commits the change.
+
+1. **Publish the patch release**:
+
+    ```shell
+    make version/publish
+    ```
+
+    This creates and pushes the version tag (e.g., `v0.65.3`) and updates the `stable` tag.
+
+1. **Automatic synchronization** - After you push to the release branch, GitHub Actions automatically:
+
+    - Detects the version bump commit
+    - Cherry-picks it back to `main`
+    - Creates a PR to keep `main` in sync with the latest version number
+
+### Important Notes
+
+- **Patch releases** should only contain bug fixes and critical updates, not new features
+- **Feature changes** should go through regular releases from `main`
+- Release branches follow the pattern `release/v{major.minor}` (e.g., `release/v0.65`)
+- Version tags follow the format `v{major}.{minor}.{patch}` (e.g., `v0.65.3`)
+- The `stable` tag always points to the latest stable release across all versions
+- The `version-bump-on-release.yml` GitHub Actions workflow handles automatic version synchronization back to `main`
 
 Thank you for contributing!
