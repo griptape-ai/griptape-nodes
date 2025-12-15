@@ -21,38 +21,42 @@ Please refer to the [main CONTRIBUTING.md](https://github.com/griptape-ai/gripta
 ## Contributing Code
 
 1. **Find the library code** - All nodes for this library are located in:
-   ```
-   libraries/griptape_nodes_advanced_media_library/
-   ```
 
-   Nodes are organized by framework/technology:
-   - `controlnet_aux/` - ControlNet auxiliary models
-   - `diffusers/` - Diffusion model nodes
-   - `dino_sam2/` - DINO and SAM2 segmentation models
-   - `opencv/` - OpenCV computer vision nodes
-   - `openpose/` - OpenPose pose estimation
-   - `pillow/` - Pillow image processing
-   - `spandrel/` - Spandrel super-resolution
-   - `transformers/` - Hugging Face Transformers models
-   - `ultralytics/` - YOLO object detection models
-   - `artifact_utils/` - Shared utilities for artifacts
-   - `utils/` - General utility functions
+    ```
+    libraries/griptape_nodes_advanced_media_library/
+    ```
 
-2. **Make your changes** - Follow the existing code structure and style in the library.
+    Nodes are organized by framework/technology:
 
-3. **Run tests** - Test the library to ensure your changes work:
-   ```shell
-   # From the repository root
-   uv run pytest libraries/griptape_nodes_advanced_media_library/tests/
-   ```
+    - `controlnet_aux/` - ControlNet auxiliary models
+    - `diffusers/` - [Diffusers](https://github.com/huggingface/diffusers) package nodes
+    - `dino_sam2/` - DINO and SAM2 segmentation models
+    - `opencv/` - OpenCV computer vision nodes
+    - `openpose/` - OpenPose pose estimation
+    - `pillow/` - Pillow image processing
+    - `spandrel/` - Spandrel super-resolution
+    - `transformers/` - Hugging Face Transformers models
+    - `ultralytics/` - YOLO object detection models
+    - `artifact_utils/` - Shared utilities for artifacts
+    - `utils/` - General utility functions
 
-4. **Follow code quality standards** - Run checks before submitting:
-   ```shell
-   make check  # Check linting, formatting, and type errors
-   make fix    # Auto-fix issues where possible
-   ```
+1. **Make your changes** - Follow the existing code structure and style in the library.
 
-5. **Submit a pull request** - Open a PR against the `main` branch of the [griptape-nodes](https://github.com/griptape-ai/griptape-nodes) repository.
+1. **Run tests** - Test the library to ensure your changes work:
+
+    ```shell
+    # From the repository root
+    uv run pytest libraries/griptape_nodes_advanced_media_library/tests/
+    ```
+
+1. **Follow code quality standards** - Run checks before submitting:
+
+    ```shell
+    make check  # Check linting, formatting, and type errors
+    make fix    # Auto-fix issues where possible
+    ```
+
+1. **Submit a pull request** - Open a PR against the `main` branch of the [griptape-nodes](https://github.com/griptape-ai/griptape-nodes) repository.
 
 ## Syncing to Public Repository
 
@@ -67,40 +71,44 @@ Releases involve two steps: updating the version in the main repository, then pu
 ### Step 1: Update Version (in main griptape-nodes repo)
 
 1. Navigate to the library directory:
-   ```shell
-   cd libraries/griptape_nodes_advanced_media_library
-   ```
 
-2. Edit `griptape_nodes_library.json` and update the version in the metadata section:
-   ```json
-   {
-     "metadata": {
-       "library_version": "0.63.1"
-     }
-   }
-   ```
+    ```shell
+    cd libraries/griptape_nodes_advanced_media_library
+    ```
 
-3. Commit and push:
-   ```shell
-   git add griptape_nodes_library.json
-   git commit -m "chore: bump griptape_nodes_advanced_media_library to v0.63.1"
-   git push origin main
-   ```
+1. Edit `griptape_nodes_library.json` and update the version in the metadata section:
 
-   This automatically syncs the changes to the public library repository.
+    ```json
+    {
+      "metadata": {
+        "library_version": "0.63.1"
+      }
+    }
+    ```
+
+1. Commit and push:
+
+    ```shell
+    git add griptape_nodes_library.json
+    git commit -m "chore: bump griptape_nodes_advanced_media_library to v0.63.1"
+    git push origin main
+    ```
+
+    This automatically syncs the changes to the public library repository.
 
 ### Step 2: Publish Release (in public library repo)
 
 After the sync completes:
 
 1. Go to the [griptape-nodes-library-advanced-media](https://github.com/griptape-ai/griptape-nodes-library-advanced-media) repository on GitHub
-2. Navigate to Actions → "Publish Version"
-3. Run the workflow manually to:
-   - Create version tag (e.g., `v0.63.1`)
-   - Update `stable` tag
-   - Create GitHub release with auto-generated notes
+1. Navigate to Actions → "Publish Version"
+1. Run the workflow manually to:
+    - Create version tag (e.g., `v0.63.1`)
+    - Update `stable` tag
+    - Create GitHub release with auto-generated notes
 
 The library also has automated workflows:
+
 - `version-bump-patch.yml` / `version-bump-minor.yml` - Can bump versions (but currently versions are managed in main repo)
 - `nightly-release.yml` - Creates nightly prerelease builds automatically
 

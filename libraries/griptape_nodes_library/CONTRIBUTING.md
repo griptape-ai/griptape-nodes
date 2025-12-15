@@ -21,33 +21,37 @@ Please refer to the [main CONTRIBUTING.md](https://github.com/griptape-ai/gripta
 ## Contributing Code
 
 1. **Find the library code** - All nodes for this library are located in:
-   ```
-   libraries/griptape_nodes_library/griptape_nodes_library/
-   ```
 
-   Nodes are organized by category:
-   - `agents/` - Agent nodes
-   - `audio/` - Audio processing nodes
-   - `image/` - Image manipulation nodes
-   - `text/` - Text processing nodes
-   - `video/` - Video processing nodes
-   - And 17 more categories...
+    ```
+    libraries/griptape_nodes_library/griptape_nodes_library/
+    ```
 
-2. **Make your changes** - Follow the existing code structure and style in the library.
+    Nodes are organized by category:
 
-3. **Run tests** - Test the library to ensure your changes work:
-   ```shell
-   # From the repository root
-   uv run pytest libraries/griptape_nodes_library/tests/
-   ```
+    - `agents/` - Agent nodes
+    - `audio/` - Audio processing nodes
+    - `image/` - Image manipulation nodes
+    - `text/` - Text processing nodes
+    - `video/` - Video processing nodes
+    - And 17 more categories...
 
-4. **Follow code quality standards** - Run checks before submitting:
-   ```shell
-   make check  # Check linting, formatting, and type errors
-   make fix    # Auto-fix issues where possible
-   ```
+1. **Make your changes** - Follow the existing code structure and style in the library.
 
-5. **Submit a pull request** - Open a PR against the `main` branch of the [griptape-nodes](https://github.com/griptape-ai/griptape-nodes) repository.
+1. **Run tests** - Test the library to ensure your changes work:
+
+    ```shell
+    # From the repository root
+    uv run pytest libraries/griptape_nodes_library/tests/
+    ```
+
+1. **Follow code quality standards** - Run checks before submitting:
+
+    ```shell
+    make check  # Check linting, formatting, and type errors
+    make fix    # Auto-fix issues where possible
+    ```
+
+1. **Submit a pull request** - Open a PR against the `main` branch of the [griptape-nodes](https://github.com/griptape-ai/griptape-nodes) repository.
 
 ## Syncing to Public Repository
 
@@ -62,40 +66,44 @@ Releases involve two steps: updating the version in the main repository, then pu
 ### Step 1: Update Version (in main griptape-nodes repo)
 
 1. Navigate to the library directory:
-   ```shell
-   cd libraries/griptape_nodes_library
-   ```
 
-2. Edit `griptape_nodes_library.json` and update the version in the metadata section:
-   ```json
-   {
-     "metadata": {
-       "library_version": "0.52.4"
-     }
-   }
-   ```
+    ```shell
+    cd libraries/griptape_nodes_library
+    ```
 
-3. Commit and push:
-   ```shell
-   git add griptape_nodes_library.json
-   git commit -m "chore: bump griptape_nodes_library to v0.52.4"
-   git push origin main
-   ```
+1. Edit `griptape_nodes_library.json` and update the version in the metadata section:
 
-   This automatically syncs the changes to the public library repository.
+    ```json
+    {
+      "metadata": {
+        "library_version": "0.52.4"
+      }
+    }
+    ```
+
+1. Commit and push:
+
+    ```shell
+    git add griptape_nodes_library.json
+    git commit -m "chore: bump griptape_nodes_library to v0.52.4"
+    git push origin main
+    ```
+
+    This automatically syncs the changes to the public library repository.
 
 ### Step 2: Publish Release (in public library repo)
 
 After the sync completes:
 
 1. Go to the [griptape-nodes-library-standard](https://github.com/griptape-ai/griptape-nodes-library-standard) repository on GitHub
-2. Navigate to Actions → "Publish Version"
-3. Run the workflow manually to:
-   - Create version tag (e.g., `v0.52.4`)
-   - Update `stable` tag
-   - Create GitHub release with auto-generated notes
+1. Navigate to Actions → "Publish Version"
+1. Run the workflow manually to:
+    - Create version tag (e.g., `v0.52.4`)
+    - Update `stable` tag
+    - Create GitHub release with auto-generated notes
 
 The library also has automated workflows:
+
 - `version-bump-patch.yml` / `version-bump-minor.yml` - Can bump versions (but currently versions are managed in main repo)
 - `nightly-release.yml` - Creates nightly prerelease builds automatically
 

@@ -259,6 +259,7 @@ Use this process for minor and major version bumps that include new features or 
     ```
 
     This creates and pushes:
+
     - A version tag (e.g., `v0.66.0`)
     - An updated `stable` tag
     - A release branch (e.g., `release/v0.66`) for future patch releases
@@ -327,6 +328,7 @@ Use this process to release bug fixes for a specific version without including n
     This creates and pushes the version tag (e.g., `v0.65.3`) and updates the `stable` tag.
 
 1. **Automatic synchronization** - After you push to the release branch, GitHub Actions automatically:
+
     - Detects the version bump commit
     - Cherry-picks it back to `main`
     - Creates a PR to keep `main` in sync with the latest version number
