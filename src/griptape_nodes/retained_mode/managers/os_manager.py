@@ -1136,7 +1136,7 @@ class OSManager:
             if mime_type is None:
                 mime_type = "text/plain"
             return mime_type  # noqa: TRY300
-        except (OSError, ValueError) as e:
+        except Exception as e:
             msg = f"MIME type detection failed for {file_path}: {e}"
             logger.warning(msg)
             return "text/plain"
