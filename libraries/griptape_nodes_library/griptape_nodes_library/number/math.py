@@ -116,11 +116,30 @@ class Math(ControlNode):
         ops = {"average": statistics.mean, "min": min, "max": max}
         return ops.get(operation, lambda: 0.0)(values)
 
+    def _coerce_number(self, value: Any) -> float:
+        # Upstream nodes may temporarily produce None while a graph is updating.
+        # Treat None (or non-numeric values) as 0.0 to avoid exceptions during live edits.
+        if value is None:
+            return 0.0
+
+        if isinstance(value, bool):
+            return float(int(value))
+
+        if isinstance(value, int | float):
+            return float(value)
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
     def calculate_operation(self) -> float:
         choice = self.get_parameter_value("operation")
+        if not choice:
+            return 0.0
         operation = choice.split(" [")[0]  # Extract just the operation name
-        input_1 = self.get_parameter_value("A")
-        input_2 = self.get_parameter_value("B")
+        input_1 = self._coerce_number(self.get_parameter_value("A"))
+        input_2 = self._coerce_number(self.get_parameter_value("B"))
 
         if operation in ["sqrt", "abs", "round", "ceil", "floor", "sin"]:
             return self._handle_unary(operation, input_1)
