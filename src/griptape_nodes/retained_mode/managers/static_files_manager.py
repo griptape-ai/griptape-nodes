@@ -26,7 +26,6 @@ from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import start_static_server
-from griptape_nodes.utils import resolve_workspace_path
 from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
@@ -184,12 +183,9 @@ class StaticFilesManager:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        # Resolve path, treating relative paths as workspace-relative
-        absolute_file_path = resolve_workspace_path(full_file_path, self.config_manager.workspace_path)
-
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
-            file_url=str(absolute_file_path),
+            file_url=self.storage_driver.get_asset_url(full_file_path),
             result_details="Successfully created static file download URL",
         )
 
