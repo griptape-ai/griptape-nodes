@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from subprocess import _ENV
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class PythonSubprocessExecutor:
         self._is_running = False
 
     async def execute_python_script(
-        self, script_path: Path, args: list[str] | None = None, cwd: Path | None = None
+        self, script_path: Path, args: list[str] | None = None, cwd: Path | None = None, env: _ENV | None = None
     ) -> None:
         """Execute a Python script in a subprocess and wait for completion.
 
@@ -29,6 +30,7 @@ class PythonSubprocessExecutor:
             script_path: Path to the Python script to execute
             args: Additional command line arguments
             cwd: Working directory for the subprocess
+            env: Environment variables for the subprocess
         """
         if self.is_running():
             logger.warning("Another subprocess is already running. Terminating it first.")
@@ -44,6 +46,7 @@ class PythonSubprocessExecutor:
             self._process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=cwd,
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
