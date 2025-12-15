@@ -32,15 +32,15 @@ class ForEachStartNode(BaseIterativeStartNode):
         self.add_parameter(self.items_list)
 
         # Add parallel execution control parameter
-        self.run_in_parallel = Parameter(
-            name="run_in_parallel",
-            tooltip="Execute all iterations concurrently (parallel) or one at a time (sequential)",
+        self.run_in_order = Parameter(
+            name="run_in_order",
+            tooltip="Execute all iterations in order or concurrently",
             type=ParameterTypeBuiltin.BOOL.value,
             allowed_modes={ParameterMode.PROPERTY},
-            default_value=False,
-            ui_options={"display_name": "Run in Parallel"},
+            default_value=True,
+            ui_options={"display_name": "Run in Order"},
         )
-        self.add_parameter(self.run_in_parallel)
+        self.add_parameter(self.run_in_order)
 
         # Add current_item parameter specific to ForEach
         self.current_item = Parameter(
@@ -56,25 +56,30 @@ class ForEachStartNode(BaseIterativeStartNode):
             group.add_child(self.current_item)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter == self.run_in_parallel:
-            self.is_parallel = value
+        if parameter == self.run_in_order:
+            if value:
+                # If Run in Order is true, we don't run in parallel.
+                self.is_parallel = False
+            else:
+                # If Run in Order is false, we run in parallel.
+                self.is_parallel = True
 
             # Hide or show break/skip controls based on parallel mode
             if self.end_node:
                 skip_param = self.end_node.skip_control
                 break_param = self.end_node.break_control
                 if value:
-                    # Hide controls when running in parallel (not supported)
-                    if skip_param:
-                        skip_param.ui_options["hide"] = True
-                    if break_param:
-                        break_param.ui_options["hide"] = True
-                else:
                     # Show controls when running sequentially
                     if skip_param:
                         skip_param.ui_options["hide"] = False
                     if break_param:
                         break_param.ui_options["hide"] = False
+                else:
+                    # Hide controls when running in parallel (not supported)
+                    if skip_param:
+                        skip_param.ui_options["hide"] = True
+                    if break_param:
+                        break_param.ui_options["hide"] = True
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
