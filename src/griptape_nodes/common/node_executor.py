@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
+from griptape_nodes.exe_types import node_types
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
@@ -1325,41 +1326,42 @@ class NodeExecutor:
         parameter_values_to_set_before_run = self._get_merged_parameter_values_for_iterative_group(node, package_result)
 
         # Execute all iterations based on execution environment
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_locally(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_to_set_before_run,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_privately(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_to_set_before_run,
-            )
-        else:
-            # Cloud publisher execution (Deadline Cloud, etc.)
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_via_publisher(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_to_set_before_run,
-                execution_type=execution_type,
-            )
+        match execution_type:
+            case node_types.LOCAL_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_locally(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                )
+            case node_types.PRIVATE_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_privately(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                )
+            case _:
+                # Cloud publisher execution (Deadline Cloud, etc.)
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_via_publisher(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    execution_type=execution_type,
+                )
 
         if len(successful_iterations) != total_iterations:
             failed_count = total_iterations - len(successful_iterations)
@@ -1422,41 +1424,42 @@ class NodeExecutor:
         parameter_values_per_iteration = self._get_merged_parameter_values_for_iterative_group(node, package_result)
 
         # Execute iterations sequentially based on execution environment
-        if execution_type == LOCAL_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_sequentially_local(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_per_iteration,
-            )
-        elif execution_type == PRIVATE_EXECUTION:
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_sequentially_private(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_per_iteration,
-            )
-        else:
-            # Cloud publisher execution
-            (
-                iteration_results,
-                successful_iterations,
-                last_iteration_values,
-            ) = await self._execute_iterative_group_iterations_sequentially_via_publisher(
-                node=node,
-                package_result=package_result,
-                total_iterations=total_iterations,
-                parameter_values_per_iteration=parameter_values_per_iteration,
-                execution_type=execution_type,
-            )
+        match execution_type:
+            case node_types.LOCAL_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_sequentially_local(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                )
+            case node_types.PRIVATE_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_sequentially_private(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                )
+            case _:
+                # Cloud publisher execution
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_iterative_group_iterations_sequentially_via_publisher(
+                    node=node,
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    execution_type=execution_type,
+                )
 
         # Check if execution stopped early due to break (not failure)
         if len(successful_iterations) < total_iterations:
