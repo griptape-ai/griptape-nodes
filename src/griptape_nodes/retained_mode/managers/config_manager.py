@@ -255,6 +255,31 @@ class ConfigManager:
         workspace_path = self.workspace_path
         return workspace_path / relative_path
 
+    def _coerce_to_type(self, value: Any, cast_type: type) -> Any:
+        """Coerce a value to the specified type.
+
+        This is particularly useful for environment variables which are always strings.
+
+        Args:
+            value: The value to coerce.
+            cast_type: The type to coerce to (bool, int, float, or str).
+
+        Returns:
+            The coerced value.
+        """
+        if cast_type is bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() not in ("false", "0", "no", "")
+            return bool(value)
+        if cast_type is int:
+            return int(value)
+        if cast_type is float:
+            return float(value)
+        # str is a no-op
+        return value
+
     def get_config_value(
         self,
         key: str,
@@ -262,6 +287,7 @@ class ConfigManager:
         should_load_env_var_if_detected: bool = True,
         config_source: Literal["user_config", "workspace_config", "default_config", "merged_config"] = "merged_config",
         default: Any | None = None,
+        cast_type: type[bool] | type[int] | type[float] | type[str] | None = None,
     ) -> Any:
         """Get a value from the configuration.
 
@@ -273,6 +299,8 @@ class ConfigManager:
             should_load_env_var_if_detected: If True, and the value starts with a $, it will be pulled from the environment variables.
             config_source: The source of the configuration to use. Can be 'user_config', 'workspace_config', 'default_config', or 'merged_config'.
             default: The default value to return if the key is not found in the configuration.
+            cast_type: Optional type to coerce the value to (bool, int, float, or str). Useful for environment
+                       variables which are always strings (e.g., "false" -> False when cast_type=bool).
 
         Returns:
             The value associated with the key, or the entire category if key points to a dict.
@@ -295,6 +323,9 @@ class ConfigManager:
             from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             value = GriptapeNodes.SecretsManager().get_secret(value[1:])
+
+        if cast_type is not None:
+            value = self._coerce_to_type(value, cast_type)
 
         return value
 
