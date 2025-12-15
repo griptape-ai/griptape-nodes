@@ -106,18 +106,21 @@ class CreateStaticFileDownloadUrlRequest(RequestPayload):
     enabling temporary download links, controlling file access permissions.
 
     Args:
-        file_name: Name of the file to be downloaded (deprecated, use file_path)
-        file_path: Path to the file (absolute or workspace-relative). If relative,
-                   resolved relative to workspace root. If outside workspace, file
-                   will be copied to staticfiles directory.
+        file_name: Name of the file to be downloaded (deprecated, use file_url)
+        file_url: File URL or path. Accepts both:
+                  - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
+                  - Absolute paths (e.g., "/absolute/path/to/file.jpg")
+                  - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+                  If relative, resolved relative to workspace root. If outside workspace,
+                  file will be copied to staticfiles directory.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
 
-    Note: Exactly one of file_name or file_path must be provided.
+    Note: Exactly one of file_name or file_url must be provided.
     """
 
     file_name: str | None = None
-    file_path: str | None = None
+    file_url: str | None = None
 
 
 @dataclass

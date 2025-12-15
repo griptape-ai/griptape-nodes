@@ -158,29 +158,30 @@ class StaticFilesManager:
         """Handle the request to create a presigned URL for downloading a static file.
 
         Args:
-            request: The request object containing the file name.
+            request: The request object containing the file name or file URL.
 
         Returns:
             A result object indicating success or failure.
         """
         resolved_directory = self._get_static_files_directory()
         file_name = request.file_name
-        file_path = request.file_path
+        file_url = request.file_url
 
         if file_name is not None:
             full_file_path = Path(resolved_directory) / file_name
-        elif file_path is not None:
-            full_file_path = Path(uri_to_path(file_path))
+        elif file_url is not None:
+            full_file_path = Path(uri_to_path(file_url))
         else:
             return CreateStaticFileDownloadUrlResultFailure(
-                error="Either file_name or file_path must be provided.",
+                error="Either file_name or file_url must be provided.",
                 result_details="Invalid request parameters.",
             )
 
         try:
             url = self.storage_driver.create_signed_download_url(full_file_path)
         except Exception as e:
-            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            identifier = file_name if file_name is not None else file_url
+            msg = f"Failed to create presigned URL for file {identifier}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
