@@ -1119,12 +1119,11 @@ class OSManager:
             logger.error(details)
             return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=details)
 
-    def _detect_mime_type(self, file_path: Path, resolved_path: Path | None = None) -> str | None:  # noqa: ARG002
+    def _detect_mime_type(self, file_path: Path) -> str | None:
         """Detect MIME type for a file. Returns None for directories or if detection fails.
 
         Args:
             file_path: Original file path (used for is_dir() check and filename extraction)
-            resolved_path: Optional pre-resolved path (not used for MIME detection, kept for API compatibility)
         """
         if file_path.is_dir():
             return None
@@ -1239,7 +1238,7 @@ class OSManager:
                                 if entry_path_obj is None:
                                     entry_path_obj = Path(dir_entry.path)
                                 # Use resolved_entry if available, otherwise just entry_path_obj
-                                mime_type = self._detect_mime_type(entry_path_obj, resolved_path=resolved_entry)
+                                mime_type = self._detect_mime_type(entry_path_obj)
 
                             # Determine size and modified_time values
                             entry_size = 0
