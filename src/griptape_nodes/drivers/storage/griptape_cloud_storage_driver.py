@@ -73,8 +73,36 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             "file_path": str(normalized_path),
         }
 
+    def _parse_cloud_asset_path(self, path: Path) -> Path:
+        """Parse cloud asset URL path to extract workspace-relative portion.
+
+        Handles paths like /buckets/{bucket_id}/assets/{workspace_relative_path}
+        by extracting just the {workspace_relative_path} portion.
+
+        Args:
+            path: Path object that may contain a cloud asset URL pattern
+
+        Returns:
+            Workspace-relative path
+        """
+        path_str = str(path)
+
+        # Check if it's a cloud asset URL pattern
+        if "/buckets/" in path_str and "/assets/" in path_str:
+            # Extract workspace-relative path from cloud URL
+            # Format: /buckets/{bucket_id}/assets/{workspace_relative_path}
+            parts = path_str.split("/assets/", 1)
+            expected_parts_count = 2
+            if len(parts) == expected_parts_count:
+                return Path(parts[1])  # Return the workspace-relative path after /assets/
+
+        # For non-cloud paths, return as-is
+        return path
+
     def create_signed_download_url(self, path: Path) -> str:
-        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        # Parse cloud asset URLs before normalizing
+        parsed_path = self._parse_cloud_asset_path(path)
+        normalized_path = get_workspace_relative_path(parsed_path, self.workspace_directory)
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{normalized_path.as_posix()}")
         try:
             response = httpx.post(url, json={"method": "GET"}, headers=self.headers)
@@ -220,7 +248,9 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         Returns:
             Permanent cloud asset URL
         """
-        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        # Parse cloud asset URLs before normalizing
+        parsed_path = self._parse_cloud_asset_path(path)
+        normalized_path = get_workspace_relative_path(parsed_path, self.workspace_directory)
         return urljoin(self.base_url, f"/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
 
     @staticmethod
