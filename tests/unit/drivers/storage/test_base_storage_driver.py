@@ -42,6 +42,10 @@ class TestBaseStorageDriverUploadFile:
             """Mock implementation of abstract method."""
             return []
 
+        def get_asset_url(self, path: Path) -> str:
+            """Mock implementation of abstract method."""
+            return f"http://test.com/assets/{path.name}"
+
         def save_file(
             self,
             path: Path,
