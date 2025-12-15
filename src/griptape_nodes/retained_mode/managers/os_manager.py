@@ -1128,18 +1128,19 @@ class OSManager:
         if file_path.is_dir():
             return None
 
+        # mimetypes.guess_type() only needs the filename, not the full path
+        # Using just the filename is ~2x faster and avoids path normalization overhead
+        filename = file_path.name
         try:
-            # mimetypes.guess_type() only needs the filename, not the full path
-            # Using just the filename is ~2x faster and avoids path normalization overhead
-            filename = file_path.name
             mime_type, _ = mimetypes.guess_type(filename, strict=True)
-            if mime_type is None:
-                mime_type = "text/plain"
-            return mime_type  # noqa: TRY300
         except Exception as e:
-            msg = f"MIME type detection failed for {file_path}: {e}"
+            msg = f"MIME type detection failed for {file_path} (filename: {filename}): {e}"
             logger.warning(msg)
             return "text/plain"
+
+        if mime_type is None:
+            mime_type = "text/plain"
+        return mime_type
 
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Handle a request to list directory contents."""
