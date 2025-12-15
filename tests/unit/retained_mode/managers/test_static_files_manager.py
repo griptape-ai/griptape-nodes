@@ -68,8 +68,6 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_default_policy_is_overwrite(
         self,
         mock_static_files_manager: StaticFilesManager,
-        mock_upload_response: dict[str, Any],
-        mock_download_url: str,
     ) -> None:
         """Test line 202: Verify default behavior unchanged (backward compatibility)."""
         # Mock save_file to return a file path
@@ -92,8 +90,6 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_explicit_overwrite_policy(
         self,
         mock_static_files_manager: StaticFilesManager,
-        mock_upload_response: dict[str, Any],
-        mock_download_url: str,
     ) -> None:
         """Test line 230: Explicitly pass OVERWRITE policy."""
         # Mock save_file to return a file path
@@ -118,8 +114,6 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_fail_policy_success(
         self,
         mock_static_files_manager: StaticFilesManager,
-        mock_upload_response: dict[str, Any],
-        mock_download_url: str,
     ) -> None:
         """Test line 230: Pass FAIL policy when file doesn't exist (success case)."""
         # Mock save_file to return a file path
@@ -159,9 +153,7 @@ class TestStaticFilesManagerSaveStaticFile:
             assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
             assert call_args[0][2] == ExistingFilePolicy.FAIL  # Third positional argument
 
-    def test_save_static_file_create_new_policy(
-        self, mock_static_files_manager: StaticFilesManager, mock_upload_response: dict[str, Any]
-    ) -> None:
+    def test_save_static_file_create_new_policy(self, mock_static_files_manager: StaticFilesManager) -> None:
         """Test line 230: Pass CREATE_NEW policy."""
         # Mock save_file to return alternative filename (storage driver handles unique filename generation)
         expected_file_path = f"/mock/workspace/staticfiles/{TEST_ALTERNATIVE_NAME}"
@@ -199,9 +191,7 @@ class TestStaticFilesManagerSaveStaticFile:
             # Verify storage driver was called before exception
             mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
-    def test_save_static_file_http_upload_failure(
-        self, mock_static_files_manager: StaticFilesManager, mock_upload_response: dict[str, Any]
-    ) -> None:
+    def test_save_static_file_http_upload_failure(self, mock_static_files_manager: StaticFilesManager) -> None:
         """Test generic exception handling (non-FileExistsError exceptions wrapped in RuntimeError)."""
         # Mock storage driver to raise a generic exception (simulating upload failure)
         mock_static_files_manager.storage_driver.save_file.side_effect = ValueError("Upload failed")
@@ -217,8 +207,6 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_complete_success_flow(
         self,
         mock_static_files_manager: StaticFilesManager,
-        mock_upload_response: dict[str, Any],
-        mock_download_url: str,
     ) -> None:
         """Test end-to-end success path with new policy parameter."""
         # Mock save_file to return a file path with alternative filename
