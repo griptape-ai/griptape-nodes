@@ -80,31 +80,23 @@ class ForLoopStartNode(BaseIterativeStartNode):
         self.move_element_to_position("status_message", position="last")
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter == self.run_in_order:
-            if value:
-                # If Run in Order is true, we don't run in parallel.
-                self.is_parallel = False
-            else:
-                # If Run in Order is false, we run in parallel.
-                self.is_parallel = True
-
+        if parameter == self.run_in_order and self.end_node:
             # Hide or show break/skip controls based on parallel mode
-            if self.end_node:
-                skip_param = self.end_node.get_parameter_by_name("skip_iteration")
-                break_param = self.end_node.get_parameter_by_name("break_loop")
+            skip_param = self.end_node.get_parameter_by_name("skip_iteration")
+            break_param = self.end_node.get_parameter_by_name("break_loop")
 
-                if value:
-                    # Show controls when running sequentially
-                    if skip_param:
-                        skip_param.allowed_modes = {ParameterMode.INPUT}
-                    if break_param:
-                        break_param.allowed_modes = {ParameterMode.INPUT}
-                else:
-                    # Hide controls when running in parallel (not supported)
-                    if skip_param:
-                        skip_param.allowed_modes = set()
-                    if break_param:
-                        break_param.allowed_modes = set()
+            if value:
+                # Show controls when running sequentially
+                if skip_param:
+                    skip_param.allowed_modes = {ParameterMode.INPUT}
+                if break_param:
+                    break_param.allowed_modes = {ParameterMode.INPUT}
+            else:
+                # Hide controls when running in parallel (not supported)
+                if skip_param:
+                    skip_param.allowed_modes = set()
+                if break_param:
+                    break_param.allowed_modes = set()
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""

@@ -56,30 +56,22 @@ class ForEachStartNode(BaseIterativeStartNode):
             group.add_child(self.current_item)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter == self.run_in_order:
-            if value:
-                # If Run in Order is true, we don't run in parallel.
-                self.is_parallel = False
-            else:
-                # If Run in Order is false, we run in parallel.
-                self.is_parallel = True
-
+        if parameter == self.run_in_order and self.end_node:
             # Hide or show break/skip controls based on parallel mode
-            if self.end_node:
-                skip_param = self.end_node.skip_control
-                break_param = self.end_node.break_control
-                if value:
-                    # Show controls when running sequentially
-                    if skip_param:
-                        skip_param.ui_options["hide"] = False
-                    if break_param:
-                        break_param.ui_options["hide"] = False
-                else:
-                    # Hide controls when running in parallel (not supported)
-                    if skip_param:
-                        skip_param.ui_options["hide"] = True
-                    if break_param:
-                        break_param.ui_options["hide"] = True
+            skip_param = self.end_node.skip_control
+            break_param = self.end_node.break_control
+            if value:
+                # Show controls when running sequentially
+                if skip_param:
+                    skip_param.ui_options["hide"] = False
+                if break_param:
+                    break_param.ui_options["hide"] = False
+            else:
+                # Hide controls when running in parallel (not supported)
+                if skip_param:
+                    skip_param.ui_options["hide"] = True
+                if break_param:
+                    break_param.ui_options["hide"] = True
 
     def _get_compatible_end_classes(self) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
