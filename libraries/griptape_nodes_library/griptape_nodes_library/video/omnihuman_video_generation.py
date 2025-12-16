@@ -177,16 +177,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         self.add_parameter(
             Parameter(
-                name="downscaled_image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
-                tooltip="Downscaled image URL if the input image was resized",
-                ui_options={"hide": True},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
                 name="seed",
                 input_types=["int"],
                 type="int",
@@ -245,10 +235,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             self.show_parameter_by_name("fast_mode")
             self.show_parameter_by_name("prompt")
 
-        # Clear cached downscaled image when input image changes
-        if parameter.name == "image_url":
-            self.parameter_output_values["downscaled_image_url"] = None
-
     def _log(self, message: str) -> None:
         """Log a message."""
         with contextlib.suppress(Exception):
@@ -270,7 +256,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         try:
             # Get and validate parameters
-            params = await self._get_parameters(api_key)
+            params, downscaled_filename = await self._get_parameters(api_key)
         except ValueError as e:
             self._public_image_url_parameter.delete_uploaded_artifact()
             self._public_audio_url_parameter.delete_uploaded_artifact()
@@ -287,10 +273,12 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                     was_successful=False,
                     result_details="No generation_id returned from proxy. Cannot proceed with generation.",
                 )
+                self._cleanup_downscaled_image(downscaled_filename)
                 return
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
+            self._cleanup_downscaled_image(downscaled_filename)
             return
 
         # Poll for result
@@ -299,54 +287,36 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # Cleanup
         self._public_image_url_parameter.delete_uploaded_artifact()
         self._public_audio_url_parameter.delete_uploaded_artifact()
+        self._cleanup_downscaled_image(downscaled_filename)
 
-    async def _shrink_input_image_if_needed(self) -> None:
-        """Shrink the input image if it exceeds the maximum size limit.
-
-        This modifies the image_url parameter to point to a shrunk version if needed.
-        Uses downscaled_image_url as a cache to avoid re-downscaling on repeated runs.
-        """
-        # Check if we have a cached downscaled image
-        cached_downscaled = self.parameter_output_values.get("downscaled_image_url")
-        if cached_downscaled is not None:
-            self._log("Using cached downscaled image")
-            self.set_parameter_value("image_url", cached_downscaled)
+    def _cleanup_downscaled_image(self, filename: str | None) -> None:
+        """Delete the downscaled image file if it exists."""
+        if not filename:
             return
 
-        parameter_value = self.get_parameter_value("image_url")
-        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
-
-        if not url:
-            return
-
-        # Get file contents based on URL type
-        is_external = url.startswith(("http://", "https://")) and "localhost" not in url
-
-        if is_external:
-            # Download from external URL
-            file_contents = await self._download_image_bytes(url)
-            if not file_contents:
-                return
-        else:
-            # Read from local static files
+        try:
             config_manager = GriptapeNodes.ConfigManager()
             workspace_path = config_manager.workspace_path
             static_files_dir = "staticfiles"
-            static_files_path = workspace_path / static_files_dir
+            file_path = workspace_path / static_files_dir / filename
 
-            parsed_url = urlparse(url)
-            filename = Path(parsed_url.path).name
-            file_path = static_files_path / filename
+            if file_path.exists():
+                file_path.unlink()
+                self._log(f"Cleaned up downscaled image: {filename}")
+        except Exception as e:
+            self._log(f"Failed to cleanup downscaled image {filename}: {e}")
 
-            if not file_path.exists():
-                return
+    async def _get_image_for_api(self) -> tuple[ImageUrlArtifact | None, str | None]:
+        """Get the image to use for the API call, shrinking if needed.
 
-            with file_path.open("rb") as f:
-                file_contents = f.read()
-
-        # Check if shrinking is needed
-        if len(file_contents) <= MAX_IMAGE_SIZE_BYTES:
-            return
+        Returns a tuple of (artifact, filename):
+        - artifact: The downscaled image artifact if shrinking was needed, or None to use original
+        - filename: The filename of the downscaled image for cleanup, or None
+        """
+        # Get the image file contents
+        file_contents = await self._get_image_file_contents()
+        if file_contents is None or len(file_contents) <= MAX_IMAGE_SIZE_BYTES:
+            return None, None
 
         size_mb = len(file_contents) / (1024 * 1024)
         max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
@@ -364,17 +334,45 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         if len(shrunk_bytes) >= len(file_contents):
             # Shrinking didn't help
             self._log("Could not shrink image, using original")
-            return
+            return None, None
 
         # Save shrunk image to static files
         shrunk_filename = f"shrunk_{uuid4().hex}.webp"
         shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
 
-        # Create artifact and cache it
         new_artifact = ImageUrlArtifact(value=shrunk_url)
-        self.parameter_output_values["downscaled_image_url"] = new_artifact
-        self.set_parameter_value("image_url", new_artifact)
         self._log(f"Shrunk image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
+        return new_artifact, shrunk_filename
+
+    async def _get_image_file_contents(self) -> bytes | None:
+        """Get the file contents of the input image."""
+        parameter_value = self.get_parameter_value("image_url")
+        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
+
+        if not url:
+            return None
+
+        # Check if it's an external URL
+        is_external = url.startswith(("http://", "https://")) and "localhost" not in url
+
+        if is_external:
+            return await self._download_image_bytes(url)
+
+        # Read from local static files
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_path = config_manager.workspace_path
+        static_files_dir = "staticfiles"
+        static_files_path = workspace_path / static_files_dir
+
+        parsed_url = urlparse(url)
+        filename = Path(parsed_url.path).name
+        file_path = static_files_path / filename
+
+        if not file_path.exists():
+            return None
+
+        with file_path.open("rb") as f:
+            return f.read()
 
     async def _download_image_bytes(self, url: str) -> bytes | None:
         """Download image bytes from an external URL."""
@@ -387,12 +385,45 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             self._log(f"Failed to download image from {url}: {e}")
             return None
 
-    async def _get_parameters(self, api_key: str) -> dict[str, Any]:
-        """Get and normalize input parameters."""
-        # Shrink the input image if needed before uploading
-        await self._shrink_input_image_if_needed()
+    def _get_public_url_for_artifact(self, artifact: ImageUrlArtifact) -> str:
+        """Get a public URL for an image artifact by uploading to Griptape Cloud."""
+        url = artifact.value
 
-        image_url = self.get_parameter_value("image_url")
+        # If already a public URL, return it
+        if url.startswith(("http://", "https://")) and "localhost" not in url:
+            return url
+
+        # Read file contents from static files
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_path = config_manager.workspace_path
+        static_files_dir = "staticfiles"
+        static_files_path = workspace_path / static_files_dir
+
+        parsed_url = urlparse(url)
+        filename = Path(parsed_url.path).name
+        file_path = static_files_path / filename
+
+        with file_path.open("rb") as f:
+            file_contents = f.read()
+
+        # Upload using the existing public image URL parameter's storage driver
+        gtc_file_path = Path(static_files_dir) / "artifact_url_storage" / uuid4().hex / filename
+        public_url = self._public_image_url_parameter._storage_driver.upload_file(
+            path=gtc_file_path, file_content=file_contents
+        )
+
+        return public_url
+
+    async def _get_parameters(self, api_key: str) -> tuple[dict[str, Any], str | None]:
+        """Get and normalize input parameters.
+
+        Returns a tuple of (params_dict, downscaled_filename) where downscaled_filename
+        is the filename of any downscaled image that needs cleanup, or None.
+        """
+        # Check if we need to use a downscaled image
+        downscaled_image, downscaled_filename = await self._get_image_for_api()
+
+        image_url_param = self.get_parameter_value("image_url")
         audio_url = self.get_parameter_value("audio_url")
         mask_image_urls = self.get_parameter_value("mask_image_urls")
         prompt = self.get_parameter_value("prompt")
@@ -402,10 +433,16 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         model_id = self.get_parameter_value("model_id")
 
         # image url and audio url are required
-        if not image_url:
+        if not image_url_param:
             msg = "image_url parameter is required."
             raise ValueError(msg)
-        image_url = self._public_image_url_parameter.get_public_url_for_parameter()
+
+        # Use downscaled image if available, otherwise use original
+        if downscaled_image is not None:
+            # Upload downscaled image to get public URL
+            image_url = self._get_public_url_for_artifact(downscaled_image)
+        else:
+            image_url = self._public_image_url_parameter.get_public_url_for_parameter()
         if not audio_url:
             msg = "audio_url parameter is required."
             raise ValueError(msg)
@@ -433,7 +470,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             "fast_mode": fast_mode if fast_mode else None,
         }
         # remove None values
-        return {k: v for k, v in body.items() if v is not None}
+        params = {k: v for k, v in body.items() if v is not None}
+        return params, downscaled_filename
 
     async def _auto_detect_masks(self, image_url: str, api_key: str) -> list[str]:
         """Automatically detect masks by calling the subject detection API."""
