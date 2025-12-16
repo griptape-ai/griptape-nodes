@@ -517,7 +517,10 @@ class AddTextToExistingImage(SuccessFailureNode):
         if not text.strip():
             return self._pil_to_png_bytes(pil_image)
 
-        draw = ImageDraw.Draw(pil_image, "RGBA")
+        # Draw text/background onto a transparent overlay and alpha-composite it onto
+        # the original image. This ensures semi-transparent colors blend correctly.
+        overlay = Image.new("RGBA", pil_image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay, "RGBA")
 
         try:
             font = ImageFont.load_default(size=font_size)
@@ -573,6 +576,8 @@ class AddTextToExistingImage(SuccessFailureNode):
         except Exception as draw_error:
             msg = f"Failed to draw text: {draw_error}"
             raise RuntimeError(msg) from draw_error
+
+        pil_image = Image.alpha_composite(pil_image, overlay)
 
         return self._pil_to_png_bytes(pil_image)
 
