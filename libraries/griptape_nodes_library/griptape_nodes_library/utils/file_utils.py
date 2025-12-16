@@ -1,5 +1,6 @@
 """File utility functions for generating filenames and managing file operations."""
 
+from pathlib import Path
 from typing import Any
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -75,26 +76,32 @@ def sanitize_filename_component(name: str) -> str:
     return "".join(c for c in name if c.isalnum() or c in ("-", "_")).rstrip()
 
 
-def clean_path_string(path: str | Any) -> str | Any:
+def clean_path_string(path: str | Path | Any) -> str | Any:
     r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
 
     This utility function handles cases where merge_texts nodes accidentally add newlines
     between path components. Paths with embedded newlines cause WinError 123 on Windows.
 
     Args:
-        path: Path string that may contain newlines/carriage returns, or any other type
+        path: Path string or Path object that may contain newlines/carriage returns, or any other type
 
     Returns:
-        Cleaned path string with newlines/carriage returns removed, or original value if not a string
+        Cleaned path string with newlines/carriage returns removed, or original value if not a string/Path
 
     Examples:
         >>> clean_path_string("C:\\Users\\file\\n\\n.txt")
         "C:\\Users\\file.txt"
         >>> clean_path_string("/path/to/file\\r\\n")
         "/path/to/file"
+        >>> clean_path_string(Path("/path/to/file"))
+        "/path/to/file"
         >>> clean_path_string(None)
         None
     """
+    # Convert Path objects to strings
+    if isinstance(path, Path):
+        path = str(path)
+
     if not isinstance(path, str):
         return path
 
