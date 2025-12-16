@@ -6,6 +6,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
@@ -220,7 +221,7 @@ class LoadImage(SuccessFailureNode):
             from pathlib import Path
 
             # Check if it's a URL or file path
-            if path_value.startswith(("http://", "https://")):
+            if is_url_or_path(path_value):
                 return ImageUrlArtifact(value=path_value)
 
             # Check if local file exists
