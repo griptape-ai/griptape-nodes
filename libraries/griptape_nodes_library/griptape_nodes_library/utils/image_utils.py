@@ -933,3 +933,47 @@ def shrink_image_to_size(image_bytes: bytes, max_size_bytes: int, context_name: 
         logger.warning("%s downscale failed: %s", context_name, e)
     logger.warning("%s returning original image bytes after downscale attempts", context_name)
     return image_bytes
+
+
+def resize_image_for_resolution(image_bytes: bytes, max_dimension: int, context_name: str = "image") -> bytes:
+    """Resize image to fit within max_dimension while maintaining aspect ratio.
+
+    Args:
+        image_bytes: Raw image bytes
+        max_dimension: Maximum width or height in pixels
+        context_name: Name for logging context (e.g., node name)
+
+    Returns:
+        Resized image bytes, or original if resizing fails or unnecessary
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        width, height = img.size
+
+        # Check if resizing is needed
+        if width <= max_dimension and height <= max_dimension:
+            return image_bytes
+
+        scale = min(max_dimension / width, max_dimension / height)
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+
+        logger.info(
+            "%s resizing image from %dx%d to %dx%d",
+            context_name,
+            width,
+            height,
+            new_width,
+            new_height,
+        )
+
+        resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Save to bytes, preserve format if possible, otherwise use WEBP
+        buf = io.BytesIO()
+        img_format = img.format if img.format else "WEBP"
+        resized.save(buf, format=img_format)
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning("%s resize failed: %s", context_name, e)
+        return image_bytes

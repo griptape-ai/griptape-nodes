@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json as _json
 import logging
 import os
@@ -15,6 +16,7 @@ from uuid import uuid4
 import httpx
 from griptape.artifacts import ImageUrlArtifact, VideoUrlArtifact
 from griptape.artifacts.url_artifact import UrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -23,7 +25,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import shrink_image_to_size
+from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -31,6 +33,8 @@ __all__ = ["OmnihumanVideoGeneration"]
 
 # Maximum image size in bytes (5MB)
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+# Maximum image resolution (4096x4096)
+MAX_IMAGE_DIMENSION = 4096
 
 
 class OmnihumanVideoGeneration(SuccessFailureNode):
@@ -315,21 +319,52 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         """
         # Get the image file contents
         file_contents = await self._get_image_file_contents()
-        if file_contents is None or len(file_contents) <= MAX_IMAGE_SIZE_BYTES:
+        if file_contents is None:
             return None, None
 
-        size_mb = len(file_contents) / (1024 * 1024)
+        # Check file size
+        size_bytes = len(file_contents)
+        size_mb = size_bytes / (1024 * 1024)
         max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+        exceeds_size = size_bytes > MAX_IMAGE_SIZE_BYTES
+
+        # Check resolution
+        img = Image.open(io.BytesIO(file_contents))
+        width, height = img.size
+        exceeds_resolution = width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION
+
+        # If neither constraint is exceeded, use original
+        if not exceeds_size and not exceeds_resolution:
+            return None, None
 
         # Check if auto resize is enabled
         auto_image_resize = self.get_parameter_value("auto_image_resize")
         if not auto_image_resize:
-            msg = f"{self.name} input image exceeds maximum size of {max_mb:.0f}MB (image is {size_mb:.2f}MB)"
+            issues = []
+            if exceeds_size:
+                issues.append(f"size {size_mb:.2f}MB exceeds {max_mb:.0f}MB limit")
+            if exceeds_resolution:
+                issues.append(f"resolution {width}x{height} exceeds {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} limit")
+            msg = f"{self.name} input image: {', '.join(issues)}"
             raise ValueError(msg)
 
-        # Shrink the image
-        self._log(f"Input image is {size_mb:.2f}MB, shrinking to under {max_mb:.0f}MB...")
-        shrunk_bytes = shrink_image_to_size(file_contents, MAX_IMAGE_SIZE_BYTES, self.name)
+        # Log what needs to be fixed
+        if exceeds_size and exceeds_resolution:
+            self._log(f"Input image is {size_mb:.2f}MB and {width}x{height}, resizing...")
+        elif exceeds_size:
+            self._log(f"Input image is {size_mb:.2f}MB, shrinking to under {max_mb:.0f}MB...")
+        else:
+            self._log(
+                f"Input image is {width}x{height}, resizing to under {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}..."
+            )
+
+        # Resize for resolution if needed, then shrink for size
+        resized_bytes = (
+            resize_image_for_resolution(file_contents, MAX_IMAGE_DIMENSION, self.name)
+            if exceeds_resolution
+            else file_contents
+        )
+        shrunk_bytes = shrink_image_to_size(resized_bytes, MAX_IMAGE_SIZE_BYTES, self.name)
 
         if len(shrunk_bytes) >= len(file_contents):
             # Shrinking didn't help
@@ -341,7 +376,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
 
         new_artifact = ImageUrlArtifact(value=shrunk_url)
-        self._log(f"Shrunk image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
+        self._log(f"Resized image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
         return new_artifact, shrunk_filename
 
     async def _get_image_file_contents(self) -> bytes | None:
