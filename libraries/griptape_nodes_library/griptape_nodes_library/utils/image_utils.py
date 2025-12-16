@@ -864,3 +864,72 @@ def apply_mask_transformations(
         alpha = apply_blur_to_mask(alpha, blur_radius, context_name)
 
     return alpha
+
+
+def shrink_image_to_size(image_bytes: bytes, max_size_bytes: int, context_name: str = "image") -> bytes:
+    """Best-effort shrink image to ensure it fits under the byte limit while maximizing quality.
+
+    Uses a strategy that progressively reduces quality and resolution to find the largest
+    file size (best quality) that still fits under the limit.
+
+    Args:
+        image_bytes: Raw image bytes
+        max_size_bytes: Maximum allowed size in bytes
+        context_name: Name for logging context (e.g., node name)
+
+    Returns:
+        Possibly converted/compressed bytes, or original if shrinking fails or unnecessary
+    """
+    if len(image_bytes) <= max_size_bytes:
+        return image_bytes
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img = img.convert("RGBA") if img.mode in ("P", "LA") else img
+        # Prefer WEBP for better compression and alpha support
+        target_format = "WEBP"
+
+        orig_w, orig_h = img.size
+
+        # Try lossless first (best quality)
+        buf = io.BytesIO()
+        img.save(buf, format=target_format, lossless=True, method=6)
+        data = buf.getvalue()
+        image_size_bytes = len(data)
+        logger.info(
+            "%s downscale attempt: lossless size=%.2fMB",
+            context_name,
+            image_size_bytes / (1024 * 1024),
+        )
+        if image_size_bytes <= max_size_bytes:
+            logger.info("%s shrunk image to %.2fMB (lossless)", context_name, image_size_bytes / (1024 * 1024))
+            return data
+
+        # Finer-grained scales for better quality preservation
+        scales = [1.0, 0.75, 0.5]
+        qualities = [100, 95, 85]
+
+        for scale in scales:
+            w = max(1, int(orig_w * scale))
+            h = max(1, int(orig_h * scale))
+            resized = img.resize((w, h)) if (w, h) != (orig_w, orig_h) else img
+
+            for q in qualities:
+                buf = io.BytesIO()
+                resized.save(buf, format=target_format, quality=q, method=6)
+                data = buf.getvalue()
+                image_size_bytes = len(data)
+                logger.info(
+                    "%s downscale attempt: scale=%.2f quality=%d size=%.2fMB",
+                    context_name,
+                    scale,
+                    q,
+                    image_size_bytes / (1024 * 1024),
+                )
+                if image_size_bytes <= max_size_bytes:
+                    logger.info("%s shrunk image to %.2fMB (q=%d)", context_name, image_size_bytes / (1024 * 1024), q)
+                    return data
+    except Exception as e:
+        logger.warning("%s downscale failed: %s", context_name, e)
+    logger.warning("%s returning original image bytes after downscale attempts", context_name)
+    return image_bytes

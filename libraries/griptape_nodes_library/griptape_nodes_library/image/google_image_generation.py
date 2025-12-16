@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import io as _io
 import json as _json
 import logging
 import os
@@ -10,7 +9,6 @@ from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 import httpx
-import PIL.Image
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
@@ -18,6 +16,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -624,69 +623,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         except IndexError:
             return None
 
-    def _shrink_image(self, image_bytes: bytes) -> bytes:
-        """Best-effort shrink using Pillow to ensure <= byte_limit while maximizing quality.
-
-        Uses a strategy that finds the largest file size (best quality) that still
-        fits under the limit, rather than returning the first valid result.
-
-        Args:
-            image_bytes: Raw image bytes
-
-        Returns:
-            Possibly converted/compressed bytes, or original if shrinking fails
-        """
-        try:
-            img = PIL.Image.open(_io.BytesIO(image_bytes))
-            img = img.convert("RGBA") if img.mode in ("P", "LA") else img
-            # Prefer WEBP for better compression and alpha support
-            target_format = "WEBP"
-
-            orig_w, orig_h = img.size
-
-            # Try lossless first (best quality)
-            buf = _io.BytesIO()
-            img.save(buf, format=target_format, lossless=True, method=6)
-            data = buf.getvalue()
-            image_size_bytes = len(data)
-            logger.info(
-                "%s downscale attempt: lossless size=%.2fMB",
-                self.name,
-                image_size_bytes / (1024 * 1024),
-            )
-            if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
-                logger.info("%s shrunk image to %.2fMB (lossless)", self.name, image_size_bytes / (1024 * 1024))
-                return data
-
-            # Finer-grained scales for better quality preservation
-            scales = [1.0, 0.75, 0.5]
-            qualities = [100, 95, 85]
-
-            for scale in scales:
-                w = max(1, int(orig_w * scale))
-                h = max(1, int(orig_h * scale))
-                resized = img.resize((w, h)) if (w, h) != (orig_w, orig_h) else img
-
-                for q in qualities:
-                    buf = _io.BytesIO()
-                    resized.save(buf, format=target_format, quality=q, method=6)
-                    data = buf.getvalue()
-                    image_size_bytes = len(data)
-                    logger.info(
-                        "%s downscale attempt: scale=%.2f quality=%d size=%.2fMB",
-                        self.name,
-                        scale,
-                        q,
-                        image_size_bytes / (1024 * 1024),
-                    )
-                    if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
-                        logger.info("%s shrunk image to %.2fMB (q=%d)", self.name, image_size_bytes / (1024 * 1024), q)
-                        return data
-        except Exception as e:
-            logger.warning("%s downscale failed: %s", self.name, e)
-        logger.warning("%s returning original image bytes after downscale attempts", self.name)
-        return image_bytes
-
     def _validate_image_size(
         self, base64_data: str, mime_type: str, *, auto_image_resize: bool = True
     ) -> tuple[str, str] | None:
@@ -723,7 +659,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Try to shrink the image
         logger.info("%s image is %.2fMB, attempting to shrink...", self.name, size_mb)
-        shrunk_bytes = self._shrink_image(image_bytes)
+        shrunk_bytes = shrink_image_to_size(image_bytes, MAX_IMAGE_SIZE_BYTES, self.name)
 
         if len(shrunk_bytes) <= MAX_IMAGE_SIZE_BYTES:
             # Successfully shrunk - encode back to base64 with new WEBP mime type

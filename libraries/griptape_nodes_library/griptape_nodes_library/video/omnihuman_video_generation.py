@@ -6,12 +6,15 @@ import json as _json
 import logging
 import os
 import time
+from pathlib import Path
 from time import monotonic
 from typing import Any, ClassVar
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from uuid import uuid4
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts import ImageUrlArtifact, VideoUrlArtifact
+from griptape.artifacts.url_artifact import UrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -20,10 +23,14 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["OmnihumanVideoGeneration"]
+
+# Maximum image size in bytes (5MB)
+MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
 
 
 class OmnihumanVideoGeneration(SuccessFailureNode):
@@ -95,6 +102,18 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         )
         self._public_image_url_parameter.add_input_parameters()
 
+        # Image size validation
+        self.add_parameter(
+            Parameter(
+                name="auto_image_resize",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB limit. If enabled, oversized images are best-effort scaled to fit within the limit.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
         self._public_audio_url_parameter = PublicArtifactUrlParameter(
             node=self,
             artifact_url_parameter=Parameter(
@@ -158,6 +177,16 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         self.add_parameter(
             Parameter(
+                name="downscaled_image_url",
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
+                tooltip="Downscaled image URL if the input image was resized",
+                ui_options={"hide": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
                 name="seed",
                 input_types=["int"],
                 type="int",
@@ -211,10 +240,14 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             self.hide_parameter_by_name("seed")
             self.hide_parameter_by_name("fast_mode")
             self.hide_parameter_by_name("prompt")
-        else:
+        elif parameter.name == "model_id":
             self.show_parameter_by_name("seed")
             self.show_parameter_by_name("fast_mode")
             self.show_parameter_by_name("prompt")
+
+        # Clear cached downscaled image when input image changes
+        if parameter.name == "image_url":
+            self.parameter_output_values["downscaled_image_url"] = None
 
     def _log(self, message: str) -> None:
         """Log a message."""
@@ -267,8 +300,98 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._public_image_url_parameter.delete_uploaded_artifact()
         self._public_audio_url_parameter.delete_uploaded_artifact()
 
+    async def _shrink_input_image_if_needed(self) -> None:
+        """Shrink the input image if it exceeds the maximum size limit.
+
+        This modifies the image_url parameter to point to a shrunk version if needed.
+        Uses downscaled_image_url as a cache to avoid re-downscaling on repeated runs.
+        """
+        # Check if we have a cached downscaled image
+        cached_downscaled = self.parameter_output_values.get("downscaled_image_url")
+        if cached_downscaled is not None:
+            self._log("Using cached downscaled image")
+            self.set_parameter_value("image_url", cached_downscaled)
+            return
+
+        parameter_value = self.get_parameter_value("image_url")
+        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
+
+        if not url:
+            return
+
+        # Get file contents based on URL type
+        is_external = url.startswith(("http://", "https://")) and "localhost" not in url
+
+        if is_external:
+            # Download from external URL
+            file_contents = await self._download_image_bytes(url)
+            if not file_contents:
+                return
+        else:
+            # Read from local static files
+            config_manager = GriptapeNodes.ConfigManager()
+            workspace_path = config_manager.workspace_path
+            static_files_dir = "staticfiles"
+            static_files_path = workspace_path / static_files_dir
+
+            parsed_url = urlparse(url)
+            filename = Path(parsed_url.path).name
+            file_path = static_files_path / filename
+
+            if not file_path.exists():
+                return
+
+            with file_path.open("rb") as f:
+                file_contents = f.read()
+
+        # Check if shrinking is needed
+        if len(file_contents) <= MAX_IMAGE_SIZE_BYTES:
+            return
+
+        size_mb = len(file_contents) / (1024 * 1024)
+        max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+
+        # Check if auto resize is enabled
+        auto_image_resize = self.get_parameter_value("auto_image_resize")
+        if not auto_image_resize:
+            msg = f"{self.name} input image exceeds maximum size of {max_mb:.0f}MB (image is {size_mb:.2f}MB)"
+            raise ValueError(msg)
+
+        # Shrink the image
+        self._log(f"Input image is {size_mb:.2f}MB, shrinking to under {max_mb:.0f}MB...")
+        shrunk_bytes = shrink_image_to_size(file_contents, MAX_IMAGE_SIZE_BYTES, self.name)
+
+        if len(shrunk_bytes) >= len(file_contents):
+            # Shrinking didn't help
+            self._log("Could not shrink image, using original")
+            return
+
+        # Save shrunk image to static files
+        shrunk_filename = f"shrunk_{uuid4().hex}.webp"
+        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
+
+        # Create artifact and cache it
+        new_artifact = ImageUrlArtifact(value=shrunk_url)
+        self.parameter_output_values["downscaled_image_url"] = new_artifact
+        self.set_parameter_value("image_url", new_artifact)
+        self._log(f"Shrunk image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
+
+    async def _download_image_bytes(self, url: str) -> bytes | None:
+        """Download image bytes from an external URL."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=120.0)
+                response.raise_for_status()
+                return response.content
+        except Exception as e:
+            self._log(f"Failed to download image from {url}: {e}")
+            return None
+
     async def _get_parameters(self, api_key: str) -> dict[str, Any]:
         """Get and normalize input parameters."""
+        # Shrink the input image if needed before uploading
+        await self._shrink_input_image_if_needed()
+
         image_url = self.get_parameter_value("image_url")
         audio_url = self.get_parameter_value("audio_url")
         mask_image_urls = self.get_parameter_value("mask_image_urls")
