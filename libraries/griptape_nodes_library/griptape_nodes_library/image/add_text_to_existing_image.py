@@ -11,7 +11,7 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image, ImageDraw, ImageFont
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
@@ -234,9 +234,15 @@ class AddTextToExistingImage(SuccessFailureNode):
                 logger.warning(f"{self.name}: Cached render refresh failed: {e}")
         return super().after_value_set(parameter, value)
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[None]:
+        """Run using AsyncResult pattern for UI running status."""
         self._clear_execution_status()
         self._set_failure_output_values()
+        yield lambda: self._process()
+
+    def _process(self) -> None:
+        """Synchronous implementation for AsyncResult wrapper."""
+        # The async wrapper handles execution status reset and failure defaults.
 
         input_image = self.get_parameter_value("input_image")
         text_template = self.get_parameter_value("text") or ""
