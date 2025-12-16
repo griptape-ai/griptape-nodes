@@ -31,10 +31,15 @@ __all__ = ["Flux2ImageGeneration"]
 PROMPT_TRUNCATE_LENGTH = 100
 
 # Maximum number of input images supported
-MAX_INPUT_IMAGES = 10
+MAX_INPUT_IMAGES = 8
 
 # Aspect ratio options
-ASPECT_RATIO_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:7", "7:3"]
+DISABLE_ASPECT_RATIO_VALUE = "N/A"
+ASPECT_RATIO_OPTIONS = [DISABLE_ASPECT_RATIO_VALUE, "1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:7", "7:3"]
+
+# Image dimension constants
+DEFAULT_IMAGE_SIZE = 1024
+IMAGE_DIMENSION_STEP = 16
 
 # Output format options
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
@@ -58,8 +63,10 @@ class Flux2ImageGeneration(SuccessFailureNode):
     Inputs:
         - model (str): Flux model to use ("flux-2-pro", "flux-2-flex", or "flux-2-max", default: "flux-2-pro")
         - prompt (str): Text description of the desired image
-        - input_image (ImageArtifact): Optional input image for image-to-image generation
-        - aspect_ratio (str): Desired aspect ratio (e.g., "16:9", default: "1:1")
+        - input_images (list): Optional input images for image-to-image generation
+        - width (int): Output width in pixels. Must be a multiple of 16. (default: 1024)
+        - height (int): Output height in pixels. Must be a multiple of 16. (default: 1024)
+        - aspect_ratio (str): [hidden] If provided, overrides width/height and generates a 1MP image (e.g., "16:9")
         - randomize_seed (bool): If true, randomize the seed on each run (default: False)
         - seed (int): Random seed for reproducible results (default: 42)
         - prompt_upsampling (bool): If true, performs upsampling on the prompt
@@ -133,14 +140,40 @@ class Flux2ImageGeneration(SuccessFailureNode):
                 ui_options={"expander": True, "display_name": "Input Images"},
             )
         )
-        # Aspect ratio parameter
+        # Width parameter
+        self.add_parameter(
+            ParameterInt(
+                name="width",
+                default_value=DEFAULT_IMAGE_SIZE,
+                tooltip="Output width in pixels. Must be a multiple of 16. Total image size cannot exceed 4MP.",
+                allow_output=False,
+                min_val=IMAGE_DIMENSION_STEP,
+                step=IMAGE_DIMENSION_STEP,
+            )
+        )
+
+        # Height parameter
+        self.add_parameter(
+            ParameterInt(
+                name="height",
+                default_value=DEFAULT_IMAGE_SIZE,
+                tooltip="Output height in pixels. Must be a multiple of 16. Total image size cannot exceed 4MP.",
+                allow_output=False,
+                min_val=IMAGE_DIMENSION_STEP,
+                step=IMAGE_DIMENSION_STEP,
+            )
+        )
+
+        # Aspect ratio parameter (hidden, for backwards compatibility)
+        # If provided, aspect_ratio is used instead of width/height
         self.add_parameter(
             ParameterString(
                 name="aspect_ratio",
-                default_value="1:1",
-                tooltip="Desired aspect ratio (e.g., '16:9'). All outputs are ~1MP total.",
+                default_value=DISABLE_ASPECT_RATIO_VALUE,
+                tooltip="Desired aspect ratio (e.g., '16:9'). Overrides 'width' and 'height'. All outputs are ~1MP total.",
                 allow_output=False,
                 traits={Options(choices=ASPECT_RATIO_OPTIONS)},
+                hide=True,
             )
         )
 
@@ -318,10 +351,12 @@ class Flux2ImageGeneration(SuccessFailureNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
-            "model": self.get_parameter_value("model") or "flux-kontext-pro",
+            "model": self.get_parameter_value("model") or "flux-2-pro",
             "prompt": self.get_parameter_value("prompt") or "",
             "input_images": self.get_parameter_list_value("input_images") or [],
-            "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
+            "width": self.get_parameter_value("width") or DEFAULT_IMAGE_SIZE,
+            "height": self.get_parameter_value("height") or DEFAULT_IMAGE_SIZE,
+            "aspect_ratio": self.get_parameter_value("aspect_ratio") or DISABLE_ASPECT_RATIO_VALUE,
             "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
@@ -404,12 +439,18 @@ class Flux2ImageGeneration(SuccessFailureNode):
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "prompt": params["prompt"],
-            "aspect_ratio": params["aspect_ratio"],
             "prompt_upsampling": params["prompt_upsampling"],
             "output_format": params["output_format"],
             "safety_tolerance": params["safety_tolerance"],
             "seed": params["seed"],
         }
+
+        # Use aspect_ratio if provided, otherwise use width/height
+        if params["aspect_ratio"] and params["aspect_ratio"] != DISABLE_ASPECT_RATIO_VALUE:
+            payload["aspect_ratio"] = params["aspect_ratio"]
+        else:
+            payload["width"] = params["width"]
+            payload["height"] = params["height"]
 
         # add steps and guidance for flex model
         if params["model"] == "flux-2-flex":
