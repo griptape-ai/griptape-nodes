@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -25,6 +26,9 @@ __all__ = ["WanReferenceToVideoGeneration"]
 
 # Define constant for prompt truncation length
 PROMPT_TRUNCATE_LENGTH = 100
+
+# HTTP status code threshold for error responses
+HTTP_ERROR_STATUS = 400
 
 # Model options
 MODEL_OPTIONS = [
@@ -56,11 +60,13 @@ SHOT_TYPE_OPTIONS = [
     "multi",
 ]
 
-# Response status constants
-STATUS_FAILED = "Failed"
-STATUS_ERROR = "Error"
-STATUS_REQUEST_MODERATED = "Request Moderated"
-STATUS_CONTENT_MODERATED = "Content Moderated"
+# Generation status constants
+STATUS_PENDING = "PENDING"
+STATUS_RUNNING = "RUNNING"
+STATUS_SUCCEEDED = "SUCCEEDED"
+STATUS_FAILED = "FAILED"
+STATUS_CANCELED = "CANCELED"
+STATUS_UNKNOWN = "UNKNOWN"
 
 
 class WanReferenceToVideoGeneration(SuccessFailureNode):
@@ -175,7 +181,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         )
         self._public_video_url_parameter_1.add_input_parameters()
 
-        # Reference video 2 (optional) using PublicArtifactUrlParameter
+        # Reference video 2 (optional) using PublicArtifactUrlParameter - hidden by default
         self._public_video_url_parameter_2 = PublicArtifactUrlParameter(
             node=self,
             artifact_url_parameter=Parameter(
@@ -185,13 +191,15 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                 default_value="",
                 tooltip="Second reference video (optional). MP4/MOV, 2-30s, max 100MB. Use 'character2' in prompt to reference.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Reference Video 2"},
+                ui_options={"display_name": "Reference Video 2", "hide_handle": True, "hide_property": True},
             ),
             disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the reference video.",
         )
         self._public_video_url_parameter_2.add_input_parameters()
+        # Hide the upload message for video 2 since the parameter is hidden
+        self.hide_message_by_name("artifact_url_parameter_message_reference_video_2")
 
-        # Reference video 3 (optional) using PublicArtifactUrlParameter
+        # Reference video 3 (optional) using PublicArtifactUrlParameter - hidden by default
         self._public_video_url_parameter_3 = PublicArtifactUrlParameter(
             node=self,
             artifact_url_parameter=Parameter(
@@ -201,11 +209,13 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                 default_value="",
                 tooltip="Third reference video (optional). MP4/MOV, 2-30s, max 100MB. Use 'character3' in prompt to reference.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Reference Video 3"},
+                ui_options={"display_name": "Reference Video 3", "hide_handle": True, "hide_property": True},
             ),
             disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the reference video.",
         )
         self._public_video_url_parameter_3.add_input_parameters()
+        # Hide the upload message for video 3 since the parameter is hidden
+        self.hide_message_by_name("artifact_url_parameter_message_reference_video_3")
 
         # Size parameter
         self.add_parameter(
@@ -358,24 +368,23 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         model = params["model"]
         logger.info("Generating video from reference with %s", model)
 
-        # Submit request and get synchronous response
+        # Submit request and get generation_id
         try:
-            response = await self._submit_request(params, headers)
-            if not response:
+            generation_id = await self._submit_request(params, headers)
+            if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
                     was_successful=False,
-                    result_details="No response returned from API. Cannot proceed with generation.",
+                    result_details="No generation_id returned from API. Cannot proceed with generation.",
                 )
                 return
         except RuntimeError as e:
-            # HTTP error during submission
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
             return
 
-        # Handle synchronous response
-        await self._handle_response(response)
+        # Poll for result
+        await self._poll_for_result(generation_id, headers, params["duration"])
 
         # Cleanup uploaded artifacts
         self._public_video_url_parameter_1.delete_uploaded_artifact()
@@ -392,19 +401,27 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         audio = self.get_parameter_value("audio")
         watermark = self.get_parameter_value("watermark")
 
-        # Collect reference video URLs
+        # Collect reference video URLs using PublicArtifactUrlParameter
         reference_video_urls = []
+
+        # Video 1 is required
         video_url_1 = self._public_video_url_parameter_1.get_public_url_for_parameter()
         if video_url_1:
             reference_video_urls.append(video_url_1)
 
-        video_url_2 = self._public_video_url_parameter_2.get_public_url_for_parameter()
-        if video_url_2:
-            reference_video_urls.append(video_url_2)
+        # Video 2 is optional - only get public URL if a value is provided
+        video_2_value = self.get_parameter_value("reference_video_2")
+        if video_2_value:
+            video_url_2 = self._public_video_url_parameter_2.get_public_url_for_parameter()
+            if video_url_2:
+                reference_video_urls.append(video_url_2)
 
-        video_url_3 = self._public_video_url_parameter_3.get_public_url_for_parameter()
-        if video_url_3:
-            reference_video_urls.append(video_url_3)
+        # Video 3 is optional - only get public URL if a value is provided
+        video_3_value = self.get_parameter_value("reference_video_3")
+        if video_3_value:
+            video_url_3 = self._public_video_url_parameter_3.get_public_url_for_parameter()
+            if video_url_3:
+                reference_video_urls.append(video_url_3)
 
         if not reference_video_urls:
             msg = "At least one reference video URL is required"
@@ -446,42 +463,47 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
+    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
+        """Submit async generation request and return generation_id."""
+        post_url = urljoin(self._proxy_base, f"models/{params['model']}")
         payload = self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
 
-        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
+        logger.debug("Submitting request to proxy model=%s", params["model"])
 
-        # Log sanitized payload (truncate prompt)
-        sanitized_prompt = params["prompt"]
-        if len(sanitized_prompt) > PROMPT_TRUNCATE_LENGTH:
-            sanitized_prompt = sanitized_prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
-        logger.info("Request with prompt: %s", sanitized_prompt)
+        async with httpx.AsyncClient() as client:
+            post_resp = await client.post(post_url, json=payload, headers=headers, timeout=60)
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=300)
-                response.raise_for_status()
-                response_json = response.json()
-                logger.info("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
-            # Try to parse error response body
+        if post_resp.status_code >= HTTP_ERROR_STATUS:
+            self._set_safe_defaults()
+            logger.debug(
+                "Proxy POST error status=%s headers=%s body=%s",
+                post_resp.status_code,
+                dict(post_resp.headers),
+                post_resp.text,
+            )
             try:
-                error_json = e.response.json()
+                error_json = post_resp.json()
                 error_msg = error_json.get("error", "")
                 provider_response = error_json.get("provider_response", "")
                 msg_parts = [p for p in [error_msg, provider_response] if p]
                 msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
             except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            logger.error("Request failed: %s", e)
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
+                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
+            raise RuntimeError(msg)
 
-        return response_json
+        post_json = post_resp.json()
+        generation_id = str(post_json.get("generation_id") or "")
+        provider_response = post_json.get("provider_response")
+
+        self.parameter_output_values["generation_id"] = generation_id
+        self.parameter_output_values["provider_response"] = provider_response
+
+        if generation_id:
+            logger.debug("Submitted. generation_id=%s", generation_id)
+        else:
+            logger.debug("No generation_id returned from POST response")
+
+        return generation_id
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build payload matching proxy expected format
@@ -503,129 +525,135 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
 
         return payload
 
-    async def _handle_response(self, response: dict[str, Any]) -> None:
-        """Handle WAN synchronous response and extract video.
+    async def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
+        """Poll the generations endpoint until ready."""
+        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
+        pending_start_time = time.monotonic()
+        running_start_time = None
+        last_json = None
+        attempt = 0
+        poll_interval_s = 5.0
+        pending_timeout_s = 30.0
+        running_timeout_s = video_duration * 30.0
 
-        Response shape:
-        {
-            "task_id": "...",
-            "task_status": "SUCCEEDED",
-            "video_url": "https://...",
-            "submit_time": "...",
-            "scheduled_time": "...",
-            "end_time": "...",
-            "orig_prompt": "..."
-        }
-        """
-        self.parameter_output_values["provider_response"] = response
+        async with httpx.AsyncClient() as client:
+            while True:
+                try:
+                    get_resp = await client.get(get_url, headers=headers, timeout=60)
+                    get_resp.raise_for_status()
+                    last_json = get_resp.json()
+                    self.parameter_output_values["provider_response"] = last_json
+                except Exception as exc:
+                    logger.debug("GET generation failed: %s", exc)
+                    error_msg = f"Failed to poll generation status: {exc}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    self._handle_failure_exception(RuntimeError(error_msg))
+                    return
 
-        # Extract task_id for generation_id
-        task_id = response.get("task_id", "")
-        self.parameter_output_values["generation_id"] = str(task_id)
+                attempt += 1
+                status = self._extract_status(last_json) or STATUS_UNKNOWN
+                logger.info("Last generation response: %s", last_json)
+                logger.info("Polling attempt #%s status=%s", attempt, status)
 
-        # Extract task status and video URL from top-level fields
-        task_status = response.get("task_status")
+                if status == STATUS_PENDING and time.monotonic() - pending_start_time > pending_timeout_s:
+                    self.parameter_output_values["video"] = self._extract_result_video_url(last_json)
+                    logger.debug("Polling timed out waiting for generation to start")
+                    self._set_status_results(
+                        was_successful=False,
+                        result_details=f"Video generation timed out after {pending_timeout_s} seconds waiting for generation to start.",
+                    )
+                    return
 
-        # Check task status
-        if task_status != "SUCCEEDED":
-            logger.error("Generation failed with task_status: %s", task_status)
-            self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
-            self._set_status_results(was_successful=False, result_details=error_details)
-            return
+                if status == STATUS_RUNNING:
+                    if not running_start_time:
+                        running_start_time = time.monotonic()
+                    if running_start_time and time.monotonic() - running_start_time > running_timeout_s:
+                        self.parameter_output_values["video"] = self._extract_result_video_url(last_json)
+                        logger.debug("Polling timed out waiting for result")
+                        self._set_status_results(
+                            was_successful=False,
+                            result_details=f"Video generation timed out after {int(running_timeout_s)} seconds of processing.",
+                        )
+                        return
 
-        video_url = response.get("video_url")
-        if video_url:
-            await self._save_video_from_url(video_url)
-        else:
-            logger.warning("No video_url found in response")
-            self._set_safe_defaults()
+                if status in {STATUS_FAILED, STATUS_CANCELED}:
+                    provider_resp = last_json.get("provider_response") if last_json else {}
+                    error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None
+                    error_message = provider_resp.get("message") if isinstance(provider_resp, dict) else None
+                    log_parts = [p for p in [error_code, error_message] if p]
+                    logger.error("Generation failed: %s", " - ".join(log_parts) or status)
+                    self.parameter_output_values["video"] = None
+                    error_details = self._extract_error_details(last_json)
+                    self._set_status_results(was_successful=False, result_details=error_details)
+                    return
+
+                if status == STATUS_SUCCEEDED:
+                    await self._handle_completion(last_json, generation_id)
+                    return
+
+                await asyncio.sleep(poll_interval_s)
+
+    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+        """Handle successful generation completion."""
+        extracted_url = self._extract_result_video_url(last_json)
+        if not extracted_url:
+            self.parameter_output_values["video"] = None
             self._set_status_results(
                 was_successful=False,
                 result_details="Generation completed but no video URL was found in the response.",
             )
+            return
 
-    async def _save_video_from_url(self, video_url: str) -> None:
-        """Download and save the video from the provided URL."""
         try:
-            logger.info("Downloading video from URL")
-            video_bytes = await self._download_bytes_from_url(video_url)
-            if video_bytes:
-                filename = f"wan_r2v_{int(time.time())}.mp4"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
+            logger.debug("Downloading video bytes from provider URL")
+            video_bytes = await self._download_bytes_from_url(extracted_url)
+        except Exception as e:
+            logger.debug("Failed to download video: %s", e)
+            video_bytes = None
 
+        if video_bytes:
+            try:
+                filename = (
+                    f"wan_r2v_{generation_id}.mp4" if generation_id else f"wan_r2v_{int(time.time())}.mp4"
+                )
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("Saved video to static storage as %s", filename)
+                logger.debug("Saved video to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
-            else:
+            except Exception as e:
+                logger.debug("Failed to save to static storage: %s, using provider URL", e)
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
-                    was_successful=False,
-                    result_details="Video generation completed but could not download video bytes from URL.",
+                    was_successful=True,
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
                 )
-        except Exception as e:
-            logger.error("Failed to save video from URL: %s", e)
+        else:
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
             self._set_status_results(
-                was_successful=False,
-                result_details=f"Video generation completed but could not save to static storage: {e}",
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
             )
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
-
-        Args:
-            response_json: The JSON response from the API that may contain error information
-
-        Returns:
-            A formatted error message string
-        """
+        """Extract error details from API response."""
         if not response_json:
             return "Generation failed with no error details provided by API."
 
         top_level_error = response_json.get("error")
         parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
 
-        # Try to extract from provider response first (more detailed)
         provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
         if provider_error_msg:
             return provider_error_msg
 
-        # Fall back to top-level error
         if top_level_error:
             return self._format_top_level_error(top_level_error)
 
-        # Check for status-based errors
-        status = response_json.get("status")
-
-        # Handle moderation specifically
-        if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-            return self._format_moderation_error(response_json)
-
-        # Handle other failure statuses
-        if status in [STATUS_FAILED, STATUS_ERROR]:
-            return self._format_failure_status_error(response_json, status)
-
-        # Final fallback
-        return f"Generation failed.\n\nFull API response:\n{response_json}"
-
-    def _format_moderation_error(self, response_json: dict[str, Any]) -> str:
-        """Format error message for moderated content."""
-        details = response_json.get("details", {})
-        moderation_reasons = details.get("Moderation Reasons", [])
-        if moderation_reasons:
-            reasons_str = ", ".join(moderation_reasons)
-            return f"Content was moderated and blocked.\nModeration Reasons: {reasons_str}"
-        return "Content was moderated and blocked by safety filters."
-
-    def _format_failure_status_error(self, response_json: dict[str, Any], status: str) -> str:
-        """Format error message for failed/error status."""
-        result = response_json.get("result", {})
-        if isinstance(result, dict) and result.get("error"):
-            return f"Generation failed: {result['error']}"
-        return f"Generation failed with status '{status}'."
+        status = self._extract_status(response_json) or STATUS_UNKNOWN
+        return f"Generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
         """Parse provider_response if it's a JSON string."""
@@ -680,11 +708,33 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         self.parameter_output_values["video"] = None
 
     @staticmethod
+    def _extract_status(response_json: dict[str, Any] | None) -> str | None:
+        """Extract task status from response."""
+        if not response_json:
+            return None
+        task_status = response_json.get("task_status")
+        if isinstance(task_status, str):
+            return task_status
+        return None
+
+    @staticmethod
+    def _extract_result_video_url(obj: dict[str, Any] | None) -> str | None:
+        """Extract video URL from response results."""
+        if not obj:
+            return None
+        results = obj.get("results")
+        if isinstance(results, dict):
+            video_url = results.get("video_url")
+            if isinstance(video_url, str) and video_url.startswith("http"):
+                return video_url
+        return None
+
+    @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
         """Download bytes from a URL."""
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=30)
+                resp = await client.get(url, timeout=120)
                 resp.raise_for_status()
                 return resp.content
         except Exception:
