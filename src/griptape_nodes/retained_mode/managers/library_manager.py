@@ -2710,7 +2710,7 @@ class LibraryManager:
                 root_cause = self._get_root_cause_from_exception(err)
                 problems.append(
                     NodeModuleImportProblem(
-                        class_name=node_def.class_name,
+                        class_name=f"<Sandbox node in '{node_def.file_path}'>",
                         file_path=str(candidate_path),
                         error_message=str(err),
                         root_cause=str(root_cause),
