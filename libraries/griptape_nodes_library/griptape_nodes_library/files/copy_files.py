@@ -17,6 +17,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.files.file_operation_base import BaseFileOperationInfo, FileOperationBaseNode
+from griptape_nodes_library.utils.file_utils import clean_path_string
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,12 @@ class CopyFiles(FileOperationBaseNode):
                 failure_reason = (
                     result.failure_reason.value if hasattr(result.failure_reason, "value") else "Unknown error"
                 )
-                failure_msg = f"{self.name}: Failed to copy directory '{target.source_path}' to '{destination_path}': {failure_reason}"
+                # Include detailed error message if available
+                error_details = ""
+                if result.result_details:
+                    # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                    error_details = f" - {result.result_details}"
+                failure_msg = f"{self.name}: Failed to copy directory '{target.source_path}' to '{destination_path}': {failure_reason}{error_details}"
                 logger.error(failure_msg)
                 target.failure_reason = failure_msg
                 return
@@ -186,9 +192,12 @@ class CopyFiles(FileOperationBaseNode):
                 failure_reason = (
                     result.failure_reason.value if hasattr(result.failure_reason, "value") else "Unknown error"
                 )
-                failure_msg = (
-                    f"{self.name}: Failed to copy file '{target.source_path}' to '{destination_path}': {failure_reason}"
-                )
+                # Include detailed error message if available
+                error_details = ""
+                if result.result_details:
+                    # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                    error_details = f" - {result.result_details}"
+                failure_msg = f"{self.name}: Failed to copy file '{target.source_path}' to '{destination_path}': {failure_reason}{error_details}"
                 logger.error(failure_msg)
                 target.failure_reason = failure_msg
                 return
@@ -245,6 +254,9 @@ class CopyFiles(FileOperationBaseNode):
         destination_dir = self.get_parameter_value("destination_path")
         overwrite = self.get_parameter_value("overwrite") or False
 
+        # Clean destination path to remove newlines/carriage returns that cause Windows errors
+        destination_dir = clean_path_string(destination_dir)
+
         # Handle empty paths as success with info message (consistent with delete_file)
         if not source_paths_raw:
             msg = "No files specified for copying"
@@ -255,6 +267,9 @@ class CopyFiles(FileOperationBaseNode):
         # Normalize to list of strings (get_parameter_list_value flattens, but we need to ensure strings)
         # Also extract values from artifacts
         source_paths = [self._extract_value_from_artifact(p) for p in source_paths_raw if p is not None]
+
+        # Clean source paths to remove newlines/carriage returns that cause Windows errors
+        source_paths = self._clean_source_paths(source_paths)
 
         # Remove duplicates
         source_paths = list(set(source_paths))

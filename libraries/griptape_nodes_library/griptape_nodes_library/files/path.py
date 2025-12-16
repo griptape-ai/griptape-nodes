@@ -5,6 +5,7 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.file_utils import clean_path_string
 
 
 class FilePathComponents(DataNode):
@@ -147,7 +148,14 @@ class FilePathComponents(DataNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "path":
             # Convert value to string if needed
-            path_str = str(value) if value is not None else ""
+            if value is not None:
+                path_str = str(value)
+            else:
+                path_str = ""
+
+            # Clean path to remove newlines/carriage returns that cause Windows errors
+            path_str = clean_path_string(path_str)
+
             self._extract_path_components(path_str)
 
         return super().after_value_set(parameter, value)
@@ -167,5 +175,8 @@ class FilePathComponents(DataNode):
             path_str = str(path_str)
         else:
             path_str = ""
+
+            # Clean path to remove newlines/carriage returns that cause Windows errors
+            path_str = clean_path_string(path_str)
 
         self._extract_path_components(path_str)

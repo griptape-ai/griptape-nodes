@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.files.copy_files import CopyFiles
 from griptape_nodes_library.files.file_operation_base import BaseFileOperationInfo
+from griptape_nodes_library.utils.file_utils import clean_path_string
 
 
 class MoveStatus(Enum):
@@ -90,9 +91,17 @@ class MoveFiles(CopyFiles):
 
                 if isinstance(delete_result, DeleteFileResultFailure):
                     target.status = MoveStatus.FAILED
-                    target.failure_reason = (
-                        f"Failed to delete existing destination: {delete_result.failure_reason.value}"
+                    failure_reason = (
+                        delete_result.failure_reason.value
+                        if hasattr(delete_result.failure_reason, "value")
+                        else "Unknown error"
                     )
+                    # Include detailed error message if available
+                    error_details = ""
+                    if delete_result.result_details:
+                        # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                        error_details = f" - {delete_result.result_details}"
+                    target.failure_reason = f"Failed to delete existing destination: {failure_reason}{error_details}"
                     return
 
         # Execute move using RenameFileRequest (which performs atomic move)
@@ -105,7 +114,17 @@ class MoveFiles(CopyFiles):
 
         if isinstance(rename_result, RenameFileResultFailure):
             target.status = MoveStatus.FAILED
-            target.failure_reason = f"Move failed: {rename_result.failure_reason.value}"
+            failure_reason = (
+                rename_result.failure_reason.value
+                if hasattr(rename_result.failure_reason, "value")
+                else "Unknown error"
+            )
+            # Include detailed error message if available
+            error_details = ""
+            if rename_result.result_details:
+                # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                error_details = f" - {rename_result.result_details}"
+            target.failure_reason = f"Move failed: {failure_reason}{error_details}"
             return
 
         # SUCCESS PATH AT END - result must be RenameFileResultSuccess (only two possible types)
@@ -161,6 +180,9 @@ class MoveFiles(CopyFiles):
         destination_dir = self.get_parameter_value("destination_path")
         overwrite = self.get_parameter_value("overwrite") or False
 
+        # Clean destination path to remove newlines/carriage returns that cause Windows errors
+        destination_dir = clean_path_string(destination_dir)
+
         # Handle empty paths as success with info message (consistent with delete_file)
         if not source_paths_raw:
             msg = "No files specified for moving"
@@ -171,6 +193,9 @@ class MoveFiles(CopyFiles):
         # Normalize to list of strings (get_parameter_list_value flattens, but we need to ensure strings)
         # Also extract values from artifacts
         source_paths = [self._extract_value_from_artifact(p) for p in source_paths_raw if p is not None]
+
+        # Clean source paths to remove newlines/carriage returns that cause Windows errors
+        source_paths = self._clean_source_paths(source_paths)
 
         # Remove duplicates
         source_paths = list(set(source_paths))

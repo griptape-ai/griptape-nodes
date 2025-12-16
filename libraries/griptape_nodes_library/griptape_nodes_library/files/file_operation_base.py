@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes_library.utils.file_utils import clean_path_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -98,6 +99,21 @@ class FileOperationBaseNode(SuccessFailureNode):
 
         # Not a localhost workspace URL, return as-is
         return url
+
+    def _clean_source_paths(self, paths: list[str | Any]) -> list[str]:
+        """Clean a list of source paths to remove newlines/carriage returns that cause Windows errors.
+
+        Args:
+            paths: List of path strings that may contain newlines/carriage returns
+
+        Returns:
+            List of cleaned path strings with newlines/carriage returns removed
+        """
+        cleaned_paths = []
+        for path in paths:
+            cleaned_path = clean_path_string(path)
+            cleaned_paths.append(cleaned_path)
+        return cleaned_paths
 
     def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
@@ -209,6 +225,10 @@ class FileOperationBaseNode(SuccessFailureNode):
         Returns:
             Full destination path
         """
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        destination_dir = clean_path_string(destination_dir)
+        source_path = clean_path_string(source_path)
+
         destination_path_obj = Path(destination_dir)
 
         # Check if destination_dir looks like a file path (has an extension)

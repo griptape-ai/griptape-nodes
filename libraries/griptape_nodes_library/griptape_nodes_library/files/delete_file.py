@@ -26,6 +26,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+from griptape_nodes_library.utils.file_utils import clean_path_string
 
 # Default warning message for destructive operation
 DEFAULT_DELETION_WARNING = (
@@ -145,8 +146,10 @@ class DeleteFile(SuccessFailureNode):
 
             # Normalize input to list
             param_values = self.get_parameter_list_value(self.file_paths.name)
+            # Clean paths to remove newlines/carriage returns that cause Windows errors
+            cleaned_paths = [clean_path_string(str(p)) if p is not None else p for p in param_values]
             # Dupe strip
-            paths = set(param_values)
+            paths = set(cleaned_paths)
 
             if paths:
                 # Collect all files/directories that will be deleted
@@ -165,8 +168,10 @@ class DeleteFile(SuccessFailureNode):
 
         # Get paths from param list.
         param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        cleaned_paths = [clean_path_string(str(p)) if p is not None else p for p in param_values]
         # Dupe strip
-        paths = set(param_values)
+        paths = set(cleaned_paths)
 
         # Handle empty paths as success with info message
         if not paths:
@@ -262,8 +267,10 @@ class DeleteFile(SuccessFailureNode):
         """
         # Get current file paths
         param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        cleaned_paths = [clean_path_string(str(p)) if p is not None else p for p in param_values]
         # Dupe strip
-        paths = set(param_values)
+        paths = set(cleaned_paths)
 
         if paths:
             # Re-scan file system
