@@ -774,6 +774,17 @@
       }
     },
     {
+      "class_name": "WanReferenceToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_reference_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from reference videos using WAN models via Griptape model proxy",
+        "display_name": "WAN Reference to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SeedVRVideoUpscale",
       "file_path": "griptape_nodes_library/video/seedvr_video_upscale.py",
       "metadata": {
