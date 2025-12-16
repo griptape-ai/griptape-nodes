@@ -19,8 +19,8 @@ from griptape_nodes.exe_types.param_components.api_key_provider_parameter import
     ApiKeyProviderParameter,
     ApiKeyValidationResult,
 )
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
-from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
@@ -66,7 +66,8 @@ class FluxImageGeneration(SuccessFailureNode):
         - prompt (str): Text description of the desired image
         - input_image (ImageArtifact): Optional input image for image-to-image generation
         - aspect_ratio (str): Desired aspect ratio (e.g., "16:9", default: "1:1")
-        - seed (int): Random seed for reproducible results (-1 for random)
+        - randomize_seed (bool): If true, randomize the seed on each run (default: False)
+        - seed (int): Random seed for reproducible results (default: 42)
         - prompt_upsampling (bool): If true, performs upsampling on the prompt
         - output_format (str): Desired format of the output image ("jpeg" or "png")
         - safety_tolerance (str): Content moderation preset ("least restrictive", "moderate", or "most restrictive")
@@ -152,15 +153,9 @@ class FluxImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Seed parameter
-        self.add_parameter(
-            ParameterInt(
-                name="seed",
-                default_value=-1,
-                tooltip="Random seed for reproducible results (-1 for random)",
-                allow_output=False,
-            )
-        )
+        # Seed parameter (using SeedParameter component)
+        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter.add_input_parameters()
 
         # Prompt upsampling parameter
         self.add_parameter(
@@ -244,6 +239,9 @@ class FluxImageGeneration(SuccessFailureNode):
         await self._process()
 
     async def _process(self) -> None:
+        # Preprocess to handle seed randomization
+        self.preprocess()
+
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -302,7 +300,7 @@ class FluxImageGeneration(SuccessFailureNode):
             "prompt": self.get_parameter_value("prompt") or "",
             "input_image": self.get_parameter_value("input_image"),
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
-            "seed": self.get_parameter_value("seed") or -1,
+            "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
             "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
@@ -343,8 +341,12 @@ class FluxImageGeneration(SuccessFailureNode):
         return self._api_key_provider.validate_api_key()
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
         self._api_key_provider.after_value_set(parameter, value)
-        return super().after_value_set(parameter, value)
+        self._seed_parameter.after_value_set(parameter, value)
+
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
         """Submit request to proxy API and return generation ID.
@@ -414,11 +416,8 @@ class FluxImageGeneration(SuccessFailureNode):
             "prompt_upsampling": params["prompt_upsampling"],
             "output_format": params["output_format"],
             "safety_tolerance": params["safety_tolerance"],
+            "seed": params["seed"],
         }
-
-        # Add seed if not -1 (random)
-        if params["seed"] != -1:
-            payload["seed"] = params["seed"]
 
         # Add input image if provided
         input_image_data = await self._process_input_image(params["input_image"])
