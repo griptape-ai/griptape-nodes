@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from io import BytesIO
@@ -41,6 +42,7 @@ HORIZONTAL_ALIGN_OPTIONS = [HORIZONTAL_ALIGN_LEFT, HORIZONTAL_ALIGN_CENTER, HORI
 class _RenderSignature:
     source_fingerprint: str
     text: str
+    template_values_fingerprint: str
     text_color: str
     text_background: str
     text_vertical_alignment: str
@@ -60,6 +62,12 @@ class _TextLayoutSettings:
     border: int
     text_vertical_alignment: str
     text_horizontal_alignment: str
+
+
+@dataclass(frozen=True)
+class _TextExpansionResult:
+    rendered_text: str
+    missing_keys: list[str]
 
 
 class AddTextToExistingImage(SuccessFailureNode):
@@ -86,15 +94,22 @@ class AddTextToExistingImage(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="text",
-                input_types=["str", "dict"],
                 type="str",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                tooltip=(
-                    "Text to render on the image. If a dict is provided, this node will use the dict's "
-                    "'template' string and replace {key} placeholders with dict values."
-                ),
+                tooltip="Text to render on the image. Use {key} placeholders to insert values from template_values.",
                 ui_options={"multiline": True, "placeholder_text": "Enter text to render on image"},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="template_values",
+                input_types=["dict"],
+                type="dict",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                default_value=None,
+                tooltip="Dictionary of values used to replace {key} placeholders in the text parameter",
             )
         )
 
@@ -176,54 +191,36 @@ class AddTextToExistingImage(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-    def _resolve_text(self, text_value: Any) -> str:
-        if text_value is None:
-            return ""
+    def _expand_text_template(self, template: str, template_values: Any) -> _TextExpansionResult:
+        template_value = template or ""
 
-        if isinstance(text_value, str):
-            return text_value
-
-        if isinstance(text_value, dict):
-            template = self._extract_template_from_text_dict(text_value)
-            return self._process_text_template(template, text_value)
-
-        return str(text_value)
-
-    def _extract_template_from_text_dict(self, text_dict: dict) -> str:
-        template_value = text_dict.get("template")
-        if isinstance(template_value, str):
-            return template_value
-
-        text_field_value = text_dict.get("text")
-        if isinstance(text_field_value, str):
-            return text_field_value
-
-        value_field_value = text_dict.get("value")
-        if isinstance(value_field_value, str):
-            return value_field_value
-
-        return ""
-
-    def _process_text_template(self, template: str, values: dict) -> str:
-        template_value = template
+        values: dict = {}
+        if isinstance(template_values, dict):
+            values = template_values
 
         pattern = r"\{(\w+)\}"
-        matches = re.findall(pattern, template)
+        matches = re.findall(pattern, template_value)
+        if not matches:
+            return _TextExpansionResult(rendered_text=template_value, missing_keys=[])
+
+        missing_keys: list[str] = []
+        seen_missing: set[str] = set()
 
         for key in matches:
             if key in values:
                 template_value = template_value.replace(f"{{{key}}}", str(values[key]))
+            elif key not in seen_missing:
+                missing_keys.append(key)
+                seen_missing.add(key)
 
-        if (template_value and template_value != template) or not matches:
-            return template_value
-
-        return ""
+        return _TextExpansionResult(rendered_text=template_value, missing_keys=missing_keys)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         # Re-render and cache image locally when any relevant parameter changes.
         if parameter.name in {
             "input_image",
             "text",
+            "template_values",
             "text_color",
             "text_background",
             "text_vertical_alignment",
@@ -242,8 +239,10 @@ class AddTextToExistingImage(SuccessFailureNode):
         self._set_failure_output_values()
 
         input_image = self.get_parameter_value("input_image")
-        text_value = self.get_parameter_value("text")
-        text = self._resolve_text(text_value)
+        text_template = self.get_parameter_value("text") or ""
+        template_values = self.get_parameter_value("template_values")
+        expansion = self._expand_text_template(text_template, template_values)
+        text = expansion.rendered_text
         text_color = self.get_parameter_value("text_color") or "#ffffffff"
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
@@ -270,6 +269,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             signature = self._build_render_signature(
                 image_value=input_image,
                 text=text,
+                template_values=template_values,
                 text_color=text_color,
                 text_background=text_background,
                 text_vertical_alignment=text_vertical_alignment,
@@ -314,7 +314,11 @@ class AddTextToExistingImage(SuccessFailureNode):
         )
 
         success_details = self._get_success_message(text)
-        self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+        result_lines = [f"SUCCESS: {success_details}"]
+        result_lines.extend(
+            [f"key: {missing_key} not found in dictionary input" for missing_key in expansion.missing_keys]
+        )
+        self._set_status_results(was_successful=True, result_details="\n".join(result_lines))
         logger.info(f"AddTextToExistingImage '{self.name}': {success_details}")
 
     def _validate_parameters(
@@ -353,8 +357,10 @@ class AddTextToExistingImage(SuccessFailureNode):
             self._cached_render_png_bytes = None
             return
 
-        text_value = self.get_parameter_value("text")
-        text = self._resolve_text(text_value)
+        text_template = self.get_parameter_value("text") or ""
+        template_values = self.get_parameter_value("template_values")
+        expansion = self._expand_text_template(text_template, template_values)
+        text = expansion.rendered_text
         text_color = self.get_parameter_value("text_color") or "#ffffffff"
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
@@ -365,6 +371,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         signature = self._build_render_signature(
             image_value=input_image,
             text=text,
+            template_values=template_values,
             text_color=text_color,
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
@@ -392,6 +399,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         *,
         image_value: Any,
         text: str,
+        template_values: Any,
         text_color: str,
         text_background: str,
         text_vertical_alignment: str,
@@ -400,9 +408,11 @@ class AddTextToExistingImage(SuccessFailureNode):
         font_size: int,
     ) -> _RenderSignature:
         source_fingerprint = self._fingerprint_image_value(image_value)
+        template_values_fingerprint = self._fingerprint_template_values(template_values)
         return _RenderSignature(
             source_fingerprint=source_fingerprint,
             text=text,
+            template_values_fingerprint=template_values_fingerprint,
             text_color=text_color,
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
@@ -410,6 +420,17 @@ class AddTextToExistingImage(SuccessFailureNode):
             border=border,
             font_size=font_size,
         )
+
+    def _fingerprint_template_values(self, template_values: Any) -> str:
+        if template_values is None:
+            return "none"
+        if not isinstance(template_values, dict):
+            return f"type:{type(template_values).__name__}"
+        try:
+            serialized = json.dumps(template_values, sort_keys=True, default=str)
+        except Exception:
+            serialized = repr(template_values)
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     def _fingerprint_image_value(self, image_value: Any) -> str:
         if isinstance(image_value, dict):
