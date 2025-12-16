@@ -118,8 +118,8 @@ class ArtifactPathValidator(Trait):
 
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
-            # Check if it's a URL
-            if ArtifactPathTethering._is_url(path_str):
+            # Check if it's an HTTP/HTTPS URL (needs URL validation)
+            if path_str.startswith(("http://", "https://")):
                 valid = validate_url(path_str)
                 if not valid:
                     error_msg = f"Invalid URL: '{path_str}'"
@@ -390,7 +390,7 @@ class ArtifactPathTethering:
 
         try:
             # Process the path (URL or file)
-            if self._is_url(path_value):
+            if path_value.startswith(("http://", "https://")):
                 # Handle http/https URLs: download and upload to static storage
                 download_url = self._download_and_upload_url(path_value)
             elif path_value.startswith("file://"):
@@ -450,11 +450,6 @@ class ArtifactPathTethering:
                 artifact.meta = metadata
             return artifact
         return value
-
-    @staticmethod
-    def _is_url(path: str) -> bool:
-        """Check if the path is a URL."""
-        return path.startswith(("http://", "https://"))
 
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""

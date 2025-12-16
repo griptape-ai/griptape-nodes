@@ -43,6 +43,7 @@ from griptape_nodes.retained_mode.events.model_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import MODELS_TO_DOWNLOAD_KEY
 from griptape_nodes.utils.async_utils import cancel_subprocess
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -999,7 +1000,7 @@ class ModelManager:
             str: The parsed model ID in the format 'namespace/repo_name' or 'repo_name'
         """
         # If it's already a simple model ID (no URL scheme), return as-is
-        if not model_input.startswith(("http://", "https://")):
+        if not is_url_or_path(model_input):
             return model_input
 
         # Parse the URL
