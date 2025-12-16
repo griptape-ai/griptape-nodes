@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.5",
+    "library_version": "0.52.6",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -2404,6 +2404,26 @@
         "description": "Rename a file or directory. Can rename to a new name in the same directory or to a full path.",
         "display_name": "Rename File",
         "icon": "Edit"
+      }
+    },
+    {
+      "class_name": "TempDirectory",
+      "file_path": "griptape_nodes_library/files/temp_directory.py",
+      "metadata": {
+        "category": "files",
+        "description": "Get the system temporary directory path. Works cross-platform (Windows, macOS, Linux).",
+        "display_name": "Temp Directory",
+        "icon": "Folder"
+      }
+    },
+    {
+      "class_name": "TempFilename",
+      "file_path": "griptape_nodes_library/files/temp_filename.py",
+      "metadata": {
+        "category": "files",
+        "description": "Generate a unique temporary filename using Python's tempfile module. Supports optional directory, suffix, prefix, and can return absolute path or just filename.",
+        "display_name": "Temp Filename",
+        "icon": "FileText"
       }
     }
   ],
