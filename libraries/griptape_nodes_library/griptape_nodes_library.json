@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.3",
+    "library_version": "0.52.4",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -1397,8 +1397,8 @@
       "file_path": "griptape_nodes_library/image/flux_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Flux models via Griptape model proxy",
-        "display_name": "Flux Image Generation",
+        "description": "Generate images using FLUX.1 models via Griptape model proxy",
+        "display_name": "FLUX.1 Image Generation",
         "group": "create",
         "icon": "Zap"
       }
@@ -1408,8 +1408,8 @@
       "file_path": "griptape_nodes_library/image/flux_2_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Flux-2 models via Griptape model proxy",
-        "display_name": "Flux 2 Image Generation",
+        "description": "Generate images using FLUX.2 models via Griptape model proxy",
+        "display_name": "FLUX.2 Image Generation",
         "group": "create",
         "icon": "Zap"
       }
