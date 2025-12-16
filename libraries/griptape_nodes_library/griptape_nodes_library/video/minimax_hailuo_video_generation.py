@@ -32,13 +32,13 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
     Inputs:
         - prompt (str): Text prompt for the video
-        - model_id (str): Provider model id (default: MiniMax-Hailuo-2.3)
+        - model_id (str): Model to use (default: Hailuo 2.3)
         - duration (int): Video duration in seconds (default: 6, options depend on model)
         - resolution (str): Output resolution (options depend on model and duration)
         - prompt_optimizer (bool): Enable prompt optimization (default: False)
-        - fast_pretreatment (bool): Reduce optimization time for 2.3/02 models (default: False)
+        - fast_pretreatment (bool): Reduce optimization time for Hailuo 2.3/02 models (default: False)
         - first_frame_image (ImageArtifact|ImageUrlArtifact|str): Optional first frame image (data URL)
-        - last_frame_image (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for 02 model (data URL)
+        - last_frame_image (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for Hailuo 02 model (data URL)
         (Always polls for result: 5s interval, 10 min timeout)
 
     Outputs:
@@ -52,7 +52,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
 
-    # Model capability definitions
+    # Model capability definitions (keyed by provider model IDs)
     MODEL_CAPABILITIES: ClassVar[dict[str, Any]] = {
         "MiniMax-Hailuo-2.3": {
             "durations": [6, 10],
@@ -78,6 +78,13 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             "supports_last_frame": False,
             "supports_fast_pretreatment": False,
         },
+    }
+
+    # Map user-facing names to provider model IDs
+    MODEL_NAME_MAP: ClassVar[dict[str, str]] = {
+        "Hailuo 2.3 (TTV & ITV)": "MiniMax-Hailuo-2.3",
+        "Hailuo 02 (TTV & ITV)": "MiniMax-Hailuo-02",
+        "Hailuo 2.3 Fast (ITV)": "MiniMax-Hailuo-2.3-Fast",
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -106,8 +113,8 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterString(
                 name="model_id",
-                default_value="MiniMax-Hailuo-2.3",
-                tooltip="Model id to call via proxy",
+                default_value="Hailuo 2.3 (TTV & ITV)",
+                tooltip="Model to use for video generation",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "model",
@@ -116,9 +123,9 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 traits={
                     Options(
                         choices=[
-                            "MiniMax-Hailuo-2.3 (TTV & ITV)",
-                            "MiniMax-Hailuo-02 (TTV & ITV)",
-                            "MiniMax-Hailuo-2.3-Fast (ITV)",
+                            "Hailuo 2.3 (TTV & ITV)",
+                            "Hailuo 02 (TTV & ITV)",
+                            "Hailuo 2.3 Fast (ITV)",
                         ]
                     )
                 },
@@ -162,7 +169,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             ParameterBool(
                 name="fast_pretreatment",
                 default_value=False,
-                tooltip="Reduce optimization time (only for MiniMax-Hailuo-2.3 and MiniMax-Hailuo-02)",
+                tooltip="Reduce optimization time (only for Hailuo 2.3 and Hailuo 02)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"hide": False},
             )
@@ -193,7 +200,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 type="ImageArtifact",
                 default_value=None,
                 tooltip=(
-                    "Optional last frame image for MiniMax-Hailuo-02 model as data URL (data:image/jpeg;base64,...). "
+                    "Optional last frame image for Hailuo 02 model as data URL (data:image/jpeg;base64,...). "
                     "Supported formats: JPG, JPEG, PNG, WebP. Requirements: <20MB, short edge >300px, "
                     "aspect ratio between 2:5 and 5:2."
                 ),
@@ -244,11 +251,11 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
         if parameter.name == "model_id":
-            # Clean model name to remove display hints
-            clean_model = self._clean_model_name(value)
+            # Convert friendly name to provider model ID
+            provider_model_id = self._get_provider_model_id(value)
 
             # Show/hide last_frame_image parameter only for 02 model
-            capabilities = self.MODEL_CAPABILITIES.get(clean_model, {})
+            capabilities = self.MODEL_CAPABILITIES.get(provider_model_id, {})
             show_last_frame = capabilities.get("supports_last_frame", False)
             if show_last_frame:
                 self.show_parameter_by_name("last_frame_image")
@@ -292,9 +299,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         # Validate model-specific requirements
         if params["model_id"] == "MiniMax-Hailuo-2.3-Fast" and not params["first_frame_image"]:
             self._set_safe_defaults()
-            error_msg = (
-                f"{self.name} requires a first frame image for MiniMax-Hailuo-2.3-Fast model (image-to-video only)."
-            )
+            error_msg = f"{self.name} requires a first frame image for Hailuo 2.3 Fast model (image-to-video only)."
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(ValueError(error_msg))
             return
@@ -335,9 +340,9 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         await self._poll_for_result_async(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
-        raw_model_id = self.get_parameter_value("model_id") or "MiniMax-Hailuo-2.3"
-        # Strip display hints from model name (e.g., "MiniMax-Hailuo-2.3 (TTV & ITV)" -> "MiniMax-Hailuo-2.3")
-        model_id = self._clean_model_name(raw_model_id)
+        raw_model_id = self.get_parameter_value("model_id") or "Hailuo 2.3 (TTV & ITV)"
+        # Convert friendly name to provider model ID
+        model_id = self._get_provider_model_id(raw_model_id)
 
         return {
             "prompt": self.get_parameter_value("prompt") or "",
@@ -350,12 +355,14 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             "last_frame_image": self.get_parameter_value("last_frame_image"),
         }
 
-    @staticmethod
-    def _clean_model_name(model_name: str) -> str:
-        """Remove display hints from model name (e.g., ' (TTV & ITV)')."""
-        if " (" in model_name:
-            return model_name.split(" (")[0]
-        return model_name
+    @classmethod
+    def _get_provider_model_id(cls, user_facing_name: str) -> str:
+        """Convert user-facing model name to provider model ID.
+
+        Falls back to the input value if it's not in the mapping (for backwards compatibility
+        with saved flows that may have old model IDs).
+        """
+        return cls.MODEL_NAME_MAP.get(user_facing_name, user_facing_name)
 
     def _validate_api_key(self) -> str:
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
