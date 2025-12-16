@@ -15,6 +15,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -39,7 +40,7 @@ ASPECT_RATIO_OPTIONS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21", "3:
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
 # Model options
-MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex"]
+MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex", "flux-2-max"]
 
 # Safety tolerance options
 SAFETY_TOLERANCE_OPTIONS = ["least restrictive", "moderate", "most restrictive"]
@@ -55,11 +56,12 @@ class Flux2ImageGeneration(SuccessFailureNode):
     """Generate images using Flux-2 models via Griptape model proxy.
 
     Inputs:
-        - model (str): Flux model to use (default: "flux-kontext-pro")
+        - model (str): Flux model to use ("flux-2-pro", "flux-2-flex", or "flux-2-max", default: "flux-2-pro")
         - prompt (str): Text description of the desired image
         - input_image (ImageArtifact): Optional input image for image-to-image generation
         - aspect_ratio (str): Desired aspect ratio (e.g., "16:9", default: "1:1")
-        - seed (int): Random seed for reproducible results (-1 for random)
+        - randomize_seed (bool): If true, randomize the seed on each run (default: False)
+        - seed (int): Random seed for reproducible results (default: 42)
         - prompt_upsampling (bool): If true, performs upsampling on the prompt
         - output_format (str): Desired format of the output image ("jpeg" or "png")
         - safety_tolerance (str): Content moderation preset ("least restrictive", "moderate", or "most restrictive")
@@ -142,15 +144,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Seed parameter
-        self.add_parameter(
-            ParameterInt(
-                name="seed",
-                default_value=-1,
-                tooltip="Random seed for reproducible results (-1 for random)",
-                allow_output=False,
-            )
-        )
+        # Seed parameter (using SeedParameter component)
+        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter.add_input_parameters()
 
         # Prompt upsampling parameter
         self.add_parameter(
@@ -256,6 +252,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
             logger.info(message)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+        self._seed_parameter.after_value_set(parameter, value)
+
         if parameter.name == "model":
             if value in ["flux-2-flex"]:
                 self.show_parameter_by_name("steps")
@@ -264,12 +263,16 @@ class Flux2ImageGeneration(SuccessFailureNode):
                 self.hide_parameter_by_name("steps")
                 self.hide_parameter_by_name("guidance")
 
-        super().after_value_set(parameter, value)
+    def preprocess(self) -> None:
+        self._seed_parameter.preprocess()
 
     async def aprocess(self) -> None:
         await self._process()
 
     async def _process(self) -> None:
+        # Preprocess to handle seed randomization
+        self.preprocess()
+
         # Clear execution status at the start
         self._clear_execution_status()
 
@@ -319,7 +322,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
             "prompt": self.get_parameter_value("prompt") or "",
             "input_images": self.get_parameter_list_value("input_images") or [],
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
-            "seed": self.get_parameter_value("seed") or -1,
+            "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
             "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
@@ -405,16 +408,13 @@ class Flux2ImageGeneration(SuccessFailureNode):
             "prompt_upsampling": params["prompt_upsampling"],
             "output_format": params["output_format"],
             "safety_tolerance": params["safety_tolerance"],
+            "seed": params["seed"],
         }
 
         # add steps and guidance for flex model
         if params["model"] == "flux-2-flex":
             payload["steps"] = params["steps"]
             payload["guidance"] = params["guidance"]
-
-        # Add seed if not -1 (random)
-        if params["seed"] != -1:
-            payload["seed"] = params["seed"]
 
         # Add input images if provided (input_image, input_image_2, ..., input_image_9)
         input_images_list = params.get("input_images", [])
