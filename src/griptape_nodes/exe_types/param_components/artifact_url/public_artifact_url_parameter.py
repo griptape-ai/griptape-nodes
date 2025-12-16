@@ -16,6 +16,7 @@ from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequ
 from griptape_nodes.retained_mode.events.secrets_events import GetSecretValueRequest, GetSecretValueResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 
 class PublicArtifactUrlParameter:
@@ -130,7 +131,7 @@ class PublicArtifactUrlParameter:
         url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
 
         # check if the URL is already public
-        if url.startswith(("http://", "https://")) and "localhost" not in url:
+        if is_url_or_path(url) and "localhost" not in url:
             return url
 
         workspace_path = GriptapeNodes.ConfigManager().workspace_path

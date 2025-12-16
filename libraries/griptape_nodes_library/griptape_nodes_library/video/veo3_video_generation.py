@@ -19,6 +19,7 @@ from griptape_nodes.exe_types.param_components.seed_parameter import SeedParamet
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -541,7 +542,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             return self._parse_data_uri(image_str)
 
         # Handle URL - download and convert
-        if image_str.startswith(("http://", "https://")):
+        if is_url_or_path(image_str):
             return self._download_url_to_base64_dict(image_str)
 
         # Assume raw base64 string
