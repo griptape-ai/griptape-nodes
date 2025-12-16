@@ -117,3 +117,29 @@ def test_text_is_centered_within_background_when_center_aligned(tmp_path: Path) 
 
     assert abs(red_center_y - green_center_y) <= 2
 
+
+def test_text_dict_template_expands_keys(tmp_path: Path) -> None:
+    input_path = _write_test_png(tmp_path, size=(240, 240))
+
+    node = AddTextToExistingImage(name="test-node")
+
+    png_bytes = node._render_png_bytes(
+        image_value=ImageUrlArtifact(value=str(input_path)),
+        text=node._resolve_text({"template": "Hello {name} #{num}", "name": "Ian", "num": 7}),
+        text_color="#ff0000ff",
+        text_background="#00ff00ff",
+        text_vertical_alignment="top",
+        text_horizontal_alignment="left",
+        border=10,
+        font_size=36,
+    )
+
+    # If expansion failed completely, we'd likely have no red pixels (empty label) or placeholders would remain.
+    rendered = Image.open(BytesIO(png_bytes)).convert("RGBA")
+    red_bbox = _bbox_for_pixels(rendered, lambda r, g, b, a: a > 200 and r > 200 and g < 80 and b < 80)
+    assert red_bbox is not None
+
+
+def test_text_dict_template_with_no_matches_returns_empty() -> None:
+    node = AddTextToExistingImage(name="test-node")
+    assert node._resolve_text({"template": "Hello {missing}"}) == ""
