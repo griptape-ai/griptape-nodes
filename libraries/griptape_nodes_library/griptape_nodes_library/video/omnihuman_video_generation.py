@@ -293,20 +293,24 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._public_audio_url_parameter.delete_uploaded_artifact()
         self._cleanup_downscaled_image(downscaled_filename)
 
+    def _get_static_files_path(self) -> Path:
+        """Get the absolute path to the static files directory."""
+        static_files_manager = GriptapeNodes.StaticFilesManager()
+        static_files_dir = static_files_manager._get_static_files_directory()
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        return workspace_path / static_files_dir
+
     def _cleanup_downscaled_image(self, filename: str | None) -> None:
         """Delete the downscaled image file if it exists."""
         if not filename:
             return
 
         try:
-            config_manager = GriptapeNodes.ConfigManager()
-            workspace_path = config_manager.workspace_path
-            static_files_dir = "staticfiles"
-            file_path = workspace_path / static_files_dir / filename
-
-            if file_path.exists():
-                file_path.unlink()
-                self._log(f"Cleaned up downscaled image: {filename}")
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            static_files_dir = static_files_manager._get_static_files_directory()
+            file_path = Path(static_files_dir) / filename
+            static_files_manager.storage_driver.delete_file(file_path)
+            self._log(f"Cleaned up downscaled image: {filename}")
         except Exception as e:
             self._log(f"Failed to cleanup downscaled image {filename}: {e}")
 
@@ -387,21 +391,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         if not url:
             return None
 
-        # Check if it's an external URL
-        is_external = url.startswith(("http://", "https://")) and "localhost" not in url
-
-        if is_external:
+        # External URLs need to be downloaded
+        if self._is_external_url(url):
             return await self._download_image_bytes(url)
 
         # Read from local static files
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_path = config_manager.workspace_path
-        static_files_dir = "staticfiles"
-        static_files_path = workspace_path / static_files_dir
+        return self._read_local_file(url)
 
-        parsed_url = urlparse(url)
-        filename = Path(parsed_url.path).name
-        file_path = static_files_path / filename
+    def _is_external_url(self, url: str) -> bool:
+        """Check if a URL is external (not localhost)."""
+        return url.startswith(("http://", "https://")) and "localhost" not in url
+
+    def _read_local_file(self, url: str) -> bytes | None:
+        """Read file contents from local static files directory."""
+        filename = Path(urlparse(url).path).name
+        file_path = self._get_static_files_path() / filename
 
         if not file_path.exists():
             return None
@@ -425,29 +429,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         url = artifact.value
 
         # If already a public URL, return it
-        if url.startswith(("http://", "https://")) and "localhost" not in url:
+        if self._is_external_url(url):
             return url
 
-        # Read file contents from static files
-        config_manager = GriptapeNodes.ConfigManager()
-        workspace_path = config_manager.workspace_path
-        static_files_dir = "staticfiles"
-        static_files_path = workspace_path / static_files_dir
+        # Read file contents and upload to cloud
+        file_contents = self._read_local_file(url)
+        if file_contents is None:
+            msg = f"Could not read file for artifact: {url}"
+            raise ValueError(msg)
 
-        parsed_url = urlparse(url)
-        filename = Path(parsed_url.path).name
-        file_path = static_files_path / filename
+        filename = Path(urlparse(url).path).name
+        gtc_file_path = Path("staticfiles") / "artifact_url_storage" / uuid4().hex / filename
 
-        with file_path.open("rb") as f:
-            file_contents = f.read()
-
-        # Upload using the existing public image URL parameter's storage driver
-        gtc_file_path = Path(static_files_dir) / "artifact_url_storage" / uuid4().hex / filename
-        public_url = self._public_image_url_parameter._storage_driver.upload_file(
+        return self._public_image_url_parameter._storage_driver.upload_file(
             path=gtc_file_path, file_content=file_contents
         )
-
-        return public_url
 
     async def _get_parameters(self, api_key: str) -> tuple[dict[str, Any], str | None]:
         """Get and normalize input parameters.
@@ -668,7 +664,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 self._log(f"Polling attempt #{attempt}, status={status}")
 
                 if status == "done":
-                    await self._handle_completion(last_json, generation_id)
+                    await self._handle_completion(last_json)
                     return
 
                 if status not in ["not_found", "expired"]:
@@ -683,7 +679,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 self._set_status_results(was_successful=False, result_details=error_details)
                 return
 
-    async def _handle_completion(self, response_json: dict[str, Any], _generation_id: str) -> None:
+    async def _handle_completion(self, response_json: dict[str, Any]) -> None:
         """Handle successful completion of video generation."""
         # Extract provider response
         provider_response = response_json.get("provider_response", {})
@@ -721,9 +717,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     @staticmethod
     def _extract_video_url(response_json: dict[str, Any]) -> str | None:
         """Extract video URL from API response."""
-        if not isinstance(response_json, dict):
-            return None
-
         # Try direct video_url field
         video_url = _json.loads(response_json.get("data", {}).get("resp_data", "{}")).get("video_url")
         if isinstance(video_url, str) and video_url.startswith("http"):
