@@ -282,4 +282,3 @@ class TempFilename(DataNode):
     def process(self) -> None:
         """Generate and set the temporary filename."""
         self._update_output()
-
