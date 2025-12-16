@@ -1448,6 +1448,17 @@
       }
     },
     {
+      "class_name": "AddTextToExistingImage",
+      "file_path": "griptape_nodes_library/image/add_text_to_existing_image.py",
+      "metadata": {
+        "category": "image",
+        "description": "Overlay text onto an existing image",
+        "display_name": "Add Text to Existing Image",
+        "group": "edit",
+        "icon": "Type"
+      }
+    },
+    {
       "class_name": "AddBoundingBoxes",
       "file_path": "griptape_nodes_library/image/add_bounding_boxes.py",
       "metadata": {
