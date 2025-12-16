@@ -125,7 +125,7 @@ def test_text_dict_template_expands_keys(tmp_path: Path) -> None:
 
     png_bytes = node._render_png_bytes(
         image_value=ImageUrlArtifact(value=str(input_path)),
-        text=node._resolve_text({"template": "Hello {name} #{num}", "name": "Ian", "num": 7}),
+        text="Hello Ian #7",
         text_color="#ff0000ff",
         text_background="#00ff00ff",
         text_vertical_alignment="top",
@@ -140,6 +140,29 @@ def test_text_dict_template_expands_keys(tmp_path: Path) -> None:
     assert red_bbox is not None
 
 
-def test_text_dict_template_with_no_matches_returns_empty() -> None:
+def test_separate_template_values_expands_and_reports_missing_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from griptape_nodes_library.image import add_text_to_existing_image as module  # noqa: E402
+
+    def _fake_save(_image: Image.Image, _filename: str, _format: str = "PNG") -> ImageUrlArtifact:
+        return ImageUrlArtifact(value="mock://static/output.png")
+
+    monkeypatch.setattr(module, "save_pil_image_with_named_filename", _fake_save)
+
+    input_path = _write_test_png(tmp_path)
+
     node = AddTextToExistingImage(name="test-node")
-    assert node._resolve_text({"template": "Hello {missing}"}) == ""
+    node.set_parameter_value("input_image", ImageUrlArtifact(value=str(input_path)))
+    node.set_parameter_value("text", "Hello {name} #{num}")
+    node.set_parameter_value("template_values", {"name": "Ian"})
+    node.set_parameter_value("text_color", "#ff0000ff")
+    node.set_parameter_value("text_background", "#00ff00ff")
+    node.set_parameter_value("text_vertical_alignment", "top")
+    node.set_parameter_value("text_horizontal_alignment", "left")
+    node.set_parameter_value("border", 10)
+    node.set_parameter_value("font_size", 24)
+
+    node.process()
+
+    result_details = node.get_parameter_value("result_details")
+    assert isinstance(result_details, str)
+    assert "key: num not found in dictionary input" in result_details
