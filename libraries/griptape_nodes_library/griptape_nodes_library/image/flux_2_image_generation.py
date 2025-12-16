@@ -26,9 +26,6 @@ logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["Flux2ImageGeneration"]
 
-# Define constant for prompt truncation length
-PROMPT_TRUNCATE_LENGTH = 100
-
 # Maximum number of input images supported
 MAX_INPUT_IMAGES = 8
 
@@ -536,10 +533,6 @@ class Flux2ImageGeneration(SuccessFailureNode):
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
             sanitized_payload = deepcopy(payload)
-            # Truncate long prompts
-            prompt = sanitized_payload.get("prompt", "")
-            if len(prompt) > PROMPT_TRUNCATE_LENGTH:
-                sanitized_payload["prompt"] = prompt[:PROMPT_TRUNCATE_LENGTH] + "..."
             # Redact base64 input image data for all input images (input_image, input_image_2, ..., input_image_9)
             for key in list(sanitized_payload.keys()):
                 if key == "input_image" or (key.startswith("input_image_") and key[12:].isdigit()):
