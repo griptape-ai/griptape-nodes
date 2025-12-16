@@ -113,7 +113,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 input_types=["bool"],
                 type="bool",
                 default_value=True,
-                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB limit. If enabled, oversized images are best-effort scaled to fit within the limit.",
+                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB size limit or {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} resolution limit. If enabled, oversized images are automatically resized to fit within these limits.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
