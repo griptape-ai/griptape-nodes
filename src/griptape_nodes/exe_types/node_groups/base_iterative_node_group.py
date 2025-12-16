@@ -57,15 +57,15 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         self._results_list = []
 
         # Add parallel execution control parameter
-        self.run_in_parallel = Parameter(
-            name="run_in_parallel",
-            tooltip="Execute all iterations concurrently (parallel) or one at a time (sequential)",
+        self.run_in_order = Parameter(
+            name="run_in_order",
+            tooltip="Execute all iterations in order or concurrently",
             type=ParameterTypeBuiltin.BOOL.value,
             allowed_modes={ParameterMode.PROPERTY},
-            default_value=False,
-            ui_options={"display_name": "Run in Parallel"},
+            default_value=True,
+            ui_options={"display_name": "Run in Order"},
         )
-        self.add_parameter(self.run_in_parallel)
+        self.add_parameter(self.run_in_order)
 
         # Index parameter - available in all iterative nodes (left side - feeds into group)
         self.index_param = Parameter(
@@ -108,8 +108,8 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes."""
         super().after_value_set(parameter, value)
-        if parameter == self.run_in_parallel:
-            self.is_parallel = value
+        if parameter == self.run_in_order:
+            self.is_parallel = not value
 
     @abstractmethod
     def _get_iteration_items(self) -> list[Any]:

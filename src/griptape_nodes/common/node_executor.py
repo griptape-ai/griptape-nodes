@@ -1264,10 +1264,10 @@ class NodeExecutor:
         # Get execution environment
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
-        # Check if we should run in parallel (default is sequential/False)
-        run_in_parallel = node.get_parameter_value("run_in_parallel")
+        # Check if we should run in order (default is sequential/True)
+        run_in_order = node.get_parameter_value("run_in_order")
 
-        if not run_in_parallel:
+        if run_in_order:
             # Sequential execution
             await self._handle_sequential_iterative_group_execution(node, execution_type)
             return

@@ -30,7 +30,7 @@ class ForEachGroupNode(BaseIterativeNodeGroup):
         results (output, right): Collected results from all iterations
 
     The node supports both sequential and parallel execution modes via the
-    'run_in_parallel' property, and can execute locally, in a private subprocess,
+    'run_in_order' property, and can execute locally, in a private subprocess,
     or via cloud services depending on the 'execution_environment' setting.
     """
 
@@ -76,8 +76,8 @@ class ForEachGroupNode(BaseIterativeNodeGroup):
 
         self.move_element_to_position("items", 0)
         self.move_element_to_position("results", 1)
-        self.move_element_to_position("run_in_parallel", 2)
-        self.add_parameter_to_group_settings(self.run_in_parallel)
+        self.move_element_to_position("run_in_order", 2)
+        self.add_parameter_to_group_settings(self.run_in_order)
 
     def _get_iteration_items(self) -> list[Any]:
         """Get the list of items to iterate over.
