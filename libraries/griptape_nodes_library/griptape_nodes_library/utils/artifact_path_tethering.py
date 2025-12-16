@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 
@@ -389,13 +389,20 @@ class ArtifactPathTethering:
             return None
 
         try:
-            # Process the path (URL or file) - reuse existing path logic
+            # Process the path (URL or file)
             if self._is_url(path_value):
+                # Handle http/https URLs: download and upload to static storage
                 download_url = self._download_and_upload_url(path_value)
+            elif path_value.startswith("file://"):
+                # Handle file:// URLs: strip prefix and use as regular file path
+                parsed = urlparse(path_value)
+                file_path = unquote(parsed.path)
+                download_url = file_path
             else:
-                # Sanitize file paths (not URLs) to handle shell escapes from macOS Finder
+                # Handle local file paths: resolve to absolute path but keep as string
                 sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_value)
-                download_url = self._upload_file_to_static_storage(sanitized_path)
+                resolved_path = self._resolve_file_path(sanitized_path)
+                download_url = str(resolved_path)
 
             # Create artifact dict and convert to artifact
             artifact_dict = {"value": download_url, "type": f"{self.artifact_parameter.output_type}"}
