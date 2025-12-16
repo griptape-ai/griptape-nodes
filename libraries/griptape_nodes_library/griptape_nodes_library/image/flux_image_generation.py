@@ -313,7 +313,7 @@ class FluxImageGeneration(SuccessFailureNode):
             value: One of "least restrictive", "moderate", or "most restrictive"
 
         Returns:
-            Integer value: 6 for least restrictive, 3 for moderate, 0 for most restrictive
+            Integer value: 6 for least restrictive, 2 for moderate, 0 for most restrictive
 
         Raises:
             ValueError: If value is None or not one of the expected options
@@ -325,7 +325,7 @@ class FluxImageGeneration(SuccessFailureNode):
         if value == "most restrictive":
             return 0
         if value == "moderate":
-            return 3
+            return 2
         if value == "least restrictive":
             return 6
 

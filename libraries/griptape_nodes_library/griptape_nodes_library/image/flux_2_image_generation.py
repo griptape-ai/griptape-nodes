@@ -40,6 +40,7 @@ ASPECT_RATIO_OPTIONS = [DISABLE_ASPECT_RATIO_VALUE, "1:1", "16:9", "9:16", "4:3"
 # Image dimension constants
 DEFAULT_IMAGE_SIZE = 1024
 IMAGE_DIMENSION_STEP = 16
+MAX_IMAGE_DIMENSION = 8192  # Any image wider than this will be >4MP anyways
 
 # Output format options
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
@@ -148,6 +149,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
                 tooltip="Output width in pixels. Must be a multiple of 16. Total image size cannot exceed 4MP.",
                 allow_output=False,
                 min_val=IMAGE_DIMENSION_STEP,
+                max_val=MAX_IMAGE_DIMENSION,
                 step=IMAGE_DIMENSION_STEP,
             )
         )
@@ -160,6 +162,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
                 tooltip="Output height in pixels. Must be a multiple of 16. Total image size cannot exceed 4MP.",
                 allow_output=False,
                 min_val=IMAGE_DIMENSION_STEP,
+                max_val=MAX_IMAGE_DIMENSION,
                 step=IMAGE_DIMENSION_STEP,
             )
         )
@@ -372,7 +375,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
             value: One of "least restrictive", "moderate", or "most restrictive"
 
         Returns:
-            Integer value: 6 for least restrictive, 3 for moderate, 0 for most restrictive
+            Integer value: 5 for least restrictive, 2 for moderate, 0 for most restrictive
 
         Raises:
             ValueError: If value is None or not one of the expected options
@@ -384,9 +387,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
         if value == "most restrictive":
             return 0
         if value == "moderate":
-            return 3
+            return 2
         if value == "least restrictive":
-            return 6
+            return 5
 
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
