@@ -676,7 +676,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    def _generate_sandbox_library_metadata(  # noqa: C901, PLR0915
+    def _generate_sandbox_library_metadata(
         self,
     ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure | None:
         """Generate sandbox library metadata by scanning Python files without importing them.
@@ -782,9 +782,9 @@ class LibraryManager:
 
         # Get git remote and ref if the sandbox directory is in a git repository
         try:
-            git_remote = get_git_remote(sandbox_directory)
+            git_remote = get_git_remote(sandbox_library_dir)
         except GitRemoteError as e:
-            logger.debug("Failed to get git remote for sandbox library %s: %s", sandbox_directory, e)
+            logger.debug("Failed to get git remote for sandbox library %s: %s", sandbox_library_dir, e)
             git_remote = None
 
         try:
