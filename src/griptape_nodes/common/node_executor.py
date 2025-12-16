@@ -1143,9 +1143,9 @@ class NodeExecutor:
             logger.info("No iterations for empty loop from '%s' to '%s'", start_node.name, node.name)
             return
 
-        # Check if we should run in parallel (default is sequential/False)
-        run_in_parallel = start_node.is_parallel
-        if not run_in_parallel:
+        # Check if we should run in order (default is in order / True)
+        run_in_order = start_node.get_parameter_value("run_in_order")
+        if run_in_order:
             # Sequential execution - run iterations one at a time in the main execution flow
             await self._handle_sequential_loop_execution(start_node, node)
             return
