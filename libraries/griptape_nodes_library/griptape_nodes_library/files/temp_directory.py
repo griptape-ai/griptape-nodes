@@ -60,4 +60,3 @@ class TempDirectory(DataNode):
         self.set_parameter_value("path", temp_path)
         self.publish_update_to_parameter("path", temp_path)
         self.parameter_output_values["path"] = temp_path
-
