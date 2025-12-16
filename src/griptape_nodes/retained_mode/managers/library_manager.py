@@ -731,12 +731,32 @@ class LibraryManager:
         # Generate sandbox library metadata if configured
         sandbox_library_dir = self._get_sandbox_directory()
         if sandbox_library_dir:
-            sandbox_result = self._generate_sandbox_library_metadata(sandbox_directory=sandbox_library_dir)
+            # Try to load existing JSON first - only scan if load fails
+            sandbox_json_path = sandbox_library_dir / LibraryManager.LIBRARY_CONFIG_FILENAME
+            sandbox_result = self.load_library_metadata_from_file_request(
+                LoadLibraryMetadataFromFileRequest(file_path=str(sandbox_json_path))
+            )
+
+            # If load failed, it either didn't exist or was malformed. Try scanning, which will generate a fresh one.
+            if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+                scan_result = self.scan_sandbox_directory_request(
+                    ScanSandboxDirectoryRequest(directory_path=str(sandbox_library_dir))
+                )
+                # Map scan result to load result for consistency
+                if isinstance(scan_result, ScanSandboxDirectoryResultSuccess):
+                    sandbox_result = LoadLibraryMetadataFromFileResultSuccess(
+                        library_schema=scan_result.library_schema,
+                        file_path=str(sandbox_json_path),
+                        git_remote=None,
+                        git_ref=None,
+                        result_details=scan_result.result_details,
+                    )
+                # else: Keep the load failure result
+
             if isinstance(sandbox_result, LoadLibraryMetadataFromFileResultSuccess):
                 successful_libraries.append(sandbox_result)
-            elif isinstance(sandbox_result, LoadLibraryMetadataFromFileResultFailure):
+            else:
                 failed_libraries.append(sandbox_result)
-            # If sandbox_result is None, no files found in sandbox - skip it
 
         details = (
             f"Successfully loaded metadata for {len(successful_libraries)} libraries, {len(failed_libraries)} failed"
@@ -747,7 +767,7 @@ class LibraryManager:
             result_details=details,
         )
 
-    def _generate_sandbox_library_metadata(  # noqa: C901, PLR0915
+    def _generate_sandbox_library_metadata(
         self,
         sandbox_directory: Path,
     ) -> LoadLibraryMetadataFromFileResultSuccess | LoadLibraryMetadataFromFileResultFailure | None:
@@ -773,10 +793,11 @@ class LibraryManager:
         sandbox_node_candidates = self._find_files_in_dir(directory=sandbox_directory, extension=".py")
         if not sandbox_node_candidates:
             logger.debug(
-                "No candidate files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                "No candidate files found in sandbox directory '%s'. Creating empty sandbox library metadata.",
                 sandbox_directory,
             )
-            return None
+            # Continue with empty list - create valid schema with 0 nodes
+            sandbox_node_candidates = []
 
         # Try to load existing library JSON for smart merging
         json_path = sandbox_directory / LibraryManager.LIBRARY_CONFIG_FILENAME
@@ -809,10 +830,11 @@ class LibraryManager:
 
             if not node_definitions:
                 logger.debug(
-                    "No valid node files found after merge in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                    "No valid node files found after merge in sandbox directory '%s'. Creating empty sandbox library metadata.",
                     sandbox_directory,
                 )
-                return None
+                # Continue with empty list - create valid schema with 0 nodes
+                node_definitions = []
 
             # Preserve existing library metadata
             library_name = existing_schema.name
@@ -854,10 +876,11 @@ class LibraryManager:
 
             if not node_definitions:
                 logger.debug(
-                    "No valid node files found in sandbox directory '%s'. Skipping sandbox library metadata generation.",
+                    "No valid node files found in sandbox directory '%s'. Creating empty sandbox library metadata.",
                     sandbox_directory,
                 )
-                return None
+                # Continue with empty list - create valid schema with 0 nodes
+                node_definitions = []
 
             # Create default metadata
             sandbox_category = CategoryDefinition(
@@ -902,18 +925,9 @@ class LibraryManager:
             nodes=node_definitions,
         )
 
-        # Get git remote and ref if the sandbox directory is in a git repository
-        try:
-            git_remote = get_git_remote(sandbox_directory)
-        except GitRemoteError as e:
-            logger.debug("Failed to get git remote for sandbox library %s: %s", sandbox_directory, e)
-            git_remote = None
-
-        try:
-            git_ref = get_current_ref(sandbox_directory)
-        except GitRefError as e:
-            logger.debug("Failed to get git ref for sandbox library %s: %s", sandbox_directory, e)
-            git_ref = None
+        # Sandbox libraries are never git repositories - always set to None
+        git_remote = None
+        git_ref = None
 
         details = f"Successfully generated sandbox library metadata with {len(node_definitions)} nodes from {sandbox_directory}"
         return LoadLibraryMetadataFromFileResultSuccess(
@@ -1036,10 +1050,10 @@ class LibraryManager:
         # Generate/merge library metadata
         result = self._generate_sandbox_library_metadata(sandbox_directory=sandbox_directory)
 
+        # Note: result should never be None after Step 1 fix, but handle defensively
         if result is None:
-            # No files found
-            details = f"No Python files found in sandbox directory: {sandbox_directory}"
-            return ScanSandboxDirectoryResultFailure(result_details=ResultDetails(message=details, level=logging.INFO))
+            details = f"Internal error: _generate_sandbox_library_metadata returned None for {sandbox_directory}"
+            return ScanSandboxDirectoryResultFailure(result_details=ResultDetails(message=details, level=logging.ERROR))
 
         if isinstance(result, LoadLibraryMetadataFromFileResultFailure):
             # Failure during generation
@@ -1501,24 +1515,20 @@ class LibraryManager:
                         )
                         self._library_file_path_to_info[file_path] = library_info
                     else:
-                        # SANDBOX LIBRARIES: Full processing here (metadata + discovery + registration)
-                        # Step 1: Generate/load metadata with placeholders (loads JSON second time for merging)
+                        # SANDBOX LIBRARIES: Full processing here (discovery + registration)
+                        # Load metadata from JSON file (already generated in DISCOVERED → METADATA_LOADED)
                         sandbox_directory = Path(library_info.library_path).parent
-                        generate_result = self._generate_sandbox_library_metadata(sandbox_directory=sandbox_directory)
+                        metadata_result = self.load_library_metadata_from_file_request(
+                            LoadLibraryMetadataFromFileRequest(file_path=library_info.library_path)
+                        )
 
-                        if generate_result is None:
-                            # No files found in sandbox
-                            details = f"No files found in sandbox directory '{sandbox_directory}'"
+                        if isinstance(metadata_result, LoadLibraryMetadataFromFileResultFailure):
                             self._library_file_path_to_info[library_info.library_path] = library_info
-                            return RegisterLibraryFromFileResultFailure(result_details=details)
+                            return RegisterLibraryFromFileResultFailure(result_details=metadata_result.result_details)
 
-                        if isinstance(generate_result, LoadLibraryMetadataFromFileResultFailure):
-                            self._library_file_path_to_info[library_info.library_path] = library_info
-                            return RegisterLibraryFromFileResultFailure(result_details=generate_result.result_details)
-
-                        # Step 2: Discover real class names by importing files
+                        # Discover real class names by importing files
                         await self._attempt_generate_sandbox_library_from_schema(
-                            library_schema=generate_result.library_schema,
+                            library_schema=metadata_result.library_schema,
                             sandbox_directory=str(sandbox_directory),
                             library_info=library_info,
                         )
@@ -2692,7 +2702,8 @@ class LibraryManager:
         # Get the file paths from the schema's node definitions to load actual classes
         actual_node_definitions = []
         for node_def in library_schema.nodes:
-            candidate_path = Path(node_def.file_path)
+            # Resolve relative path from schema against sandbox directory
+            candidate_path = sandbox_library_dir / node_def.file_path
             try:
                 module = self._load_module_from_file(candidate_path, LibraryManager.SANDBOX_LIBRARY_NAME)
             except Exception as err:
@@ -2745,7 +2756,7 @@ class LibraryManager:
 
                     node_definition = NodeDefinition(
                         class_name=class_name,
-                        file_path=str(candidate_path),
+                        file_path=node_def.file_path,  # Keep original relative path from schema
                         metadata=node_metadata,
                     )
                     actual_node_definitions.append(node_definition)
@@ -2794,6 +2805,9 @@ class LibraryManager:
             details = f"Attempted to load Library JSON file from '{sandbox_library_dir}'. Failed because a Library '{library_data.name}' already exists. Error: {err}."
             logger.error(details)
             return
+
+        # Add any problems encountered during node discovery to library_info
+        library_info.problems.extend(problems)
 
         # Load nodes into the library (modifies library_info in place)
         # Note: library_info is passed as parameter from lifecycle handler
@@ -2974,14 +2988,29 @@ class LibraryManager:
             sandbox_library_dir = self._get_sandbox_directory()
             if sandbox_library_dir:
                 # Generate/update the sandbox library JSON file
-                metadata_result = self._generate_sandbox_library_metadata(sandbox_directory=sandbox_library_dir)
+                metadata_result = self.scan_sandbox_directory_request(
+                    ScanSandboxDirectoryRequest(directory_path=str(sandbox_library_dir))
+                )
 
-                # If generation succeeded, add the sandbox library
-                if metadata_result is not None and isinstance(
-                    metadata_result, LoadLibraryMetadataFromFileResultSuccess
-                ):
+                # If generation succeeded, write JSON and add the sandbox library
+                if isinstance(metadata_result, ScanSandboxDirectoryResultSuccess):
                     sandbox_json_path = sandbox_library_dir / LibraryManager.LIBRARY_CONFIG_FILENAME
                     sandbox_json_path_str = str(sandbox_json_path)
+
+                    # Write the schema to JSON so it exists for lifecycle phases
+                    try:
+                        with sandbox_json_path.open("w", encoding="utf-8") as f:
+                            f.write(metadata_result.library_schema.model_dump_json(indent=2))
+                        logger.debug(
+                            "Wrote sandbox library schema with %d nodes to '%s' during discovery",
+                            len(metadata_result.library_schema.nodes),
+                            sandbox_json_path,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to write sandbox library schema during discovery to '%s': %s", sandbox_json_path, e
+                        )
+                        # Continue anyway - lifecycle will fail gracefully
 
                     # Add to discovered libraries with is_sandbox=True
                     discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
