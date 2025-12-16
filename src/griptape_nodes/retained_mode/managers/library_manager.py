@@ -134,6 +134,7 @@ from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStat
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
+    WriteFileRequest,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 from griptape_nodes.retained_mode.events.resource_events import (
@@ -2776,16 +2777,13 @@ class LibraryManager:
 
         # Save the schema with real class names back to disk
         json_path = sandbox_library_dir / LibraryManager.LIBRARY_CONFIG_FILENAME
-        try:
-            with json_path.open("w", encoding="utf-8") as f:
-                f.write(library_data.model_dump_json(indent=2))
+        write_succeeded = self._write_library_schema_to_json(library_data, json_path)
+        if write_succeeded:
             logger.debug(
                 "Saved sandbox library schema with %d discovered nodes to '%s'",
                 len(actual_node_definitions),
                 json_path,
             )
-        except Exception as e:
-            logger.error("Failed to save sandbox library schema to '%s': %s", json_path, e)
 
         # Register the library.
         # Create or get the library
@@ -2832,6 +2830,29 @@ class LibraryManager:
                     file_path = Path(root) / file
                     ret_val.append(file_path)
         return ret_val
+
+    def _write_library_schema_to_json(self, library_schema: LibrarySchema, json_path: Path) -> bool:
+        """Write library schema to JSON file using WriteFileRequest.
+
+        Args:
+            library_schema: The library schema to write
+            json_path: Path where the JSON file should be written
+
+        Returns:
+            True if write succeeded, False otherwise
+        """
+        write_request = WriteFileRequest(
+            file_path=str(json_path),
+            content=library_schema.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+        write_result = GriptapeNodes.handle_request(write_request)
+
+        if write_result.failed():
+            logger.error("Failed to write library schema to '%s': %s", json_path, write_result.result_details)
+            return False
+
+        return True
 
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
         # Now remove all libraries that were missing from the user's config.
@@ -2998,19 +3019,16 @@ class LibraryManager:
                     sandbox_json_path_str = str(sandbox_json_path)
 
                     # Write the schema to JSON so it exists for lifecycle phases
-                    try:
-                        with sandbox_json_path.open("w", encoding="utf-8") as f:
-                            f.write(metadata_result.library_schema.model_dump_json(indent=2))
+                    write_succeeded = self._write_library_schema_to_json(
+                        metadata_result.library_schema, sandbox_json_path
+                    )
+                    if write_succeeded:
                         logger.debug(
                             "Wrote sandbox library schema with %d nodes to '%s' during discovery",
                             len(metadata_result.library_schema.nodes),
                             sandbox_json_path,
                         )
-                    except Exception as e:
-                        logger.error(
-                            "Failed to write sandbox library schema during discovery to '%s': %s", sandbox_json_path, e
-                        )
-                        # Continue anyway - lifecycle will fail gracefully
+                    # Continue anyway if write failed - lifecycle will fail gracefully
 
                     # Add to discovered libraries with is_sandbox=True
                     discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
