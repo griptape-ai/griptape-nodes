@@ -79,8 +79,9 @@ def sanitize_filename_component(name: str) -> str:
 def clean_path_string(path: str | Path | Any) -> str | Any:
     r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
 
-    This utility function handles cases where merge_texts nodes accidentally add newlines
-    between path components. Paths with embedded newlines cause WinError 123 on Windows.
+    This utility function delegates to OSManager.clean_path_string() to ensure
+    consistent path cleaning across the codebase. The core implementation lives
+    in OSManager so the core engine doesn't depend on library code.
 
     Args:
         path: Path string or Path object that may contain newlines/carriage returns, or any other type
@@ -98,17 +99,4 @@ def clean_path_string(path: str | Path | Any) -> str | Any:
         >>> clean_path_string(None)
         None
     """
-    # Convert Path objects to strings
-    if isinstance(path, Path):
-        path = str(path)
-
-    if not isinstance(path, str):
-        return path
-
-    # Remove newlines and carriage returns from anywhere in the path
-    cleaned = path.replace("\n", "").replace("\r", "")
-    # Strip leading/trailing whitespace
-    cleaned = cleaned.strip()
-
-    # Return cleaned path (may be empty string if path was only whitespace/newlines)
-    return cleaned
+    return GriptapeNodes.OSManager().clean_path_string(path)

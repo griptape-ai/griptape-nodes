@@ -523,12 +523,52 @@ class OSManager:
 
         return path_str
 
+    def clean_path_string(self, path: str | Path | Any) -> str | Any:
+        r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
+
+        This utility method handles cases where merge_texts nodes accidentally add newlines
+        between path components. Paths with embedded newlines cause WinError 123 on Windows.
+
+        Args:
+            path: Path string or Path object that may contain newlines/carriage returns, or any other type
+
+        Returns:
+            Cleaned path string with newlines/carriage returns removed, or original value if not a string/Path
+
+        Examples:
+            >>> os_manager = GriptapeNodes.OSManager()
+            >>> os_manager.clean_path_string("C:\\Users\\file\\n\\n.txt")
+            "C:\\Users\\file.txt"
+            >>> os_manager.clean_path_string("/path/to/file\\r\\n")
+            "/path/to/file"
+            >>> os_manager.clean_path_string(Path("/path/to/file"))
+            "/path/to/file"
+            >>> os_manager.clean_path_string(None)
+            None
+        """
+        # Convert Path objects to strings
+        if isinstance(path, Path):
+            path = str(path)
+
+        if not isinstance(path, str):
+            return path
+
+        # Remove newlines and carriage returns from anywhere in the path
+        cleaned = path.replace("\n", "").replace("\r", "")
+        # Strip leading/trailing whitespace
+        cleaned = cleaned.strip()
+
+        # Return cleaned path (may be empty string if path was only whitespace/newlines)
+        return cleaned
+
     def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
         need the \\?\ prefix to work correctly. This method transparently adds
         the prefix when needed on Windows.
+
+        Also cleans paths to remove newlines/carriage returns that cause Windows errors.
 
         Note: This method assumes the path exists or will exist. For non-existent
         paths that need cross-platform normalization, use resolve_path_safely() first.
@@ -537,9 +577,14 @@ class OSManager:
             path: Path object to convert to string
 
         Returns:
-            String representation of path, with Windows long path prefix if needed
+            String representation of path, cleaned of newlines/carriage returns,
+            with Windows long path prefix if needed
         """
         path_str = str(path.resolve())
+
+        # Clean path to remove newlines/carriage returns that cause Windows errors
+        # This handles cases where merge_texts nodes accidentally add newlines between path components
+        path_str = self.clean_path_string(path_str)
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
         if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
