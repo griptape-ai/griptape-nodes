@@ -16,7 +16,6 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -70,7 +69,6 @@ class Flux2ImageGeneration(SuccessFailureNode):
         - aspect_ratio (str): [hidden] If provided, overrides width/height and generates a 1MP image (e.g., "16:9")
         - randomize_seed (bool): If true, randomize the seed on each run (default: False)
         - seed (int): Random seed for reproducible results (default: 42)
-        - prompt_upsampling (bool): If true, performs upsampling on the prompt
         - output_format (str): Desired format of the output image ("jpeg" or "png")
         - safety_tolerance (str): Content moderation preset ("least restrictive", "moderate", or "most restrictive")
         - steps (int): [flex only] Number of inference steps. Maximum: 50, default: 50. Higher = more detail, slower.
@@ -183,16 +181,6 @@ class Flux2ImageGeneration(SuccessFailureNode):
         # Seed parameter (using SeedParameter component)
         self._seed_parameter = SeedParameter(self)
         self._seed_parameter.add_input_parameters()
-
-        # Prompt upsampling parameter
-        self.add_parameter(
-            ParameterBool(
-                name="prompt_upsampling",
-                default_value=False,
-                tooltip="If true, performs upsampling on the prompt",
-                allow_output=False,
-            )
-        )
 
         # Output format parameter
         self.add_parameter(
@@ -361,7 +349,6 @@ class Flux2ImageGeneration(SuccessFailureNode):
             "height": self.get_parameter_value("height") or DEFAULT_IMAGE_SIZE,
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or DISABLE_ASPECT_RATIO_VALUE,
             "seed": self._seed_parameter.get_seed(),
-            "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
             "output_format": self.get_parameter_value("output_format") or "jpeg",
             "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
             "steps": self.get_parameter_value("steps") or 50,
@@ -442,7 +429,6 @@ class Flux2ImageGeneration(SuccessFailureNode):
     async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "prompt": params["prompt"],
-            "prompt_upsampling": params["prompt_upsampling"],
             "output_format": params["output_format"],
             "safety_tolerance": params["safety_tolerance"],
             "seed": params["seed"],
