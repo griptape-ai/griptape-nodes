@@ -2197,6 +2197,18 @@
       }
     },
     {
+      "class_name": "ForEachGroupNode",
+      "file_path": "griptape_nodes_library/execution/for_each_group.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Group node that iterates over a list or dictionary, executing child nodes for each item",
+        "display_name": "ForEach Group",
+        "icon": "repeat",
+        "group": "iteration",
+        "is_node_group": true
+      }
+    },
+    {
       "class_name": "StandardSubflowNodeGroup",
       "file_path": "griptape_nodes_library/engine/standard_subflow_node_group.py",
       "metadata": {
