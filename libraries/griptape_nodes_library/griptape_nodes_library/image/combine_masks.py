@@ -6,7 +6,7 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image, ImageChops
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -23,13 +23,14 @@ class CombineMasks(DataNode):
         super().__init__(**kwargs)
 
         self.add_parameter(
-            ParameterList(
+            Parameter(
                 name="masks",
-                input_types=["list", "ImageUrlArtifact", "ImageArtifact"],
+                type="list",
+                input_types=["list", "list[ImageUrlArtifact]", "list[ImageArtifact]"],
                 default_value=None,
                 tooltip="List of mask images to combine into a single mask (union/max).",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"max": 50, "min": 1, "display_name": "Masks"},
+                ui_options={"display_name": "Masks"},
             )
         )
 
