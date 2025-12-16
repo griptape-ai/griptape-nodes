@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Any
@@ -85,10 +86,14 @@ class AddTextToExistingImage(SuccessFailureNode):
         self.add_parameter(
             Parameter(
                 name="text",
+                input_types=["str", "dict"],
                 type="str",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                tooltip="Text to render on the image",
+                tooltip=(
+                    "Text to render on the image. If a dict is provided, this node will use the dict's "
+                    "'template' string and replace {key} placeholders with dict values."
+                ),
                 ui_options={"multiline": True, "placeholder_text": "Enter text to render on image"},
             )
         )
@@ -171,6 +176,49 @@ class AddTextToExistingImage(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+    def _resolve_text(self, text_value: Any) -> str:
+        if text_value is None:
+            return ""
+
+        if isinstance(text_value, str):
+            return text_value
+
+        if isinstance(text_value, dict):
+            template = self._extract_template_from_text_dict(text_value)
+            return self._process_text_template(template, text_value)
+
+        return str(text_value)
+
+    def _extract_template_from_text_dict(self, text_dict: dict) -> str:
+        template_value = text_dict.get("template")
+        if isinstance(template_value, str):
+            return template_value
+
+        text_field_value = text_dict.get("text")
+        if isinstance(text_field_value, str):
+            return text_field_value
+
+        value_field_value = text_dict.get("value")
+        if isinstance(value_field_value, str):
+            return value_field_value
+
+        return ""
+
+    def _process_text_template(self, template: str, values: dict) -> str:
+        template_value = template
+
+        pattern = r"\{(\w+)\}"
+        matches = re.findall(pattern, template)
+
+        for key in matches:
+            if key in values:
+                template_value = template_value.replace(f"{{{key}}}", str(values[key]))
+
+        if (template_value and template_value != template) or not matches:
+            return template_value
+
+        return ""
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         # Re-render and cache image locally when any relevant parameter changes.
         if parameter.name in {
@@ -194,7 +242,8 @@ class AddTextToExistingImage(SuccessFailureNode):
         self._set_failure_output_values()
 
         input_image = self.get_parameter_value("input_image")
-        text = self.get_parameter_value("text") or ""
+        text_value = self.get_parameter_value("text")
+        text = self._resolve_text(text_value)
         text_color = self.get_parameter_value("text_color") or "#ffffffff"
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
@@ -304,7 +353,8 @@ class AddTextToExistingImage(SuccessFailureNode):
             self._cached_render_png_bytes = None
             return
 
-        text = self.get_parameter_value("text") or ""
+        text_value = self.get_parameter_value("text")
+        text = self._resolve_text(text_value)
         text_color = self.get_parameter_value("text_color") or "#ffffffff"
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
