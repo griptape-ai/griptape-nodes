@@ -339,7 +339,9 @@ class AddTextToExistingImage(SuccessFailureNode):
             raise ValueError(msg)
 
         if text_horizontal_alignment not in HORIZONTAL_ALIGN_OPTIONS:
-            msg = f"text_horizontal_alignment must be one of {HORIZONTAL_ALIGN_OPTIONS}, got: {text_horizontal_alignment}"
+            msg = (
+                f"text_horizontal_alignment must be one of {HORIZONTAL_ALIGN_OPTIONS}, got: {text_horizontal_alignment}"
+            )
             raise ValueError(msg)
 
         if border < 0:
@@ -689,4 +691,3 @@ class AddTextToExistingImage(SuccessFailureNode):
         y = max(0, min(y, max(0, image_height - text_height)))
 
         return _AlignedTextBoxOrigin(x=x, y=y)
-

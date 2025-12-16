@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from io import BytesIO
 import sys
+from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+ALPHA_THRESHOLD = 200
+COLOR_HIGH = 200
+COLOR_LOW = 80
+CENTER_TOLERANCE_PX = 2
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -14,18 +23,21 @@ _LIB_ROOT = _REPO_ROOT / "libraries" / "griptape_nodes_library"
 sys.path.insert(0, str(_LIB_ROOT))
 
 
-from griptape_nodes_library.image.add_text_to_existing_image import (  # noqa: E402
-    AddTextToExistingImage,
-)
+from griptape_nodes_library.image.add_text_to_existing_image import AddTextToExistingImage  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 
 def _write_test_png(tmp_path: Path, *, size: tuple[int, int] = (200, 200)) -> Path:
+    """Create a simple RGBA PNG for testing."""
     image_path = tmp_path / "input.png"
     Image.new("RGBA", size, (255, 255, 255, 255)).save(image_path, format="PNG")
     return image_path
 
 
-def _bbox_for_pixels(image: Image.Image, predicate) -> tuple[int, int, int, int] | None:
+def _bbox_for_pixels(
+    image: Image.Image,
+    predicate: Callable[[int, int, int, int], bool],
+) -> tuple[int, int, int, int] | None:
+    """Compute bounding box of pixels matching predicate."""
     pixels = image.convert("RGBA").load()
     if pixels is None:
         return None
@@ -59,8 +71,9 @@ def test_process_produces_output_for_all_alignments(
     text_vertical_alignment: str,
     text_horizontal_alignment: str,
 ) -> None:
+    """Ensure process() succeeds for all alignment options."""
     # Stub out static-file upload to keep this a true unit test.
-    from griptape_nodes_library.image import add_text_to_existing_image as module  # noqa: E402
+    from griptape_nodes_library.image import add_text_to_existing_image as module  # pyright: ignore[reportMissingImports]
 
     def _fake_save(_image: Image.Image, _filename: str, _format: str = "PNG") -> ImageUrlArtifact:
         return ImageUrlArtifact(value="mock://static/output.png")
@@ -86,6 +99,7 @@ def test_process_produces_output_for_all_alignments(
 
 
 def test_text_is_centered_within_background_when_center_aligned(tmp_path: Path) -> None:
+    """Verify text is vertically centered within its background block."""
     input_path = _write_test_png(tmp_path, size=(240, 240))
 
     node = AddTextToExistingImage(name="test-node")
@@ -103,8 +117,14 @@ def test_text_is_centered_within_background_when_center_aligned(tmp_path: Path) 
 
     rendered = Image.open(BytesIO(png_bytes)).convert("RGBA")
 
-    red_bbox = _bbox_for_pixels(rendered, lambda r, g, b, a: a > 200 and r > 200 and g < 80 and b < 80)
-    green_bbox = _bbox_for_pixels(rendered, lambda r, g, b, a: a > 200 and g > 200 and r < 80 and b < 80)
+    red_bbox = _bbox_for_pixels(
+        rendered,
+        lambda r, g, b, a: a > ALPHA_THRESHOLD and r > COLOR_HIGH and g < COLOR_LOW and b < COLOR_LOW,
+    )
+    green_bbox = _bbox_for_pixels(
+        rendered,
+        lambda r, g, b, a: a > ALPHA_THRESHOLD and g > COLOR_HIGH and r < COLOR_LOW and b < COLOR_LOW,
+    )
 
     assert red_bbox is not None, "Expected some rendered red text pixels"
     assert green_bbox is not None, "Expected some rendered green background pixels"
@@ -115,10 +135,11 @@ def test_text_is_centered_within_background_when_center_aligned(tmp_path: Path) 
     red_center_y = (red_top + red_bottom) / 2
     green_center_y = (green_top + green_bottom) / 2
 
-    assert abs(red_center_y - green_center_y) <= 2
+    assert abs(red_center_y - green_center_y) <= CENTER_TOLERANCE_PX
 
 
 def test_text_dict_template_expands_keys(tmp_path: Path) -> None:
+    """Sanity check: rendering text produces expected non-empty pixels."""
     input_path = _write_test_png(tmp_path, size=(240, 240))
 
     node = AddTextToExistingImage(name="test-node")
@@ -136,12 +157,18 @@ def test_text_dict_template_expands_keys(tmp_path: Path) -> None:
 
     # If expansion failed completely, we'd likely have no red pixels (empty label) or placeholders would remain.
     rendered = Image.open(BytesIO(png_bytes)).convert("RGBA")
-    red_bbox = _bbox_for_pixels(rendered, lambda r, g, b, a: a > 200 and r > 200 and g < 80 and b < 80)
+    red_bbox = _bbox_for_pixels(
+        rendered,
+        lambda r, g, b, a: a > ALPHA_THRESHOLD and r > COLOR_HIGH and g < COLOR_LOW and b < COLOR_LOW,
+    )
     assert red_bbox is not None
 
 
-def test_separate_template_values_expands_and_reports_missing_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from griptape_nodes_library.image import add_text_to_existing_image as module  # noqa: E402
+def test_separate_template_values_expands_and_reports_missing_keys(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ensure missing keys are reported while template text output is preserved."""
+    from griptape_nodes_library.image import add_text_to_existing_image as module  # pyright: ignore[reportMissingImports]
 
     def _fake_save(_image: Image.Image, _filename: str, _format: str = "PNG") -> ImageUrlArtifact:
         return ImageUrlArtifact(value="mock://static/output.png")

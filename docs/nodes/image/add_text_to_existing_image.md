@@ -63,7 +63,9 @@ Use this node when you want to:
 A typical “stamp metadata” workflow:
 
 1. Load an image using LoadImage
+
 1. Add AddTextToExistingImage
+
 1. Set **text** to:
 
     `"Photo: {name}  |  #{index}"`
@@ -75,7 +77,9 @@ A typical “stamp metadata” workflow:
     ```
 
 1. Set `text_background` to a semi-transparent black like `#00000080`
+
 1. Set `text_color` to white `#ffffffff`
+
 1. Run the node and connect **output** to DisplayImage
 
 ## Important Notes
