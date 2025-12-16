@@ -47,7 +47,7 @@ class _RenderSignature:
     text_background: str
     text_vertical_alignment: str
     text_horizontal_alignment: str
-    border: int
+    margin: int
     font_size: int
 
 
@@ -157,11 +157,23 @@ class AddTextToExistingImage(SuccessFailureNode):
 
         self.add_parameter(
             Parameter(
-                name="border",
+                name="margin",
                 type="int",
                 default_value=10,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Margin (in pixels) between the text block and the image edges",
+            )
+        )
+
+        # Backwards-compatible alias for older workflows.
+        self.add_parameter(
+            Parameter(
+                name="border",
+                type="int",
+                default_value=10,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                tooltip="Deprecated. Use 'margin' instead.",
+                ui_options={"hide": True},
             )
         )
 
@@ -225,6 +237,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             "text_background",
             "text_vertical_alignment",
             "text_horizontal_alignment",
+            "margin",
             "border",
             "font_size",
         }:
@@ -253,7 +266,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
         text_horizontal_alignment = self.get_parameter_value("text_horizontal_alignment") or HORIZONTAL_ALIGN_LEFT
-        border = self.get_parameter_value("border")
+        margin = self._get_margin_value()
         font_size = self.get_parameter_value("font_size")
 
         try:
@@ -261,7 +274,7 @@ class AddTextToExistingImage(SuccessFailureNode):
                 input_image=input_image,
                 text_vertical_alignment=text_vertical_alignment,
                 text_horizontal_alignment=text_horizontal_alignment,
-                border=border,
+                margin=margin,
                 font_size=font_size,
             )
         except ValueError as validation_error:
@@ -280,7 +293,7 @@ class AddTextToExistingImage(SuccessFailureNode):
                 text_background=text_background,
                 text_vertical_alignment=text_vertical_alignment,
                 text_horizontal_alignment=text_horizontal_alignment,
-                border=border,
+                margin=margin,
                 font_size=font_size,
             )
         except Exception as signature_error:
@@ -314,7 +327,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
-            border=border,
+            margin=margin,
             font_size=font_size,
             output_artifact=output_artifact,
         )
@@ -333,7 +346,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         input_image: Any,
         text_vertical_alignment: str,
         text_horizontal_alignment: str,
-        border: int,
+        margin: int,
         font_size: int,
     ) -> None:
         if input_image is None:
@@ -350,8 +363,8 @@ class AddTextToExistingImage(SuccessFailureNode):
             )
             raise ValueError(msg)
 
-        if border < 0:
-            msg = f"border must be >= 0, got: {border}"
+        if margin < 0:
+            msg = f"margin must be >= 0, got: {margin}"
             raise ValueError(msg)
 
         if font_size <= 0:
@@ -373,7 +386,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
         text_horizontal_alignment = self.get_parameter_value("text_horizontal_alignment") or HORIZONTAL_ALIGN_LEFT
-        border = self.get_parameter_value("border")
+        margin = self._get_margin_value()
         font_size = self.get_parameter_value("font_size")
 
         signature = self._build_render_signature(
@@ -384,7 +397,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
-            border=border,
+            margin=margin,
             font_size=font_size,
         )
 
@@ -396,7 +409,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
-            border=border,
+            margin=margin,
             font_size=font_size,
         )
         self._cached_render_signature = signature
@@ -412,7 +425,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background: str,
         text_vertical_alignment: str,
         text_horizontal_alignment: str,
-        border: int,
+        margin: int,
         font_size: int,
     ) -> _RenderSignature:
         source_fingerprint = self._fingerprint_image_value(image_value)
@@ -425,7 +438,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
-            border=border,
+            margin=margin,
             font_size=font_size,
         )
 
@@ -474,7 +487,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background = signature.text_background
         text_vertical_alignment = signature.text_vertical_alignment
         text_horizontal_alignment = signature.text_horizontal_alignment
-        border = signature.border
+        margin = signature.margin
         font_size = signature.font_size
 
         png_bytes = self._render_png_bytes(
@@ -484,7 +497,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
-            border=border,
+            margin=margin,
             font_size=font_size,
         )
         self._cached_render_signature = signature
@@ -500,7 +513,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background: str,
         text_vertical_alignment: str,
         text_horizontal_alignment: str,
-        border: int,
+        margin: int,
         font_size: int,
     ) -> bytes:
         try:
@@ -541,7 +554,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         # x/y here represent the desired top-left of the rendered text bounds (bbox),
         # not the draw origin. PIL fonts can have negative bbox_top; we compensate below.
         layout_settings = _TextLayoutSettings(
-            border=border,
+            border=margin,
             text_vertical_alignment=text_vertical_alignment,
             text_horizontal_alignment=text_horizontal_alignment,
         )
@@ -624,7 +637,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_background: str,
         text_vertical_alignment: str,
         text_horizontal_alignment: str,
-        border: int,
+        margin: int,
         font_size: int,
         output_artifact: ImageUrlArtifact,
     ) -> None:
@@ -633,7 +646,8 @@ class AddTextToExistingImage(SuccessFailureNode):
         self.parameter_output_values["text_background"] = text_background
         self.parameter_output_values["text_vertical_alignment"] = text_vertical_alignment
         self.parameter_output_values["text_horizontal_alignment"] = text_horizontal_alignment
-        self.parameter_output_values["border"] = border
+        self.parameter_output_values["margin"] = margin
+        self.parameter_output_values["border"] = margin
         self.parameter_output_values["font_size"] = font_size
         self.parameter_output_values["output"] = output_artifact
 
@@ -643,9 +657,21 @@ class AddTextToExistingImage(SuccessFailureNode):
         self.parameter_output_values["text_background"] = ""
         self.parameter_output_values["text_vertical_alignment"] = VERTICAL_ALIGN_TOP
         self.parameter_output_values["text_horizontal_alignment"] = HORIZONTAL_ALIGN_LEFT
+        self.parameter_output_values["margin"] = 0
         self.parameter_output_values["border"] = 0
         self.parameter_output_values["font_size"] = 0
         self.parameter_output_values["output"] = None
+
+    def _get_margin_value(self) -> int:
+        margin_value = self.get_parameter_value("margin")
+        if margin_value is not None:
+            return margin_value
+
+        border_value = self.get_parameter_value("border")
+        if border_value is not None:
+            return border_value
+
+        return 0
 
     def _get_text_bbox(
         self,

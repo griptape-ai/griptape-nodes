@@ -48,7 +48,7 @@ Use this node when you want to:
 - **text_background** (hexa, default: `#000000ff`): Background rectangle color behind the text including alpha
 - **text_vertical_alignment** (top | center | bottom, default: top): Vertical alignment of the text block
 - **text_horizontal_alignment** (left | center | right, default: left): Horizontal alignment of the text block
-- **border** (int, default: 10): Margin inset from image edges for text placement
+- **margin** (int, default: 10): Margin inset from image edges for text placement
 - **font_size** (int, default: 36): Font size used for rendering
 
 ### Outputs
