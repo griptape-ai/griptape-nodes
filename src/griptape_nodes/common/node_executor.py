@@ -6,7 +6,7 @@ import logging
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
@@ -177,47 +177,6 @@ class LoopBodyNodes(NamedTuple):
     all_nodes: set[str]
     execution_type: str
     node_group_name: str | None
-
-
-class IterativeEndNodeProtocol(Protocol):
-    """Protocol for objects that can act as the end point of an iterative loop.
-
-    Both BaseIterativeEndNode and _IterativeGroupEndNodeAdapter satisfy this protocol.
-    """
-
-    @property
-    def name(self) -> str:
-        """Return the name of the node/group."""
-        ...
-
-
-class _IterativeGroupEndNodeAdapter:
-    """Adapter that makes a BaseIterativeNodeGroup look like a BaseIterativeEndNode.
-
-    This allows the NodeExecutor to reuse existing loop iteration execution methods
-    which expect a BaseIterativeEndNode for result extraction.
-    """
-
-    def __init__(
-        self,
-        group: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        executor: NodeExecutor,
-    ) -> None:
-        self.group = group
-        self.package_result = package_result
-        self.executor = executor
-        self._result_parameter_name: str | None = None
-        # Cache the result parameter name
-        self._result_parameter_name = executor._get_result_parameter_name_for_group(group, package_result)
-
-    @property
-    def name(self) -> str:
-        return self.group.name
-
-    def get_result_parameter_name(self) -> str | None:
-        """Return the EndFlow parameter name for collecting results."""
-        return self._result_parameter_name
 
 
 class NodeExecutor:
@@ -862,7 +821,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially by running one flow instance N times.
 
@@ -1332,22 +1291,22 @@ class NodeExecutor:
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_locally(
-                    node=node,
+                ) = await self._execute_loop_iterations_locally(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
                 )
             case node_types.PRIVATE_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_privately(
-                    node=node,
+                ) = await self._execute_loop_iterations_privately(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
                 )
             case _:
                 # Cloud publisher execution (Deadline Cloud, etc.)
@@ -1355,11 +1314,11 @@ class NodeExecutor:
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_via_publisher(
-                    node=node,
+                ) = await self._execute_loop_iterations_via_publisher(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
                     execution_type=execution_type,
                 )
 
@@ -1430,22 +1389,22 @@ class NodeExecutor:
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_sequentially_local(
-                    node=node,
+                ) = await self._execute_loop_iterations_sequentially(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
                 )
             case node_types.PRIVATE_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_sequentially_private(
-                    node=node,
+                ) = await self._execute_loop_iterations_sequentially_private(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
                 )
             case _:
                 # Cloud publisher execution
@@ -1453,11 +1412,11 @@ class NodeExecutor:
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
-                ) = await self._execute_iterative_group_iterations_sequentially_via_publisher(
-                    node=node,
+                ) = await self._execute_loop_iterations_sequentially_via_publisher(
                     package_result=package_result,
                     total_iterations=total_iterations,
                     parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
                     execution_type=execution_type,
                 )
 
@@ -1579,7 +1538,7 @@ class NodeExecutor:
             Dict mapping iteration_index -> {parameter_name: value}
         """
         # Get parameter values that vary per iteration (current_item, index mappings)
-        parameter_values_per_iteration = self._get_parameter_values_per_iteration_for_group(node, package_result)
+        parameter_values_per_iteration = self.get_parameter_values_per_iteration(node, package_result)
 
         # Get resolved upstream values (constant across all iterations)
         resolved_upstream_values = self.get_resolved_upstream_values(
@@ -1600,253 +1559,6 @@ class NodeExecutor:
             )
 
         return parameter_values_per_iteration
-
-    def _get_parameter_values_per_iteration_for_group(  # noqa: C901
-        self, node: BaseIterativeNodeGroup, package_result: PackageNodesAsSerializedFlowResultSuccess
-    ) -> dict[int, dict[str, Any]]:
-        """Get parameter values for each iteration of an iterative group.
-
-        Maps current_item and index from the group's output parameters to the
-        StartFlow parameters of the packaged flow.
-
-        Args:
-            node: The iterative node group
-            package_result: The packaged flow result
-
-        Returns:
-            Dict mapping iteration_index -> {startflow_param_name: value}
-        """
-        total_iterations = node._get_total_iterations()
-
-        # Get current_item values
-        current_item_values = [node._get_current_item_value(i) for i in range(total_iterations)]
-
-        # Get index values
-        index_values = node.get_all_iteration_values()
-
-        # Get outgoing connections from this group's iteration output parameters
-        list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
-        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            msg = f"Failed to list connections for node {node.name}: {list_connections_result.result_details}"
-            raise TypeError(msg)
-
-        outgoing_connections = list_connections_result.outgoing_connections
-
-        # Get Start node's parameter mappings
-        start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
-        start_node_param_mappings = start_node_mapping.parameter_mappings
-
-        # Build parameter values for each iteration
-        parameter_val_mappings: dict[int, dict[str, Any]] = {}
-        for iteration_index in range(total_iterations):
-            iteration_values: dict[str, Any] = {}
-
-            # For each outgoing data connection from the group's iteration parameters
-            for conn in outgoing_connections:
-                source_param_name = conn.source_parameter_name
-                target_node_name = conn.target_node_name
-                target_param_name = conn.target_parameter_name
-
-                # Only care about connections from current_item or index
-                if source_param_name not in ("current_item", "index"):
-                    continue
-
-                # If target is another SubflowNodeGroup, follow internal connections
-                node_manager = GriptapeNodes.NodeManager()
-                flow_manager = GriptapeNodes.FlowManager()
-                try:
-                    target_node = node_manager.get_node_by_name(target_node_name)
-                except ValueError:
-                    logger.error("Failed to get node %s for connection from %s", target_node_name, node.name)
-                    continue
-
-                if isinstance(target_node, SubflowNodeGroup):
-                    connections = flow_manager.get_connections()
-                    proxy_param = target_node.get_parameter_by_name(target_param_name)
-                    if proxy_param:
-                        internal_connections = connections.get_all_outgoing_connections(target_node)
-                        for internal_conn in internal_connections:
-                            if (
-                                internal_conn.source_parameter.name == target_param_name
-                                and internal_conn.is_node_group_internal
-                            ):
-                                target_node_name = internal_conn.target_node.name
-                                target_param_name = internal_conn.target_parameter.name
-                                break
-
-                # Find the StartFlow parameter that corresponds to this target
-                for startflow_param_name, original_node_param in start_node_param_mappings.items():
-                    if (
-                        original_node_param.node_name == target_node_name
-                        and original_node_param.parameter_name == target_param_name
-                    ):
-                        value = self._get_iteration_value_for_parameter(
-                            source_param_name, iteration_index, index_values, current_item_values
-                        )
-                        if value is not None:
-                            iteration_values[startflow_param_name] = value
-                        break
-
-            parameter_val_mappings[iteration_index] = iteration_values
-
-        return parameter_val_mappings
-
-    def _get_result_parameter_name_for_group(
-        self, node: BaseIterativeNodeGroup, package_result: PackageNodesAsSerializedFlowResultSuccess
-    ) -> str | None:
-        """Find the EndFlow parameter name that corresponds to new_item_to_add.
-
-        Args:
-            node: The iterative node group
-            package_result: The packaged flow result
-
-        Returns:
-            The EndFlow parameter name, or None if not found
-        """
-        # Get incoming connections to the group's new_item_to_add parameter
-        list_connections_request = ListConnectionsForNodeRequest(node_name=node.name)
-        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
-        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            logger.warning("Failed to list connections for group %s", node.name)
-            return None
-
-        incoming_connections = list_connections_result.incoming_connections
-
-        # Find the connection to new_item_to_add
-        source_node_name = None
-        source_param_name = None
-        for conn in incoming_connections:
-            if conn.target_parameter_name == "new_item_to_add":
-                source_node_name = conn.source_node_name
-                source_param_name = conn.source_parameter_name
-                break
-
-        if source_node_name is None or source_param_name is None:
-            logger.info("No connection found to new_item_to_add parameter on group '%s'", node.name)
-            return None
-
-        # Get the End node's parameter mappings
-        end_node_mapping = self.get_node_parameter_mappings(package_result, "end")
-        end_node_param_mappings = end_node_mapping.parameter_mappings
-
-        # Find the EndFlow parameter that corresponds to the source node/param
-        for endflow_param_name, original_node_param in end_node_param_mappings.items():
-            if (
-                original_node_param.node_name == source_node_name
-                and original_node_param.parameter_name == source_param_name
-            ):
-                return endflow_param_name
-
-        return None
-
-    async def _execute_iterative_group_iterations_locally(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations locally in parallel.
-
-        Reuses the existing loop iteration execution infrastructure.
-        """
-        # Create a mock end node interface for compatibility with existing methods
-        return await self._execute_loop_iterations_locally(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-        )
-
-    async def _execute_iterative_group_iterations_privately(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations in private subprocesses in parallel."""
-        return await self._execute_loop_iterations_privately(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-        )
-
-    async def _execute_iterative_group_iterations_via_publisher(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-        execution_type: str,
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations via cloud publisher in parallel."""
-        return await self._execute_loop_iterations_via_publisher(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-            execution_type=execution_type,
-        )
-
-    async def _execute_iterative_group_iterations_sequentially_local(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations locally in sequence."""
-        return await self._execute_loop_iterations_sequentially(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-        )
-
-    async def _execute_iterative_group_iterations_sequentially_private(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations in private subprocesses in sequence."""
-        return await self._execute_loop_iterations_sequentially_private(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-        )
-
-    async def _execute_iterative_group_iterations_sequentially_via_publisher(
-        self,
-        node: BaseIterativeNodeGroup,
-        package_result: PackageNodesAsSerializedFlowResultSuccess,
-        total_iterations: int,
-        parameter_values_per_iteration: dict[int, dict[str, Any]],
-        execution_type: str,
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
-        """Execute iterative group iterations via cloud publisher in sequence."""
-        return await self._execute_loop_iterations_sequentially_via_publisher(
-            package_result=package_result,
-            total_iterations=total_iterations,
-            parameter_values_per_iteration=parameter_values_per_iteration,
-            end_loop_node=self._create_group_end_node_adapter(node, package_result),
-            execution_type=execution_type,
-        )
-
-    def _create_group_end_node_adapter(
-        self, node: BaseIterativeNodeGroup, package_result: PackageNodesAsSerializedFlowResultSuccess
-    ) -> _IterativeGroupEndNodeAdapter:
-        """Create an adapter that makes an iterative group look like an end node.
-
-        This allows reusing the existing loop execution methods which expect
-        a BaseIterativeEndNode for result extraction.
-        """
-        return _IterativeGroupEndNodeAdapter(node, package_result, self)
 
     def _get_iteration_value_for_parameter(
         self,
@@ -1877,7 +1589,7 @@ class NodeExecutor:
 
     def get_parameter_values_per_iteration(  # noqa: C901, Needed to add special handling for node groups.
         self,
-        start_node: BaseIterativeStartNode,
+        iteration_source: BaseIterativeStartNode | BaseIterativeNodeGroup,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
     ) -> dict[int, dict[str, Any]]:
         """Get parameter values for each iteration of the loop.
@@ -1886,30 +1598,29 @@ class NodeExecutor:
         Useful for: setting local values, sending as input for cloud publishing, or private workflow execution.
 
         Args:
-            start_node: The start loop node (ForEach or ForLoop)
-
+            iteration_source: The node providing iteration values (BaseIterativeStartNode or BaseIterativeNodeGroup)
             package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter_name_mappings
 
         Returns:
             Dict mapping iteration_index -> {startflow_param_name: value}
         """
-        total_iterations = start_node._get_total_iterations()
+        total_iterations = iteration_source._get_total_iterations()
 
         # Calculate current_item values for ForEach nodes
-        current_item_values = []
-        iteration_items = start_node._get_iteration_items()
+        iteration_items = iteration_source._get_iteration_items()
         current_item_values = list(iteration_items)
 
         # Calculate index values for ForLoop nodes
         # For ForLoop, we need actual loop values (start, start+step, start+2*step, ...)
         # not just 0-based iteration indices
-        index_values = []
-        index_values = start_node.get_all_iteration_values()
+        index_values = iteration_source.get_all_iteration_values()
 
-        list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
+        list_connections_request = ListConnectionsForNodeRequest(node_name=iteration_source.name)
         list_connections_result = GriptapeNodes.handle_request(list_connections_request)
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            msg = f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
+            msg = (
+                f"Failed to list connections for node {iteration_source.name}: {list_connections_result.result_details}"
+            )
             raise RuntimeError(msg)  # noqa: TRY004 This should be a runtime error because it happens during execution.
         # Build parameter values for each iteration
         outgoing_connections = list_connections_result.outgoing_connections
@@ -1918,7 +1629,7 @@ class NodeExecutor:
         start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
         start_node_param_mappings = start_node_mapping.parameter_mappings
 
-        # For each outgoing connection from start_node, find the corresponding StartFlow parameter
+        # For each outgoing connection from iteration_source, find the corresponding StartFlow parameter
         # The start_node_param_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
         # We need to match the target of each connection to find the right startflow parameter
         parameter_val_mappings = {}
@@ -1926,7 +1637,7 @@ class NodeExecutor:
             iteration_values = {}
             # iteration_values is going to be startflow parameter name -> value to set
 
-            # For each outgoing data connection from start_node
+            # For each outgoing data connection from iteration_source
             for conn in outgoing_connections:
                 source_param_name = conn.source_parameter_name
                 target_node_name = conn.target_node_name
@@ -1938,7 +1649,7 @@ class NodeExecutor:
                 try:
                     target_node = node_manager.get_node_by_name(target_node_name)
                 except ValueError:
-                    msg = f"Failed to get node {target_node_name} for connection {conn} from start node {start_node.name}. Can't get parameter value iterations."
+                    msg = f"Failed to get node {target_node_name} for connection {conn} from node {iteration_source.name}. Can't get parameter value iterations."
                     logger.error(msg)
                     raise RuntimeError(msg)  # noqa: B904
                 if isinstance(target_node, SubflowNodeGroup):
@@ -2156,7 +1867,7 @@ class NodeExecutor:
 
     def get_parameter_values_from_iterations(
         self,
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         deserialized_flows: list[tuple[int, str, dict[str, str]]],
         package_flow_result_success: PackageNodesAsSerializedFlowResultSuccess,
     ) -> dict[int, Any]:
@@ -2312,7 +2023,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations locally by deserializing and running flows.
 
@@ -2499,7 +2210,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         workflow_path: Path,
         workflow_result: Any,  # noqa: ARG002 - Used by wrapper methods for cleanup
         file_name_prefix: str,
@@ -2627,7 +2338,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially in private subprocesses (no cloud publishing)."""
         workflow_path, workflow_result = await self._save_workflow_file_for_loop(
@@ -2663,7 +2374,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations in parallel via private subprocesses (no cloud publishing)."""
         workflow_path, workflow_result = await self._save_workflow_file_for_loop(
@@ -2696,7 +2407,7 @@ class NodeExecutor:
 
     async def _save_workflow_file_for_loop(
         self,
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         *,
         pickle_control_flow_result: bool,
@@ -2735,7 +2446,7 @@ class NodeExecutor:
         self,
         iteration_outputs: list[tuple[int, bool, dict[str, Any] | None]],
         package_result: PackageNodesAsSerializedFlowResultSuccess,
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Extract results from subprocess iteration outputs.
 
@@ -2792,7 +2503,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially via cloud publisher (Deadline Cloud, etc.)."""
@@ -2835,7 +2546,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: IterativeEndNodeProtocol,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations in parallel via cloud publisher (Deadline Cloud, etc.)."""
