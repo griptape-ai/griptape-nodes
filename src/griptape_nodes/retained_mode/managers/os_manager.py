@@ -1115,6 +1115,31 @@ class OSManager:
             logger.error(details)
             return OpenAssociatedFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=details)
 
+    def _is_hidden(self, dir_entry: os.DirEntry, stat_result: os.stat_result | None = None) -> bool:
+        """Check if a directory entry is hidden in an OS-independent way.
+
+        On Unix/Linux/macOS: Files are considered hidden if their name starts with a dot (.).
+        On Windows: Files have a special "hidden" file attribute (FILE_ATTRIBUTE_HIDDEN).
+
+        Args:
+            dir_entry: The directory entry to check
+            stat_result: Optional pre-fetched stat result (to avoid redundant stat() calls on Windows)
+
+        Returns:
+            True if the entry is hidden, False otherwise
+        """
+        if sys.platform == "win32":
+            # Windows: Check name prefix first (fast heuristic for most hidden files)
+            # Most hidden files on Windows have dot prefix, so this avoids many stat() calls
+            if dir_entry.name.startswith("."):
+                return True
+            # For files without dot prefix, check FILE_ATTRIBUTE_HIDDEN via stat()
+            if stat_result is None:
+                stat_result = dir_entry.stat(follow_symlinks=False)
+            return bool(stat_result.st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
+        # Unix/Linux/macOS: Files are hidden if name starts with dot
+        return dir_entry.name.startswith(".")
+
     def _detect_mime_type(self, file_path: Path) -> str | None:
         """Detect MIME type for a file. Returns None for directories or if detection fails.
 
@@ -1180,13 +1205,28 @@ class OSManager:
 
             entries = []
             try:
+                # Pre-compute whether we need stat() calls (constant for all entries)
+                need_stat_for_metadata = request.include_size or request.include_modified_time
+                # On Windows, we need stat() to check FILE_ATTRIBUTE_HIDDEN when filtering hidden files
+                # (only for files without dot prefix, since dot-prefix files are handled by name check)
+                need_stat_for_hidden = not request.show_hidden and sys.platform == "win32"
+
                 # Use os.scandir() instead of Path.iterdir() for better performance
                 # os.scandir() is ~3.7x faster and provides cached stat info
                 with os.scandir(str(directory)) as scan_iter:
                     for dir_entry in scan_iter:
-                        # Skip hidden files if not requested
-                        if not request.show_hidden and dir_entry.name.startswith("."):
-                            continue
+                        # Initialize stat - we'll get it once if needed for hidden check and/or metadata
+                        stat = None
+
+                        # Skip hidden files if not requested (OS-independent check)
+                        if not request.show_hidden:
+                            # On Windows, files without dot prefix need stat() to check FILE_ATTRIBUTE_HIDDEN
+                            # Get stat() once if needed (for hidden check and/or metadata)
+                            if need_stat_for_hidden and not dir_entry.name.startswith("."):
+                                stat = dir_entry.stat(follow_symlinks=False)
+
+                            if self._is_hidden(dir_entry, stat_result=stat):
+                                continue
 
                         # Apply pattern filter if specified, or create Path object if needed
                         if request.pattern is not None:
@@ -1201,10 +1241,9 @@ class OSManager:
                             entry_path_obj = None
 
                         try:
-                            # Only call stat() if we need size or modified_time
-                            stat = None
-                            if request.include_size or request.include_modified_time:
-                                stat = dir_entry.stat()
+                            # Get stat() if needed for metadata (reuse if we already have it from hidden check)
+                            if need_stat_for_metadata and stat is None:
+                                stat = dir_entry.stat(follow_symlinks=False)
 
                             # Only resolve entry path if we need absolute_path or relative paths
                             resolved_entry = None
