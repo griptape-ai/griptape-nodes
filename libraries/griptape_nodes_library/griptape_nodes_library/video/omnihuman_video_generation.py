@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import json as _json
 import logging
 import os
 import time
+from pathlib import Path
 from time import monotonic
 from typing import Any, ClassVar
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from uuid import uuid4
 
 import httpx
-from griptape.artifacts import VideoUrlArtifact
+from griptape.artifacts import ImageUrlArtifact, VideoUrlArtifact
+from griptape.artifacts.url_artifact import UrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -20,10 +25,16 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["OmnihumanVideoGeneration"]
+
+# Maximum image size in bytes (5MB)
+MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024
+# Maximum image resolution (4096x4096)
+MAX_IMAGE_DIMENSION = 4096
 
 
 class OmnihumanVideoGeneration(SuccessFailureNode):
@@ -94,6 +105,18 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             disclaimer_message="The OmniHuman service utilizes this URL to access the image for video generation.",
         )
         self._public_image_url_parameter.add_input_parameters()
+
+        # Image size validation
+        self.add_parameter(
+            Parameter(
+                name="auto_image_resize",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB size limit or {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} resolution limit. If enabled, oversized images are automatically resized to fit within these limits.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
 
         self._public_audio_url_parameter = PublicArtifactUrlParameter(
             node=self,
@@ -211,7 +234,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             self.hide_parameter_by_name("seed")
             self.hide_parameter_by_name("fast_mode")
             self.hide_parameter_by_name("prompt")
-        else:
+        elif parameter.name == "model_id":
             self.show_parameter_by_name("seed")
             self.show_parameter_by_name("fast_mode")
             self.show_parameter_by_name("prompt")
@@ -237,7 +260,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         try:
             # Get and validate parameters
-            params = await self._get_parameters(api_key)
+            params, downscaled_filename = await self._get_parameters(api_key)
         except ValueError as e:
             self._public_image_url_parameter.delete_uploaded_artifact()
             self._public_audio_url_parameter.delete_uploaded_artifact()
@@ -254,10 +277,12 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                     was_successful=False,
                     result_details="No generation_id returned from proxy. Cannot proceed with generation.",
                 )
+                self._cleanup_downscaled_image(downscaled_filename)
                 return
         except RuntimeError as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
+            self._cleanup_downscaled_image(downscaled_filename)
             return
 
         # Poll for result
@@ -266,10 +291,170 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # Cleanup
         self._public_image_url_parameter.delete_uploaded_artifact()
         self._public_audio_url_parameter.delete_uploaded_artifact()
+        self._cleanup_downscaled_image(downscaled_filename)
 
-    async def _get_parameters(self, api_key: str) -> dict[str, Any]:
-        """Get and normalize input parameters."""
-        image_url = self.get_parameter_value("image_url")
+    def _get_static_files_path(self) -> Path:
+        """Get the absolute path to the static files directory."""
+        static_files_manager = GriptapeNodes.StaticFilesManager()
+        static_files_dir = static_files_manager._get_static_files_directory()
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        return workspace_path / static_files_dir
+
+    def _cleanup_downscaled_image(self, filename: str | None) -> None:
+        """Delete the downscaled image file if it exists."""
+        if not filename:
+            return
+
+        try:
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            static_files_dir = static_files_manager._get_static_files_directory()
+            file_path = Path(static_files_dir) / filename
+            static_files_manager.storage_driver.delete_file(file_path)
+            self._log(f"Cleaned up downscaled image: {filename}")
+        except Exception as e:
+            self._log(f"Failed to cleanup downscaled image {filename}: {e}")
+
+    async def _get_image_for_api(self) -> tuple[ImageUrlArtifact | None, str | None]:
+        """Get the image to use for the API call, shrinking if needed.
+
+        Returns a tuple of (artifact, filename):
+        - artifact: The downscaled image artifact if shrinking was needed, or None to use original
+        - filename: The filename of the downscaled image for cleanup, or None
+        """
+        # Get the image file contents
+        file_contents = await self._get_image_file_contents()
+        if file_contents is None:
+            return None, None
+
+        # Check file size
+        size_bytes = len(file_contents)
+        size_mb = size_bytes / (1024 * 1024)
+        max_mb = MAX_IMAGE_SIZE_BYTES / (1024 * 1024)
+        exceeds_size = size_bytes > MAX_IMAGE_SIZE_BYTES
+
+        # Check resolution
+        img = Image.open(io.BytesIO(file_contents))
+        width, height = img.size
+        exceeds_resolution = width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION
+
+        # If neither constraint is exceeded, use original
+        if not exceeds_size and not exceeds_resolution:
+            return None, None
+
+        # Check if auto resize is enabled
+        auto_image_resize = self.get_parameter_value("auto_image_resize")
+        if not auto_image_resize:
+            issues = []
+            if exceeds_size:
+                issues.append(f"size {size_mb:.2f}MB exceeds {max_mb:.0f}MB limit")
+            if exceeds_resolution:
+                issues.append(f"resolution {width}x{height} exceeds {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} limit")
+            msg = f"{self.name} input image: {', '.join(issues)}"
+            raise ValueError(msg)
+
+        # Log what needs to be fixed
+        if exceeds_size and exceeds_resolution:
+            self._log(f"Input image is {size_mb:.2f}MB and {width}x{height}, resizing...")
+        elif exceeds_size:
+            self._log(f"Input image is {size_mb:.2f}MB, shrinking to under {max_mb:.0f}MB...")
+        else:
+            self._log(
+                f"Input image is {width}x{height}, resizing to under {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}..."
+            )
+
+        # Resize for resolution if needed, then shrink for size
+        resized_bytes = (
+            resize_image_for_resolution(file_contents, MAX_IMAGE_DIMENSION, self.name)
+            if exceeds_resolution
+            else file_contents
+        )
+        shrunk_bytes = shrink_image_to_size(resized_bytes, MAX_IMAGE_SIZE_BYTES, self.name)
+
+        if len(shrunk_bytes) >= len(file_contents):
+            # Shrinking didn't help
+            self._log("Could not shrink image, using original")
+            return None, None
+
+        # Save shrunk image to static files
+        shrunk_filename = f"shrunk_{uuid4().hex}.webp"
+        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
+
+        new_artifact = ImageUrlArtifact(value=shrunk_url)
+        self._log(f"Resized image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
+        return new_artifact, shrunk_filename
+
+    async def _get_image_file_contents(self) -> bytes | None:
+        """Get the file contents of the input image."""
+        parameter_value = self.get_parameter_value("image_url")
+        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
+
+        if not url:
+            return None
+
+        # External URLs need to be downloaded
+        if self._is_external_url(url):
+            return await self._download_image_bytes(url)
+
+        # Read from local static files
+        return self._read_local_file(url)
+
+    def _is_external_url(self, url: str) -> bool:
+        """Check if a URL is external (not localhost)."""
+        return url.startswith(("http://", "https://")) and "localhost" not in url
+
+    def _read_local_file(self, url: str) -> bytes | None:
+        """Read file contents from local static files directory."""
+        filename = Path(urlparse(url).path).name
+        file_path = self._get_static_files_path() / filename
+
+        if not file_path.exists():
+            return None
+
+        with file_path.open("rb") as f:
+            return f.read()
+
+    async def _download_image_bytes(self, url: str) -> bytes | None:
+        """Download image bytes from an external URL."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=120.0)
+                response.raise_for_status()
+                return response.content
+        except Exception as e:
+            self._log(f"Failed to download image from {url}: {e}")
+            return None
+
+    def _get_public_url_for_artifact(self, artifact: ImageUrlArtifact) -> str:
+        """Get a public URL for an image artifact by uploading to Griptape Cloud."""
+        url = artifact.value
+
+        # If already a public URL, return it
+        if self._is_external_url(url):
+            return url
+
+        # Read file contents and upload to cloud
+        file_contents = self._read_local_file(url)
+        if file_contents is None:
+            msg = f"Could not read file for artifact: {url}"
+            raise ValueError(msg)
+
+        filename = Path(urlparse(url).path).name
+        gtc_file_path = Path("staticfiles") / "artifact_url_storage" / uuid4().hex / filename
+
+        return self._public_image_url_parameter._storage_driver.upload_file(
+            path=gtc_file_path, file_content=file_contents
+        )
+
+    async def _get_parameters(self, api_key: str) -> tuple[dict[str, Any], str | None]:
+        """Get and normalize input parameters.
+
+        Returns a tuple of (params_dict, downscaled_filename) where downscaled_filename
+        is the filename of any downscaled image that needs cleanup, or None.
+        """
+        # Check if we need to use a downscaled image
+        downscaled_image, downscaled_filename = await self._get_image_for_api()
+
+        image_url_param = self.get_parameter_value("image_url")
         audio_url = self.get_parameter_value("audio_url")
         mask_image_urls = self.get_parameter_value("mask_image_urls")
         prompt = self.get_parameter_value("prompt")
@@ -279,10 +464,16 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         model_id = self.get_parameter_value("model_id")
 
         # image url and audio url are required
-        if not image_url:
+        if not image_url_param:
             msg = "image_url parameter is required."
             raise ValueError(msg)
-        image_url = self._public_image_url_parameter.get_public_url_for_parameter()
+
+        # Use downscaled image if available, otherwise use original
+        if downscaled_image is not None:
+            # Upload downscaled image to get public URL
+            image_url = self._get_public_url_for_artifact(downscaled_image)
+        else:
+            image_url = self._public_image_url_parameter.get_public_url_for_parameter()
         if not audio_url:
             msg = "audio_url parameter is required."
             raise ValueError(msg)
@@ -310,7 +501,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             "fast_mode": fast_mode if fast_mode else None,
         }
         # remove None values
-        return {k: v for k, v in body.items() if v is not None}
+        params = {k: v for k, v in body.items() if v is not None}
+        return params, downscaled_filename
 
     async def _auto_detect_masks(self, image_url: str, api_key: str) -> list[str]:
         """Automatically detect masks by calling the subject detection API."""
@@ -472,7 +664,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 self._log(f"Polling attempt #{attempt}, status={status}")
 
                 if status == "done":
-                    await self._handle_completion(last_json, generation_id)
+                    await self._handle_completion(last_json)
                     return
 
                 if status not in ["not_found", "expired"]:
@@ -487,7 +679,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 self._set_status_results(was_successful=False, result_details=error_details)
                 return
 
-    async def _handle_completion(self, response_json: dict[str, Any], _generation_id: str) -> None:
+    async def _handle_completion(self, response_json: dict[str, Any]) -> None:
         """Handle successful completion of video generation."""
         # Extract provider response
         provider_response = response_json.get("provider_response", {})
@@ -525,9 +717,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
     @staticmethod
     def _extract_video_url(response_json: dict[str, Any]) -> str | None:
         """Extract video URL from API response."""
-        if not isinstance(response_json, dict):
-            return None
-
         # Try direct video_url field
         video_url = _json.loads(response_json.get("data", {}).get("resp_data", "{}")).get("video_url")
         if isinstance(video_url, str) and video_url.startswith("http"):
