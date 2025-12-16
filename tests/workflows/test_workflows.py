@@ -36,12 +36,15 @@ def get_workflows() -> list[str]:
     libraries_dir = Path(get_libraries_dir())
     workflow_dirs = [
         libraries_dir / "griptape_nodes_library" / "workflows" / "templates",
+        libraries_dir / "griptape_nodes_library" / "tests" / "workflows",
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/1313
         #       libraries_dir / "griptape_nodes_advanced_media_library" / "workflows" / "templates",
     ]
 
     workflows = []
     for d in workflow_dirs:
+        if not d.exists():
+            continue
         for f in d.iterdir():
             if f.is_file() and f.suffix == ".py" and not f.name.startswith("__"):
                 workflows.extend([str(f)])
@@ -108,4 +111,5 @@ async def clear_state_before_each_test(griptape_nodes: GriptapeNodes) -> AsyncGe
 @pytest.mark.asyncio
 async def test_workflow_runs(workflow_path: str, workflow_executor: LocalWorkflowExecutor) -> None:
     """Simple test to check if the workflow runs without errors."""
-    await workflow_executor.arun(workflow_name="main", flow_input={}, workflow_path=workflow_path)
+    # workflow_name is not needed when workflow_path is provided - the executor loads the workflow from the file
+    await workflow_executor.arun(flow_input={}, workflow_path=workflow_path)
