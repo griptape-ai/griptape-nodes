@@ -1,8 +1,5 @@
 """File utility functions for generating filenames and managing file operations."""
 
-from pathlib import Path
-from typing import Any
-
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # Supported text file extensions (based on LoadText node)
@@ -74,29 +71,3 @@ def sanitize_filename_component(name: str) -> str:
         Sanitized name safe for use in filenames
     """
     return "".join(c for c in name if c.isalnum() or c in ("-", "_")).rstrip()
-
-
-def clean_path_string(path: str | Path | Any) -> str | Any:
-    r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
-
-    This utility function delegates to OSManager.clean_path_string() to ensure
-    consistent path cleaning across the codebase. The core implementation lives
-    in OSManager so the core engine doesn't depend on library code.
-
-    Args:
-        path: Path string or Path object that may contain newlines/carriage returns, or any other type
-
-    Returns:
-        Cleaned path string with newlines/carriage returns removed, or original value if not a string/Path
-
-    Examples:
-        >>> clean_path_string("C:\\Users\\file\\n\\n.txt")
-        "C:\\Users\\file.txt"
-        >>> clean_path_string("/path/to/file\\r\\n")
-        "/path/to/file"
-        >>> clean_path_string(Path("/path/to/file"))
-        "/path/to/file"
-        >>> clean_path_string(None)
-        None
-    """
-    return GriptapeNodes.OSManager().clean_path_string(path)

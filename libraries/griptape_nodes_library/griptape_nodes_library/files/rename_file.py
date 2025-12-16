@@ -15,7 +15,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.files.file_operation_base import FileOperationBaseNode
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 
 class RenameFile(FileOperationBaseNode):
@@ -138,8 +137,8 @@ class RenameFile(FileOperationBaseNode):
             Full resolved new path
         """
         # Clean paths to remove newlines/carriage returns that cause Windows errors
-        old_path = clean_path_string(old_path)
-        new_path = clean_path_string(new_path)
+        old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
+        new_path = GriptapeNodes.OSManager().sanitize_path_string(new_path)
 
         new_path_obj = Path(new_path)
         old_path_obj = Path(old_path)
@@ -175,8 +174,8 @@ class RenameFile(FileOperationBaseNode):
         overwrite = self.get_parameter_value("overwrite") or False
 
         # Clean paths to remove newlines/carriage returns that cause Windows errors
-        old_path = clean_path_string(old_path)
-        new_path_input = clean_path_string(new_path_input)
+        old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
+        new_path_input = GriptapeNodes.OSManager().sanitize_path_string(new_path_input)
 
         # Resolve new path
         new_path = self._resolve_new_path(old_path, new_path_input)

@@ -18,7 +18,6 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -111,7 +110,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         """
         cleaned_paths = []
         for path in paths:
-            cleaned_path = clean_path_string(path)
+            cleaned_path = GriptapeNodes.OSManager().sanitize_path_string(path)
             cleaned_paths.append(cleaned_path)
         return cleaned_paths
 
@@ -247,8 +246,8 @@ class FileOperationBaseNode(SuccessFailureNode):
             Full destination path
         """
         # Clean paths to remove newlines/carriage returns that cause Windows errors
-        destination_dir = clean_path_string(destination_dir)
-        source_path = clean_path_string(source_path)
+        destination_dir = GriptapeNodes.OSManager().sanitize_path_string(destination_dir)
+        source_path = GriptapeNodes.OSManager().sanitize_path_string(source_path)
 
         destination_path_obj = Path(destination_dir)
 

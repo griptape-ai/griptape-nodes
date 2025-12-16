@@ -26,7 +26,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 # Default warning message for destructive operation
 DEFAULT_DELETION_WARNING = (
@@ -166,7 +165,9 @@ class DeleteFile(SuccessFailureNode):
         """
         param_values = self.get_parameter_list_value(self.file_paths.name)
         # Clean paths to remove newlines/carriage returns that cause Windows errors
-        cleaned_paths = [clean_path_string(str(p)) if p is not None else p for p in param_values]
+        cleaned_paths = [
+            GriptapeNodes.OSManager().sanitize_path_string(str(p)) if p is not None else p for p in param_values
+        ]
         # Remove duplicates
         return set(cleaned_paths)
 

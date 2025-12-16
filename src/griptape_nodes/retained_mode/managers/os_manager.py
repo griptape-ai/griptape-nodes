@@ -467,8 +467,14 @@ class OSManager:
             return path_str[1:-1]
         return path_str
 
-    def sanitize_path_string(self, path_str: str) -> str:
-        r"""Strip surrounding quotes and shell escape characters from paths.
+    def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
+        r"""Clean path strings by removing newlines, carriage returns, shell escapes, and quotes.
+
+        This method handles multiple path cleaning concerns:
+        1. Removes newlines/carriage returns that cause WinError 123 on Windows
+           (from merge_texts nodes accidentally adding newlines between path components)
+        2. Removes shell escape characters and quotes (from macOS Finder 'Copy as Pathname')
+        3. Strips leading/trailing whitespace
 
         Handles macOS Finder's 'Copy as Pathname' format which escapes
         spaces, apostrophes, and other special characters with backslashes.
@@ -476,7 +482,7 @@ class OSManager:
         breaking Windows paths like C:\Users\file.txt.
 
         Examples:
-            macOS Finder paths (the reason this exists!):
+            macOS Finder paths:
                 "/Downloads/Dragon\'s\ Curse/screenshot.jpg"
                 -> "/Downloads/Dragon's Curse/screenshot.jpg"
 
@@ -487,22 +493,33 @@ class OSManager:
                 '"/path/with spaces/file.txt"'
                 -> "/path/with spaces/file.txt"
 
-            Windows paths (preserved correctly):
-                "C:\Users\Desktop\file.txt"
-                -> "C:\Users\Desktop\file.txt"
+            Windows paths with newlines:
+                "C:\\Users\\file\\n\\n.txt"
+                -> "C:\\Users\\file.txt"
 
             Windows extended-length paths:
                 r"\\?\C:\Very\ Long\ Path\file.txt"
                 -> r"\\?\C:\Very Long Path\file.txt"
 
+            Path objects:
+                Path("/path/to/file")
+                -> "/path/to/file"
+
         Args:
-            path_str: The path string to sanitize
+            path: Path string, Path object, or any other type to sanitize
 
         Returns:
-            Sanitized path string
+            Sanitized path string, or original value if not a string/Path
         """
+        # Convert Path objects to strings
+        if isinstance(path, Path):
+            path = str(path)
+
+        if not isinstance(path, str):
+            return path
+
         # First, strip surrounding quotes
-        path_str = OSManager.strip_surrounding_quotes(path_str)
+        path_str = OSManager.strip_surrounding_quotes(path)
 
         # Handle Windows extended-length paths (\\?\...) specially
         # These are used for paths longer than 260 characters on Windows
@@ -517,49 +534,17 @@ class OSManager:
         # Does NOT match: \U \t \f etc in Windows paths like C:\Users
         path_str = re.sub(r"\\([ '\"(){}[\]&|;<>$`!*?/])", r"\1", path_str)
 
+        # Remove newlines and carriage returns from anywhere in the path
+        path_str = path_str.replace("\n", "").replace("\r", "")
+
+        # Strip leading/trailing whitespace
+        path_str = path_str.strip()
+
         # Restore extended-length prefix if it was present
         if extended_length_prefix:
             path_str = extended_length_prefix + path_str
 
         return path_str
-
-    def clean_path_string(self, path: str | Path | Any) -> str | Any:
-        r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
-
-        This utility method handles cases where merge_texts nodes accidentally add newlines
-        between path components. Paths with embedded newlines cause WinError 123 on Windows.
-
-        Args:
-            path: Path string or Path object that may contain newlines/carriage returns, or any other type
-
-        Returns:
-            Cleaned path string with newlines/carriage returns removed, or original value if not a string/Path
-
-        Examples:
-            >>> os_manager = GriptapeNodes.OSManager()
-            >>> os_manager.clean_path_string("C:\\Users\\file\\n\\n.txt")
-            "C:\\Users\\file.txt"
-            >>> os_manager.clean_path_string("/path/to/file\\r\\n")
-            "/path/to/file"
-            >>> os_manager.clean_path_string(Path("/path/to/file"))
-            "/path/to/file"
-            >>> os_manager.clean_path_string(None)
-            None
-        """
-        # Convert Path objects to strings
-        if isinstance(path, Path):
-            path = str(path)
-
-        if not isinstance(path, str):
-            return path
-
-        # Remove newlines and carriage returns from anywhere in the path
-        cleaned = path.replace("\n", "").replace("\r", "")
-        # Strip leading/trailing whitespace
-        cleaned = cleaned.strip()
-
-        # Return cleaned path (may be empty string if path was only whitespace/newlines)
-        return cleaned
 
     def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
@@ -582,9 +567,9 @@ class OSManager:
         """
         path_str = str(path.resolve())
 
-        # Clean path to remove newlines/carriage returns that cause Windows errors
+        # Clean path to remove newlines/carriage returns, shell escapes, and quotes
         # This handles cases where merge_texts nodes accidentally add newlines between path components
-        path_str = self.clean_path_string(path_str)
+        path_str = self.sanitize_path_string(path_str)
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
         if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):

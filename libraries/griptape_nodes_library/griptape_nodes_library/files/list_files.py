@@ -15,7 +15,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 logger = logging.getLogger("griptape_nodes")
 LIST_OPTIONS = [
@@ -147,7 +146,7 @@ class ListFiles(SuccessFailureNode):
         directory_path = self.get_parameter_value("directory_path")
         # Clean directory path to remove newlines/carriage returns that cause Windows errors
         if directory_path:
-            directory_path = clean_path_string(directory_path)
+            directory_path = GriptapeNodes.OSManager().sanitize_path_string(directory_path)
         show_hidden = self.get_parameter_value("show_hidden")
         list_options = self.get_parameter_value("list_options")
         use_absolute_paths = self.get_parameter_value("use_absolute_paths")

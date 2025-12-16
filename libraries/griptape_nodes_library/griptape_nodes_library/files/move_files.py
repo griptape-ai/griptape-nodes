@@ -18,7 +18,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.files.copy_files import CopyFiles
 from griptape_nodes_library.files.file_operation_base import BaseFileOperationInfo
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 
 class MoveStatus(Enum):
@@ -181,7 +180,7 @@ class MoveFiles(CopyFiles):
         overwrite = self.get_parameter_value("overwrite") or False
 
         # Clean destination path to remove newlines/carriage returns that cause Windows errors
-        destination_dir = clean_path_string(destination_dir)
+        destination_dir = GriptapeNodes.OSManager().sanitize_path_string(destination_dir)
 
         # Handle empty paths as success with info message (consistent with delete_file)
         if not source_paths_raw:

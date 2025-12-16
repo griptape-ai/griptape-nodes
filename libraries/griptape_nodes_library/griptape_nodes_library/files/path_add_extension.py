@@ -5,8 +5,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes_library.utils.file_utils import clean_path_string
 
 
 class PathAddExtension(DataNode):
@@ -76,10 +76,10 @@ class PathAddExtension(DataNode):
 
         if path_str:
             # Clean path to remove newlines/carriage returns that cause Windows errors
-            path_str = clean_path_string(str(path_str))
+            path_str = GriptapeNodes.OSManager().sanitize_path_string(str(path_str))
             if extension:
                 # Clean extension to remove newlines/carriage returns
-                extension_str = clean_path_string(str(extension))
+                extension_str = GriptapeNodes.OSManager().sanitize_path_string(str(extension))
             else:
                 extension_str = ""
 
