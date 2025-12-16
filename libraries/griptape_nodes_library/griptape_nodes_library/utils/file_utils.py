@@ -76,7 +76,7 @@ def sanitize_filename_component(name: str) -> str:
 
 
 def clean_path_string(path: str | Any) -> str | Any:
-    """Remove newlines and carriage returns from path strings to prevent Windows errors.
+    r"""Remove newlines and carriage returns from path strings to prevent Windows errors.
 
     This utility function handles cases where merge_texts nodes accidentally add newlines
     between path components. Paths with embedded newlines cause WinError 123 on Windows.
