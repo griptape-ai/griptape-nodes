@@ -523,7 +523,7 @@ class OSManager:
 
         return path_str
 
-    def normalize_path_for_platform(self, path: Path, resolved_path_str: str | None = None) -> str:
+    def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
 
         Windows has a 260 character path limit (MAX_PATH). Paths longer than this
@@ -535,15 +535,11 @@ class OSManager:
 
         Args:
             path: Path object to convert to string
-            resolved_path_str: Optional pre-resolved path string to avoid redundant resolve() calls
 
         Returns:
             String representation of path, with Windows long path prefix if needed
         """
-        if resolved_path_str is not None:
-            path_str = resolved_path_str
-        else:
-            path_str = str(path.resolve())
+        path_str = str(path.resolve())
 
         # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
         if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
