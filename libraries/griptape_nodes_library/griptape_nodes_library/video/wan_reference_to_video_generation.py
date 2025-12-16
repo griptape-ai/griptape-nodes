@@ -613,9 +613,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
 
         if video_bytes:
             try:
-                filename = (
-                    f"wan_r2v_{generation_id}.mp4" if generation_id else f"wan_r2v_{int(time.time())}.mp4"
-                )
+                filename = f"wan_r2v_{generation_id}.mp4" if generation_id else f"wan_r2v_{int(time.time())}.mp4"
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
