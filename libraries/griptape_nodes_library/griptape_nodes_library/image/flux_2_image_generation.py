@@ -46,9 +46,16 @@ OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
 # Model options
 MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex", "flux-2-max"]
+DEFAULT_MODEL = MODEL_OPTIONS[0]
 
 # Safety tolerance options
 SAFETY_TOLERANCE_OPTIONS = ["least restrictive", "moderate", "most restrictive"]
+
+MAX_STEPS_FLEX = 50
+MIN_STEPS_FLEX = 1
+MAX_GUIDANCE_FLEX = 10.0
+MIN_GUIDANCE_FLEX = 1.5
+DEFAULT_GUIDANCE_FLEX = 4.5
 
 # Response status constants
 STATUS_FAILED = "Failed"
@@ -100,7 +107,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterString(
                 name="model",
-                default_value="flux-2-pro",
+                default_value=DEFAULT_MODEL,
                 tooltip="Select the Flux model to use",
                 allow_output=False,
                 traits={Options(choices=MODEL_OPTIONS)},
@@ -207,12 +214,12 @@ class Flux2ImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterInt(
                 name="steps",
-                default_value=50,
+                default_value=MAX_STEPS_FLEX,
                 tooltip="Number of inference steps",
                 allow_output=False,
                 slider=True,
                 min_val=1,
-                max_val=100,
+                max_val=MAX_STEPS_FLEX,
                 hide=True,
             )
         )
@@ -221,12 +228,12 @@ class Flux2ImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterFloat(
                 name="guidance",
-                default_value=4.5,
+                default_value=DEFAULT_GUIDANCE_FLEX,
                 tooltip="Guidance scale",
                 allow_output=False,
                 slider=True,
-                min_val=1.5,
-                max_val=10,
+                min_val=MIN_GUIDANCE_FLEX,
+                max_val=MAX_GUIDANCE_FLEX,
                 hide=True,
             )
         )
@@ -342,7 +349,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
-            "model": self.get_parameter_value("model") or "flux-2-pro",
+            "model": self.get_parameter_value("model") or DEFAULT_MODEL,
             "prompt": self.get_parameter_value("prompt") or "",
             "input_images": self.get_parameter_list_value("input_images") or [],
             "width": self.get_parameter_value("width") or DEFAULT_IMAGE_SIZE,
@@ -351,8 +358,8 @@ class Flux2ImageGeneration(SuccessFailureNode):
             "seed": self._seed_parameter.get_seed(),
             "output_format": self.get_parameter_value("output_format") or "jpeg",
             "safety_tolerance": self._parse_safety_tolerance(self.get_parameter_value("safety_tolerance")),
-            "steps": self.get_parameter_value("steps") or 50,
-            "guidance": self.get_parameter_value("guidance") or 4.5,
+            "steps": self.get_parameter_value("steps") or MAX_STEPS_FLEX,
+            "guidance": self.get_parameter_value("guidance") or DEFAULT_GUIDANCE_FLEX,
         }
 
     def _parse_safety_tolerance(self, value: str | None) -> int:
