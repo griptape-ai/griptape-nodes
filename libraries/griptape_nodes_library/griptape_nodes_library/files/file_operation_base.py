@@ -115,6 +115,27 @@ class FileOperationBaseNode(SuccessFailureNode):
             cleaned_paths.append(cleaned_path)
         return cleaned_paths
 
+    def _extract_and_clean_source_paths(self, source_paths_raw: list[Any]) -> list[str]:
+        """Extract values from artifacts, clean source paths, and remove duplicates.
+
+        This is a common pattern used by copy_files and move_files nodes:
+        1. Extract string values from artifacts
+        2. Clean paths to remove newlines/carriage returns
+        3. Remove duplicate paths
+
+        Args:
+            source_paths_raw: Raw list of path values (may include artifacts)
+
+        Returns:
+            List of cleaned, deduplicated path strings with artifacts extracted and newlines removed
+        """
+        # Extract values from artifacts
+        source_paths = [self._extract_value_from_artifact(p) for p in source_paths_raw if p is not None]
+        # Clean paths to remove newlines/carriage returns
+        cleaned_paths = self._clean_source_paths(source_paths)
+        # Remove duplicates
+        return list(set(cleaned_paths))
+
     def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
 

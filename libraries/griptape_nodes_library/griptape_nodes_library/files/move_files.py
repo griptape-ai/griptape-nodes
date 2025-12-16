@@ -190,15 +190,8 @@ class MoveFiles(CopyFiles):
             self._set_status_results(was_successful=True, result_details=msg)
             return
 
-        # Normalize to list of strings (get_parameter_list_value flattens, but we need to ensure strings)
-        # Also extract values from artifacts
-        source_paths = [self._extract_value_from_artifact(p) for p in source_paths_raw if p is not None]
-
-        # Clean source paths to remove newlines/carriage returns that cause Windows errors
-        source_paths = self._clean_source_paths(source_paths)
-
-        # Remove duplicates
-        source_paths = list(set(source_paths))
+        # Extract values from artifacts, clean source paths, and remove duplicates
+        source_paths = self._extract_and_clean_source_paths(source_paths_raw)
 
         # FAILURE CASE: Empty destination
         if not destination_dir:
