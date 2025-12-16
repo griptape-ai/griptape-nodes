@@ -163,6 +163,7 @@ def test_separate_template_values_expands_and_reports_missing_keys(monkeypatch: 
 
     node.process()
 
+    assert node.parameter_output_values["text"] == "Hello {name} #{num}"
     result_details = node.get_parameter_value("result_details")
     assert isinstance(result_details, str)
     assert "key: num not found in dictionary input" in result_details

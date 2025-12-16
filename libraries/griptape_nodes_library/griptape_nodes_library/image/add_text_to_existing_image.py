@@ -242,7 +242,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         text_template = self.get_parameter_value("text") or ""
         template_values = self.get_parameter_value("template_values")
         expansion = self._expand_text_template(text_template, template_values)
-        text = expansion.rendered_text
+        rendered_text = expansion.rendered_text
         text_color = self.get_parameter_value("text_color") or "#ffffffff"
         text_background = self.get_parameter_value("text_background") or "#000000ff"
         text_vertical_alignment = self.get_parameter_value("text_vertical_alignment") or VERTICAL_ALIGN_TOP
@@ -268,7 +268,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         try:
             signature = self._build_render_signature(
                 image_value=input_image,
-                text=text,
+                text=rendered_text,
                 template_values=template_values,
                 text_color=text_color,
                 text_background=text_background,
@@ -303,7 +303,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             return
 
         self._set_success_output_values(
-            text=text,
+            text=text_template,
             text_color=text_color,
             text_background=text_background,
             text_vertical_alignment=text_vertical_alignment,
@@ -313,7 +313,7 @@ class AddTextToExistingImage(SuccessFailureNode):
             output_artifact=output_artifact,
         )
 
-        success_details = self._get_success_message(text)
+        success_details = self._get_success_message(rendered_text)
         result_lines = [f"SUCCESS: {success_details}"]
         result_lines.extend(
             [f"key: {missing_key} not found in dictionary input" for missing_key in expansion.missing_keys]
