@@ -6,7 +6,22 @@ on:
     types: [published]
 
 jobs:
+  pre-publish-checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@v6
+      - name: Init environment
+        uses: ./.github/actions/init-environment
+      - name: Run checks
+        run: make check
+
   publish-pypi:
+    needs: pre-publish-checks
     runs-on: ubuntu-latest
     if: github.event.release.prerelease == false
     strategy:
@@ -24,6 +39,7 @@ jobs:
         run: uv publish --token ${{ secrets.PYPI_TOKEN }}
 
   push_cpu_image:
+    needs: pre-publish-checks
     name: Push CPU Docker image
     runs-on: ubuntu-latest
     permissions:
@@ -68,6 +84,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   push_gpu_image:
+    needs: pre-publish-checks
     name: Push GPU Docker image
     runs-on: ubuntu-latest
     permissions:
