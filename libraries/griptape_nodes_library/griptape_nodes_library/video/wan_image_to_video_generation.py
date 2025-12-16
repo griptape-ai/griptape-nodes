@@ -25,6 +25,7 @@ PROMPT_TRUNCATE_LENGTH = 100
 
 # Model options with their constraints
 MODEL_OPTIONS = [
+    "wan2.6-i2v",
     "wan2.5-i2v-preview",
     "wan2.2-i2v-flash",
     "wan2.2-i2v-plus",
@@ -34,35 +35,41 @@ MODEL_OPTIONS = [
 
 # Model-specific configurations
 MODEL_CONFIGS = {
+    "wan2.6-i2v": {
+        "resolutions": ["720P", "1080P"],
+        "durations": [5, 10, 15],
+        "supports_audio": True,
+        "supports_shot_type": True,
+    },
     "wan2.5-i2v-preview": {
         "resolutions": ["480P", "720P", "1080P"],
         "durations": [5, 10],
         "supports_audio": True,
-        "max_prompt_length": 2000,
+        "supports_shot_type": False,
     },
     "wan2.2-i2v-flash": {
         "resolutions": ["480P", "720P"],
         "durations": [5],
         "supports_audio": False,
-        "max_prompt_length": 800,
+        "supports_shot_type": False,
     },
     "wan2.2-i2v-plus": {
         "resolutions": ["480P", "1080P"],
         "durations": [5],
         "supports_audio": False,
-        "max_prompt_length": 800,
+        "supports_shot_type": False,
     },
     "wanx2.1-i2v-plus": {
         "resolutions": ["720P"],
         "durations": [5],
         "supports_audio": False,
-        "max_prompt_length": 800,
+        "supports_shot_type": False,
     },
     "wanx2.1-i2v-turbo": {
         "resolutions": ["480P", "720P"],
         "durations": [3, 4, 5],
         "supports_audio": False,
-        "max_prompt_length": 800,
+        "supports_shot_type": False,
     },
 }
 
@@ -79,8 +86,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
     Documentation: https://www.alibabacloud.com/help/en/model-studio/image-to-video-api-reference
 
     Inputs:
-        - model (str): WAN model to use (default: "wan2.5-i2v-preview")
-            wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio, 2000 char prompts
+        - model (str): WAN model to use (default: "wan2.6-i2v")
+            wan2.6-i2v: Supports 720P/1080P, 5-15s duration, audio, shot_type
+            wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio
             wan2.2-i2v-flash: Supports 480P/720P, 5s duration, 50% faster than 2.1
             wan2.2-i2v-plus: Supports 480P/1080P, 5s duration, improved stability
             wanx2.1-i2v-plus: Supports 720P, 5s duration
@@ -94,7 +102,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         - negative_prompt (str): Description of content to avoid (max 500 characters)
         - resolution (str): Output video resolution (model-dependent)
         - duration (int): Video duration in seconds (model-dependent)
-        - audio (bool): Auto-generate audio for video (only for wan2.5-i2v-preview, default: True)
+        - audio (bool): Auto-generate audio for video (wan2.6-i2v, wan2.5-i2v-preview)
+        - shot_type (str): Shot type for video (single/multi, wan2.6-i2v)
         - prompt_extend (bool): Enable intelligent prompt rewriting (default: False)
         - watermark (bool): Add "AI-generated" watermark (default: False)
         - randomize_seed (bool): If true, randomize the seed on each run
@@ -128,7 +137,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value="wan2.5-i2v-preview",
+                default_value="wan2.6-i2v",
                 tooltip="Select the WAN image-to-video model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_OPTIONS)},
@@ -190,7 +199,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 default_value="1080P",
                 tooltip="Output video resolution (available options depend on selected model)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=MODEL_CONFIGS["wan2.5-i2v-preview"]["resolutions"])},
+                traits={Options(choices=MODEL_CONFIGS["wan2.6-i2v"]["resolutions"])},
             )
         )
 
@@ -203,20 +212,34 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 default_value=5,
                 tooltip="Video duration in seconds (model-dependent)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[3, 4, 5, 10])},
+                traits={Options(choices=MODEL_CONFIGS["wan2.6-i2v"]["durations"])},
             )
         )
 
-        # Audio auto-generation parameter (only for wan2.5-i2v-preview)
+        # Audio auto-generation parameter (for models that support it)
         self.add_parameter(
             Parameter(
                 name="audio",
                 input_types=["bool"],
                 type="bool",
                 default_value=True,
-                tooltip="Auto-generate audio for video (only for wan2.5-i2v-preview)",
+                tooltip="Auto-generate audio for video (wan2.6-i2v, wan2.5-i2v-preview)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"hide_property": self._should_hide_audio()},
+            )
+        )
+
+        # Shot type parameter (for models that support it)
+        self.add_parameter(
+            Parameter(
+                name="shot_type",
+                input_types=["str"],
+                type="str",
+                default_value="single",
+                tooltip="Shot type for video: single (continuous shot) or multi (multiple switched shots). Only effective when prompt_extend is true.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["single", "multi"])},
+                ui_options={"hide_property": self._should_hide_shot_type()},
             )
         )
 
@@ -294,7 +317,20 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         model = self.get_parameter_value("model")
         if not model:
             return False
-        return model != "wan2.5-i2v-preview"
+        model_config = MODEL_CONFIGS.get(model)
+        if not model_config:
+            return False
+        return not model_config.get("supports_audio", False)
+
+    def _should_hide_shot_type(self) -> bool:
+        """Determine if shot_type parameter should be hidden based on model selection."""
+        model = self.get_parameter_value("model")
+        if not model:
+            return False
+        model_config = MODEL_CONFIGS.get(model)
+        if not model_config:
+            return False
+        return not model_config.get("supports_shot_type", False)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes."""
@@ -309,6 +345,12 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 self.hide_parameter_by_name("audio")
             else:
                 self.show_parameter_by_name("audio")
+
+            # Update shot_type parameter visibility
+            if self._should_hide_shot_type():
+                self.hide_parameter_by_name("shot_type")
+            else:
+                self.show_parameter_by_name("shot_type")
 
             # Update resolution choices
             current_resolution = self.get_parameter_value("resolution")
@@ -390,7 +432,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Validate model-specific constraints
-        model_config = MODEL_CONFIGS.get(model, MODEL_CONFIGS["wan2.5-i2v-preview"])
+        model_config = MODEL_CONFIGS.get(model, MODEL_CONFIGS["wan2.6-i2v"])
 
         # Validate resolution
         if resolution not in model_config["resolutions"]:
@@ -403,8 +445,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Validate audio parameter
-        if self.get_parameter_value("audio") and not model_config["supports_audio"]:
-            msg = f"{model} does not support audio. Only wan2.5-i2v-preview supports audio parameter."
+        audio = self.get_parameter_value("audio")
+        if audio and not model_config.get("supports_audio", False):
+            msg = f"{model} does not support audio."
             raise ValueError(msg)
 
         return {
@@ -414,7 +457,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "negative_prompt": self.get_parameter_value("negative_prompt") or "",
             "resolution": resolution,
             "duration": duration,
-            "audio": self.get_parameter_value("audio"),
+            "audio": audio,
+            "shot_type": self.get_parameter_value("shot_type"),
             "seed": self._seed_parameter.get_seed(),
             "prompt_extend": self.get_parameter_value("prompt_extend"),
             "watermark": self.get_parameter_value("watermark"),
@@ -484,9 +528,14 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if params["negative_prompt"]:
             payload["negative_prompt"] = params["negative_prompt"]
 
-        # Add audio parameter (only for wan2.5-i2v-preview)
-        if params["model"] == "wan2.5-i2v-preview":
+        # Add audio parameter (for models that support it)
+        model_config = MODEL_CONFIGS.get(params["model"], {})
+        if model_config.get("supports_audio", False):
             payload["audio"] = params["audio"]
+
+        # Add shot_type parameter (for models that support it, only effective when prompt_extend=true)
+        if model_config.get("supports_shot_type", False) and params.get("shot_type"):
+            payload["shot_type"] = params["shot_type"]
 
         return payload
 
