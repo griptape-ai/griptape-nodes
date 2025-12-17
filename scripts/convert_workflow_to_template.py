@@ -99,7 +99,8 @@ def parse_workflow_metadata(metadata_content: str) -> dict:
     # Convert tomlkit items to plain dict
     # tomlkit items can be converted directly in most cases
     metadata_dict = {}
-    for key, value in griptape_tool_section.items():
+    # Type check: griptape_tool_section is a Table which has items() method
+    for key, value in griptape_tool_section.items():  # type: ignore[attr-defined]
         # Convert tomlkit types to Python types
         if hasattr(value, "unwrap"):
             # Use unwrap() method if available (for tomlkit items)
@@ -369,8 +370,12 @@ def _replace_workflow_name_in_code(workflow_content: str, original_name: str, te
     return updated_content
 
 
-def main() -> None:
-    """Main function to convert workflow to template."""
+def _parse_and_prompt_args() -> argparse.Namespace:
+    """Parse command line arguments and prompt for missing required values.
+
+    Returns:
+        Parsed arguments with all required values filled in
+    """
     parser = argparse.ArgumentParser(description="Convert an existing workflow file into a library template")
     parser.add_argument(
         "--workflow",
@@ -418,12 +423,20 @@ def main() -> None:
             msg = "Template description is required"
             raise ValueError(msg)
 
-    # Convert to Path objects
-    workflow_path = Path(args.workflow)
-    image_path = Path(args.image)
-    library_path = Path(args.library)
+    return args
 
-    # Validate input files exist
+
+def _validate_paths(workflow_path: Path, image_path: Path, library_path: Path) -> None:
+    """Validate that all required paths exist.
+
+    Args:
+        workflow_path: Path to the workflow file
+        image_path: Path to the image file
+        library_path: Path to the library directory
+
+    Raises:
+        FileNotFoundError: If any path does not exist
+    """
     if not workflow_path.exists():
         msg = f"Workflow file not found: {workflow_path}"
         raise FileNotFoundError(msg)
@@ -436,15 +449,30 @@ def main() -> None:
         msg = f"Library directory not found: {library_path}"
         raise FileNotFoundError(msg)
 
+
+def _convert_workflow(
+    workflow_path: Path,
+    image_path: Path,
+    library_path: Path,
+    template_name: str,
+    template_description: str,
+) -> None:
+    """Convert workflow to template.
+
+    Args:
+        workflow_path: Path to the workflow file
+        image_path: Path to the image file
+        library_path: Path to the library directory
+        template_name: Name for the template
+        template_description: Description for the template
+    """
     # Extract and parse metadata
     console.print(f"Extracting metadata from {workflow_path}...")
     metadata_block, workflow_content = extract_metadata_block(workflow_path)
     metadata = parse_workflow_metadata(metadata_block)
 
-    # Use provided template name (already prompted if not provided)
-    template_name = args.name
     console.print(f"Template name: {template_name}")
-    console.print(f"Template description: {args.description}")
+    console.print(f"Template description: {template_description}")
 
     # Get original workflow name for code replacement
     original_workflow_name = metadata.get("name", template_name)
@@ -478,7 +506,7 @@ def main() -> None:
     console.print(f"GitHub URL: {github_url}")
 
     # Update metadata with provided template name and description
-    updated_metadata = update_workflow_metadata(metadata, github_url, template_name, args.description)
+    updated_metadata = update_workflow_metadata(metadata, github_url, template_name, template_description)
 
     # Replace workflow_name in code with provided template name
     updated_workflow_content = _replace_workflow_name_in_code(workflow_content, original_workflow_name, template_name)
@@ -498,6 +526,22 @@ def main() -> None:
     console.print(f"  Workflow: {workflow_output_path}")
     console.print(f"  Thumbnail: {thumbnail_path}")
     console.print(f"  Library JSON: {library_path / 'griptape_nodes_library.json'}")
+
+
+def main() -> None:
+    """Main function to convert workflow to template."""
+    args = _parse_and_prompt_args()
+
+    # Convert to Path objects
+    workflow_path = Path(args.workflow)
+    image_path = Path(args.image)
+    library_path = Path(args.library)
+
+    # Validate input files exist
+    _validate_paths(workflow_path, image_path, library_path)
+
+    # Perform conversion
+    _convert_workflow(workflow_path, image_path, library_path, args.name, args.description)
 
 
 if __name__ == "__main__":
