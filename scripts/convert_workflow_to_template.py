@@ -137,7 +137,7 @@ def sanitize_workflow_name(name: str) -> str:
 
 
 def process_image(image_path: Path, output_path: Path) -> None:
-    """Convert and resize image to webp format.
+    """Convert and resize image to webp format using cover fit.
 
     Args:
         image_path: Path to input image file
@@ -158,12 +158,33 @@ def process_image(image_path: Path, output_path: Path) -> None:
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGB")
 
-        # Resize to 512x512
-        img_resized = img.resize((512, 512), Image.Resampling.LANCZOS)
+        # Resize to cover 512x512 while maintaining aspect ratio
+        # This is similar to CSS object-fit: cover
+        target_size = (512, 512)
+        img_width, img_height = img.size
+        target_width, target_height = target_size
+
+        # Calculate scaling factor to cover the target size
+        scale = max(target_width / img_width, target_height / img_height)
+
+        # Calculate new dimensions
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
+
+        # Resize image
+        img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Crop from center to exact target size
+        left = (new_width - target_width) // 2
+        top = (new_height - target_height) // 2
+        right = left + target_width
+        bottom = top + target_height
+
+        img_cropped = img_resized.crop((left, top, right, bottom))
 
         # Save as webp with quality=85
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        img_resized.save(output_path, format="WEBP", quality=85)
+        img_cropped.save(output_path, format="WEBP", quality=85)
 
     except Exception as err:
         msg = f"Failed to process image: {err}"
