@@ -99,19 +99,6 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         # INPUTS / PROPERTIES
         self.add_parameter(
             ParameterString(
-                name="prompt",
-                tooltip="Text prompt for the video",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the video...",
-                    "display_name": "prompt",
-                },
-            )
-        )
-
-        self.add_parameter(
-            ParameterString(
                 name="model_id",
                 default_value="Hailuo 2.3 (TTV & ITV)",
                 tooltip="Model to use for video generation",
@@ -128,6 +115,19 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                             "Hailuo 2.3 Fast (ITV)",
                         ]
                     )
+                },
+            )
+        )
+
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                tooltip="Text prompt for the video",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the video...",
+                    "display_name": "prompt",
                 },
             )
         )
@@ -248,8 +248,27 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+        # Set initial parameter visibility based on default model
+        default_model = "Hailuo 2.3 (TTV & ITV)"
+        default_provider_model_id = self._get_provider_model_id(default_model)
+        default_capabilities = self.MODEL_CAPABILITIES.get(default_provider_model_id, {})
+
+        # Show/hide last_frame_image based on default model
+        if default_capabilities.get("supports_last_frame", False):
+            self.show_parameter_by_name("last_frame_image")
+        else:
+            self.hide_parameter_by_name("last_frame_image")
+
+        # Show/hide fast_pretreatment based on default model
+        if default_capabilities.get("supports_fast_pretreatment", False):
+            self.show_parameter_by_name("fast_pretreatment")
+        else:
+            self.hide_parameter_by_name("fast_pretreatment")
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
+        super().after_value_set(parameter, value)
+
         if parameter.name == "model_id":
             # Convert friendly name to provider model ID
             provider_model_id = self._get_provider_model_id(value)
@@ -269,8 +288,6 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             else:
                 self.hide_parameter_by_name("fast_pretreatment")
 
-        return super().after_value_set(parameter, value)
-
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
@@ -281,6 +298,10 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     async def _process(self) -> None:
         # Clear execution status at the start
         self._clear_execution_status()
+        self._log(f"{self.name} starting execution")
+
+        # Log to confirm execution is starting
+        logger.info("%s _process() method called", self.name)
 
         # Validate API key
         try:
@@ -288,20 +309,36 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         except ValueError as e:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+            logger.error("%s API key validation failed: %s", self.name, e)
             return
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         # Get parameters and validate
         params = self._get_parameters()
+        logger.info(
+            "%s parameters: model=%s, prompt_length=%d, duration=%s, resolution=%s",
+            self.name,
+            params["model_id"],
+            len(params["prompt"]),
+            params["duration"],
+            params["resolution"],
+        )
+
+        # Validate prompt is provided
+        if not params["prompt"].strip():
+            self._set_safe_defaults()
+            error_msg = f"{self.name} requires a prompt to generate video."
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            logger.error("%s validation failed: empty prompt", self.name)
+            return
 
         # Validate model-specific requirements
         if params["model_id"] == "MiniMax-Hailuo-2.3-Fast" and not params["first_frame_image"]:
             self._set_safe_defaults()
             error_msg = f"{self.name} requires a first frame image for Hailuo 2.3 Fast model (image-to-video only)."
             self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
+            logger.error("%s validation failed: Hailuo 2.3 Fast requires first frame image", self.name)
             return
 
         # Validate duration/resolution combination
@@ -315,8 +352,10 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 f"Valid resolutions for {params['duration']}s: {', '.join(valid_resolutions)}"
             )
             self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
+            logger.error("%s validation failed: invalid duration/resolution combination", self.name)
             return
+
+        logger.info("%s all validations passed, proceeding with request", self.name)
 
         # Build payload
         payload = await self._build_payload_async(params)
