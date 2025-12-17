@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -73,31 +73,63 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             "file_path": str(normalized_path),
         }
 
-    def _parse_cloud_asset_path(self, path: Path) -> Path:
+    def _parse_cloud_asset_path(self, path: str | Path) -> Path:
         """Parse cloud asset URL path to extract workspace-relative portion.
 
-        Handles paths like /buckets/{bucket_id}/assets/{workspace_relative_path}
-        by extracting just the {workspace_relative_path} portion.
+        Handles multiple input formats:
+        - Full URLs: https://cloud.griptape.ai/buckets/{id}/assets/{path}
+        - Path-only: /buckets/{id}/assets/{path}
+        - Workspace-relative: {path}
+
+        When a full URL is provided, validates that the domain matches
+        self.base_url to prevent cross-environment URL mixing.
 
         Args:
-            path: Path object that may contain a cloud asset URL pattern
+            path: String or Path object that may contain a cloud asset URL pattern
 
         Returns:
             Workspace-relative path
+
+        Raises:
+            ValueError: When full URL domain doesn't match configured base_url
         """
-        path_str = str(path)
+        # Convert to string for processing
+        path_str = str(path) if isinstance(path, Path) else path
+
+        # Validate domain for full URLs (only if it contains :// scheme separator)
+        if "://" in path_str and path_str.startswith(("http://", "https://")):
+            input_parsed = urlparse(path_str)
+            input_domain = input_parsed.netloc.lower()
+
+            base_parsed = urlparse(self.base_url)
+            expected_domain = base_parsed.netloc.lower()
+
+            if input_domain != expected_domain:
+                msg = (
+                    f"Invalid cloud asset URL: domain '{input_domain}' does not match "
+                    f"configured base URL '{self.base_url}'. "
+                    f"Expected domain: '{expected_domain}'"
+                )
+                logger.error(msg)
+                raise ValueError(msg)
+
+            # Extract path component for further processing
+            path_str = input_parsed.path.lstrip("/")
 
         # Check if it's a cloud asset URL pattern
-        if "/buckets/" in path_str and "/assets/" in path_str:
+        # Handle both /buckets/ and buckets/ (after leading slash removal)
+        has_buckets = "/buckets/" in path_str or path_str.startswith("buckets/")
+        has_assets = "/assets/" in path_str
+        if has_buckets and has_assets:
             # Extract workspace-relative path from cloud URL
-            # Format: /buckets/{bucket_id}/assets/{workspace_relative_path}
+            # Format: /buckets/{bucket_id}/assets/{workspace_relative_path} or buckets/{bucket_id}/assets/{workspace_relative_path}
             parts = path_str.split("/assets/", 1)
             expected_parts_count = 2
             if len(parts) == expected_parts_count:
                 return Path(parts[1])  # Return the workspace-relative path after /assets/
 
         # For non-cloud paths, return as-is
-        return path
+        return Path(path_str)
 
     def create_signed_download_url(self, path: Path) -> str:
         # Parse cloud asset URLs before normalizing
