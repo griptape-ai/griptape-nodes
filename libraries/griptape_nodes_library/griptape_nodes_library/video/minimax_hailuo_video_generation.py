@@ -39,7 +39,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         - fast_pretreatment (bool): Reduce optimization time for Hailuo 2.3/02 models (default: False)
         - first_frame_image (ImageArtifact|ImageUrlArtifact|str): Optional first frame image (data URL)
         - last_frame_image (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for Hailuo 02 model (data URL)
-        (Always polls for result: 5s interval, 10 min timeout)
+        (Always polls for result: 5s interval, 20 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
@@ -288,20 +288,13 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             else:
                 self.hide_parameter_by_name("fast_pretreatment")
 
-    def _log(self, message: str) -> None:
-        with suppress(Exception):
-            logger.info(message)
-
     async def aprocess(self) -> None:
         await self._process()
 
     async def _process(self) -> None:
         # Clear execution status at the start
         self._clear_execution_status()
-        self._log(f"{self.name} starting execution")
-
-        # Log to confirm execution is starting
-        logger.info("%s _process() method called", self.name)
+        logger.info("%s starting video generation", self.name)
 
         # Validate API key
         try:
@@ -316,7 +309,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
         # Get parameters and validate
         params = self._get_parameters()
-        logger.info(
+        logger.debug(
             "%s parameters: model=%s, prompt_length=%d, duration=%s, resolution=%s",
             self.name,
             params["model_id"],
@@ -354,8 +347,6 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: invalid duration/resolution combination", self.name)
             return
-
-        logger.info("%s all validations passed, proceeding with request", self.name)
 
         # Build payload
         payload = await self._build_payload_async(params)
@@ -413,7 +404,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     async def _submit_request_async(self, model_id: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
         post_url = urljoin(self._proxy_base, f"models/{model_id}")
 
-        self._log(f"Submitting request to proxy model={model_id}")
+        logger.info("Submitting request to proxy model=%s", model_id)
         self._log_request(post_url, headers, payload)
 
         async with httpx.AsyncClient() as client:
@@ -426,8 +417,11 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
             if post_resp.status_code >= 400:  # noqa: PLR2004
                 self._set_safe_defaults()
-                self._log(
-                    f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+                logger.error(
+                    "Proxy POST error status=%d headers=%s body=%s",
+                    post_resp.status_code,
+                    dict(post_resp.headers),
+                    post_resp.text,
                 )
                 try:
                     error_json = post_resp.json()
@@ -447,10 +441,10 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             generation_id = str(post_json.get("generation_id") or "")
 
             if generation_id:
-                self._log(f"Submitted. generation_id={generation_id}")
+                logger.info("Submitted. generation_id=%s", generation_id)
                 self.parameter_output_values["generation_id"] = generation_id
             else:
-                self._log("No generation_id returned from POST response")
+                logger.error("No generation_id returned from POST response")
 
             return generation_id
 
@@ -518,14 +512,14 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 resp = await client.get(url, timeout=20)
                 resp.raise_for_status()
             except (httpx.HTTPError, httpx.TimeoutException) as e:
-                self._log(f"{self.name} failed to inline frame URL: {e}")
+                logger.debug("%s failed to inline frame URL: %s", self.name, e)
                 return None
             else:
                 content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0]
                 if not content_type.startswith("image/"):
                     content_type = "image/jpeg"
                 b64 = base64.b64encode(resp.content).decode("utf-8")
-                self._log("Frame URL converted to data URI for proxy")
+                logger.debug("Frame URL converted to data URI for proxy")
                 return f"data:{content_type};base64,{b64}"
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
@@ -546,14 +540,16 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
         with suppress(Exception):
-            self._log(f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(_sanitize_body(payload), indent=2)}")
+            logger.debug(
+                "POST %s\nheaders=%s\nbody=%s", url, dbg_headers, _json.dumps(_sanitize_body(payload), indent=2)
+            )
 
     async def _poll_for_result_async(self, generation_id: str, headers: dict[str, str]) -> None:
         status_url = urljoin(self._proxy_base, f"generations/{generation_id}")
         start_time = monotonic()
         attempt = 0
         poll_interval_s = 5.0
-        timeout_s = 600.0
+        timeout_s = 1200.0
 
         async with httpx.AsyncClient() as client:
             while True:
@@ -579,13 +575,13 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 self.parameter_output_values["provider_response"] = status_json
 
                 with suppress(Exception):
-                    self._log(f"GET status attempt #{attempt + 1}: {_json.dumps(status_json, indent=2)}")
+                    logger.debug("GET status attempt #%d: %s", attempt + 1, _json.dumps(status_json, indent=2))
 
                 attempt += 1
 
                 # Check status field for generation state
                 status = status_json.get("status", "").upper()
-                self._log(f"{self.name} polling attempt #{attempt} status={status}")
+                logger.info("%s polling attempt #%d status=%s", self.name, attempt, status)
 
                 # Handle terminal states
                 if status == "COMPLETED":
@@ -602,19 +598,19 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                     continue
 
                 # Unknown status - log and continue polling
-                self._log(f"{self.name} unknown status '{status}', continuing to poll")
+                logger.warning("%s unknown status '%s', continuing to poll", self.name, status)
                 await asyncio.sleep(poll_interval_s)
 
     def _handle_polling_timeout(self) -> None:
         self.parameter_output_values["video_url"] = None
-        self._log(f"{self.name} polling timed out waiting for result")
+        logger.error("%s polling timed out waiting for result", self.name)
         self._set_status_results(
             was_successful=False,
-            result_details="Video generation timed out after 600 seconds waiting for result.",
+            result_details="Video generation timed out after 1200 seconds waiting for result.",
         )
 
     def _handle_polling_error(self, exc: Exception) -> None:
-        self._log(f"{self.name} GET generation status failed: {exc}")
+        logger.error("%s GET generation status failed: %s", self.name, exc)
         error_msg = f"Failed to poll generation status: {exc}"
         self._set_status_results(was_successful=False, result_details=error_msg)
         self._handle_failure_exception(RuntimeError(error_msg))
@@ -622,14 +618,14 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
     async def _fetch_and_handle_result(
         self, client: httpx.AsyncClient, generation_id: str, headers: dict[str, str]
     ) -> None:
-        self._log(f"{self.name} generation completed, fetching result")
+        logger.info("%s generation completed, fetching result", self.name)
         result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
 
         try:
             result_resp = await client.get(result_url, headers=headers, timeout=60)
             result_resp.raise_for_status()
         except (httpx.HTTPError, httpx.TimeoutException) as exc:
-            self._log(f"{self.name} failed to fetch result: {exc}")
+            logger.error("%s failed to fetch result: %s", self.name, exc)
             error_msg = f"Generation completed but failed to fetch result: {exc}"
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(RuntimeError(error_msg))
@@ -638,7 +634,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         try:
             result_json = result_resp.json()
         except (ValueError, _json.JSONDecodeError) as exc:
-            self._log(f"{self.name} received invalid JSON in result: {exc}")
+            logger.error("%s received invalid JSON in result: %s", self.name, exc)
             error_msg = f"Generation completed but received invalid JSON: {exc}"
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(RuntimeError(error_msg))
@@ -646,7 +642,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
         self.parameter_output_values["provider_response"] = result_json
         with suppress(Exception):
-            self._log(f"GET result: {_json.dumps(result_json, indent=2)}")
+            logger.debug("GET result: %s", _json.dumps(result_json, indent=2))
         await self._handle_completion_async(result_json, generation_id)
 
     def _handle_generation_failure(self, status_json: dict[str, Any], status: str) -> None:
@@ -666,7 +662,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         else:
             message = f"Generation {status.lower()} with no details provided"
 
-        self._log(f"{self.name} generation {status.lower()}: {message}")
+        logger.error("%s generation %s: %s", self.name, status.lower(), message)
         self.parameter_output_values["video_url"] = None
         self._set_status_results(
             was_successful=False, result_details=f"{self.name} generation {status.lower()}: {message}"
@@ -693,10 +689,10 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             return
 
         try:
-            self._log(f"{self.name} downloading video from provider URL")
+            logger.info("%s downloading video from provider URL", self.name)
             video_bytes = await self._download_bytes_from_url_async(download_url)
         except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
-            self._log(f"{self.name} failed to download video: {e}")
+            logger.warning("%s failed to download video: %s", self.name, e)
             video_bytes = None
 
         if video_bytes:
@@ -705,12 +701,12 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 filename = f"minimax_hailuo_video_{generation_id}.mp4"
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"{self.name} saved video to static storage as {filename}")
+                logger.info("%s saved video to static storage as %s", self.name, filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
                 )
             except (OSError, PermissionError) as e:
-                self._log(f"{self.name} failed to save to static storage: {e}, using provider URL")
+                logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
                 self._set_status_results(
                     was_successful=True,
