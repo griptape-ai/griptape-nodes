@@ -596,7 +596,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         attempt = 0
         poll_interval_s = 5.0
         pending_timeout_s = 30.0
-        running_timeout_s = video_duration * 30.0
+        running_timeout_s = video_duration * 60.0
 
         async with httpx.AsyncClient() as client:
             while True:
@@ -631,7 +631,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                         running_start_time = time.monotonic()
                     if running_start_time and time.monotonic() - running_start_time > running_timeout_s:
                         self.parameter_output_values["video"] = self._extract_result_video_url(last_json)
-                        logger.debug("Polling timed out waiting for result")
+                        logger.info("Polling timed out waiting for result")
                         self._set_status_results(
                             was_successful=False,
                             result_details=f"Video generation timed out after {int(running_timeout_s)} seconds of processing.",
@@ -779,14 +779,12 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
 
     @staticmethod
     def _extract_result_video_url(obj: dict[str, Any] | None) -> str | None:
-        """Extract video URL from response results."""
+        """Extract video URL from response."""
         if not obj:
             return None
-        results = obj.get("results")
-        if isinstance(results, dict):
-            video_url = results.get("video_url")
-            if isinstance(video_url, str) and video_url.startswith("http"):
-                return video_url
+        video_url = obj.get("video_url")
+        if isinstance(video_url, str) and video_url.startswith("http"):
+            return video_url
         return None
 
     @staticmethod
