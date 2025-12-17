@@ -178,7 +178,7 @@ class TestGriptapeCloudStorageDriverParseCloudAssetPath:
     def test_parse_path_only_no_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
         """Path-only format (no domain) should work as before."""
         path_only = "/buckets/test-bucket/assets/file.txt"
-        result = cloud_storage_driver._parse_cloud_asset_path(Path(path_only))
+        result = cloud_storage_driver._parse_cloud_asset_path(path_only)
         assert result == Path("file.txt")
 
     def test_parse_workspace_relative_path(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
