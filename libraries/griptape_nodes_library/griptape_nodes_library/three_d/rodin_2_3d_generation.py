@@ -519,9 +519,7 @@ class Rodin23DGeneration(SuccessFailureNode):
         except ValueError:
             self._log(f"Invalid bbox_condition format: {bbox_condition}")
 
-    async def _process_images_for_upload(
-        self, params: dict[str, Any]
-    ) -> list[tuple[str, tuple[str, bytes, str]]]:
+    async def _process_images_for_upload(self, params: dict[str, Any]) -> list[tuple[str, tuple[str, bytes, str]]]:
         """Process input images into file tuples for multipart upload."""
         input_images_list = params.get("input_images", [])
         if not isinstance(input_images_list, list):
