@@ -2272,6 +2272,17 @@
       }
     },
     {
+      "class_name": "Rodin23DGeneration",
+      "file_path": "griptape_nodes_library/three_d/rodin_2_3d_generation.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Generate 3D models using Rodin Gen-2 via Griptape model proxy",
+        "display_name": "Rodin 3D Generation",
+        "group": "create",
+        "icon": "Cube"
+      }
+    },
+    {
       "class_name": "ForLoopStartNode",
       "file_path": "griptape_nodes_library/execution/for_loop_start.py",
       "metadata": {
