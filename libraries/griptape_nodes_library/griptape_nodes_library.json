@@ -2450,11 +2450,12 @@
     }
   ],
   "workflows": [
-    "workflows/templates/fill_in_the_story.py",
-    "workflows/templates/prompt_an_image.py",
-    "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",
-    "workflows/templates/photography_team.py"
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/fill_in_the_story.py",
+    "workflows/templates/flux_2_-_magazine_cover.py",
+    "workflows/templates/photography_team.py",
+    "workflows/templates/prompt_an_image.py"
   ],
   "is_default_library": true
 }
