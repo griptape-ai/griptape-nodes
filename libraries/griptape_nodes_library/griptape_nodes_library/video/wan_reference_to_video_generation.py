@@ -222,22 +222,6 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         # Hide the upload message for video 3 since the parameter is hidden
         self.hide_message_by_name("artifact_url_parameter_message_reference_video_3")
 
-        # Input Audio (optional) using PublicArtifactUrlParameter
-        self._public_audio_url_parameter = PublicArtifactUrlParameter(
-            node=self,
-            artifact_url_parameter=Parameter(
-                name="input_audio",
-                input_types=["AudioUrlArtifact"],
-                type="AudioUrlArtifact",
-                default_value="",
-                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Audio"},
-            ),
-            disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the audio file.",
-        )
-        self._public_audio_url_parameter.add_input_parameters()
-
         # Size parameter
         self.add_parameter(
             Parameter(
@@ -264,6 +248,38 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
             )
         )
 
+        # Audio parameter
+        self.add_parameter(
+            Parameter(
+                name="audio",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip="Auto-generate audio for video",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # Input Audio (optional) using PublicArtifactUrlParameter
+        # Hidden by default since audio auto-generation is enabled by default
+        self._public_audio_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="input_audio",
+                input_types=["AudioUrlArtifact"],
+                type="AudioUrlArtifact",
+                default_value="",
+                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Input Audio"},
+                hide=self._should_hide_input_audio(),
+            ),
+            disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the audio file.",
+        )
+        self._public_audio_url_parameter.add_input_parameters()
+        # Hide the upload message since audio auto-generation is enabled by default
+        self.hide_message_by_name("artifact_url_parameter_message_input_audio")
+
         # Shot type parameter
         self.add_parameter(
             Parameter(
@@ -274,18 +290,6 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                 tooltip="Shot type: 'single' for continuous shot, 'multi' for multiple changing shots",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=SHOT_TYPE_OPTIONS)},
-            )
-        )
-
-        # Audio parameter
-        self.add_parameter(
-            Parameter(
-                name="audio",
-                input_types=["bool"],
-                type="bool",
-                default_value=True,
-                tooltip="Auto-generate audio for video",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
@@ -355,6 +359,28 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         if not prompt:
             exceptions.append(ValueError("Prompt must be provided"))
         return exceptions if exceptions else None
+
+    def _should_hide_input_audio(self) -> bool:
+        """Determine if input_audio should be hidden. Hidden when audio auto-generation is enabled."""
+        audio_enabled = self.get_parameter_value("audio")
+        return audio_enabled is True
+
+    def _update_input_audio_visibility(self) -> None:
+        """Update input_audio parameter visibility based on audio setting."""
+        if self._should_hide_input_audio():
+            self.hide_parameter_by_name("input_audio")
+            self.hide_message_by_name("artifact_url_parameter_message_input_audio")
+        else:
+            self.show_parameter_by_name("input_audio")
+            self.show_message_by_name("artifact_url_parameter_message_input_audio")
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes."""
+        super().after_value_set(parameter, value)
+
+        # Update input_audio visibility when audio parameter changes
+        if parameter.name == "audio":
+            self._update_input_audio_visibility()
 
     async def aprocess(self) -> None:
         await self._process()

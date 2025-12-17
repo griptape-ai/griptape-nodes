@@ -227,6 +227,8 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             disclaimer_message="The WAN Text-to-Video service utilizes this URL to access the audio file.",
         )
         self._public_audio_url_parameter.add_input_parameters()
+        # Hide the upload message since input_audio is hidden by default
+        self.hide_message_by_name("artifact_url_parameter_message_input_audio")
 
         # Shot type parameter (for models that support it)
         self.add_parameter(
