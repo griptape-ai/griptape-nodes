@@ -676,7 +676,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         # 1) direct fields
         for key in ("url", "video_url", "output_url"):
             val = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(val, str) and val.startswith("http"):
+            if isinstance(val, str) and is_url_or_path(val) and val.startswith(("http://", "https://")):
                 return val
         # 2) nested known containers (Seedance returns content.video_url)
         for key in ("result", "data", "output", "outputs", "content", "task_result"):

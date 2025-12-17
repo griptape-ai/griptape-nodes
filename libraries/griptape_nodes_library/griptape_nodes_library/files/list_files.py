@@ -15,6 +15,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 logger = logging.getLogger("griptape_nodes")
 LIST_OPTIONS = [
@@ -129,14 +130,10 @@ class ListFiles(SuccessFailureNode):
         for entry in entries:
             if use_absolute_paths:
                 entry_path = Path(entry.path)
-                if not entry_path.is_absolute():
-                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
-                    combined_path = workspace_path / entry_path
-                    absolute_path = os_manager.resolve_path_safely(combined_path)
-                    file_paths.append(str(absolute_path))
-                else:
-                    absolute_path = os_manager.resolve_path_safely(entry_path)
-                    file_paths.append(str(absolute_path))
+                workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                resolved_path = resolve_workspace_path(entry_path, workspace_path)
+                absolute_path = os_manager.resolve_path_safely(resolved_path)
+                file_paths.append(str(absolute_path))
             else:
                 file_paths.append(entry.path)
         return file_paths
