@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Convert an existing workflow file into a library template.
 
 This script processes a workflow file and thumbnail image, converts them into
@@ -8,12 +7,17 @@ a template format, and adds them to the specified library.
 import argparse
 import json
 import re
+import sys
+import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 
 import tomlkit
 from PIL import Image
+from rich.console import Console
 from rich.prompt import Confirm, Prompt
+
+console = Console()
 
 
 def extract_metadata_block(file_path: Path) -> tuple[str, str]:
@@ -86,11 +90,11 @@ def parse_workflow_metadata(metadata_content: str) -> dict:
         msg = f"Missing '[{tool_header}]' section in metadata"
         raise ValueError(msg)
 
-    if griptape_nodes_header not in toml_doc[tool_header]:  # type: ignore
+    if griptape_nodes_header not in toml_doc[tool_header]:  # type: ignore[assignment]
         msg = f"Missing '[{tool_header}.{griptape_nodes_header}]' section in metadata"
         raise ValueError(msg)
 
-    griptape_tool_section = toml_doc[tool_header][griptape_nodes_header]  # type: ignore
+    griptape_tool_section = toml_doc[tool_header][griptape_nodes_header]  # type: ignore[index]
 
     # Convert tomlkit items to plain dict
     # tomlkit items can be converted directly in most cases
@@ -258,7 +262,7 @@ def write_workflow_file(output_path: Path, metadata: dict, workflow_content: str
         griptape_tool_table.add(key=key, value=value)
 
     toml_doc["tool"] = tomlkit.table()
-    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore
+    toml_doc["tool"]["griptape-nodes"] = griptape_tool_table  # type: ignore[assignment]
 
     # Format the metadata block with comment markers
     toml_lines = tomlkit.dumps(toml_doc).split("\n")
@@ -321,6 +325,48 @@ def update_library_json(library_path: Path, workflow_relative_path: str) -> None
     except Exception as err:
         msg = f"Failed to update library JSON: {err}"
         raise ValueError(msg) from err
+
+
+def _check_and_confirm_overwrite(file_path: Path, file_type: str) -> None:
+    """Check if file exists and prompt for overwrite confirmation.
+
+    Args:
+        file_path: Path to the file to check
+        file_type: Type description of the file (e.g., "Workflow file")
+
+    Raises:
+        ValueError: If user chooses not to overwrite
+    """
+    if file_path.exists():
+        overwrite = Confirm.ask(
+            f"{file_type} already exists: {file_path}\nDo you want to overwrite it?",
+            default=False,
+        )
+        if not overwrite:
+            msg = "Operation cancelled. Please choose a different name to avoid conflicts."
+            raise ValueError(msg)
+
+
+def _replace_workflow_name_in_code(workflow_content: str, original_name: str, template_name: str) -> str:
+    """Replace workflow_name in Python code with provided template name.
+
+    Args:
+        workflow_content: The Python code content
+        original_name: Original workflow name from metadata
+        template_name: Template name to replace with
+
+    Returns:
+        Updated workflow content with replaced names
+    """
+    updated_content = workflow_content
+    patterns = [
+        (f"workflow_name='{original_name}'", f"workflow_name='{template_name}'"),
+        (f'workflow_name="{original_name}"', f'workflow_name="{template_name}"'),
+    ]
+    for pattern, replacement in patterns:
+        updated_content = updated_content.replace(pattern, replacement)
+
+    return updated_content
 
 
 def main() -> None:
@@ -391,21 +437,21 @@ def main() -> None:
         raise FileNotFoundError(msg)
 
     # Extract and parse metadata
-    print(f"Extracting metadata from {workflow_path}...")
+    console.print(f"Extracting metadata from {workflow_path}...")
     metadata_block, workflow_content = extract_metadata_block(workflow_path)
     metadata = parse_workflow_metadata(metadata_block)
 
     # Use provided template name (already prompted if not provided)
     template_name = args.name
-    print(f"Template name: {template_name}")
-    print(f"Template description: {args.description}")
+    console.print(f"Template name: {template_name}")
+    console.print(f"Template description: {args.description}")
 
     # Get original workflow name for code replacement
     original_workflow_name = metadata.get("name", template_name)
 
     # Sanitize template name for filenames
     sanitized_name = sanitize_workflow_name(template_name)
-    print(f"Sanitized name for filenames: {sanitized_name}")
+    console.print(f"Sanitized name for filenames: {sanitized_name}")
 
     # Generate filenames
     workflow_filename = f"{sanitized_name}.py"
@@ -419,72 +465,48 @@ def main() -> None:
     workflow_output_path = templates_dir / workflow_filename
     thumbnail_path = templates_dir / thumbnail_filename
 
-    if workflow_output_path.exists():
-        overwrite = Confirm.ask(
-            f"Workflow file already exists: {workflow_output_path}\nDo you want to overwrite it?",
-            default=False,
-        )
-        if not overwrite:
-            msg = "Operation cancelled. Please choose a different name to avoid conflicts."
-            raise ValueError(msg)
-
-    if thumbnail_path.exists():
-        overwrite = Confirm.ask(
-            f"Thumbnail file already exists: {thumbnail_path}\nDo you want to overwrite it?",
-            default=False,
-        )
-        if not overwrite:
-            msg = "Operation cancelled. Please choose a different name to avoid conflicts."
-            raise ValueError(msg)
+    _check_and_confirm_overwrite(workflow_output_path, "Workflow file")
+    _check_and_confirm_overwrite(thumbnail_path, "Thumbnail file")
 
     # Process and save image
-    print(f"Processing image: {image_path} -> {thumbnail_path}...")
+    console.print(f"Processing image: {image_path} -> {thumbnail_path}...")
     process_image(image_path, thumbnail_path)
-    print(f"Image processed and saved to {thumbnail_path}")
+    console.print(f"Image processed and saved to {thumbnail_path}")
 
     # Generate GitHub URL
     github_url = generate_github_url(library_path, thumbnail_filename)
-    print(f"GitHub URL: {github_url}")
+    console.print(f"GitHub URL: {github_url}")
 
     # Update metadata with provided template name and description
     updated_metadata = update_workflow_metadata(metadata, github_url, template_name, args.description)
 
     # Replace workflow_name in code with provided template name
-    # Handle both single and double quotes
-    updated_workflow_content = workflow_content
-    patterns = [
-        (f"workflow_name='{original_workflow_name}'", f"workflow_name='{template_name}'"),
-        (f'workflow_name="{original_workflow_name}"', f'workflow_name="{template_name}"'),
-    ]
-    for pattern, replacement in patterns:
-        updated_workflow_content = updated_workflow_content.replace(pattern, replacement)
+    updated_workflow_content = _replace_workflow_name_in_code(workflow_content, original_workflow_name, template_name)
 
     # Write updated workflow file
-    print(f"Writing workflow file: {workflow_output_path}...")
+    console.print(f"Writing workflow file: {workflow_output_path}...")
     write_workflow_file(workflow_output_path, updated_metadata, updated_workflow_content)
-    print(f"Workflow file written to {workflow_output_path}")
+    console.print(f"Workflow file written to {workflow_output_path}")
 
     # Update library.json
     workflow_relative_path = f"workflows/templates/{workflow_filename}"
-    print(f"Updating library.json with workflow: {workflow_relative_path}...")
+    console.print(f"Updating library.json with workflow: {workflow_relative_path}...")
     update_library_json(library_path, workflow_relative_path)
-    print("Library.json updated successfully")
+    console.print("Library.json updated successfully")
 
-    print("\n✓ Conversion complete!")
-    print(f"  Workflow: {workflow_output_path}")
-    print(f"  Thumbnail: {thumbnail_path}")
-    print(f"  Library JSON: {library_path / 'griptape_nodes_library.json'}")
+    console.print("\n✓ Conversion complete!")
+    console.print(f"  Workflow: {workflow_output_path}")
+    console.print(f"  Thumbnail: {thumbnail_path}")
+    console.print(f"  Library JSON: {library_path / 'griptape_nodes_library.json'}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}", file=__import__("sys").stderr)
-        exit(1)
+        console.print(f"Error: {e}", style="red")
+        sys.exit(1)
     except Exception as e:
-        print(f"Unexpected error: {e}", file=__import__("sys").stderr)
-        import traceback
-
+        console.print(f"Unexpected error: {e}", style="red")
         traceback.print_exc()
-        exit(1)
+        sys.exit(1)
