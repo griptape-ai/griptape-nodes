@@ -87,6 +87,9 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         - reference_video_2 (VideoUrlArtifact): Second reference video (optional)
         - reference_video_3 (VideoUrlArtifact): Third reference video (optional)
             Video requirements: MP4/MOV, 2-30s duration, max 100MB
+        - input_audio (AudioUrlArtifact): Input audio file (optional)
+            Audio requirements: WAV/MP3, 3-30s duration, max 15MB
+            If audio exceeds video duration, it is truncated. If shorter, remaining video is silent.
         - size (str): Output video resolution (default: "1920*1080")
             720p tier: 1280*720, 720*1280, 960*960, 1088*832, 832*1088
             1080p tier: 1920*1080, 1080*1920, 1440*1440, 1632*1248, 1248*1632
@@ -191,7 +194,8 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                 default_value="",
                 tooltip="Second reference video (optional). MP4/MOV, 2-30s, max 100MB. Use 'character2' in prompt to reference.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Reference Video 2", "hide_handle": True, "hide_property": True},
+                ui_options={"display_name": "Reference Video 2"},
+                hide=True,
             ),
             disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the reference video.",
         )
@@ -209,13 +213,30 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
                 default_value="",
                 tooltip="Third reference video (optional). MP4/MOV, 2-30s, max 100MB. Use 'character3' in prompt to reference.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Reference Video 3", "hide_handle": True, "hide_property": True},
+                ui_options={"display_name": "Reference Video 3"},
+                hide=True,
             ),
             disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the reference video.",
         )
         self._public_video_url_parameter_3.add_input_parameters()
         # Hide the upload message for video 3 since the parameter is hidden
         self.hide_message_by_name("artifact_url_parameter_message_reference_video_3")
+
+        # Input Audio (optional) using PublicArtifactUrlParameter
+        self._public_audio_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="input_audio",
+                input_types=["AudioUrlArtifact"],
+                type="AudioUrlArtifact",
+                default_value="",
+                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Input Audio"},
+            ),
+            disclaimer_message="The WAN Reference-to-Video service utilizes this URL to access the audio file.",
+        )
+        self._public_audio_url_parameter.add_input_parameters()
 
         # Size parameter
         self.add_parameter(
@@ -390,8 +411,9 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         self._public_video_url_parameter_1.delete_uploaded_artifact()
         self._public_video_url_parameter_2.delete_uploaded_artifact()
         self._public_video_url_parameter_3.delete_uploaded_artifact()
+        self._public_audio_url_parameter.delete_uploaded_artifact()
 
-    def _get_parameters(self) -> dict[str, Any]:
+    def _get_parameters(self) -> dict[str, Any]:  # noqa: C901
         model = self.get_parameter_value("model")
         prompt = self.get_parameter_value("prompt")
         negative_prompt = self.get_parameter_value("negative_prompt") or ""
@@ -442,11 +464,18 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
             msg = f"Invalid shot_type {shot_type}. Available options: {', '.join(SHOT_TYPE_OPTIONS)}"
             raise ValueError(msg)
 
+        # Get audio URL if provided
+        audio_url = None
+        input_audio_value = self.get_parameter_value("input_audio")
+        if input_audio_value:
+            audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
+
         return {
             "model": model,
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "reference_video_urls": reference_video_urls,
+            "audio_url": audio_url,
             "size": size,
             "duration": duration,
             "shot_type": shot_type,
@@ -522,6 +551,10 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         # Add negative prompt if provided
         if params["negative_prompt"]:
             payload["negative_prompt"] = params["negative_prompt"]
+
+        # Add audio_url if provided
+        if params.get("audio_url"):
+            payload["audio_url"] = params["audio_url"]
 
         return payload
 

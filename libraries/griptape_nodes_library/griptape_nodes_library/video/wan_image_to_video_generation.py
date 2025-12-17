@@ -12,6 +12,9 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -103,6 +106,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         - resolution (str): Output video resolution (model-dependent)
         - duration (int): Video duration in seconds (model-dependent)
         - audio (bool): Auto-generate audio for video (wan2.6-i2v, wan2.5-i2v-preview)
+        - input_audio (AudioUrlArtifact): Input audio file (optional, wan2.6/wan2.5 only)
+            Audio requirements: WAV/MP3, 3-30s duration, max 15MB
+            If audio exceeds video duration, it is truncated. If shorter, remaining video is silent.
         - shot_type (str): Shot type for video (single/multi, wan2.6-i2v)
         - prompt_extend (bool): Enable intelligent prompt rewriting (default: False)
         - watermark (bool): Add "AI-generated" watermark (default: False)
@@ -229,6 +235,23 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             )
         )
 
+        # Input Audio (optional) using PublicArtifactUrlParameter
+        # Hidden by default since audio auto-generation is enabled by default
+        self._public_audio_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="input_audio",
+                input_types=["AudioUrlArtifact"],
+                type="AudioUrlArtifact",
+                default_value="",
+                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound. Only supported by wan2.6 and wan2.5 models.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Input Audio", "hide_property": self._should_hide_input_audio()},
+            ),
+            disclaimer_message="The WAN Image-to-Video service utilizes this URL to access the audio file.",
+        )
+        self._public_audio_url_parameter.add_input_parameters()
+
         # Shot type parameter (for models that support it)
         self.add_parameter(
             Parameter(
@@ -322,6 +345,13 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             return False
         return not model_config.get("supports_audio", False)
 
+    def _should_hide_input_audio(self) -> bool:
+        """Determine if input_audio should be hidden. Hidden when model doesn't support audio OR when audio auto-generation is enabled."""
+        if self._should_hide_audio():
+            return True
+        audio_enabled = self.get_parameter_value("audio")
+        return audio_enabled is True
+
     def _should_hide_shot_type(self) -> bool:
         """Determine if shot_type parameter should be hidden based on model selection."""
         model = self.get_parameter_value("model")
@@ -340,11 +370,14 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if parameter.name == "model" and value in MODEL_CONFIGS:
             model_config = MODEL_CONFIGS[value]
 
-            # Update audio parameter visibility
+            # Update audio parameter visibility based on model support
             if self._should_hide_audio():
                 self.hide_parameter_by_name("audio")
             else:
                 self.show_parameter_by_name("audio")
+
+            # Update input_audio visibility based on model support and audio setting
+            self._update_input_audio_visibility()
 
             # Update shot_type parameter visibility
             if self._should_hide_shot_type():
@@ -369,6 +402,19 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             else:
                 # Set to first available duration if current is not supported
                 self._update_option_choices("duration", new_durations, new_durations[0])
+
+        # Update input_audio visibility when audio parameter changes
+        if parameter.name == "audio":
+            self._update_input_audio_visibility()
+
+    def _update_input_audio_visibility(self) -> None:
+        """Update input_audio parameter visibility based on audio setting."""
+        if self._should_hide_input_audio():
+            self.hide_parameter_by_name("input_audio")
+            self.hide_message_by_name("artifact_url_parameter_message_input_audio")
+        else:
+            self.show_parameter_by_name("input_audio")
+            self.show_message_by_name("artifact_url_parameter_message_input_audio")
 
     async def aprocess(self) -> None:
         await self._process()
@@ -420,6 +466,9 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         # Handle synchronous response
         await self._handle_response(response)
 
+        # Cleanup uploaded artifacts
+        self._public_audio_url_parameter.delete_uploaded_artifact()
+
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
         input_image = self.get_parameter_value("input_image")
@@ -450,6 +499,13 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             msg = f"{model} does not support audio."
             raise ValueError(msg)
 
+        # Get audio URL if provided and model supports it
+        audio_url = None
+        if model_config.get("supports_audio", False):
+            input_audio_value = self.get_parameter_value("input_audio")
+            if input_audio_value:
+                audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
+
         return {
             "model": model,
             "input_image": input_image,
@@ -458,6 +514,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "resolution": resolution,
             "duration": duration,
             "audio": audio,
+            "audio_url": audio_url,
             "shot_type": self.get_parameter_value("shot_type"),
             "seed": self._seed_parameter.get_seed(),
             "prompt_extend": self.get_parameter_value("prompt_extend"),
@@ -528,10 +585,16 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if params["negative_prompt"]:
             payload["negative_prompt"] = params["negative_prompt"]
 
-        # Add audio parameter (for models that support it)
+        # Add model-specific parameters
         model_config = MODEL_CONFIGS.get(params["model"], {})
+
+        # Add audio parameter (for models that support it)
         if model_config.get("supports_audio", False):
             payload["audio"] = params["audio"]
+
+        # Add audio_url if provided (for models that support it)
+        if model_config.get("supports_audio", False) and params.get("audio_url"):
+            payload["audio_url"] = params["audio_url"]
 
         # Add shot_type parameter (for models that support it, only effective when prompt_extend=true)
         if model_config.get("supports_shot_type", False) and params.get("shot_type"):
