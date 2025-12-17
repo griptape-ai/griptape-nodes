@@ -401,14 +401,14 @@ def _parse_and_prompt_args() -> argparse.Namespace:
     parser.add_argument(
         "--workflow",
         type=str,
-        required=True,
-        help='Path to the workflow file to convert (use quotes if path contains spaces, e.g., "GriptapeNodes/Flux 2 - Create a Magazine Cover_3.py")',
+        default=None,
+        help='Path to the workflow file to convert (use quotes if path contains spaces, e.g., "GriptapeNodes/Flux 2 - Create a Magazine Cover_3.py"). If not provided, will prompt for input.',
     )
     parser.add_argument(
         "--image",
         type=str,
-        required=True,
-        help="Path to the thumbnail image file (use quotes if path contains spaces)",
+        default=None,
+        help="Path to the thumbnail image file (use quotes if path contains spaces). If not provided, will prompt for input.",
     )
     parser.add_argument(
         "--library",
@@ -432,6 +432,18 @@ def _parse_and_prompt_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     # Prompt for required arguments if not provided
+    if args.workflow is None:
+        args.workflow = Prompt.ask("Enter workflow file path")
+        if not args.workflow:
+            msg = "Workflow file path is required"
+            raise ValueError(msg)
+
+    if args.image is None:
+        args.image = Prompt.ask("Enter thumbnail image file path")
+        if not args.image:
+            msg = "Image file path is required"
+            raise ValueError(msg)
+
     if args.name is None:
         args.name = Prompt.ask("Enter template name")
         if not args.name:
