@@ -14,7 +14,6 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     get_library_names_with_publish_handlers,
 )
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -300,26 +299,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         return proxy_param
 
-    def add_parameter_to_group_settings(self, parameter: Parameter) -> None:
-        """Add a parameter to the Group settings panel.
-
-        Args:
-            parameter: The parameter to add to settings
-        """
-        if ParameterMode.PROPERTY not in parameter.allowed_modes:
-            msg = f"Parameter '{parameter.name}' must allow PROPERTY mode to be added to settings."
-            raise ValueError(msg)
-
-        execution_environment: dict = self.metadata.get("execution_environment", {})
-        if LOCAL_EXECUTION not in execution_environment:
-            execution_environment[LOCAL_EXECUTION] = {"parameter_names": []}
-        if PRIVATE_EXECUTION not in execution_environment:
-            execution_environment[PRIVATE_EXECUTION] = {"parameter_names": []}
-
-        for library in execution_environment:
-            parameter_names = self.metadata["execution_environment"][library].get("parameter_names", [])
-            self.metadata["execution_environment"][library]["parameter_names"] = [parameter.name, *parameter_names]
-
     def get_all_nodes(self) -> dict[str, BaseNode]:
         all_nodes = {}
         for node_name, node in self.nodes.items():
@@ -477,12 +456,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
                     child_nodes.setdefault(existing_parent_group, []).append(node)
         for parent_group, node_list in child_nodes.items():
             parent_group.remove_nodes_from_group(node_list)
-
-    def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
-        """Add nodes to the group's node dictionary."""
-        for node in nodes:
-            node.parent_group = self
-            self.nodes[node.name] = node
 
     def _cleanup_proxy_parameter(self, proxy_parameter: Parameter, metadata_key: str) -> None:
         """Clean up proxy parameter if it has no more connections.
@@ -891,13 +864,6 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
 
         GriptapeNodes.handle_request(create_first_connection)
         GriptapeNodes.handle_request(create_second_connection)
-
-    def _validate_nodes_in_group(self, nodes: list[BaseNode]) -> None:
-        """Validate that all nodes are in the group."""
-        for node in nodes:
-            if node.name not in self.nodes:
-                msg = f"Node {node.name} is not in node group {self.name}"
-                raise ValueError(msg)
 
     def delete_nodes_from_group(self, nodes: list[BaseNode]) -> None:
         """Delete nodes from the group and untrack their connections.
