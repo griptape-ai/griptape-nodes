@@ -45,7 +45,7 @@ class LocalStorageDriver(BaseStorageDriver):
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> CreateSignedUploadUrlResponse:
         # on_write_file_request seems to work most reliably with an absolute path.
-        absolute_path = path if path.is_absolute() else self.workspace_directory / path
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Always delegate to OSManager for file path resolution and policy handling.
         # Creating an empty file before the upload url gives us a chance to claim ownership
@@ -113,7 +113,7 @@ class LocalStorageDriver(BaseStorageDriver):
             RuntimeError: If file write fails.
         """
         # Resolve to absolute if relative
-        absolute_path = path if path.is_absolute() else self.workspace_directory / path
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Write file using OSManager with policy handling
         os_manager = GriptapeNodes.OSManager()

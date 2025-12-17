@@ -22,6 +22,8 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.utils.path_utils import resolve_workspace_path
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.video_utils import validate_url
 
 
@@ -118,12 +120,15 @@ class ArtifactPathValidator(Trait):
 
             path_str = OSManager.strip_surrounding_quotes(str(value).strip())
 
-            # Check if it's an HTTP/HTTPS URL (needs URL validation)
-            if path_str.startswith(("http://", "https://")):
+            # Check if it's a URL (needs URL validation for HTTP/HTTPS)
+            if is_url_or_path(path_str) and path_str.startswith(("http://", "https://")):
                 valid = validate_url(path_str)
                 if not valid:
                     error_msg = f"Invalid URL: '{path_str}'"
                     raise ValueError(error_msg)
+            elif is_url_or_path(path_str) and path_str.startswith("file://"):
+                # file:// URLs are valid, no additional validation needed here
+                pass
             else:
                 # Sanitize file paths before validation to handle shell escapes from macOS Finder
                 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -131,10 +136,8 @@ class ArtifactPathValidator(Trait):
                 sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_str)
 
                 # Validate file path exists and has supported extension
-                path = Path(sanitized_path)
-
-                if not path.is_absolute():
-                    path = GriptapeNodes.ConfigManager().workspace_path / path
+                workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                path = resolve_workspace_path(Path(sanitized_path), workspace_path)
 
                 if not path.exists():
                     error_msg = f"File not found: '{sanitized_path}'"
@@ -390,10 +393,10 @@ class ArtifactPathTethering:
 
         try:
             # Process the path (URL or file)
-            if path_value.startswith(("http://", "https://")):
+            if is_url_or_path(path_value) and path_value.startswith(("http://", "https://")):
                 # Handle http/https URLs: download and upload to static storage
                 download_url = self._download_and_upload_url(path_value)
-            elif path_value.startswith("file://"):
+            elif is_url_or_path(path_value) and path_value.startswith("file://"):
                 # Handle file:// URLs: strip prefix and use as regular file path
                 parsed = urlparse(path_value)
                 file_path = unquote(parsed.path)

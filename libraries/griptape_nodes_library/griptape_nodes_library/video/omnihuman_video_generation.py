@@ -696,7 +696,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         """Extract video URL from API response."""
         # Try direct video_url field
         video_url = _json.loads(response_json.get("data", {}).get("resp_data", "{}")).get("video_url")
-        if isinstance(video_url, str) and video_url.startswith("http"):
+        if isinstance(video_url, str) and is_url_or_path(video_url) and video_url.startswith(("http://", "https://")):
             return video_url
 
         return None

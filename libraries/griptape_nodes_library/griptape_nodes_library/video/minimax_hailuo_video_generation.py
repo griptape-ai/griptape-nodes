@@ -24,6 +24,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -492,7 +493,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             return frame_url
 
         # If it's an external URL, download and convert to data URL
-        if frame_url.startswith(("http://", "https://")):
+        if is_url_or_path(frame_url) and frame_url.startswith(("http://", "https://")):
             return await self._inline_external_url_async(frame_url)
 
         return frame_url
