@@ -561,26 +561,29 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         return generation_id
 
     def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
-        # Build payload matching proxy expected format
+        # Build payload matching proxy expected format (nested input/parameters structure)
         payload = {
-            "model": params["model"],
-            "prompt": params["prompt"],
-            "reference_video_urls": params["reference_video_urls"],
-            "size": params["size"],
-            "duration": params["duration"],
-            "shot_type": params["shot_type"],
-            "audio": params["audio"],
-            "watermark": params["watermark"],
-            "seed": params["seed"],
+            "input": {
+                "prompt": params["prompt"],
+                "reference_video_urls": params["reference_video_urls"],
+            },
+            "parameters": {
+                "size": params["size"],
+                "duration": params["duration"],
+                "shot_type": params["shot_type"],
+                "audio": params["audio"],
+                "watermark": params["watermark"],
+                "seed": params["seed"],
+            },
         }
 
         # Add negative prompt if provided
         if params["negative_prompt"]:
-            payload["negative_prompt"] = params["negative_prompt"]
+            payload["input"]["negative_prompt"] = params["negative_prompt"]
 
         # Add audio_url if provided
         if params.get("audio_url"):
-            payload["audio_url"] = params["audio_url"]
+            payload["input"]["audio_url"] = params["audio_url"]
 
         return payload
 
