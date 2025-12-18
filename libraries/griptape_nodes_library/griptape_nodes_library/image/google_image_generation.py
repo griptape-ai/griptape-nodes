@@ -38,7 +38,14 @@ class GoogleImageGeneration(SuccessFailureNode):
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
     SUPPORTED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
+        "Nano Banana Pro": "gemini-3-pro-image-preview",
+    }
+    DEPRECATED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "nano-banana-3-pro": "gemini-3-pro-image-preview",
+    }
+    ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
+        **SUPPORTED_MODELS_TO_API_MODELS,
+        **DEPRECATED_MODELS_TO_API_MODELS,
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -314,7 +321,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
 
         payload = {
-            "model": self.SUPPORTED_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
+            "model": self.ALL_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"],
