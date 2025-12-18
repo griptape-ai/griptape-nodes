@@ -67,9 +67,28 @@ class EventManager:
         return self._event_queue
 
     def should_suppress_event(self, event: BaseEvent | ProgressEvent) -> bool:
-        """Check if events should be suppressed from being sent to websockets."""
+        """Check if events should be suppressed from being sent to websockets.
+
+        This method checks both the wrapper event type and the payload type for wrapped events.
+        For example, if InvolvedNodesEvent is in the suppression set, an ExecutionGriptapeNodeEvent
+        that wraps an InvolvedNodesEvent will be suppressed.
+        """
         event_type = type(event)
-        return self._event_suppression_counts.get(event_type, 0) > 0
+
+        # Check wrapper type first
+        if self._event_suppression_counts.get(event_type, 0) > 0:
+            return True
+
+        # For wrapped events (like ExecutionGriptapeNodeEvent), also check the payload type
+        wrapped_event = getattr(event, "wrapped_event", None)
+        if wrapped_event is not None:
+            payload = getattr(wrapped_event, "payload", None)
+            if payload is not None:
+                payload_type = type(payload)
+                if self._event_suppression_counts.get(payload_type, 0) > 0:
+                    return True
+
+        return False
 
     def clear_event_suppression(self) -> None:
         """Clear all event suppression counts."""
@@ -433,11 +452,14 @@ class EventTranslationContext:
         self.manager = manager
         self.node_name_mapping = node_name_mapping
         self.original_put_event: Any = None
+        self.original_aput_event: Any = None
 
     def __enter__(self) -> None:
         """Enter the context and start translating events."""
         self.original_put_event = self.manager.put_event
+        self.original_aput_event = self.manager.aput_event
         self.manager.put_event = self._translate_and_put  # type: ignore[method-assign]
+        self.manager.aput_event = self._translate_and_aput  # type: ignore[method-assign]
 
     def __exit__(
         self,
@@ -447,24 +469,168 @@ class EventTranslationContext:
     ) -> None:
         """Exit the context and restore original event sending."""
         self.manager.put_event = self.original_put_event  # type: ignore[method-assign]
+        self.manager.aput_event = self.original_aput_event  # type: ignore[method-assign]
 
-    def _translate_and_put(self, event: Any) -> None:
-        """Translate node names in events and put them in the queue.
+    def _translate_event(self, event: Any) -> Any:
+        """Translate node names in an event.
 
         Args:
-            event: The event to potentially translate and send
+            event: The event to potentially translate
+
+        Returns:
+            The translated event, or the original if no translation needed
         """
+        # Handle wrapped events (like ExecutionGriptapeNodeEvent)
+        wrapped_event = getattr(event, "wrapped_event", None)
+        if wrapped_event is not None:
+            payload = getattr(wrapped_event, "payload", None)
+            if payload is not None:
+                translated_payload = self._translate_payload(payload)
+                if translated_payload is not payload:
+                    # Create a new wrapped event with the translated payload
+                    translated_event = self._create_translated_wrapped_event(event, translated_payload)
+                    if translated_event is not None:
+                        return translated_event
+
         # Check if event has node_name attribute and needs translation
         if hasattr(event, "node_name"):
             node_name = event.node_name
             if node_name in self.node_name_mapping:
                 # Create a copy of the event with the translated node name
-                translated_event = self._copy_event_with_translated_name(event)
-                self.original_put_event(translated_event)
-                return
+                return self._copy_event_with_translated_name(event)
 
-        # No translation needed, send as-is
-        self.original_put_event(event)
+        return event
+
+    def _translate_and_put(self, event: Any) -> None:
+        """Translate node names in events and put them in the queue (sync version).
+
+        Args:
+            event: The event to potentially translate and send
+        """
+        translated_event = self._translate_event(event)
+        self.original_put_event(translated_event)
+
+    async def _translate_and_aput(self, event: Any) -> None:
+        """Translate node names in events and put them in the queue (async version).
+
+        Args:
+            event: The event to potentially translate and send
+        """
+        translated_event = self._translate_event(event)
+        await self.original_aput_event(translated_event)
+
+    def _translate_payload(self, payload: Any) -> Any:
+        """Translate node names in a payload.
+
+        Handles both single node_name and involved_nodes list.
+
+        Args:
+            payload: The payload to translate
+
+        Returns:
+            A new payload with translated names, or the original if no translation needed
+        """
+        # Handle involved_nodes list (e.g., InvolvedNodesEvent)
+        involved_nodes = getattr(payload, "involved_nodes", None)
+        if involved_nodes is not None and isinstance(involved_nodes, list):
+            translated_nodes: list[str] = []
+            any_translated = False
+            for node_name in involved_nodes:
+                if node_name in self.node_name_mapping:
+                    translated_nodes.append(self.node_name_mapping[node_name])
+                    any_translated = True
+                else:
+                    translated_nodes.append(node_name)
+            # Only create new payload if something was translated
+            if any_translated:
+                return self._copy_payload_with_translated_involved_nodes(payload, translated_nodes)
+
+        # Handle single node_name
+        node_name = getattr(payload, "node_name", None)
+        if node_name is not None and node_name in self.node_name_mapping:
+            return self._copy_payload_with_translated_node_name(payload, self.node_name_mapping[node_name])
+
+        return payload
+
+    def _copy_payload_with_translated_involved_nodes(self, payload: Any, translated_nodes: list[str]) -> Any:
+        """Create a copy of a payload with translated involved_nodes.
+
+        Args:
+            payload: The payload to copy
+            translated_nodes: The translated list of node names
+
+        Returns:
+            A new payload instance with translated involved_nodes
+        """
+        payload_class = type(payload)
+
+        if hasattr(payload, "model_dump"):
+            payload_dict = payload.model_dump()
+        elif hasattr(payload, "__dict__"):
+            payload_dict = payload.__dict__.copy()
+        else:
+            return payload
+
+        payload_dict["involved_nodes"] = translated_nodes
+
+        try:
+            return payload_class(**payload_dict)
+        except Exception:
+            return payload
+
+    def _copy_payload_with_translated_node_name(self, payload: Any, translated_name: str) -> Any:
+        """Create a copy of a payload with a translated node_name.
+
+        Args:
+            payload: The payload to copy
+            translated_name: The translated node name
+
+        Returns:
+            A new payload instance with translated node_name
+        """
+        payload_class = type(payload)
+
+        if hasattr(payload, "model_dump"):
+            payload_dict = payload.model_dump()
+        elif hasattr(payload, "__dict__"):
+            payload_dict = payload.__dict__.copy()
+        else:
+            return payload
+
+        payload_dict["node_name"] = translated_name
+
+        try:
+            return payload_class(**payload_dict)
+        except Exception:
+            return payload
+
+    def _create_translated_wrapped_event(self, event: Any, translated_payload: Any) -> Any | None:
+        """Create a new wrapped event with a translated payload.
+
+        Args:
+            event: The original wrapped event (e.g., ExecutionGriptapeNodeEvent)
+            translated_payload: The translated payload
+
+        Returns:
+            A new wrapped event with the translated payload, or None if creation fails
+        """
+        wrapped_event = getattr(event, "wrapped_event", None)
+        if wrapped_event is None:
+            return None
+
+        # Create new wrapped_event with translated payload
+        wrapped_class = type(wrapped_event)
+        try:
+            new_wrapped = wrapped_class(payload=translated_payload)
+        except Exception:
+            return None
+
+        # Create new outer event with new wrapped_event
+        event_class = type(event)
+        try:
+            return event_class(wrapped_event=new_wrapped)
+        except Exception:
+            return None
 
     def _copy_event_with_translated_name(self, event: Any) -> Any:
         """Create a copy of an event with the node name translated to the original name.

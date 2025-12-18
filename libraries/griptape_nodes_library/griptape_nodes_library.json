@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.7",
+    "library_version": "0.52.9",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -2272,6 +2272,16 @@
       }
     },
     {
+      "class_name": "Rodin23DGeneration",
+      "file_path": "griptape_nodes_library/three_d/rodin_2_3d_generation.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Generate 3D models using Rodin Gen-2 via Griptape model proxy",
+        "display_name": "Rodin 3D Generation",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "ForLoopStartNode",
       "file_path": "griptape_nodes_library/execution/for_loop_start.py",
       "metadata": {
@@ -2454,8 +2464,12 @@
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/fill_in_the_story.py",
     "workflows/templates/flux_2_-_magazine_cover.py",
+    "workflows/templates/nano_banana_-_image_collage.py",
+    "workflows/templates/nano_banana_pro_-_image_collage.py",
+    "workflows/templates/nano_banana_pro_-_product_advertisement.py",
     "workflows/templates/photography_team.py",
-    "workflows/templates/prompt_an_image.py"
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/qwen-image_-_band_poster.py"
   ],
   "is_default_library": true
 }

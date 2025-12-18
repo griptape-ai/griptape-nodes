@@ -7,6 +7,7 @@ a template format, and adds them to the specified library.
 import argparse
 import json
 import re
+import shutil
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -139,6 +140,8 @@ def sanitize_workflow_name(name: str) -> str:
 def process_image(image_path: Path, output_path: Path) -> None:
     """Convert and resize image to webp format using cover fit.
 
+    If the input is a GIF, it will be copied as-is without modification.
+
     Args:
         image_path: Path to input image file
         output_path: Path where processed image will be saved
@@ -151,6 +154,12 @@ def process_image(image_path: Path, output_path: Path) -> None:
         raise ValueError(msg)
 
     try:
+        # Check if it's a GIF - if so, copy as-is
+        if image_path.suffix.lower() in (".gif",):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(image_path, output_path)
+            return
+
         # Load image
         img = Image.open(image_path)
 
@@ -391,11 +400,65 @@ def _replace_workflow_name_in_code(workflow_content: str, original_name: str, te
     return updated_content
 
 
-def _parse_and_prompt_args() -> argparse.Namespace:
-    """Parse command line arguments and prompt for missing required values.
+def _extract_workflow_defaults(workflow_path: Path) -> dict[str, str | None]:
+    """Extract default values from workflow metadata.
+
+    Args:
+        workflow_path: Path to the workflow file
 
     Returns:
-        Parsed arguments with all required values filled in
+        Dictionary with default_description, default_image, and default_name
+    """
+    defaults: dict[str, str | None] = {
+        "default_description": None,
+        "default_image": None,
+        "default_name": None,
+    }  # type: ignore[assignment]
+
+    if not workflow_path.exists():
+        return defaults
+
+    try:
+        metadata_block, _ = extract_metadata_block(workflow_path)
+        metadata = parse_workflow_metadata(metadata_block)
+        defaults["default_description"] = metadata.get("description")
+        defaults["default_image"] = metadata.get("image")
+        defaults["default_name"] = metadata.get("name")
+    except Exception as e:
+        # If we can't parse metadata, log and continue without defaults
+        console.print(f"Warning: Could not extract defaults from workflow metadata: {e}", style="yellow")
+
+    return defaults
+
+
+def _prompt_with_default(prompt_text: str, default_value: str | None, *, required: bool = True) -> str:
+    """Prompt user with an optional default value.
+
+    Args:
+        prompt_text: The prompt text to display
+        default_value: Optional default value
+        required: Whether the input is required (keyword-only)
+
+    Returns:
+        User input or default value
+
+    Raises:
+        ValueError: If required and no value provided
+    """
+    if default_value:
+        prompt_text += f" [default: {default_value}]"
+    result = Prompt.ask(prompt_text, default=default_value or "")
+    if required and not result:
+        msg = f"{prompt_text} is required"
+        raise ValueError(msg)
+    return result
+
+
+def _create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser.
+
+    Returns:
+        Configured ArgumentParser
     """
     parser = argparse.ArgumentParser(description="Convert an existing workflow file into a library template")
     parser.add_argument(
@@ -413,8 +476,8 @@ def _parse_and_prompt_args() -> argparse.Namespace:
     parser.add_argument(
         "--library",
         type=str,
-        default="libraries/griptape_nodes_library",
-        help="Path to the library directory (default: libraries/griptape_nodes_library)",
+        default=None,
+        help="Path to the library directory. If not provided, will prompt with default: libraries/griptape_nodes_library",
     )
     parser.add_argument(
         "--name",
@@ -428,33 +491,39 @@ def _parse_and_prompt_args() -> argparse.Namespace:
         default=None,
         help="Description for the template workflow (used in metadata). If not provided, will prompt for input.",
     )
+    return parser
 
+
+def _parse_and_prompt_args() -> argparse.Namespace:
+    """Parse command line arguments and prompt for missing required values.
+
+    Returns:
+        Parsed arguments with all required values filled in
+    """
+    parser = _create_argument_parser()
     args = parser.parse_args()
 
-    # Prompt for required arguments if not provided
+    # Prompt for workflow first (needed to extract defaults)
     if args.workflow is None:
-        args.workflow = Prompt.ask("Enter workflow file path")
-        if not args.workflow:
-            msg = "Workflow file path is required"
-            raise ValueError(msg)
+        args.workflow = _prompt_with_default("Enter workflow file path", None)
 
+    # Extract defaults from workflow metadata if available
+    workflow_path = Path(args.workflow)
+    defaults = _extract_workflow_defaults(workflow_path)
+
+    # Prompt for remaining arguments with defaults
     if args.image is None:
-        args.image = Prompt.ask("Enter thumbnail image file path")
-        if not args.image:
-            msg = "Image file path is required"
-            raise ValueError(msg)
+        args.image = _prompt_with_default("Enter thumbnail image file path", defaults["default_image"])
 
     if args.name is None:
-        args.name = Prompt.ask("Enter template name")
-        if not args.name:
-            msg = "Template name is required"
-            raise ValueError(msg)
+        args.name = _prompt_with_default("Enter template name", defaults["default_name"])
 
     if args.description is None:
-        args.description = Prompt.ask("Enter template description")
-        if not args.description:
-            msg = "Template description is required"
-            raise ValueError(msg)
+        args.description = _prompt_with_default("Enter template description", defaults["default_description"])
+
+    if args.library is None:
+        default_library = "libraries/griptape_nodes_library"
+        args.library = Prompt.ask("Enter library path", default=default_library)
 
     return args
 
@@ -516,7 +585,11 @@ def _convert_workflow(
 
     # Generate filenames
     workflow_filename = f"{sanitized_name}.py"
-    thumbnail_filename = f"thumbnail_{sanitized_name}.webp"
+    # Check if input image is a GIF - preserve extension if so
+    if image_path.suffix.lower() == ".gif":
+        thumbnail_filename = f"thumbnail_{sanitized_name}.gif"
+    else:
+        thumbnail_filename = f"thumbnail_{sanitized_name}.webp"
 
     # Set up target directory
     templates_dir = library_path / "workflows" / "templates"
