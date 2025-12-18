@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.6",
+    "library_version": "0.52.7",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -2269,6 +2269,16 @@
         "description": "Loads a 3D file into your workflow",
         "display_name": "Load 3D",
         "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "Rodin23DGeneration",
+      "file_path": "griptape_nodes_library/three_d/rodin_2_3d_generation.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Generate 3D models using Rodin Gen-2 via Griptape model proxy",
+        "display_name": "Rodin 3D Generation",
+        "group": "create"
       }
     },
     {
