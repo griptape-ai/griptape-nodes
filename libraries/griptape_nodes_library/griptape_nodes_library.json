@@ -2465,7 +2465,8 @@
     "workflows/templates/fill_in_the_story.py",
     "workflows/templates/flux_2_-_magazine_cover.py",
     "workflows/templates/photography_team.py",
-    "workflows/templates/prompt_an_image.py"
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/qwen-image_-_band_poster.py"
   ],
   "is_default_library": true
 }
