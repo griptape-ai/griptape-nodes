@@ -43,7 +43,10 @@ class GoogleImageGeneration(SuccessFailureNode):
     DEPRECATED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "nano-banana-3-pro": "gemini-3-pro-image-preview",
     }
-    ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {**SUPPORTED_MODELS_TO_API_MODELS, **DEPRECATED_MODELS_TO_API_MODELS}
+    ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
+        **SUPPORTED_MODELS_TO_API_MODELS,
+        **DEPRECATED_MODELS_TO_API_MODELS,
+    }
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
