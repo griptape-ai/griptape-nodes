@@ -509,7 +509,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=600)
+                response = await client.post(proxy_url, json=payload, headers=headers, timeout=None)
                 response.raise_for_status()
                 response_json = response.json()
                 logger.info("Request submitted successfully")
