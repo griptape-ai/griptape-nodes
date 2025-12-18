@@ -431,13 +431,13 @@ def _extract_workflow_defaults(workflow_path: Path) -> dict[str, str | None]:
     return defaults
 
 
-def _prompt_with_default(prompt_text: str, default_value: str | None, required: bool = True) -> str:
+def _prompt_with_default(prompt_text: str, default_value: str | None, *, required: bool = True) -> str:
     """Prompt user with an optional default value.
 
     Args:
         prompt_text: The prompt text to display
         default_value: Optional default value
-        required: Whether the input is required
+        required: Whether the input is required (keyword-only)
 
     Returns:
         User input or default value
