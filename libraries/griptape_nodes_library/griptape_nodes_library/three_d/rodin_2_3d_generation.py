@@ -50,9 +50,10 @@ CONDITION_MODE_OPTIONS = ["concat", "fuse"]
 DEFAULT_CONDITION_MODE = "concat"
 
 # Response status constants
+STATUS_WAITING = "Waiting"
+STATUS_GENERATING = "Generating"
+STATUS_DONE = "Done"
 STATUS_FAILED = "Failed"
-STATUS_ERROR = "Error"
-STATUS_READY = "Ready"
 
 
 class Rodin23DGeneration(SuccessFailureNode):
@@ -611,12 +612,12 @@ class Rodin23DGeneration(SuccessFailureNode):
                     status = result_json.get("status", "unknown")
                     self._log(f"Status: {status}")
 
-                    if status == STATUS_READY:
+                    if status == STATUS_DONE:
                         # Extract the result files
                         result = result_json.get("result", {})
                         await self._handle_success(result_json, result, params)
                         return
-                    if status in [STATUS_FAILED, STATUS_ERROR]:
+                    if status == STATUS_FAILED:
                         self._log(f"Generation failed with status: {status}")
                         self._set_safe_defaults()
                         error_details = self._extract_error_details(result_json)
@@ -783,7 +784,7 @@ class Rodin23DGeneration(SuccessFailureNode):
     def _get_error_from_status(self, response_json: dict[str, Any]) -> str | None:
         """Extract error from status field."""
         status = response_json.get("status")
-        if status in [STATUS_FAILED, STATUS_ERROR]:
+        if status == STATUS_FAILED:
             return f"Generation failed with status '{status}'."
         return None
 
