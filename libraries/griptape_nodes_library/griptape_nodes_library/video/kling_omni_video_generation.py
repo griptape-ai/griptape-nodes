@@ -7,15 +7,17 @@ import logging
 import os
 from contextlib import suppress
 from time import monotonic
-from typing import Any, ClassVar
+from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
+    PublicArtifactUrlParameter,
+)
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -23,88 +25,47 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
-__all__ = ["KlingImageToVideoGeneration"]
+__all__ = ["KlingOmniVideoGeneration"]
 
 # Constants
 MAX_PROMPT_LENGTH = 2500
 HTTP_CLIENT_ERROR_STATUS = 400
-DEFAULT_DURATION_5S = 5
+MAX_IMAGES_WITH_VIDEO = 4
+MAX_IMAGES_WITHOUT_VIDEO = 7
+MAX_IMAGES_FOR_END_FRAME = 2
 
 
-class KlingImageToVideoGeneration(SuccessFailureNode):
-    """Generate a video from an image using Kling AI models via Griptape Cloud model proxy.
+class KlingOmniVideoGeneration(SuccessFailureNode):
+    """Generate a video using Kling Omni AI via Griptape Cloud model proxy.
+
+    The Omni model supports various capabilities through templated prompts with elements,
+    images, and videos. Use <<<element_1>>>, <<<image_1>>>, <<<video_1>>> in prompts.
 
     Inputs:
-        - image (ImageArtifact|ImageUrlArtifact|str): Start frame image (required)
-        - image_tail (ImageArtifact|ImageUrlArtifact|str): End frame image (optional, v2.1+ pro mode only)
-        - prompt (str): Text prompt for video generation (max 2500 chars)
-        - model_name (str): Model to use (default: kling-v2-1)
-        - negative_prompt (str): Negative text prompt (max 2500 chars)
-        - cfg_scale (float): Flexibility in video generation (0-1)
+        - prompt (str): Text prompt with optional templates (max 2500 chars, required)
+        - reference_images (list[ImageArtifact]): Reference images for generation (optional)
+        - first_frame_image (ImageArtifact|ImageUrlArtifact|str): First frame image (optional)
+        - end_frame_image (ImageArtifact|ImageUrlArtifact|str): End frame image (optional)
+        - element_ids (str): Comma-separated element IDs (optional)
+        - reference_video (VideoUrlArtifact): Reference video for editing or style reference (optional, max 1)
+        - video_refer_type (str): Video reference type (base: edit video, reference: use as reference)
+        - video_keep_sound (bool): Keep original video sound (default: False)
         - mode (str): Video generation mode (std: Standard, pro: Professional)
-        - duration (int): Video length in seconds
-        - sound (str): Generate native audio with the video (kling-v2-6 only)
-        - static_mask (ImageArtifact|ImageUrlArtifact|str): Static mask for brush application
-        - dynamic_masks (str): JSON string for dynamic brush configuration
+        - aspect_ratio (str): Aspect ratio (required when not using first frame or video editing)
+        - duration (int): Video length in seconds (3-10s)
         (Always polls for result: 5s interval, 20 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (latest polling response)
-        - video_url (VideoUrlArtifact): Saved static video URL
-        - video_id (str): The Kling AI video ID
+        - video_url (VideoUrlArtifact): Saved video URL
+        - kling_video_id (str): The video ID from Kling AI
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
-
-    # Model capability definitions
-    MODEL_CAPABILITIES: ClassVar[dict[str, Any]] = {
-        "kling-v1": {
-            "modes": ["std", "pro"],
-            "durations": [5],
-            "supports_sound": False,
-            "supports_tail_frame": False,
-        },
-        "kling-v1-5": {
-            "modes": ["pro"],
-            "durations": [5, 10],
-            "supports_sound": False,
-            "supports_tail_frame": False,
-        },
-        "kling-v2-master": {
-            "modes": ["std", "pro"],
-            "durations": [5, 10],
-            "supports_sound": False,
-            "supports_tail_frame": False,
-        },
-        "kling-v2-1": {
-            "modes": ["std", "pro"],
-            "durations": [5, 10],
-            "supports_sound": False,
-            "supports_tail_frame": True,  # Only with pro mode
-        },
-        "kling-v2-1-master": {
-            "modes": ["std", "pro"],
-            "durations": [5, 10],
-            "supports_sound": False,
-            "supports_tail_frame": False,
-        },
-        "kling-v2-5-turbo": {
-            "modes": ["pro"],
-            "durations": [5, 10],
-            "supports_sound": False,
-            "supports_tail_frame": True,  # Only with pro mode
-        },
-        "kling-v2-6": {
-            "modes": ["pro"],
-            "durations": [5, 10],
-            "supports_sound": True,
-            "supports_tail_frame": False,
-        },
-    }
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -118,73 +79,102 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
         # INPUTS / PROPERTIES
         self.add_parameter(
             ParameterString(
-                name="model_name",
-                default_value="kling-v2-1",
-                tooltip="Model Name for generation",
+                name="prompt",
+                tooltip="Text prompt with optional templates like <<<image_1>>>, <<<element_1>>> (max 2500 chars)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={
-                    Options(
-                        choices=[
-                            "kling-v1",
-                            "kling-v1-5",
-                            "kling-v2-master",
-                            "kling-v2-1",
-                            "kling-v2-1-master",
-                            "kling-v2-5-turbo",
-                            "kling-v2-6",
-                        ]
-                    )
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the video... Use <<<image_1>>> to reference images.",
+                    "display_name": "prompt",
                 },
-                ui_options={"display_name": "Model"},
             )
         )
 
         # Image Inputs Group
         with ParameterGroup(name="Image Inputs") as image_group:
-            Parameter(
-                name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                tooltip="Start frame image (required). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Start Frame"},
+            ParameterList(
+                name="reference_images",
+                input_types=[
+                    "ImageArtifact",
+                    "ImageUrlArtifact",
+                    "str",
+                    "list[ImageArtifact]",
+                    "list[ImageUrlArtifact]",
+                    "list[str]",
+                ],
+                default_value=[],
+                tooltip="Reference images for generation. These appear first in the template (<<<image_1>>>, <<<image_2>>>, etc.)",
+                allowed_modes={ParameterMode.INPUT},
+                ui_options={"expander": True, "display_name": "reference images"},
             )
             Parameter(
-                name="image_tail",
+                name="first_frame_image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
                 type="ImageArtifact",
-                tooltip="End frame image (optional). Supported on kling-v2-1 and kling-v2-5-turbo with pro mode.",
+                tooltip="First frame image (optional). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "End Frame"},
+                ui_options={"display_name": "first frame"},
+            )
+            Parameter(
+                name="end_frame_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                tooltip="End frame image (optional). Requires first frame to be set.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "end frame"},
             )
         self.add_node_element(image_group)
 
-        # Prompts Group
-        with ParameterGroup(name="Prompts") as prompts_group:
+        # Advanced References Group
+        with ParameterGroup(name="Advanced References") as advanced_group:
             ParameterString(
-                name="prompt",
+                name="element_ids",
                 default_value="",
-                tooltip="Positive text prompt (max 2500 chars)",
+                tooltip="Comma-separated element IDs (e.g., '123,456,789')",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Describe the desired video content..."},
+                ui_options={"placeholder_text": "e.g., 123,456,789"},
             )
+        advanced_group.ui_options = {"hide": False}
+        self.add_node_element(advanced_group)
+
+        # Video Reference Group
+        with ParameterGroup(name="Video Reference") as video_group:
+            # Use PublicArtifactUrlParameter for video upload handling
+            self._public_video_url_parameter = PublicArtifactUrlParameter(
+                node=self,
+                artifact_url_parameter=Parameter(
+                    name="reference_video",
+                    input_types=["VideoUrlArtifact"],
+                    type="VideoUrlArtifact",
+                    tooltip="Reference video for editing or style reference (optional, max 1)",
+                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    ui_options={"placeholder_text": "https://example.com/video.mp4"},
+                ),
+                disclaimer_message="The Kling Omni service utilizes this URL to access the video for generation.",
+            )
+            self._public_video_url_parameter.add_input_parameters()
+
             ParameterString(
-                name="negative_prompt",
-                default_value="",
-                tooltip="Negative text prompt (max 2500 chars)",
+                name="video_refer_type",
+                default_value="reference",
+                tooltip="Video reference type: 'base' for video editing, 'reference' for style reference",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True},
+                traits={Options(choices=["reference", "base"])},
             )
-        self.add_node_element(prompts_group)
+            Parameter(
+                name="video_keep_sound",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Keep original video sound (only applies when video_refer_type is 'base')",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "keep video sound"},
+            )
+        video_group.ui_options = {"hide": False}
+        self.add_node_element(video_group)
 
         # Generation Settings Group
         with ParameterGroup(name="Generation Settings") as gen_settings_group:
-            ParameterFloat(
-                name="cfg_scale",
-                default_value=0.5,
-                tooltip="Flexibility (0-1). Higher value = lower flexibility, stronger prompt relevance.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
             ParameterString(
                 name="mode",
                 default_value="pro",
@@ -192,42 +182,21 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["std", "pro"])},
             )
+            ParameterString(
+                name="aspect_ratio",
+                default_value="16:9",
+                tooltip="Aspect ratio (required when not using first frame or video editing)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["16:9", "9:16", "1:1"])},
+            )
             ParameterInt(
                 name="duration",
                 default_value=5,
-                tooltip="Video length in seconds",
+                tooltip="Video length in seconds (3-10s). Only 5/10s for text-to-video and first-frame generation.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[5, 10])},
-            )
-            ParameterString(
-                name="sound",
-                default_value="off",
-                tooltip="Generate native audio with the video (kling-v2-6 only)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["on", "off"])},
-                ui_options={"hide": True},
+                traits={Options(choices=[3, 4, 5, 6, 7, 8, 9, 10])},
             )
         self.add_node_element(gen_settings_group)
-
-        # Masks Group
-        with ParameterGroup(name="Masks") as masks_group:
-            Parameter(
-                name="static_mask",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                default_value=None,
-                tooltip="Static brush application area. Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-            ParameterString(
-                name="dynamic_masks",
-                default_value="",
-                tooltip="JSON string for dynamic brush configuration list. Masks within JSON must be URL/Base64.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Enter JSON for dynamic masks..."},
-            )
-        masks_group.ui_options = {"hide": True}
-        self.add_node_element(masks_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -264,7 +233,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterString(
                 name="kling_video_id",
-                tooltip="The Kling AI video ID",
+                tooltip="The video ID from Kling AI",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
@@ -276,57 +245,14 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-        # Set initial parameter visibility based on default model
-        self._update_parameter_visibility_for_model("kling-v2-1")
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle parameter value changes to show/hide dependent parameters."""
-        super().after_value_set(parameter, value)
-
-        if parameter.name == "model_name":
-            self._update_parameter_visibility_for_model(value)
-
-    def _update_parameter_visibility_for_model(self, model_name: str) -> None:
-        """Update parameter visibility based on selected model."""
-        # Show mask features for all models
-        self.show_parameter_by_name(["static_mask", "dynamic_masks"])
-
-        # Show/hide image_tail (end frame) based on model support
-        capabilities = self.MODEL_CAPABILITIES.get(model_name, {})
-        if capabilities.get("supports_tail_frame", False):
-            self.show_parameter_by_name("image_tail")
-        else:
-            self.hide_parameter_by_name("image_tail")
-
-        if model_name == "kling-v1":
-            self.show_parameter_by_name("mode")
-            self.hide_parameter_by_name(["duration", "sound"])
-            current_duration = self.get_parameter_value("duration")
-            if current_duration != DEFAULT_DURATION_5S:
-                self.set_parameter_value("duration", DEFAULT_DURATION_5S)
-        elif model_name in {"kling-v1-5", "kling-v2-5-turbo"}:
-            self.hide_parameter_by_name(["mode", "sound"])
-            self.show_parameter_by_name("duration")
-            current_mode = self.get_parameter_value("mode")
-            if current_mode != "pro":
-                self.set_parameter_value("mode", "pro")
-        elif model_name == "kling-v2-6":
-            self.hide_parameter_by_name("mode")
-            self.show_parameter_by_name(["duration", "sound"])
-            current_mode = self.get_parameter_value("mode")
-            if current_mode != "pro":
-                self.set_parameter_value("mode", "pro")
-            current_duration = self.get_parameter_value("duration")
-            if current_duration not in [5, 10]:
-                self.set_parameter_value("duration", 5)
-        else:
-            self.show_parameter_by_name(["mode", "duration"])
-            self.hide_parameter_by_name("sound")
-
     async def aprocess(self) -> None:
-        await self._process()
+        try:
+            await self._process()
+        finally:
+            # Always cleanup uploaded video artifact
+            self._public_video_url_parameter.delete_uploaded_artifact()
 
-    async def _process(self) -> None:  # noqa: PLR0911, PLR0912, PLR0915, C901
+    async def _process(self) -> None:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Clear execution status at the start
         self._clear_execution_status()
         logger.info("%s starting video generation", self.name)
@@ -345,109 +271,130 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
         # Get parameters and validate
         params = await self._get_parameters_async()
         logger.debug(
-            "%s parameters: model=%s, mode=%s, duration=%s",
-            self.name,
-            params["model_name"],
-            params["mode"],
-            params["duration"],
+            "%s parameters: prompt_length=%d, duration=%s", self.name, len(params["prompt"]), params["duration"]
         )
 
-        # Validate at least one image is provided
-        if not params["image"] and not params["image_tail"]:
+        # Validate prompt is provided
+        if not params["prompt"]:
             self._set_safe_defaults()
-            error_msg = f"{self.name} requires at least one of 'image' (start frame) or 'image_tail' (end frame)."
+            error_msg = f"{self.name} requires a prompt to generate video."
             self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: no images provided", self.name)
+            logger.error("%s validation failed: empty prompt", self.name)
             return
 
         # Validate prompt length
-        if params["prompt"] and len(params["prompt"]) > MAX_PROMPT_LENGTH:
+        if len(params["prompt"]) > MAX_PROMPT_LENGTH:
             self._set_safe_defaults()
             error_msg = f"{self.name} prompt exceeds {MAX_PROMPT_LENGTH} characters (limit: {MAX_PROMPT_LENGTH})."
             self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: prompt too long", self.name)
             return
 
-        # Validate negative prompt length
-        if params["negative_prompt"] and len(params["negative_prompt"]) > MAX_PROMPT_LENGTH:
-            self._set_safe_defaults()
-            error_msg = (
-                f"{self.name} negative_prompt exceeds {MAX_PROMPT_LENGTH} characters (limit: {MAX_PROMPT_LENGTH})."
+        # Parse element IDs from comma-separated string
+        element_list = []
+        if params["element_ids"]:
+            try:
+                element_ids_parts = [part.strip() for part in params["element_ids"].split(",") if part.strip()]
+                element_list = [{"element_id": int(eid)} for eid in element_ids_parts]
+            except ValueError:
+                self._set_safe_defaults()
+                error_msg = f"{self.name} validation failed: element_ids must be comma-separated integers"
+                self._set_status_results(was_successful=False, result_details=error_msg)
+                logger.error("%s validation failed: invalid element_ids", self.name)
+                return
+
+        # Build video list from individual video parameters
+        video_list = []
+        if params["reference_video_url"]:
+            keep_sound_str = "yes" if params["video_keep_sound"] else "no"
+            video_list.append(
+                {
+                    "video_url": params["reference_video_url"],
+                    "refer_type": params["video_refer_type"],
+                    "keep_original_sound": keep_sound_str,
+                }
             )
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: negative prompt too long", self.name)
-            return
 
-        # Validate cfg_scale
-        if not (0 <= params["cfg_scale"] <= 1):
+        # Get reference images (already a list from ParameterList)
+        ref_images_input = params["reference_images"]
+        if not isinstance(ref_images_input, list):
+            ref_images_input = [ref_images_input] if ref_images_input else []
+
+        # Validate end frame requires first frame
+        if params["end_frame_image"] and not params["first_frame_image"]:
             self._set_safe_defaults()
-            error_msg = f"{self.name} cfg_scale must be between 0.0 and 1.0."
+            error_msg = f"{self.name} end_frame_image requires first_frame_image to be set."
             self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: invalid cfg_scale", self.name)
+            logger.error("%s validation failed: end frame without first frame", self.name)
             return
 
-        # Validate model-specific constraints
-        capabilities = self.MODEL_CAPABILITIES.get(params["model_name"], {})
+        # Count total images and elements
+        total_image_count = len(ref_images_input)
+        if params["first_frame_image"]:
+            total_image_count += 1
+        if params["end_frame_image"]:
+            total_image_count += 1
+        total_element_count = len(element_list)
+        has_video = len(video_list) > 0
 
-        if params["mode"] not in capabilities.get("modes", ["std", "pro"]):
-            self._set_safe_defaults()
-            valid_modes = capabilities.get("modes", [])
-            error_msg = (
-                f"{self.name}: Model {params['model_name']} does not support mode '{params['mode']}'. "
-                f"Valid modes: {', '.join(valid_modes)}"
-            )
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: invalid mode for model", self.name)
-            return
-
-        if params["duration"] not in capabilities.get("durations", [5, 10]):
-            self._set_safe_defaults()
-            valid_durations = capabilities.get("durations", [])
-            error_msg = (
-                f"{self.name}: Model {params['model_name']} does not support duration {params['duration']}s. "
-                f"Valid durations: {', '.join(map(str, valid_durations))}"
-            )
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: invalid duration for model", self.name)
-            return
-
-        # Validate tail frame support
-        if params["image_tail"]:
-            supports_tail = capabilities.get("supports_tail_frame", False)
-            if not supports_tail:
+        # Validate image + element count limits
+        if has_video:
+            if total_image_count + total_element_count > MAX_IMAGES_WITH_VIDEO:
                 self._set_safe_defaults()
                 error_msg = (
-                    f"{self.name}: Model {params['model_name']} does not support end frame (image_tail). "
-                    f"Only kling-v2-1 and kling-v2-5-turbo with pro mode support end frames."
+                    f"{self.name} when using reference videos, the sum of images ({total_image_count}) "
+                    f"and elements ({total_element_count}) cannot exceed {MAX_IMAGES_WITH_VIDEO}."
                 )
                 self._set_status_results(was_successful=False, result_details=error_msg)
-                logger.error("%s validation failed: model doesn't support tail frame", self.name)
+                logger.error("%s validation failed: too many images+elements with video", self.name)
                 return
+        elif total_image_count + total_element_count > MAX_IMAGES_WITHOUT_VIDEO:
+            self._set_safe_defaults()
+            error_msg = (
+                f"{self.name} the sum of images ({total_image_count}) "
+                f"and elements ({total_element_count}) cannot exceed {MAX_IMAGES_WITHOUT_VIDEO}."
+            )
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            logger.error("%s validation failed: too many images+elements", self.name)
+            return
 
-            if supports_tail and params["mode"] != "pro":
-                self._set_safe_defaults()
-                error_msg = f"{self.name}: End frame (image_tail) requires pro mode."
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                logger.error("%s validation failed: tail frame requires pro mode", self.name)
-                return
+        # Validate end frame not allowed with >2 images
+        if params["end_frame_image"] and total_image_count > MAX_IMAGES_FOR_END_FRAME:
+            self._set_safe_defaults()
+            error_msg = (
+                f"{self.name} end frame is not supported when there are more than {MAX_IMAGES_FOR_END_FRAME} images."
+            )
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            logger.error("%s validation failed: end frame with >2 images", self.name)
+            return
 
-        # Validate dynamic_masks JSON if provided
-        if params["dynamic_masks"]:
-            try:
-                _json.loads(params["dynamic_masks"])
-            except _json.JSONDecodeError as e:
-                self._set_safe_defaults()
-                error_msg = f"{self.name} dynamic_masks is not valid JSON: {e}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                logger.error("%s validation failed: invalid dynamic_masks JSON", self.name)
-                return
+        # Validate video editing cannot be used with first/end frames
+        has_base_video = any(v.get("refer_type") == "base" for v in video_list if isinstance(v, dict))
+        if has_base_video and (params["first_frame_image"] or params["end_frame_image"]):
+            self._set_safe_defaults()
+            error_msg = f"{self.name} video editing (refer_type='base') cannot be used with first or end frame images."
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            logger.error("%s validation failed: video editing with first/end frames", self.name)
+            return
+
+        # Validate duration constraints for text/first-frame generation
+        is_text_or_first_frame = not has_base_video
+        if is_text_or_first_frame and params["duration"] not in [5, 10]:
+            self._set_safe_defaults()
+            error_msg = (
+                f"{self.name} text-to-video and first-frame generation only support 5 or 10 second durations "
+                f"(got {params['duration']}s)."
+            )
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            logger.error("%s validation failed: invalid duration for text/first-frame generation", self.name)
+            return
 
         # Build payload
         payload = await self._build_payload_async(params)
 
-        # Submit request
+        # Submit request - using static model ID "kling-video-o1:omnivideo"
         try:
-            generation_id = await self._submit_request_async(params["model_name"], payload, headers)
+            generation_id = await self._submit_request_async("kling-video-o1:omnivideo", payload, headers)
             if not generation_id:
                 self._set_safe_defaults()
                 self._set_status_results(
@@ -465,18 +412,30 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
 
     async def _get_parameters_async(self) -> dict[str, Any]:
         """Get and process all parameters, including image conversion."""
+        # Get video parameters - use PublicArtifactUrlParameter to get public URL
+        reference_video_param = self.get_parameter_value("reference_video")
+        reference_video_url = None
+        if reference_video_param:
+            reference_video_url = self._public_video_url_parameter.get_public_url_for_parameter()
+
+        video_keep_sound = self.get_parameter_value("video_keep_sound")
+        if video_keep_sound is None:
+            video_keep_sound = False
+
         return {
-            "model_name": self.get_parameter_value("model_name") or "kling-v2-1",
-            "image": await self._prepare_image_data_url_async(self.get_parameter_value("image")),
-            "image_tail": await self._prepare_image_data_url_async(self.get_parameter_value("image_tail")),
-            "prompt": self.get_parameter_value("prompt") or "",
-            "negative_prompt": self.get_parameter_value("negative_prompt") or "",
-            "cfg_scale": self.get_parameter_value("cfg_scale") or 0.5,
+            "prompt": (self.get_parameter_value("prompt") or "").strip(),
+            "reference_images": self.get_parameter_value("reference_images") or [],
+            "first_frame_image": await self._prepare_image_data_url_async(
+                self.get_parameter_value("first_frame_image")
+            ),
+            "end_frame_image": await self._prepare_image_data_url_async(self.get_parameter_value("end_frame_image")),
+            "element_ids": (self.get_parameter_value("element_ids") or "").strip(),
+            "reference_video_url": reference_video_url,
+            "video_refer_type": self.get_parameter_value("video_refer_type") or "reference",
+            "video_keep_sound": video_keep_sound,
             "mode": self.get_parameter_value("mode") or "pro",
+            "aspect_ratio": self.get_parameter_value("aspect_ratio") or "16:9",
             "duration": self.get_parameter_value("duration") or 5,
-            "sound": self.get_parameter_value("sound") or "off",
-            "static_mask": await self._prepare_image_data_url_async(self.get_parameter_value("static_mask")),
-            "dynamic_masks": self.get_parameter_value("dynamic_masks") or "",
         }
 
     def _validate_api_key(self) -> str:
@@ -486,12 +445,11 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request_async(self, model_name: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
-        # Append :image2video modality to the model_id for the endpoint
-        model_id_with_modality = f"{model_name}:image2video"
-        post_url = urljoin(self._proxy_base, f"models/{model_id_with_modality}")
+    async def _submit_request_async(self, model_id: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
+        # Use the static model ID directly (already includes modality)
+        post_url = urljoin(self._proxy_base, f"models/{model_id}")
 
-        logger.info("Submitting request to proxy model=%s", model_id_with_modality)
+        logger.info("Submitting request to proxy model=%s", model_id)
         self._log_request(post_url, headers, payload)
 
         async with httpx.AsyncClient() as client:
@@ -535,40 +493,66 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
 
             return generation_id
 
-    async def _build_payload_async(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Build the request payload for Kling API."""
+    async def _build_payload_async(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
+        """Build the request payload for Kling Omni API.
+
+        Images are ordered: reference images FIRST, then start/end frames at the END.
+        This allows users to reference <<<image_1>>>, <<<image_2>>> in the order they
+        supplied the reference images.
+        """
         payload: dict[str, Any] = {
-            "model_name": params["model_name"],
-            "duration": int(params["duration"]),
-            "cfg_scale": float(params["cfg_scale"]),
+            "model_name": "kling-video-o1",
+            "prompt": params["prompt"],
             "mode": params["mode"],
+            "aspect_ratio": params["aspect_ratio"],
+            "duration": int(params["duration"]),
         }
 
-        # Add images
-        if params["image"]:
-            payload["image"] = params["image"]
+        # Build image_list array: reference images FIRST, then start/end frames at END
+        image_list = []
 
-        if params["image_tail"]:
-            payload["image_tail"] = params["image_tail"]
+        # Add reference images first (so they are image_1, image_2, etc. in order)
+        # Reference images don't have a "type" field
+        ref_images_input = params.get("reference_images", [])
+        if not isinstance(ref_images_input, list):
+            ref_images_input = [ref_images_input] if ref_images_input else []
 
-        # Add prompts if provided
-        if params["prompt"]:
-            payload["prompt"] = params["prompt"].strip()
+        for ref_image in ref_images_input:
+            if ref_image:
+                ref_image_url = await self._prepare_image_data_url_async(ref_image)
+                if ref_image_url:
+                    image_list.append({"image_url": ref_image_url})
 
-        if params["negative_prompt"]:
-            payload["negative_prompt"] = params["negative_prompt"].strip()
+        # Add start and end frames at the END with explicit type field
+        if params["first_frame_image"]:
+            image_list.append({"image_url": params["first_frame_image"], "type": "first_frame"})
+        if params["end_frame_image"]:
+            image_list.append({"image_url": params["end_frame_image"], "type": "end_frame"})
 
-        # Add sound parameter for v2.6
-        if params["model_name"] == "kling-v2-6" and params["sound"]:
-            payload["sound"] = params["sound"]
+        if image_list:
+            payload["image_list"] = image_list
 
-        # Add masks if provided
-        if params["static_mask"]:
-            payload["static_mask"] = params["static_mask"]
+        # Parse element IDs from comma-separated string
+        if params.get("element_ids"):
+            element_list = []
+            try:
+                element_ids_parts = [part.strip() for part in params["element_ids"].split(",") if part.strip()]
+                element_list = [{"element_id": int(eid)} for eid in element_ids_parts]
+            except ValueError:
+                pass  # Validation already happened in _process
+            if element_list:
+                payload["element_list"] = element_list
 
-        if params["dynamic_masks"]:
-            with suppress(_json.JSONDecodeError):
-                payload["dynamic_masks"] = _json.loads(params["dynamic_masks"])
+        # Add video if provided
+        if params.get("reference_video_url"):
+            keep_sound_str = "yes" if params.get("video_keep_sound", False) else "no"
+            payload["video_list"] = [
+                {
+                    "video_url": params["reference_video_url"],
+                    "refer_type": params.get("video_refer_type", "reference"),
+                    "keep_original_sound": keep_sound_str,
+                }
+            ]
 
         return payload
 
@@ -601,9 +585,6 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 logger.debug("%s failed to inline image URL: %s", self.name, e)
                 return None
             else:
-                content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0]
-                if not content_type.startswith("image/"):
-                    content_type = "image/jpeg"
                 b64 = base64.b64encode(resp.content).decode("utf-8")
                 logger.debug("Image URL converted to data URI for proxy")
                 return b64
@@ -614,13 +595,16 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 from copy import deepcopy
 
                 red = deepcopy(b)
-                # Redact data URLs in images and masks
-                for key in ("image", "image_tail", "static_mask"):
-                    if key in red and isinstance(red[key], str) and red[key].startswith("data:image/"):
-                        parts = red[key].split(",", 1)
-                        header = parts[0] if parts else "data:image/"
-                        b64 = parts[1] if len(parts) > 1 else ""
-                        red[key] = f"{header},<redacted base64 length={len(b64)}>"
+                # Redact data URLs in image_list
+                if "image_list" in red and isinstance(red["image_list"], list):
+                    for img in red["image_list"]:
+                        if isinstance(img, dict) and "image_url" in img:
+                            img_url = img["image_url"]
+                            if isinstance(img_url, str) and img_url.startswith("data:image/"):
+                                parts = img_url.split(",", 1)
+                                header = parts[0] if parts else "data:image/"
+                                b64 = parts[1] if len(parts) > 1 else ""
+                                img["image_url"] = f"{header},<redacted base64 length={len(b64)}>"
             except (KeyError, TypeError, ValueError):
                 return b
             else:
@@ -801,7 +785,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
         if video_bytes:
             try:
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"kling_image_to_video_{generation_id}.mp4"
+                filename = f"kling_omni_video_{generation_id}.mp4"
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.info("%s saved video to static storage as %s", self.name, filename)

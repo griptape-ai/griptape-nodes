@@ -763,6 +763,17 @@
       }
     },
     {
+      "class_name": "KlingOmniVideoGeneration",
+      "file_path": "griptape_nodes_library/video/kling_omni_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos using Kling Omni AI with advanced templating and multi-modal references via Griptape Cloud model proxy.",
+        "display_name": "Kling Omni Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {

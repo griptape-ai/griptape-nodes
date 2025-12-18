@@ -47,7 +47,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (latest polling response)
         - video_url (VideoUrlArtifact): Saved static video URL
-        - video_id (str): The video ID from Kling AI
+        - video_id (str): The Kling AI video ID
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -226,10 +226,9 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
 
         self.add_parameter(
             ParameterString(
-                name="video_id",
-                tooltip="The video ID from Kling AI",
+                name="kling_video_id",
+                tooltip="The Kling AI video ID",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"is_full_width": True},
             )
         )
 
@@ -627,9 +626,9 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
             )
             return
 
-        # Set video_id output parameter
+        # Set kling_video_id output parameter
         if video_id:
-            self.parameter_output_values["video_id"] = video_id
+            self.parameter_output_values["kling_video_id"] = video_id
             logger.info("Video ID: %s", video_id)
 
         try:
@@ -681,7 +680,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video_url"] = None
-        self.parameter_output_values["video_id"] = ""
+        self.parameter_output_values["kling_video_id"] = ""
 
     @staticmethod
     async def _download_bytes_from_url_async(url: str) -> bytes | None:

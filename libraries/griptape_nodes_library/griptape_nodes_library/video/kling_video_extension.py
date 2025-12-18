@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -42,8 +42,8 @@ class KlingVideoExtension(SuccessFailureNode):
     Outputs:
         - generation_id (str): Griptape Cloud generation id
         - provider_response (dict): Verbatim response from API (latest polling response)
-        - extended_video_url (VideoUrlArtifact): Saved extended video URL
-        - task_id (str): The task/video ID from Kling AI
+        - video_url (VideoUrlArtifact): Saved extended video URL
+        - kling_video_id (str): The Kling AI video ID
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
     """
@@ -104,9 +104,10 @@ class KlingVideoExtension(SuccessFailureNode):
         )
 
         self.add_parameter(
-            ParameterString(
+            Parameter(
                 name="provider_response",
                 output_type="dict",
+                type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
@@ -114,9 +115,10 @@ class KlingVideoExtension(SuccessFailureNode):
         )
 
         self.add_parameter(
-            ParameterString(
-                name="extended_video_url",
+            Parameter(
+                name="video_url",
                 output_type="VideoUrlArtifact",
+                type="VideoUrlArtifact",
                 tooltip="Saved extended video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -126,8 +128,8 @@ class KlingVideoExtension(SuccessFailureNode):
 
         self.add_parameter(
             ParameterString(
-                name="task_id",
-                tooltip="The task/video ID from Kling AI",
+                name="kling_video_id",
+                tooltip="The Kling AI video ID",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )
@@ -364,7 +366,7 @@ class KlingVideoExtension(SuccessFailureNode):
                 await asyncio.sleep(poll_interval_s)
 
     def _handle_polling_timeout(self) -> None:
-        self.parameter_output_values["extended_video_url"] = None
+        self.parameter_output_values["video_url"] = None
         logger.error("%s polling timed out waiting for result", self.name)
         self._set_status_results(
             was_successful=False,
@@ -425,7 +427,7 @@ class KlingVideoExtension(SuccessFailureNode):
             message = f"Extension {status.lower()} with no details provided"
 
         logger.error("%s extension %s: %s", self.name, status.lower(), message)
-        self.parameter_output_values["extended_video_url"] = None
+        self.parameter_output_values["video_url"] = None
         self._set_status_results(
             was_successful=False, result_details=f"{self.name} extension {status.lower()}: {message}"
         )
@@ -441,7 +443,7 @@ class KlingVideoExtension(SuccessFailureNode):
         videos = task_result.get("videos", [])
 
         if not videos or not isinstance(videos, list) or len(videos) == 0:
-            self.parameter_output_values["extended_video_url"] = None
+            self.parameter_output_values["video_url"] = None
             self._set_status_results(
                 was_successful=False,
                 result_details=f"{self.name} extension completed but no videos found in response.",
@@ -453,17 +455,17 @@ class KlingVideoExtension(SuccessFailureNode):
         video_id = video_info.get("id")
 
         if not download_url:
-            self.parameter_output_values["extended_video_url"] = None
+            self.parameter_output_values["video_url"] = None
             self._set_status_results(
                 was_successful=False,
                 result_details=f"{self.name} extension completed but no download URL found in response.",
             )
             return
 
-        # Set task_id output parameter
+        # Set kling_video_id output parameter
         if video_id:
-            self.parameter_output_values["task_id"] = video_id
-            logger.info("Task/Video ID: %s", video_id)
+            self.parameter_output_values["kling_video_id"] = video_id
+            logger.info("Video ID: %s", video_id)
 
         try:
             logger.info("%s downloading video from provider URL", self.name)
@@ -477,20 +479,20 @@ class KlingVideoExtension(SuccessFailureNode):
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 filename = f"kling_video_extension_{generation_id}.mp4"
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["extended_video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.info("%s saved video to static storage as %s", self.name, filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Video extended successfully and saved as {filename}."
                 )
             except (OSError, PermissionError) as e:
                 logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
-                self.parameter_output_values["extended_video_url"] = VideoUrlArtifact(value=download_url)
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
                 self._set_status_results(
                     was_successful=True,
                     result_details=f"Video extended successfully. Using provider URL (could not save to static storage: {e}).",
                 )
         else:
-            self.parameter_output_values["extended_video_url"] = VideoUrlArtifact(value=download_url)
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
             self._set_status_results(
                 was_successful=True,
                 result_details="Video extended successfully. Using provider URL (could not download video bytes).",
@@ -513,8 +515,8 @@ class KlingVideoExtension(SuccessFailureNode):
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
-        self.parameter_output_values["extended_video_url"] = None
-        self.parameter_output_values["task_id"] = ""
+        self.parameter_output_values["video_url"] = None
+        self.parameter_output_values["kling_video_id"] = ""
 
     @staticmethod
     async def _download_bytes_from_url_async(url: str) -> bytes | None:
