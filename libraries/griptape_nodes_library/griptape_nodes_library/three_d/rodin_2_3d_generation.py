@@ -259,7 +259,7 @@ class Rodin23DGeneration(SuccessFailureNode):
         )
 
         # Seed parameter (using SeedParameter component)
-        self._seed_parameter = SeedParameter(self)
+        self._seed_parameter = SeedParameter(self, 65535)
         self._seed_parameter.add_input_parameters()
 
         # OUTPUTS
