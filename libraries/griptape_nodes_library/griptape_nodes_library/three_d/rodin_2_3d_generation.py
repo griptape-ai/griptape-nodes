@@ -613,9 +613,7 @@ class Rodin23DGeneration(SuccessFailureNode):
                     self._log(f"Status: {status}")
 
                     if status == STATUS_DONE:
-                        # Extract the result files
-                        result = result_json.get("result", {})
-                        await self._handle_success(result_json, result, params)
+                        await self._handle_success(result_json, params)
                         return
                     if status == STATUS_FAILED:
                         self._log(f"Generation failed with status: {status}")
@@ -651,19 +649,17 @@ class Rodin23DGeneration(SuccessFailureNode):
                 result_details=f"3D generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
             )
 
-    async def _handle_success(self, response: dict[str, Any], result: dict[str, Any], params: dict[str, Any]) -> None:
+    async def _handle_success(self, response: dict[str, Any], params: dict[str, Any]) -> None:
         """Handle successful generation result."""
         self.parameter_output_values["provider_response"] = response
 
-        # Get all file URLs from result - the proxy returns 'downloads' list
-        files = result.get("downloads", [])
+        # Get download URLs - the proxy returns 'downloads' list at top level
+        files = response.get("downloads", [])
         if not files:
-            # Try alternate response formats
-            files = result.get("files", [])
-        if not files:
-            sample_url = result.get("sample")
-            if sample_url:
-                files = [{"url": sample_url, "name": f"model.{params['geometry_file_format']}"}]
+            # Try nested in result object
+            result = response.get("result", {})
+            if isinstance(result, dict):
+                files = result.get("downloads", [])
 
         if not files:
             self._set_safe_defaults()
