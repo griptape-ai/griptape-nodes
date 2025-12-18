@@ -1570,7 +1570,42 @@ class WorkflowManager:
         else:
             return None
 
-    def _determine_save_target(  # noqa: PLR0915
+    def _generate_unique_filename(self, base_name: str) -> str:
+        """Generate a unique filename for a workflow, avoiding collisions.
+
+        Uses the same logic as object_manager:
+        1. If base name has no collision, use it as-is
+        2. If collision exists and name ends in a number, find first free prefix + integer
+        3. If collision exists and name doesn't end in a number, append _1, _2, etc.
+
+        Args:
+            base_name: The desired base name for the workflow
+
+        Returns:
+            A unique filename that doesn't exist in the workspace
+        """
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        base_path = workspace_path.joinpath(f"{base_name}.py")
+        if not base_path.exists():
+            return base_name
+
+        pattern_match = re.search(r"\d+$", base_name)
+        if pattern_match is not None:
+            # Name ends in a number - strip it and find first free integer
+            incremental_prefix = base_name[: pattern_match.start()]
+        else:
+            # Name doesn't end in a number - append underscore prefix
+            incremental_prefix = f"{base_name}_"
+
+        curr_idx = 1
+        while True:
+            candidate_name = f"{incremental_prefix}{curr_idx}"
+            candidate_path = workspace_path.joinpath(f"{candidate_name}.py")
+            if not candidate_path.exists():
+                return candidate_name
+            curr_idx += 1
+
+    def _determine_save_target(
         self, requested_file_name: str | None, current_workflow_name: str | None
     ) -> SaveWorkflowTargetInfo:
         """Determine the target file path, name, and metadata for saving a workflow.
@@ -1613,17 +1648,7 @@ class WorkflowManager:
                 msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
                 raise ValueError(msg)
             base_name = requested_file_name if requested_file_name else template_workflow.metadata.name
-
-            # Find unique filename
-            curr_idx = 1
-            while True:
-                candidate_name = f"{base_name}_{curr_idx}"
-                candidate_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(f"{candidate_name}.py")
-                if not candidate_path.exists():
-                    break
-                curr_idx += 1
-
-            file_name = candidate_name
+            file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
             relative_file_path = f"{file_name}.py"
