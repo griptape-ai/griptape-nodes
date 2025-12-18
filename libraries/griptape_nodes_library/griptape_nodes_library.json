@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.9",
+    "library_version": "0.52.10",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -2469,7 +2469,8 @@
     "workflows/templates/nano_banana_pro_-_product_advertisement.py",
     "workflows/templates/photography_team.py",
     "workflows/templates/prompt_an_image.py",
-    "workflows/templates/qwen-image_-_band_poster.py"
+    "workflows/templates/qwen-image_-_band_poster.py",
+    "workflows/templates/rodin_3d_-_3d_model_from_image.py"
   ],
   "is_default_library": true
 }
