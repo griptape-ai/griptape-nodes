@@ -1570,7 +1570,7 @@ class WorkflowManager:
         else:
             return None
 
-    def _determine_save_target(
+    def _determine_save_target(  # noqa: PLR0915
         self, requested_file_name: str | None, current_workflow_name: str | None
     ) -> SaveWorkflowTargetInfo:
         """Determine the target file path, name, and metadata for saving a workflow.
