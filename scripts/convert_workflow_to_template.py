@@ -409,11 +409,11 @@ def _extract_workflow_defaults(workflow_path: Path) -> dict[str, str | None]:
     Returns:
         Dictionary with default_description, default_image, and default_name
     """
-    defaults = {
+    defaults: dict[str, str | None] = {
         "default_description": None,
         "default_image": None,
         "default_name": None,
-    }
+    }  # type: ignore[assignment]
 
     if not workflow_path.exists():
         return defaults
