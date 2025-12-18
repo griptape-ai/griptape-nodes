@@ -400,11 +400,65 @@ def _replace_workflow_name_in_code(workflow_content: str, original_name: str, te
     return updated_content
 
 
-def _parse_and_prompt_args() -> argparse.Namespace:
-    """Parse command line arguments and prompt for missing required values.
+def _extract_workflow_defaults(workflow_path: Path) -> dict[str, str | None]:
+    """Extract default values from workflow metadata.
+
+    Args:
+        workflow_path: Path to the workflow file
 
     Returns:
-        Parsed arguments with all required values filled in
+        Dictionary with default_description, default_image, and default_name
+    """
+    defaults = {
+        "default_description": None,
+        "default_image": None,
+        "default_name": None,
+    }
+
+    if not workflow_path.exists():
+        return defaults
+
+    try:
+        metadata_block, _ = extract_metadata_block(workflow_path)
+        metadata = parse_workflow_metadata(metadata_block)
+        defaults["default_description"] = metadata.get("description")
+        defaults["default_image"] = metadata.get("image")
+        defaults["default_name"] = metadata.get("name")
+    except Exception as e:
+        # If we can't parse metadata, log and continue without defaults
+        console.print(f"Warning: Could not extract defaults from workflow metadata: {e}", style="yellow")
+
+    return defaults
+
+
+def _prompt_with_default(prompt_text: str, default_value: str | None, required: bool = True) -> str:
+    """Prompt user with an optional default value.
+
+    Args:
+        prompt_text: The prompt text to display
+        default_value: Optional default value
+        required: Whether the input is required
+
+    Returns:
+        User input or default value
+
+    Raises:
+        ValueError: If required and no value provided
+    """
+    if default_value:
+        prompt_text += f" [default: {default_value}]"
+    result = Prompt.ask(prompt_text, default=default_value or "")
+    if required and not result:
+        msg = f"{prompt_text} is required"
+        raise ValueError(msg)
+    return result
+
+
+def _create_argument_parser() -> argparse.ArgumentParser:
+    """Create and configure the argument parser.
+
+    Returns:
+        Configured ArgumentParser
     """
     parser = argparse.ArgumentParser(description="Convert an existing workflow file into a library template")
     parser.add_argument(
@@ -437,62 +491,35 @@ def _parse_and_prompt_args() -> argparse.Namespace:
         default=None,
         help="Description for the template workflow (used in metadata). If not provided, will prompt for input.",
     )
+    return parser
 
+
+def _parse_and_prompt_args() -> argparse.Namespace:
+    """Parse command line arguments and prompt for missing required values.
+
+    Returns:
+        Parsed arguments with all required values filled in
+    """
+    parser = _create_argument_parser()
     args = parser.parse_args()
 
     # Prompt for workflow first (needed to extract defaults)
     if args.workflow is None:
-        args.workflow = Prompt.ask("Enter workflow file path")
-        if not args.workflow:
-            msg = "Workflow file path is required"
-            raise ValueError(msg)
+        args.workflow = _prompt_with_default("Enter workflow file path", None)
 
     # Extract defaults from workflow metadata if available
-    default_description = None
-    default_image = None
-    default_name = None
-
     workflow_path = Path(args.workflow)
-    if workflow_path.exists():
-        try:
-            metadata_block, _ = extract_metadata_block(workflow_path)
-            metadata = parse_workflow_metadata(metadata_block)
-            default_description = metadata.get("description")
-            default_image = metadata.get("image")
-            default_name = metadata.get("name")
-        except Exception:
-            # If we can't parse metadata, just continue without defaults
-            pass
+    defaults = _extract_workflow_defaults(workflow_path)
 
-    # Prompt for image with default from workflow metadata
+    # Prompt for remaining arguments with defaults
     if args.image is None:
-        prompt_text = "Enter thumbnail image file path"
-        if default_image:
-            prompt_text += f" [default: {default_image}]"
-        args.image = Prompt.ask(prompt_text, default=default_image or "")
-        if not args.image:
-            msg = "Image file path is required"
-            raise ValueError(msg)
+        args.image = _prompt_with_default("Enter thumbnail image file path", defaults["default_image"])
 
-    # Prompt for name with default from workflow metadata
     if args.name is None:
-        prompt_text = "Enter template name"
-        if default_name:
-            prompt_text += f" [default: {default_name}]"
-        args.name = Prompt.ask(prompt_text, default=default_name or "")
-        if not args.name:
-            msg = "Template name is required"
-            raise ValueError(msg)
+        args.name = _prompt_with_default("Enter template name", defaults["default_name"])
 
-    # Prompt for description with default from workflow metadata
     if args.description is None:
-        prompt_text = "Enter template description"
-        if default_description:
-            prompt_text += f" [default: {default_description}]"
-        args.description = Prompt.ask(prompt_text, default=default_description or "")
-        if not args.description:
-            msg = "Template description is required"
-            raise ValueError(msg)
+        args.description = _prompt_with_default("Enter template description", defaults["default_description"])
 
     if args.library is None:
         default_library = "libraries/griptape_nodes_library"
