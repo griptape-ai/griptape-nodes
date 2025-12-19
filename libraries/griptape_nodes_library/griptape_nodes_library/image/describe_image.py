@@ -1,12 +1,16 @@
-from griptape.artifacts import ImageUrlArtifact
+import json
+
+from griptape.artifacts import ImageUrlArtifact, ModelArtifact
 from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
+from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -16,6 +20,7 @@ SERVICE = "Griptape"
 API_KEY_URL = "https://cloud.griptape.ai/configuration/api-keys"
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 MODEL_CHOICES = [
+    "gpt-5.2",
     "gpt-4.1",
     "gpt-4.1-mini",
     "gpt-4.1-nano",
@@ -91,6 +96,19 @@ class DescribeImage(ControlNode):
                 default_value=True,
             )
         )
+
+        # Parameter for output schema
+        self.add_parameter(
+            Parameter(
+                name="output_schema",
+                input_types=["json"],
+                type="json",
+                tooltip="Optional JSON schema for structured output validation.",
+                default_value=None,
+                allowed_modes={ParameterMode.INPUT},
+                ui_options={"hide_property": True},
+            )
+        )
         self.add_parameter(
             Parameter(
                 name="output",
@@ -106,6 +124,42 @@ class DescribeImage(ControlNode):
                 },
             )
         )
+
+    def _update_output_type_and_validate_connections(self, new_output_type: str) -> None:
+        output_param = self.get_parameter_by_name("output")
+        if output_param is None:
+            return
+
+        output_param.output_type = new_output_type
+        output_param.type = new_output_type
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing_for_node = connections.outgoing_index.get(self.name, {})
+        connection_ids = outgoing_for_node.get("output", [])
+
+        for connection_id in connection_ids:
+            connection = connections.connections[connection_id]
+            target_param = connection.target_parameter
+            target_node = connection.target_node
+
+            is_compatible = any(
+                ParameterType.are_types_compatible(new_output_type, input_type) for input_type in target_param.input_types
+            )
+
+            if not is_compatible:
+                logger.info(
+                    f"Removing incompatible connection: DescribeImage '{self.name}' output ({new_output_type}) to "
+                    f"'{target_node.name}.{target_param.name}' (accepts: {target_param.input_types})"
+                )
+
+                GriptapeNodes.handle_request(
+                    DeleteConnectionRequest(
+                        source_node_name=self.name,
+                        source_parameter_name="output",
+                        target_node_name=target_node.name,
+                        target_parameter_name=target_param.name,
+                    )
+                )
 
     def validate_before_workflow_run(self) -> list[Exception] | None:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/871
@@ -129,6 +183,9 @@ class DescribeImage(ControlNode):
         if target_parameter.name == "agent":
             self.hide_parameter_by_name("model")
 
+        if target_parameter.name == "output_schema":
+            self._update_output_type_and_validate_connections("json")
+
         if target_parameter.name == "model" and source_parameter.name == "prompt_model_config":
             # Check and see if the incoming connection is from a prompt model config or an agent.
             target_parameter.type = source_parameter.type
@@ -150,6 +207,9 @@ class DescribeImage(ControlNode):
     ) -> None:
         if target_parameter.name == "agent":
             self.show_parameter_by_name("model")
+        if target_parameter.name == "output_schema":
+            self.set_parameter_value("output_schema", None)
+            self._update_output_type_and_validate_connections("str")
         # Check and see if the incoming connection is from an agent. If so, we'll hide the model parameter
         if target_parameter.name == "model":
             target_parameter.type = "str"
@@ -166,7 +226,7 @@ class DescribeImage(ControlNode):
 
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
-    def process(self) -> AsyncResult[Structure]:
+    def process(self) -> AsyncResult[Structure]:  # noqa: C901, PLR0915, PLR0912
         # Get the parameters from the node
         params = self.parameter_values
         model_input = self.get_parameter_value("model")
@@ -178,6 +238,43 @@ class DescribeImage(ControlNode):
             stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
         )
 
+        output_schema = self.get_parameter_value("output_schema")
+        pydantic_schema = None
+        if output_schema is not None:
+            schema_value = output_schema
+            if isinstance(schema_value, str):
+                if not schema_value.strip():
+                    schema_value = None
+                else:
+                    try:
+                        schema_value = json.loads(schema_value)
+                    except json.JSONDecodeError as e:
+                        msg = (
+                            f"DescribeImage '{self.name}': Unable to parse output_schema as JSON: {e}. "
+                            "Try using the `Create Agent Schema` node to generate a schema."
+                        )
+                        logger.error(msg)
+                        raise
+
+            if schema_value is not None and not isinstance(schema_value, dict):
+                msg = (
+                    f"DescribeImage '{self.name}': output_schema must be a JSON schema object (dict) "
+                    f"or a JSON string, got: {type(schema_value).__name__}"
+                )
+                logger.error(msg)
+                raise TypeError(msg)
+
+            if schema_value is not None:
+                try:
+                    pydantic_schema = create_model(schema_value)
+                except Exception as e:
+                    msg = (
+                        f"DescribeImage '{self.name}': Unable to create output schema model: {e}. "
+                        "Try using the `Create Agent Schema` node to generate a schema."
+                    )
+                    logger.error(msg)
+                    raise
+
         # If an agent is provided, we'll use and ensure it's using a PromptTask
         # If a prompt_driver is provided, we'll use that
         # If neither are provided, we'll create a new one with the selected model.
@@ -187,9 +284,11 @@ class DescribeImage(ControlNode):
             agent = GtAgent().from_dict(agent)
             # make sure the agent is using a PromptTask
             if not isinstance(agent.tasks[0], PromptTask):
-                agent.add_task(PromptTask(prompt_driver=default_prompt_driver))
+                agent.add_task(PromptTask(prompt_driver=default_prompt_driver, output_schema=pydantic_schema))
+            else:
+                agent.tasks[0].output_schema = pydantic_schema
         elif isinstance(model_input, BasePromptDriver):
-            agent = GtAgent(prompt_driver=model_input)
+            agent = GtAgent(prompt_driver=model_input, output_schema=pydantic_schema)
         elif isinstance(model_input, str):
             if model_input not in MODEL_CHOICES:
                 model_input = DEFAULT_MODEL
@@ -198,10 +297,10 @@ class DescribeImage(ControlNode):
                 api_key=GriptapeNodes.SecretsManager().get_secret(API_KEY_ENV_VAR),
                 stream=False,  # TODO: enable once https://github.com/griptape-ai/griptape-cloud/issues/1593 is resolved
             )
-            agent = GtAgent(prompt_driver=prompt_driver)
+            agent = GtAgent(prompt_driver=prompt_driver, output_schema=pydantic_schema)
         else:
             # If the agent is not provided, we'll create a new one with a default prompt driver
-            agent = GtAgent(prompt_driver=default_prompt_driver)
+            agent = GtAgent(prompt_driver=default_prompt_driver, output_schema=pydantic_schema)
 
         prompt = params.get("prompt", "")
         if prompt == "":
@@ -221,9 +320,18 @@ class DescribeImage(ControlNode):
 
         # Run the agent
         yield lambda: agent.run([prompt, image_artifact])
-        self.parameter_output_values["output"] = agent.output.value
+        agent_output = agent.output
+        output_value = agent_output.value
+        if isinstance(agent_output, ModelArtifact):
+            output_value = agent_output.value.model_dump()
+
+        self.parameter_output_values["output"] = output_value
+
         # Insert a false memory to prevent the base64
-        agent.insert_false_memory(prompt=prompt, output=self.parameter_output_values["output"])
+        memory_output = output_value
+        if isinstance(memory_output, (dict, list)):
+            memory_output = json.dumps(memory_output, ensure_ascii=False)
+        agent.insert_false_memory(prompt=prompt, output=str(memory_output))
         try_throw_error(agent.output)
 
         # Set the output value for the agent
