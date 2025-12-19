@@ -31,11 +31,11 @@ OUTPUT_FORMAT_OPTIONS = ["jpeg", "png", "webp"]
 # Operation types
 OPERATION_OPTIONS = [
     "enhance",
-    "enhance_generative",
+    "enhance-generative",
     "sharpen",
-    "sharpen_generative",
+    "sharpen-generative",
     "denoise",
-    "restore_generative",
+    "restore-generative",
     "lighting",
     "matting",
     "tool",
@@ -109,11 +109,11 @@ MATTING_MODE_OPTIONS = ["alpha", "segmentation"]
 
 OPERATION_MODELS = {
     "enhance": ENHANCE_MODELS,
-    "enhance_generative": ENHANCE_GENERATIVE_MODELS,
+    "enhance-generative": ENHANCE_GENERATIVE_MODELS,
     "sharpen": SHARPEN_MODELS,
-    "sharpen_generative": SHARPEN_GENERATIVE_MODELS,
+    "sharpen-generative": SHARPEN_GENERATIVE_MODELS,
     "denoise": DENOISE_MODELS,
-    "restore_generative": RESTORE_GENERATIVE_MODELS,
+    "restore-generative": RESTORE_GENERATIVE_MODELS,
     "lighting": LIGHTING_MODELS,
     "matting": MATTING_MODELS,
     "tool": TOOL_MODELS,
