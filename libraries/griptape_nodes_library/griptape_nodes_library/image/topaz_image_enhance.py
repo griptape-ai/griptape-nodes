@@ -16,6 +16,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -28,16 +29,95 @@ __all__ = ["TopazImageEnhance"]
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png", "webp"]
 
 # Operation types
-OPERATION_OPTIONS = ["enhance", "denoise", "sharpen"]
+OPERATION_OPTIONS = [
+    "enhance",
+    "enhance_generative",
+    "sharpen",
+    "sharpen_generative",
+    "denoise",
+    "restore_generative",
+    "lighting",
+    "matting",
+    "tool",
+]
 
-# Enhance models
-ENHANCE_MODELS = ["Standard V2", "Low Resolution V2", "CGI", "High Fidelity V2", "Text Refine"]
+ENHANCE_MODELS = {
+    "Standard V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
+    "Low Resolution V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
+    "CGI": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
+    "High Fidelity V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
+    "Text Refine": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "sharpen", "denoise", "fix_compression"],
+}
 
-# Denoise models
-DENOISE_MODELS = ["Normal", "Strong", "Extreme"]
+ENHANCE_GENERATIVE_MODELS = {
+    "Redefine": ["prompt", "autoprompt", "creativity", "texture", "sharpen", "denoise"],
+    "Recovery V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "detail"],
+    "Standard MAX": [],
+    "Wonder": [],
+}
 
-# Sharpen models
-SHARPEN_MODELS = ["Standard", "Strong", "Lens Blur", "Motion Blur", "Wildlife", "Portrait"]
+SHARPEN_MODELS = {
+    "Standard": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Strong": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength"],
+    "Lens Blur": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Lens Blur V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Motion Blur": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Natural": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Refocus": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Wildlife": ["denoise_strength", "sharpen_strength"],
+    "Portrait": ["denoise_strength", "sharpen_strength"],
+}
+
+SHARPEN_GENERATIVE_MODELS = {
+    "Super Focus V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "detail", "focus_boost"],
+}
+
+DENOISE_MODELS = {
+    "Normal": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
+    "Strong": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
+    "Extreme": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
+}
+
+RESTORE_GENERATIVE_MODELS = {
+    "Dust-Scratch": [],
+    "Dust-Scratch V2": ["grain", "grain_model", "grain_strength", "grain_density", "grain_size"],
+}
+
+LIGHTING_MODELS = {
+    "Adjust": ["color_correction", "exposure", "highlight", "shadow"],
+    "Adjust V2": ["exposure", "highlight", "shadow"],
+    "White Balance": ["temperature", "opacity"],
+    "Colorize": ["saturation"],
+}
+
+MATTING_MODELS = {
+    "Object": ["mode"],
+}
+
+TOOL_MODELS = {
+    "Transparency Upscale": [],
+}
+
+# Subject detection options
+SUBJECT_DETECTION_OPTIONS = ["Foreground", "Background", "All"]
+
+# Grain model options (for Dust-Scratch V2)
+GRAIN_MODEL_OPTIONS = ["silver rich", "gaussian", "grey"]
+
+# Matting mode options
+MATTING_MODE_OPTIONS = ["alpha", "segmentation"]
+
+OPERATION_MODELS = {
+    "enhance": ENHANCE_MODELS,
+    "enhance_generative": ENHANCE_GENERATIVE_MODELS,
+    "sharpen": SHARPEN_MODELS,
+    "sharpen_generative": SHARPEN_GENERATIVE_MODELS,
+    "denoise": DENOISE_MODELS,
+    "restore_generative": RESTORE_GENERATIVE_MODELS,
+    "lighting": LIGHTING_MODELS,
+    "matting": MATTING_MODELS,
+    "tool": TOOL_MODELS,
+}
 
 # Response status constants
 STATUS_FAILED = "Failed"
@@ -98,7 +178,7 @@ class TopazImageEnhance(SuccessFailureNode):
                 default_value="Standard V2",
                 tooltip="Model to use for the selected operation",
                 allow_output=False,
-                traits={Options(choices=ENHANCE_MODELS)},
+                traits={Options(choices=list(ENHANCE_MODELS.keys()))},
             )
         )
 
@@ -220,6 +300,323 @@ class TopazImageEnhance(SuccessFailureNode):
             )
         )
 
+        # Face enhancement creativity
+        self.add_parameter(
+            ParameterFloat(
+                name="face_enhancement_creativity",
+                default_value=0.5,
+                tooltip="Choose realistic (lower) or creative (higher) face recovery (0.0-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=1.0,
+            )
+        )
+
+        # Subject detection
+        self.add_parameter(
+            ParameterString(
+                name="subject_detection",
+                default_value="All",
+                tooltip="Where enhancements are applied (Foreground, Background, or All)",
+                allow_output=False,
+                traits={Options(choices=SUBJECT_DETECTION_OPTIONS)},
+            )
+        )
+
+        # Sharpen-specific: minor_denoise
+        self.add_parameter(
+            ParameterFloat(
+                name="minor_denoise",
+                default_value=0.1,
+                tooltip="Slight noise reduction applied after sharpening (0.01-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.01,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Wildlife/Portrait-specific: denoise_strength
+        self.add_parameter(
+            ParameterFloat(
+                name="denoise_strength",
+                default_value=0.5,
+                tooltip="Noise reduction strength for Wildlife/Portrait models (0.0-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Wildlife/Portrait-specific: sharpen_strength
+        self.add_parameter(
+            ParameterFloat(
+                name="sharpen_strength",
+                default_value=0.5,
+                tooltip="Sharpening strength for Wildlife/Portrait models (0.0-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Generative model parameters
+
+        # Prompt parameter (Redefine only)
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                default_value="",
+                tooltip="A description of the resulting image (max 1024 characters)",
+                multiline=True,
+                placeholder_text="e.g., girl with red hair and blue eyes",
+                allow_output=False,
+                hide=True,
+            )
+        )
+
+        # Auto-prompt parameter (Redefine only)
+        self.add_parameter(
+            Parameter(
+                name="autoprompt",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Use auto-prompting model to generate a prompt. If enabled, ignores manual prompt input.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "Auto Prompt"},
+                hide=True,
+            )
+        )
+
+        # Creativity parameter (Redefine only)
+        self.add_parameter(
+            ParameterInt(
+                name="creativity",
+                default_value=3,
+                tooltip="Lower values maintain highest fidelity. Higher values provide more creative results (1-6).",
+                allow_output=False,
+                slider=True,
+                min_val=1,
+                max_val=6,
+                hide=True,
+            )
+        )
+
+        # Texture parameter (Redefine only)
+        self.add_parameter(
+            ParameterInt(
+                name="texture",
+                default_value=1,
+                tooltip="Add texture to the image. Recommend 1 for low creativity, 3 for higher creativity (1-5).",
+                allow_output=False,
+                slider=True,
+                min_val=1,
+                max_val=5,
+                hide=True,
+            )
+        )
+
+        # Detail parameter (Recovery V2, Super Focus V2)
+        self.add_parameter(
+            ParameterFloat(
+                name="detail",
+                default_value=0.5,
+                tooltip="Adjusts the level of added detail after rendering (0.0-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Focus boost parameter (Super Focus V2 only)
+        self.add_parameter(
+            ParameterFloat(
+                name="focus_boost",
+                default_value=0.5,
+                tooltip="Boost focus strength (0.25-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.25,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Grain parameters (Dust-Scratch V2 only)
+        self.add_parameter(
+            Parameter(
+                name="grain",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Add film grain to the restored image",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterString(
+                name="grain_model",
+                default_value="gaussian",
+                tooltip="Type of grain to apply",
+                allow_output=False,
+                traits={Options(choices=GRAIN_MODEL_OPTIONS)},
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterInt(
+                name="grain_strength",
+                default_value=30,
+                tooltip="Strength of the grain effect (0-60)",
+                allow_output=False,
+                slider=True,
+                min_val=0,
+                max_val=60,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterInt(
+                name="grain_density",
+                default_value=30,
+                tooltip="Density of the grain effect (0-60)",
+                allow_output=False,
+                slider=True,
+                min_val=0,
+                max_val=60,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterInt(
+                name="grain_size",
+                default_value=3,
+                tooltip="Size of the grain particles (1-5)",
+                allow_output=False,
+                slider=True,
+                min_val=1,
+                max_val=5,
+                hide=True,
+            )
+        )
+
+        # Lighting parameters
+        self.add_parameter(
+            Parameter(
+                name="color_correction",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
+                tooltip="Enable color correction",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="exposure",
+                default_value=1.0,
+                tooltip="Exposure adjustment (0.0-2.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=2.0,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="highlight",
+                default_value=1.0,
+                tooltip="Highlight adjustment (0.0-2.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=2.0,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="shadow",
+                default_value=1.0,
+                tooltip="Shadow adjustment (0.0-2.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=2.0,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="temperature",
+                default_value=0.5,
+                tooltip="Color temperature adjustment (0.01-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.01,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="opacity",
+                default_value=1.0,
+                tooltip="Effect opacity (0.01-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.01,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="saturation",
+                default_value=0.5,
+                tooltip="Saturation adjustment (0.0-1.0)",
+                allow_output=False,
+                slider=True,
+                min_val=0.0,
+                max_val=1.0,
+                hide=True,
+            )
+        )
+
+        # Matting mode parameter
+        self.add_parameter(
+            ParameterString(
+                name="mode",
+                default_value="alpha",
+                tooltip="Matting output mode (alpha or segmentation)",
+                allow_output=False,
+                traits={Options(choices=MATTING_MODE_OPTIONS)},
+                hide=True,
+            )
+        )
+
         # Output format parameter
         self.add_parameter(
             ParameterString(
@@ -275,52 +672,51 @@ class TopazImageEnhance(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
+    # All configurable parameter names that can be shown/hidden based on model
+    ALL_MODEL_PARAMS = [
+        # Standard enhance params
+        "sharpen", "denoise", "fix_compression", "strength",
+        "minor_deblur", "original_detail", "minor_denoise",
+        "face_enhancement", "face_enhancement_strength", "face_enhancement_creativity",
+        "subject_detection",
+        # Wildlife/Portrait sharpen params
+        "denoise_strength", "sharpen_strength",
+        # Generative enhance params
+        "prompt", "autoprompt", "creativity", "texture", "detail",
+        # Super Focus V2 params
+        "focus_boost",
+        # Dust-Scratch V2 grain params
+        "grain", "grain_model", "grain_strength", "grain_density", "grain_size",
+        # Lighting params
+        "color_correction", "exposure", "highlight", "shadow", "temperature", "opacity", "saturation",
+        # Matting params
+        "mode",
+    ]
+
+    def _update_visible_params_for_model(self, model_name: str) -> None:
+        """Show/hide parameters based on the selected model's supported params."""
+        operation = self.get_parameter_value("operation") or "enhance"
+        models_dict = OPERATION_MODELS.get(operation, {})
+        supported_params = set(models_dict.get(model_name, []))
+
+        for param_name in self.ALL_MODEL_PARAMS:
+            if param_name in supported_params:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
         if parameter.name == "operation":
-            # Update model choices based on operation
-            model_param = self.get_parameter_by_name("model")
-            if model_param:
-                if value == "enhance":
-                    model_param.traits = {Options(choices=ENHANCE_MODELS)}
-                    self.set_parameter_value("model", "Standard V2")
-                    # Show enhance-specific params
-                    self.show_parameter_by_name("sharpen")
-                    self.show_parameter_by_name("denoise")
-                    self.show_parameter_by_name("fix_compression")
-                    self.show_parameter_by_name("face_enhancement")
-                    self.show_parameter_by_name("face_enhancement_strength")
-                    # Hide denoise-specific params
-                    self.hide_parameter_by_name("strength")
-                    self.hide_parameter_by_name("minor_deblur")
-                    self.hide_parameter_by_name("original_detail")
-                elif value == "denoise":
-                    model_param.traits = {Options(choices=DENOISE_MODELS)}
-                    self.set_parameter_value("model", "Normal")
-                    # Hide enhance-specific params
-                    self.hide_parameter_by_name("sharpen")
-                    self.hide_parameter_by_name("denoise")
-                    self.hide_parameter_by_name("fix_compression")
-                    self.hide_parameter_by_name("face_enhancement")
-                    self.hide_parameter_by_name("face_enhancement_strength")
-                    # Show denoise-specific params
-                    self.show_parameter_by_name("strength")
-                    self.show_parameter_by_name("minor_deblur")
-                    self.show_parameter_by_name("original_detail")
-                elif value == "sharpen":
-                    model_param.traits = {Options(choices=SHARPEN_MODELS)}
-                    self.set_parameter_value("model", "Standard")
-                    # Hide most params for sharpen
-                    self.hide_parameter_by_name("sharpen")
-                    self.hide_parameter_by_name("denoise")
-                    self.hide_parameter_by_name("fix_compression")
-                    self.hide_parameter_by_name("face_enhancement")
-                    self.hide_parameter_by_name("face_enhancement_strength")
-                    self.hide_parameter_by_name("original_detail")
-                    # Show strength/minor_deblur for sharpen
-                    self.show_parameter_by_name("strength")
-                    self.show_parameter_by_name("minor_deblur")
+            models_dict = OPERATION_MODELS.get(value, {})
+            model_choices = list(models_dict.keys())
+            if model_choices:
+                first_model = model_choices[0]
+                self._update_option_choices("model", model_choices, first_model)
+
+        if parameter.name == "model" and value:
+            self._update_visible_params_for_model(value)
 
     async def aprocess(self) -> None:
         await self._process()
@@ -370,32 +766,19 @@ class TopazImageEnhance(SuccessFailureNode):
 
     def _get_parameters(self) -> dict[str, Any]:
         operation = self.get_parameter_value("operation") or "enhance"
+        model = self.get_parameter_value("model") or "Standard V2"
         params = {
             "operation": operation,
-            "model": self.get_parameter_value("model") or "Standard V2",
+            "model": model,
             "image_input": self.get_parameter_value("image_input"),
-            "output_format": self.get_parameter_value("output_format") or "jpeg",
+            "output_format": self.get_parameter_value("output_format"),
         }
 
-        if operation == "enhance":
-            params.update({
-                "sharpen": self.get_parameter_value("sharpen") or 0.0,
-                "denoise": self.get_parameter_value("denoise") or 0.0,
-                "fix_compression": self.get_parameter_value("fix_compression") or 0.0,
-                "face_enhancement": self.get_parameter_value("face_enhancement") or False,
-                "face_enhancement_strength": self.get_parameter_value("face_enhancement_strength") or 0.5,
-            })
-        elif operation == "denoise":
-            params.update({
-                "strength": self.get_parameter_value("strength") or 0.5,
-                "minor_deblur": self.get_parameter_value("minor_deblur") or 0.1,
-                "original_detail": self.get_parameter_value("original_detail") or 0.5,
-            })
-        elif operation == "sharpen":
-            params.update({
-                "strength": self.get_parameter_value("strength") or 0.5,
-                "minor_deblur": self.get_parameter_value("minor_deblur") or 0.1,
-            })
+        models_dict = OPERATION_MODELS.get(operation, {})
+        supported_params = models_dict.get(model, [])
+
+        for param_name in supported_params:
+            params[param_name] = self.get_parameter_value(param_name)
 
         return params
 
@@ -450,25 +833,22 @@ class TopazImageEnhance(SuccessFailureNode):
             "output_format": params["output_format"],
         }
 
-        operation = params["operation"]
+        operation = params.get("operation", "enhance")
+        models_dict = OPERATION_MODELS.get(operation, {})
+        supported_params = models_dict.get(params["model"], [])
 
-        if operation == "enhance":
-            if params.get("sharpen", 0) > 0:
-                payload["sharpen"] = params["sharpen"]
-            if params.get("denoise", 0) > 0:
-                payload["denoise"] = params["denoise"]
-            if params.get("fix_compression", 0) > 0:
-                payload["fix_compression"] = params["fix_compression"]
-            if params.get("face_enhancement"):
-                payload["face_enhancement"] = True
-                payload["face_enhancement_strength"] = params.get("face_enhancement_strength", 0.5)
-        elif operation == "denoise":
-            payload["strength"] = params.get("strength", 0.5)
-            payload["minor_deblur"] = params.get("minor_deblur", 0.1)
-            payload["original_detail"] = params.get("original_detail", 0.5)
-        elif operation == "sharpen":
-            payload["strength"] = params.get("strength", 0.5)
-            payload["minor_deblur"] = params.get("minor_deblur", 0.1)
+        # Add supported parameters to payload
+        for param_name in supported_params:
+            if param_name in params:
+                value = params[param_name]
+                # Skip None values and handle face_enhancement specially
+                if value is None:
+                    continue
+                # Only include face_enhancement_strength/creativity if face_enhancement is enabled
+                if param_name in ("face_enhancement_strength", "face_enhancement_creativity"):
+                    if not params.get("face_enhancement"):
+                        continue
+                payload[param_name] = value
 
         # Add input image
         image_input = params.get("image_input")
