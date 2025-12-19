@@ -2457,6 +2457,17 @@
         "display_name": "Temp Filename",
         "icon": "FileText"
       }
+    },
+    {
+      "class_name": "TopazImageEnhance",
+      "file_path": "griptape_nodes_library/image/topaz_image_enhance.py",
+      "metadata": {
+        "category": "image",
+        "description": "Enhance images using Topaz Labs models via Griptape model proxy. Supports enhance, denoise, and sharpen operations.",
+        "display_name": "Topaz Image Enhance",
+        "icon": "Sparkles",
+        "group": "edit"
+      }
     }
   ],
   "workflows": [
