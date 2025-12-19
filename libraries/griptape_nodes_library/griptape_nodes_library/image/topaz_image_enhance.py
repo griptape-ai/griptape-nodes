@@ -131,11 +131,6 @@ class TopazImageEnhance(SuccessFailureNode):
         - operation (str): Type of enhancement operation ("enhance", "denoise", or "sharpen")
         - model (str): Model to use for the selected operation
         - image_input (ImageArtifact/ImageUrlArtifact): Input image to process
-        - sharpen (float): Additional sharpening (0.0-1.0)
-        - denoise (float): Noise reduction amount (0.0-1.0)
-        - fix_compression (float): Fix lossy JPEG artifacts (0.0-1.0)
-        - face_enhancement (bool): Enable face-specific enhancements
-        - face_enhancement_strength (float): How strong facial enhancement should be (0.0-1.0)
         - output_format (str): Desired format of the output image ("jpeg", "png", or "webp")
 
     Outputs:
