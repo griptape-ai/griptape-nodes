@@ -10,6 +10,7 @@ from xdg_base_dirs import xdg_config_home
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.static_file_events import (
@@ -24,10 +25,12 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.image_metadata_injector import inject_workflow_metadata_if_image
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-from griptape_nodes.servers.static import start_static_server
+from griptape_nodes.servers.static import STATIC_SERVER_URL, start_static_server
 from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
@@ -57,8 +60,6 @@ class StaticFilesManager:
         workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
 
         # Build base URL for LocalStorageDriver from configured base URL
-        from griptape_nodes.servers.static import STATIC_SERVER_URL
-
         base_url_config = config_manager.get_config_value("static_server_base_url")
         base_url = f"{base_url_config}{STATIC_SERVER_URL}"
 
@@ -261,10 +262,6 @@ class StaticFilesManager:
             and not skip_metadata_injection
         ):
             try:
-                from griptape_nodes.retained_mode.managers.image_metadata_injector import (
-                    inject_workflow_metadata_if_image,
-                )
-
                 data = inject_workflow_metadata_if_image(data, file_name)
             except Exception as e:
                 logger.warning("Failed to inject workflow metadata into %s: %s", file_name, e)
@@ -307,9 +304,6 @@ class StaticFilesManager:
             workflow's directory relative to workspace. Otherwise, returns the staticfiles
             subdirectory relative to workspace.
         """
-        from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         workspace_path = self.config_manager.workspace_path
         static_files_subdir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
 
