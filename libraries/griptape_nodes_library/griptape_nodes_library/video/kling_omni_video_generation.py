@@ -48,7 +48,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
         - end_frame_image (ImageArtifact|ImageUrlArtifact|str): End frame image (optional)
         - element_ids (str): Comma-separated element IDs (optional)
         - reference_video (VideoUrlArtifact): Reference video for editing or style reference (optional, max 1)
-        - video_refer_type (str): Video reference type (base: edit video, reference: use as reference)
+        - video_refer_type (str): Video reference type (base: edit video, feature: use as feature reference)
         - video_keep_sound (bool): Keep original video sound (default: False)
         - mode (str): Video generation mode (std: Standard, pro: Professional)
         - aspect_ratio (str): Aspect ratio (required when not using first frame or video editing)
@@ -132,7 +132,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 default_value="",
                 tooltip="Comma-separated element IDs (e.g., '123,456,789')",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"placeholder_text": "e.g., 123,456,789"},
+                ui_options={"placeholder_text": "e.g., 123,456,789", "hide": True},
             )
         advanced_group.ui_options = {"hide": False}
         self.add_node_element(advanced_group)
@@ -156,10 +156,10 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
 
             ParameterString(
                 name="video_refer_type",
-                default_value="reference",
-                tooltip="Video reference type: 'base' for video editing, 'reference' for style reference",
+                default_value="base",
+                tooltip="Video reference type: 'feature' is the feature reference video, 'base' is the video to be edited",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["reference", "base"])},
+                traits={Options(choices=["base", "feature"])},
             )
             Parameter(
                 name="video_keep_sound",
@@ -431,7 +431,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
             "end_frame_image": await self._prepare_image_data_url_async(self.get_parameter_value("end_frame_image")),
             "element_ids": (self.get_parameter_value("element_ids") or "").strip(),
             "reference_video_url": reference_video_url,
-            "video_refer_type": self.get_parameter_value("video_refer_type") or "reference",
+            "video_refer_type": self.get_parameter_value("video_refer_type") or "base",
             "video_keep_sound": video_keep_sound,
             "mode": self.get_parameter_value("mode") or "pro",
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "16:9",
@@ -549,7 +549,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
             payload["video_list"] = [
                 {
                     "video_url": params["reference_video_url"],
-                    "refer_type": params.get("video_refer_type", "reference"),
+                    "refer_type": params.get("video_refer_type", "base"),
                     "keep_original_sound": keep_sound_str,
                 }
             ]
