@@ -1171,18 +1171,33 @@ def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dic
                 callbacks = _get_ssh_callbacks()
 
             # Shallow clone with depth=1
-            checkout_branch = ref if ref != "HEAD" else None
+            # Note: We don't use checkout_branch here because it only works with branches,
+            # not tags or commit SHAs. Instead, we'll fetch and checkout the ref manually.
             repo = pygit2.clone_repository(
                 remote_url,
                 str(temp_path),
                 callbacks=callbacks,
                 depth=1,
-                checkout_branch=checkout_branch,
             )
 
             if repo is None:
                 msg = f"Failed to clone repository from {remote_url}"
                 raise GitCloneError(msg)
+
+            # If a specific ref was requested (not HEAD), fetch and checkout that ref
+            if ref != "HEAD":
+                try:
+                    # Fetch the specific ref (works for branches, tags, and commits)
+                    remote = repo.remotes["origin"]
+                    remote.fetch([ref], callbacks=callbacks, depth=1)
+
+                    # Now resolve and checkout the ref
+                    resolved_ref = repo.revparse_single(ref)
+                    repo.checkout_tree(resolved_ref)
+                    repo.set_head(resolved_ref.id)
+                except (KeyError, pygit2.GitError) as e:
+                    msg = f"Failed to fetch and checkout ref '{ref}' in clone from {remote_url}: {e}"
+                    raise GitCloneError(msg) from e
 
             # Find the library JSON file
             library_json_path = find_file_in_directory(temp_path, "griptape[-_]nodes[-_]library.json")
