@@ -1,8 +1,4 @@
-from io import BytesIO
 from typing import Any
-
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
-from PIL import Image
 
 from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import (
     ImageMetadataDriverRegistry,
@@ -10,7 +6,7 @@ from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
-from griptape_nodes_library.utils.image_utils import load_pil_from_url
+from griptape_nodes_library.utils.image_utils import load_pil_image_from_artifact
 
 
 class ReadImageMetadataNode(SuccessFailureNode):
@@ -103,21 +99,9 @@ class ReadImageMetadataNode(SuccessFailureNode):
 
         # Load PIL image
         try:
-            if isinstance(image, ImageUrlArtifact):
-                pil_image = load_pil_from_url(image.value)
-            elif isinstance(image, ImageArtifact):
-                pil_image = Image.open(BytesIO(image.value))
-            elif isinstance(image, str):
-                pil_image = load_pil_from_url(image)
-            else:
-                error_msg = f"{self.name}: Unsupported image type: {type(image).__name__}"
-                logger.warning(error_msg)
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                return
-        except Exception as e:
-            error_msg = f"{self.name}: Failed to load image: {e}"
-            logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
+            pil_image = load_pil_image_from_artifact(image, self.name)
+        except (TypeError, ValueError) as e:
+            self._set_status_results(was_successful=False, result_details=str(e))
             return
 
         # Detect format
@@ -146,10 +130,10 @@ class ReadImageMetadataNode(SuccessFailureNode):
         self.parameter_output_values["metadata"] = metadata
 
         count = len(metadata)
-        if count == 0:
-            success_msg = "No metadata found in image"
-        else:
+        if count > 0:
             success_msg = f"Successfully read {count} metadata entries"
+        else:
+            success_msg = "No metadata found in image"
 
         self._set_status_results(was_successful=True, result_details=success_msg)
         logger.info(f"{self.name}: {success_msg}")
