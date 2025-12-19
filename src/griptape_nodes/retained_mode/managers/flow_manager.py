@@ -3680,7 +3680,7 @@ class FlowManager:
             )
 
         metadata = pil_image.info
-        metadata_keys = list(metadata.keys())
+        metadata_keys = [str(key) for key in metadata]
 
         # Validation: Check if flow commands metadata exists
         flow_commands_key = "gtn_flow_commands"
