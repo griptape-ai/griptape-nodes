@@ -143,7 +143,8 @@ class DescribeImage(ControlNode):
             target_node = connection.target_node
 
             is_compatible = any(
-                ParameterType.are_types_compatible(new_output_type, input_type) for input_type in target_param.input_types
+                ParameterType.are_types_compatible(new_output_type, input_type)
+                for input_type in target_param.input_types
             )
 
             if not is_compatible:
