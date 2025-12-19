@@ -90,15 +90,13 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
 
         # Text input
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                input_types=["str"],
-                type="str",
                 tooltip="Text to convert to speech",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Enter text to convert to speech...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Enter text to convert to speech...",
                     "display_name": "Text",
                 },
             )
@@ -182,31 +180,27 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="previous_text",
-                input_types=["str"],
-                type="str",
                 tooltip="Context for what text comes before the generated speech. Helps maintain continuity between consecutive speech generations.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Optional: provide text that comes before for continuity...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
                     "display_name": "Previous Text",
-                    "placeholder_text": "Optional: provide text that comes before for continuity...",
                 },
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="next_text",
-                input_types=["str"],
-                type="str",
                 tooltip="Context for what text comes after the generated speech. Helps maintain continuity between consecutive speech generations.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Optional: provide text that comes after for continuity...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
                     "display_name": "Next Text",
-                    "placeholder_text": "Optional: provide text that comes after for continuity...",
                 },
             )
         )
