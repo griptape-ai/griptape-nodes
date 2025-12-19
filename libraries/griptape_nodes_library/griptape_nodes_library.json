@@ -2017,17 +2017,6 @@
       }
     },
     {
-      "class_name": "MapNode",
-      "file_path": "griptape_nodes_library/misc/map_node.py",
-      "metadata": {
-        "category": "misc",
-        "description": "Display location on a map using latitude and longitude coordinates",
-        "display_name": "Map",
-        "icon": "map",
-        "group": "create"
-      }
-    },
-    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {

@@ -337,14 +337,12 @@ class ExtractFlowCommandsFromImageMetadataResultSuccess(ResultPayloadSuccess):
         metadata_keys: List of all metadata keys found in the image (for debugging)
         flow_name: Name of the deserialized flow (only present if deserialize=True)
         node_name_mappings: Mapping from original to deserialized node names (only present if deserialize=True)
-        altered_workflow_state: Whether the workflow state was altered (True if deserialized, False otherwise)
     """
 
     serialized_flow_commands: SerializedFlowCommands
     metadata_keys: list[str] = field(default_factory=list)
     flow_name: str | None = None
     node_name_mappings: dict[str, str] = field(default_factory=dict)
-    altered_workflow_state: bool = False
 
 
 @dataclass
@@ -353,11 +351,9 @@ class ExtractFlowCommandsFromImageMetadataResultFailure(WorkflowNotAlteredMixin,
     """Flow commands extraction failed.
 
     Args:
-        failure_reason: Specific reason for failure
         file_path: The file path that was attempted (for error context)
     """
 
-    failure_reason: FlowMetadataExtractionFailureReason
     file_path: str
 
 

@@ -126,6 +126,8 @@ def _serialize_flow(flow_name: str | None = None) -> str | None:
     # Success path: Serialize using pickle + base64
     try:
         serialized_flow_commands = serialize_result.serialized_flow_commands
+        # Pickle is safe here: serializing workflow data for metadata injection into saved images
+        # The data will only be deserialized by this same application
         pickled_data = pickle.dumps(serialized_flow_commands)
         encoded_data = base64.b64encode(pickled_data).decode("ascii")
     except Exception as e:

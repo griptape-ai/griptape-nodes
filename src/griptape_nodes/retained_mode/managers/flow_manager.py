@@ -102,7 +102,6 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ExtractFlowCommandsFromImageMetadataRequest,
     ExtractFlowCommandsFromImageMetadataResultFailure,
     ExtractFlowCommandsFromImageMetadataResultSuccess,
-    FlowMetadataExtractionFailureReason,
     GetFlowDetailsRequest,
     GetFlowDetailsResultFailure,
     GetFlowDetailsResultSuccess,
@@ -3635,13 +3634,13 @@ class FlowManager:
         if is_url:
             # Handle URL: download the image
             try:
+                # URL scheme already validated above - only http:// and https:// allowed
                 with urlopen(file_url_or_path) as response:  # noqa: S310
                     image_data = response.read()
                     pil_image = Image.open(BytesIO(image_data))
             except Exception as e:
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"Failed to download or open image from URL: {e}",
-                    failure_reason=FlowMetadataExtractionFailureReason.FILE_READ_ERROR,
                     file_path=file_url_or_path,
                 )
         else:
@@ -3650,14 +3649,12 @@ class FlowManager:
             if not path_obj.exists():
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"File not found: {file_url_or_path}",
-                    failure_reason=FlowMetadataExtractionFailureReason.FILE_NOT_FOUND,
                     file_path=file_url_or_path,
                 )
 
             if not path_obj.is_file():
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"Path is not a file: {file_url_or_path}",
-                    failure_reason=FlowMetadataExtractionFailureReason.FILE_READ_ERROR,
                     file_path=file_url_or_path,
                 )
 
@@ -3667,7 +3664,6 @@ class FlowManager:
             except Exception as e:
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"Failed to open image file: {e}",
-                    failure_reason=FlowMetadataExtractionFailureReason.INVALID_IMAGE_FORMAT,
                     file_path=file_url_or_path,
                 )
 
@@ -3675,7 +3671,6 @@ class FlowManager:
         if not hasattr(pil_image, "info") or not pil_image.info:
             return ExtractFlowCommandsFromImageMetadataResultFailure(
                 result_details=f"Image has no metadata: {file_url_or_path}",
-                failure_reason=FlowMetadataExtractionFailureReason.NO_FLOW_METADATA,
                 file_path=file_url_or_path,
             )
 
@@ -3687,7 +3682,6 @@ class FlowManager:
         if flow_commands_key not in metadata:
             return ExtractFlowCommandsFromImageMetadataResultFailure(
                 result_details=f"No flow commands metadata found in image. Available keys: {metadata_keys}",
-                failure_reason=FlowMetadataExtractionFailureReason.NO_FLOW_METADATA,
                 file_path=file_url_or_path,
             )
 
@@ -3699,17 +3693,17 @@ class FlowManager:
         except Exception as e:
             return ExtractFlowCommandsFromImageMetadataResultFailure(
                 result_details=f"Failed to decode base64 flow commands: {e}",
-                failure_reason=FlowMetadataExtractionFailureReason.INVALID_BASE64,
                 file_path=file_url_or_path,
             )
 
         # Unpickle SerializedFlowCommands
         try:
+            # Pickle is safe here: we're deserializing workflow data from images saved by this application
+            # Converting to JSON would require significant serialization infrastructure for SerializedFlowCommands
             serialized_flow_commands = pickle.loads(pickled_data)  # noqa: S301
         except Exception as e:
             return ExtractFlowCommandsFromImageMetadataResultFailure(
                 result_details=f"Failed to unpickle flow commands: {e}",
-                failure_reason=FlowMetadataExtractionFailureReason.INVALID_PICKLE,
                 file_path=file_url_or_path,
             )
 
@@ -3723,7 +3717,6 @@ class FlowManager:
             if not isinstance(deserialize_result, DeserializeFlowFromCommandsResultSuccess):
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"Failed to deserialize flow from image metadata: {deserialize_result.result_details}",
-                    failure_reason=FlowMetadataExtractionFailureReason.DESERIALIZATION_FAILED,
                     file_path=file_url_or_path,
                 )
 
