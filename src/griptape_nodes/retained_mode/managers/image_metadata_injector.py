@@ -87,7 +87,6 @@ def _serialize_node(node_name: str) -> str | None:
     """
     serialize_request = SerializeNodeToCommandsRequest(
         node_name=node_name,
-        serialize_all_parameter_values=True,
     )
     serialize_result = GriptapeNodes.handle_request(serialize_request)
 
