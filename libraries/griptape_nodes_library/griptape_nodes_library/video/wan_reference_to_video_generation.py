@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -137,15 +138,13 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
 
         # Prompt parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 tooltip="Text description using character1/character2/character3 to reference subjects (max 1500 characters)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="character1 is happily watching a movie on the sofa...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "character1 is happily watching a movie on the sofa...",
                     "display_name": "Prompt",
                 },
             )
