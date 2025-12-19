@@ -1,6 +1,7 @@
 """EXIF metadata injection and extraction driver for JPEG, TIFF, and MPO formats."""
 
 import json
+import logging
 from io import BytesIO
 from typing import Any
 
@@ -8,6 +9,8 @@ from PIL import Image
 from PIL.ExifTags import GPSTAGS, TAGS
 
 from griptape_nodes.drivers.image_metadata.base_image_metadata_driver import BaseImageMetadataDriver
+
+logger = logging.getLogger("griptape_nodes")
 
 # EXIF tag IDs
 EXIF_USERCOMMENT_TAG = 0x9286
@@ -200,11 +203,13 @@ class ExifMetadataDriver(BaseImageMetadataDriver):
 
             custom_metadata = json.loads(comment_str)
             if not isinstance(custom_metadata, dict):
+                logger.debug("UserComment is not a dict, skipping custom metadata")
                 return
 
             # Merge custom metadata directly into metadata dict
             for key, value in custom_metadata.items():
                 metadata[key] = str(value)
-        except Exception:  # noqa: S110
-            # Silently ignore invalid/missing custom metadata
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug("Could not parse UserComment as JSON: %s", e)
+        except Exception as e:
+            logger.debug("Unexpected error parsing UserComment: %s", e)
