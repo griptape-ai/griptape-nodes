@@ -908,7 +908,15 @@ class DeprecationMessage(ParameterMessage):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    def __init__(self, name: str, ui_options: dict | None = None, *, collapsed: bool = False, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        ui_options: dict | None = None,
+        *,
+        collapsed: bool = False,
+        user_defined: bool = False,
+        **kwargs,
+    ):
         super().__init__(name=name, **kwargs)
         if ui_options is None:
             ui_options = {}
@@ -920,6 +928,7 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
             ui_options["collapsed"] = collapsed
 
         self._ui_options = ui_options
+        self.user_defined = user_defined
 
     @property
     def ui_options(self) -> dict:

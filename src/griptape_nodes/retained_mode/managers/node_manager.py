@@ -136,6 +136,9 @@ from griptape_nodes.retained_mode.events.object_events import (
     RenameObjectResultSuccess,
 )
 from griptape_nodes.retained_mode.events.parameter_events import (
+    AddParameterGroupToNodeRequest,
+    AddParameterGroupToNodeResultFailure,
+    AddParameterGroupToNodeResultSuccess,
     AddParameterToNodeRequest,
     AddParameterToNodeResultFailure,
     AddParameterToNodeResultSuccess,
@@ -240,6 +243,9 @@ class NodeManager:
             ListParametersOnNodeRequest, self.on_list_parameters_on_node_request
         )
         event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, self.on_add_parameter_to_node_request)
+        event_manager.assign_manager_to_request_type(
+            AddParameterGroupToNodeRequest, self.on_add_parameter_group_to_node_request
+        )
         event_manager.assign_manager_to_request_type(
             RemoveParameterFromNodeRequest, self.on_remove_parameter_from_node_request
         )
@@ -1419,6 +1425,72 @@ class NodeManager:
         )
         return result
 
+    def on_add_parameter_group_to_node_request(  # noqa: C901, PLR0911
+        self, request: AddParameterGroupToNodeRequest
+    ) -> ResultPayload:
+        """Handle request to add a ParameterGroup to a node."""
+        node_name = request.node_name
+        node = None
+        parent_group: ParameterGroup | None = None
+
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to add ParameterGroup to a Node from the Current Context. Failed because the Current Context is empty."
+                return AddParameterGroupToNodeResultFailure(result_details=details)
+
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to add ParameterGroup '{request.group_name}' to a Node '{node_name}', but no such Node was found."
+                return AddParameterGroupToNodeResultFailure(result_details=details)
+
+        if node.lock:
+            details = f"Attempted to add ParameterGroup '{request.group_name}' to Node '{node_name}'. Failed because the Node was locked."
+            return AddParameterGroupToNodeResultFailure(result_details=details)
+
+        if not request.group_name:
+            details = (
+                f"Attempted to add ParameterGroup to node '{node_name}'. Failed because group_name was not defined."
+            )
+            return AddParameterGroupToNodeResultFailure(result_details=details)
+
+        existing_element = node.get_element_by_name_and_type(request.group_name)
+        if existing_element is not None:
+            details = f"Attempted to add ParameterGroup '{request.group_name}' to node '{node_name}'. Failed because an element with that name already exists."
+            return AddParameterGroupToNodeResultFailure(result_details=details)
+
+        if request.parent_element_name is not None:
+            parent_element = node.get_element_by_name_and_type(request.parent_element_name)
+            if parent_element is None:
+                details = f"Attempted to add ParameterGroup '{request.group_name}' to Parent Element '{request.parent_element_name}' in node '{node_name}'. Failed because parent element didn't exist."
+                return AddParameterGroupToNodeResultFailure(result_details=details)
+
+            if isinstance(parent_element, ParameterGroup):
+                parent_group = parent_element
+
+        new_group = ParameterGroup(
+            name=request.group_name,
+            ui_options=request.ui_options if request.ui_options else {},
+            parent_group_name=parent_group.name if parent_group is not None else None,
+            user_defined=request.is_user_defined,
+        )
+
+        if parent_group is not None:
+            parent_group.add_child(new_group)
+        else:
+            node.add_node_element(new_group)
+
+        details = f"Successfully added ParameterGroup '{request.group_name}' to Node '{node_name}'."
+        logger.debug(details)
+
+        return AddParameterGroupToNodeResultSuccess(
+            group_name=new_group.name, node_name=node_name, result_details=details
+        )
+
     def on_remove_parameter_from_node_request(self, request: RemoveParameterFromNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -2557,6 +2629,22 @@ class NodeManager:
 
             # Now creation or alteration of all of the elements.
             element_modification_commands = []
+
+            # Serialize only user-defined ParameterGroups (like parameters)
+            all_groups = node.root_ui_element.find_elements_by_type(ParameterGroup)
+            for group in all_groups:
+                if group.user_defined:
+                    add_group_request = AddParameterGroupToNodeRequest(
+                        node_name=node_name,
+                        group_name=group.name,
+                        parent_element_name=group.parent_group_name,
+                        ui_options=group.ui_options if group.ui_options else {},
+                        is_user_defined=True,
+                        initial_setup=True,
+                    )
+                    element_modification_commands.append(add_group_request)
+
+            # Then serialize parameters
             for parameter in node.parameters:
                 # Create the parameter, or alter it on the existing node
                 if parameter.user_defined:

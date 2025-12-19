@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pydantic import Field
@@ -139,6 +139,53 @@ class RemoveParameterFromNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSu
 @PayloadRegistry.register
 class RemoveParameterFromNodeResultFailure(ResultPayloadFailure):
     """Parameter removal failed. Common causes: node not found, parameter not found, removal not allowed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterGroupToNodeRequest(RequestPayload):
+    """Add a new ParameterGroup to a node.
+
+    Use when: Dynamically organizing parameters into collapsible groups,
+    structuring node interfaces, building nodes with categorized parameters.
+
+    Args:
+        node_name: Name of the node to add group to (None for current context)
+        group_name: Name of the new parameter group
+        parent_element_name: Name of parent element if nested (None for root level)
+        ui_options: UI configuration options (e.g., {"collapsed": True})
+        is_user_defined: Whether this is a user-defined group (affects serialization)
+        initial_setup: Skip setup work when loading from file
+
+    Results: AddParameterGroupToNodeResultSuccess | AddParameterGroupToNodeResultFailure
+    """
+
+    group_name: str
+    node_name: str | None = None
+    parent_element_name: str | None = None
+    ui_options: dict = field(default_factory=dict)
+    is_user_defined: bool = True
+    initial_setup: bool = False
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterGroupToNodeResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """ParameterGroup added successfully to node.
+
+    Args:
+        group_name: Name of the new parameter group
+        node_name: Name of the node group was added to
+    """
+
+    group_name: str
+    node_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class AddParameterGroupToNodeResultFailure(ResultPayloadFailure):
+    """ParameterGroup addition failed. Common causes: node not found, invalid group name, group already exists."""
 
 
 @dataclass
