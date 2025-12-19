@@ -152,6 +152,8 @@ class ReadImageMetadataNode(SuccessFailureNode):
             # Determine group name
             if prefix is None:
                 group_name = "Other"
+            elif prefix == "gtn":
+                group_name = "Griptape Nodes"
             else:
                 group_name = prefix
 
@@ -178,6 +180,11 @@ class ReadImageMetadataNode(SuccessFailureNode):
             # Add the group to the node
             self.add_node_element(param_group)
             self._dynamic_groups[group_name] = param_group
+
+        # Reorder status group to appear after dynamic groups
+        status_group = self.status_component.get_parameter_group()
+        self.remove_node_element(status_group)
+        self.add_node_element(status_group)
 
     def _read_and_populate_metadata(self, image: Any) -> None:
         """Read metadata from image and populate output parameter.
