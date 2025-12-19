@@ -1046,6 +1046,8 @@ class WorkflowManager:
         # Let us go into the darkness.
         complete_file_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(request.file_name)
         str_path = str(complete_file_path)
+        logger.info("Loading workflow metadata from: %s", complete_file_path)
+
         if not Path(complete_file_path).is_file():
             self._workflow_file_path_to_info[str(str_path)] = WorkflowManager.WorkflowInfo(
                 status=WorkflowManager.WorkflowStatus.MISSING,
@@ -1150,6 +1152,13 @@ class WorkflowManager:
             registered_libraries = []
         else:
             registered_libraries = list_libraries_result.libraries
+
+        logger.info(
+            "Workflow '%s' references %d libraries: %s",
+            workflow_metadata.name,
+            len(workflow_metadata.node_libraries_referenced),
+            [lib.library_name for lib in workflow_metadata.node_libraries_referenced],
+        )
 
         dependency_infos = []
         for node_library_referenced in workflow_metadata.node_libraries_referenced:
