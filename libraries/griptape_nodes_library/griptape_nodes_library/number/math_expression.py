@@ -1,0 +1,354 @@
+import math
+import re
+from typing import Any
+
+from asteval import Interpreter
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.traits.options import Options
+
+# All 26 letters of the alphabet for variable names
+ALPHABET = "abcdefghijklmnopqrstuvwxyz"
+
+
+class MathExpression(BaseNode):
+    """MathExpression Node that evaluates mathematical expressions with variable inputs."""
+
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+
+        # Add expression input parameter
+        self.add_parameter(
+            ParameterString(
+                name="expression",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                default_value="a + b",
+                tooltip="Mathematical expression to evaluate (e.g., 'a + b * c', 'sin(a) + cos(b)')",
+                multiline=False,
+                placeholder_text="Enter expression (e.g., a + b * c)",
+            )
+        )
+
+        # Add number of variables parameter with slider
+        self.add_parameter(
+            ParameterInt(
+                name="num_variables",
+                tooltip="Number of variables available (1-26, one for each letter a-z)",
+                default_value=2,
+                allowed_modes={ParameterMode.PROPERTY},
+                slider=True,
+                min_val=1,
+                max_val=26,
+            )
+        )
+
+        # Add all 26 variable parameters (initially hidden based on num_variables)
+        for letter in ALPHABET:
+            self.add_parameter(
+                Parameter(
+                    name=letter,
+                    type="float",
+                    input_types=["int", "float", "bool"],
+                    tooltip=f"Variable {letter.upper()} value",
+                    default_value=0,
+                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    hide=True,  # Initially hidden, will be shown based on num_variables
+                )
+            )
+
+        # Update visibility based on default num_variables
+        self._update_variable_visibility()
+
+        # Add output type parameter
+        output_type_choices = ["float", "int"]
+        self.add_parameter(
+            Parameter(
+                name="output_type",
+                tooltip="Output type: float or int",
+                type="str",
+                default_value="float",
+                allowed_modes={ParameterMode.PROPERTY},
+                traits={Options(choices=output_type_choices)},
+            )
+        )
+
+        # Add precision parameter (for float output)
+        self.add_parameter(
+            ParameterInt(
+                name="precision",
+                tooltip="Number of decimal places for float output (0-15)",
+                default_value=6,
+                allowed_modes={ParameterMode.PROPERTY},
+            )
+        )
+
+        # Add output parameter (type will be determined by output_type setting)
+        self.add_parameter(
+            Parameter(
+                name="result",
+                tooltip="Result of the evaluated expression",
+                type="float",
+                allowed_modes={ParameterMode.OUTPUT},
+                default_value=0.0,
+            )
+        )
+
+    def _update_variable_visibility(self) -> None:
+        """Update visibility of variable parameters based on num_variables setting."""
+        num_variables = self.get_parameter_value("num_variables")
+        if num_variables is None:
+            num_variables = 2
+        try:
+            num_variables = int(num_variables)
+            num_variables = max(1, min(26, num_variables))  # Clamp between 1 and 26
+        except (ValueError, TypeError):
+            num_variables = 2
+
+        # Show/hide variable parameters based on count
+        for i, letter in enumerate(ALPHABET):
+            param = self.get_parameter_by_name(letter)
+            if param is None:
+                continue
+
+            if i < num_variables:
+                param.hide = False
+            else:
+                param.hide = True
+
+    def _create_interpreter(self) -> Interpreter:
+        """Create an asteval interpreter with variables and math functions."""
+        interpreter = Interpreter()
+
+        # Get number of variables
+        num_variables = self.get_parameter_value("num_variables")
+        if num_variables is None:
+            num_variables = 2
+        try:
+            num_variables = int(num_variables)
+            num_variables = max(1, min(26, num_variables))  # Clamp between 1 and 26
+        except (ValueError, TypeError):
+            num_variables = 2
+
+        # Add variable values from individual parameters (a through the selected number)
+        for i in range(num_variables):
+            letter = ALPHABET[i]
+            value = self.get_parameter_value(letter)
+            # Handle None, convert to float
+            if value is None:
+                interpreter.symtable[letter] = 0.0
+                continue
+
+            try:
+                interpreter.symtable[letter] = float(value)
+            except (ValueError, TypeError):
+                interpreter.symtable[letter] = 0.0
+
+        # Helper function for sum that accepts multiple arguments
+        def safe_sum(*args: float) -> float:
+            """Sum function that accepts multiple arguments."""
+            if not args:
+                return 0.0
+            try:
+                # Convert all arguments to floats and sum them
+                total = 0.0
+                for arg in args:
+                    total += float(arg)
+            except (TypeError, ValueError):
+                return 0.0
+            else:
+                return total
+
+        # Add safe math functions and constants
+        interpreter.symtable.update(
+            {
+                # Math functions
+                "abs": abs,
+                "round": round,
+                "min": min,
+                "max": max,
+                "sum": safe_sum,
+                "pow": pow,
+                "sqrt": math.sqrt,
+                "sin": math.sin,
+                "cos": math.cos,
+                "tan": math.tan,
+                "asin": math.asin,
+                "acos": math.acos,
+                "atan": math.atan,
+                "atan2": math.atan2,
+                "sinh": math.sinh,
+                "cosh": math.cosh,
+                "tanh": math.tanh,
+                "exp": math.exp,
+                "log": math.log,
+                "log10": math.log10,
+                "log2": math.log2,
+                "ceil": math.ceil,
+                "floor": math.floor,
+                "fabs": math.fabs,
+                "fmod": math.fmod,
+                "degrees": math.degrees,
+                "radians": math.radians,
+                # Math constants
+                "pi": math.pi,
+                "e": math.e,
+                "tau": math.tau,
+                "inf": float("inf"),
+                "nan": float("nan"),
+            }
+        )
+
+        return interpreter
+
+    def _preprocess_expression(self, expression: str) -> str:
+        """Preprocess expression to handle implicit multiplication (e.g., a(b+c) -> a*(b+c))."""
+        # Pattern for numbers (including decimals and negative numbers)
+        # Matches: 2, 2.5, -2, -2.5, .5, -.5
+        number_pattern = r"-?(?:\d+\.?\d*|\.\d+)"
+        # Pattern for variable letters (a-z, all 26 letters)
+        var_pattern = r"[a-z]"
+
+        # Process in order from most specific to least specific patterns
+
+        # 1. Numbers before parentheses: 2( -> 2*(, 2.5( -> 2.5*(
+        expression = re.sub(r"(" + number_pattern + r")\s*\(", r"\1*(", expression)
+
+        # 2. Variables before parentheses: a( -> a*(
+        expression = re.sub(r"\b(" + var_pattern + r")\s*\(", r"\1*(", expression)
+
+        # 3. Closing parentheses before numbers/variables: )a -> )*a, )2 -> )*2
+        expression = re.sub(
+            r"\)\s*(" + number_pattern + r"|" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r")*\1", expression
+        )
+        expression = re.sub(
+            r"\)(" + number_pattern + r"|" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r")*\1", expression
+        )
+
+        # 4. Numbers before variables: 2a -> 2*a, 2.5a -> 2.5*a
+        expression = re.sub(
+            r"(" + number_pattern + r")\s*(" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
+        )
+        expression = re.sub(
+            r"(" + number_pattern + r")(" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
+        )
+
+        # 5. Variables before numbers: a2 -> a*2, a2.5 -> a*2.5
+        expression = re.sub(
+            r"\b(" + var_pattern + r")\s*(" + number_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
+        )
+        expression = re.sub(
+            r"\b(" + var_pattern + r")(" + number_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
+        )
+
+        # 6. Adjacent variables: ab -> a*b, abc -> a*b*c (iterative to handle chains)
+        for _ in range(10):  # Max 10 iterations should handle long chains
+            new_expr = re.sub(
+                r"\b(" + var_pattern + r")\s*(" + var_pattern + r")(?=\s|$|[^a-zA-Z])", r"\1*\2", expression
+            )
+            new_expr = re.sub(r"\b(" + var_pattern + r")(" + var_pattern + r")(?=\s|$|[^a-zA-Z])", r"\1*\2", new_expr)
+            if new_expr == expression:
+                break
+            expression = new_expr
+
+        # 7. Clean up: remove extra asterisks and spaces
+        expression = re.sub(r"\*\*\*+", r"*", expression)  # *** -> *
+        expression = re.sub(r"(?<!\*)\s*\*\s*(?!\*)", r"*", expression)  # Clean spaces around *
+
+        return expression
+
+    def _evaluate_expression(self, expression: str) -> float | int:
+        """Safely evaluate the mathematical expression using asteval."""
+        if not expression or not expression.strip():
+            return 0.0
+
+        try:
+            # Preprocess to handle implicit multiplication
+            processed_expr = self._preprocess_expression(expression.strip())
+        except (TypeError, ValueError, AttributeError):
+            # Return 0.0 on preprocessing error
+            return 0.0
+
+        try:
+            # Create interpreter with variables and math functions
+            interpreter = self._create_interpreter()
+        except (TypeError, ValueError, AttributeError):
+            # Return 0.0 on interpreter creation error
+            return 0.0
+
+        try:
+            # Evaluate expression using asteval
+            result = interpreter(processed_expr)
+        except (TypeError, ValueError, ZeroDivisionError, AttributeError, NameError, SyntaxError):
+            # Return 0.0 on evaluation error
+            return 0.0
+
+        # Handle None result (asteval returns None for invalid expressions)
+        if result is None:
+            return 0.0
+
+        # Convert result to float
+        try:
+            result = float(result)
+        except (TypeError, ValueError):
+            return 0.0
+
+        # Get output type and precision settings
+        output_type = self.get_parameter_value("output_type") or "float"
+        precision = self.get_parameter_value("precision")
+
+        # Handle precision (ensure it's a valid integer between 0 and 15)
+        try:
+            precision = int(precision) if precision is not None else 6
+            precision = max(0, min(15, precision))  # Clamp between 0 and 15
+        except (ValueError, TypeError):
+            precision = 6
+
+        # Format result based on output type
+        if output_type == "int":
+            # Convert to int (rounds towards zero)
+            return int(result)
+
+        # Format as float with specified precision
+        # Round to precision decimal places
+        rounded = round(float(result), precision)
+        return rounded
+
+    def after_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> None:
+        # Handle num_variables change - update visibility of variable parameters
+        if parameter.name == "num_variables":
+            self._update_variable_visibility()
+
+        # Update result when expression, variables, output_type, or precision changes
+        num_variables = self.get_parameter_value("num_variables")
+        if num_variables is None:
+            num_variables = 2
+        try:
+            num_variables = int(num_variables)
+            num_variables = max(1, min(26, num_variables))
+        except (ValueError, TypeError):
+            num_variables = 2
+
+        active_variables = set(ALPHABET[:num_variables])
+        if (
+            parameter.name in ["expression", "output_type", "precision", "num_variables"]
+            or parameter.name in active_variables
+        ):
+            expression = self.get_parameter_value("expression") or ""
+            result = self._evaluate_expression(expression)
+            self.parameter_output_values["result"] = result
+            self.publish_update_to_parameter("result", result)
+
+        return super().after_value_set(parameter, value)
+
+    def process(self) -> None:
+        # Get expression and evaluate
+        expression = self.get_parameter_value("expression") or ""
+        result = self._evaluate_expression(expression)
+        self.parameter_output_values["result"] = result

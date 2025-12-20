@@ -42,7 +42,8 @@
         "json-schema-to-pydantic>=0.4.6",
         "numpy>=1.26.0",
         "scikit-learn>=1.3.0",
-        "pillow>=11.2.1"
+        "pillow>=11.2.1",
+        "asteval>=1.0.8"
       ]
     }
   },
@@ -1876,6 +1877,17 @@
         "description": "Perform mathematical operations on numbers",
         "display_name": "Math",
         "icon": "calculator",
+        "group": "tasks"
+      }
+    },
+    {
+      "class_name": "MathExpression",
+      "file_path": "griptape_nodes_library/number/math_expression.py",
+      "metadata": {
+        "category": "number",
+        "description": "Evaluate mathematical expressions with variable inputs (a-h) and math functions",
+        "display_name": "Math Expression",
+        "icon": "function-square",
         "group": "tasks"
       }
     },
