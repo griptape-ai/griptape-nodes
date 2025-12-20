@@ -196,6 +196,7 @@ class TestBaseNodeElement:
                             "type": "str",
                             "settable": True,
                             "serializable": True,
+                            "private": False,
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
