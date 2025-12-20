@@ -119,21 +119,19 @@ class MathExpression(BaseNode):
             else:
                 param.hide = True
 
-    def _create_interpreter(self) -> Interpreter:
-        """Create an asteval interpreter with variables and math functions."""
-        interpreter = Interpreter()
-
-        # Get number of variables
+    def _get_num_variables(self) -> int:
+        """Get and validate the number of variables."""
         num_variables = self.get_parameter_value("num_variables")
         if num_variables is None:
-            num_variables = 2
+            return 2
         try:
             num_variables = int(num_variables)
-            num_variables = max(1, min(26, num_variables))  # Clamp between 1 and 26
+            return max(1, min(26, num_variables))  # Clamp between 1 and 26
         except (ValueError, TypeError):
-            num_variables = 2
+            return 2
 
-        # Add variable values from individual parameters (a through the selected number)
+    def _add_variables_to_interpreter(self, interpreter: Interpreter, num_variables: int) -> None:
+        """Add variable values from parameters to the interpreter."""
         for i in range(num_variables):
             letter = ALPHABET[i]
             value = self.get_parameter_value(letter)
@@ -146,6 +144,9 @@ class MathExpression(BaseNode):
                 interpreter.symtable[letter] = float(value)
             except (ValueError, TypeError):
                 interpreter.symtable[letter] = 0.0
+
+    def _create_helper_functions(self) -> dict[str, Any]:
+        """Create helper functions for the interpreter."""
 
         # Helper function for sum that accepts multiple arguments
         def safe_sum(*args: float) -> float:
@@ -187,46 +188,58 @@ class MathExpression(BaseNode):
             except (TypeError, ValueError):
                 return 0.0
 
-        # Add safe math functions and constants
-        interpreter.symtable.update(
-            {
-                # Math functions
-                "abs": abs,
-                "round": round,
-                "min": min,
-                "max": max,
-                "sum": safe_sum,
-                "rand": safe_rand,
-                "pow": pow,
-                "sqrt": math.sqrt,
-                "sin": math.sin,
-                "cos": math.cos,
-                "tan": math.tan,
-                "asin": math.asin,
-                "acos": math.acos,
-                "atan": math.atan,
-                "atan2": math.atan2,
-                "sinh": math.sinh,
-                "cosh": math.cosh,
-                "tanh": math.tanh,
-                "exp": math.exp,
-                "log": math.log,
-                "log10": math.log10,
-                "log2": math.log2,
-                "ceil": math.ceil,
-                "floor": math.floor,
-                "fabs": math.fabs,
-                "fmod": math.fmod,
-                "degrees": math.degrees,
-                "radians": math.radians,
-                # Math constants
-                "pi": math.pi,
-                "e": math.e,
-                "tau": math.tau,
-                "inf": float("inf"),
-                "nan": float("nan"),
-            }
-        )
+        return {"sum": safe_sum, "rand": safe_rand}
+
+    def _get_math_functions_and_constants(self) -> dict[str, Any]:
+        """Get dictionary of math functions and constants."""
+        return {
+            # Math functions
+            "abs": abs,
+            "round": round,
+            "min": min,
+            "max": max,
+            "pow": pow,
+            "sqrt": math.sqrt,
+            "sin": math.sin,
+            "cos": math.cos,
+            "tan": math.tan,
+            "asin": math.asin,
+            "acos": math.acos,
+            "atan": math.atan,
+            "atan2": math.atan2,
+            "sinh": math.sinh,
+            "cosh": math.cosh,
+            "tanh": math.tanh,
+            "exp": math.exp,
+            "log": math.log,
+            "log10": math.log10,
+            "log2": math.log2,
+            "ceil": math.ceil,
+            "floor": math.floor,
+            "fabs": math.fabs,
+            "fmod": math.fmod,
+            "degrees": math.degrees,
+            "radians": math.radians,
+            # Math constants
+            "pi": math.pi,
+            "e": math.e,
+            "tau": math.tau,
+            "inf": float("inf"),
+            "nan": float("nan"),
+        }
+
+    def _create_interpreter(self) -> Interpreter:
+        """Create an asteval interpreter with variables and math functions."""
+        interpreter = Interpreter()
+
+        num_variables = self._get_num_variables()
+        self._add_variables_to_interpreter(interpreter, num_variables)
+
+        helper_functions = self._create_helper_functions()
+        math_functions = self._get_math_functions_and_constants()
+
+        interpreter.symtable.update(helper_functions)
+        interpreter.symtable.update(math_functions)
 
         return interpreter
 
