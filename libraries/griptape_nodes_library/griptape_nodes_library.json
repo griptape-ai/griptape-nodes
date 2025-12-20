@@ -2476,6 +2476,7 @@
     "workflows/templates/coordinating_agents.py",
     "workflows/templates/fill_in_the_story.py",
     "workflows/templates/flux_2_-_magazine_cover.py",
+    "workflows/templates/flux_2_-_replace_a_face.py",
     "workflows/templates/nano_banana_-_image_collage.py",
     "workflows/templates/nano_banana_pro_-_image_collage.py",
     "workflows/templates/nano_banana_pro_-_product_advertisement.py",
