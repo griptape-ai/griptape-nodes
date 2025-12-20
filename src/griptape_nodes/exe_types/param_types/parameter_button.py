@@ -140,6 +140,7 @@ class ParameterButton(Parameter):
             settable: Whether the parameter is settable
             serializable: Whether the parameter is serializable
             user_defined: Whether the parameter is user-defined
+            private: Whether this parameter is private
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
