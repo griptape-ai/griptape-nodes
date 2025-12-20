@@ -145,7 +145,7 @@ class MathExpression(BaseNode):
             except (ValueError, TypeError):
                 interpreter.symtable[letter] = 0.0
 
-    def _create_helper_functions(self) -> dict[str, Any]:
+    def _create_helper_functions(self) -> dict[str, Any]:  # noqa: C901
         """Create helper functions for the interpreter."""
 
         # Helper function for sum that accepts multiple arguments
