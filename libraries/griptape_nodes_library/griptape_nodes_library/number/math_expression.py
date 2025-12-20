@@ -8,11 +8,6 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.events.parameter_events import (
-    AddParameterToNodeRequest,
-    RemoveParameterFromNodeRequest,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
 # All 26 letters of the alphabet for variable names
@@ -50,10 +45,8 @@ class MathExpression(BaseNode):
             )
         )
 
-        # Create initial variable parameters (default is 2, so create a and b)
-        num_variables = 2
-        for i in range(num_variables):
-            letter = ALPHABET[i]
+        # Add all 26 variable parameters (initially hidden based on num_variables)
+        for letter in ALPHABET:
             self.add_parameter(
                 Parameter(
                     name=letter,
@@ -62,8 +55,12 @@ class MathExpression(BaseNode):
                     tooltip=f"Variable {letter.upper()} value",
                     default_value=0,
                     allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    hide=True,  # Initially hidden, will be shown based on num_variables
                 )
             )
+
+        # Update visibility based on default num_variables
+        self._update_variable_visibility()
 
         # Add output type parameter
         output_type_choices = ["float", "int"]
@@ -99,8 +96,8 @@ class MathExpression(BaseNode):
             )
         )
 
-    def _update_variable_parameters(self) -> None:
-        """Add or remove variable parameters based on num_variables setting."""
+    def _update_variable_visibility(self) -> None:
+        """Update visibility of variable parameters based on num_variables setting."""
         num_variables = self.get_parameter_value("num_variables")
         if num_variables is None:
             num_variables = 2
@@ -110,43 +107,16 @@ class MathExpression(BaseNode):
         except (ValueError, TypeError):
             num_variables = 2
 
-        # Get currently existing variable parameters
-        existing_variables = set()
-        for letter in ALPHABET:
-            if self.does_name_exist(letter):
-                existing_variables.add(letter)
+        # Show/hide variable parameters based on count
+        for i, letter in enumerate(ALPHABET):
+            param = self.get_parameter_by_name(letter)
+            if param is None:
+                continue
 
-        # Determine which variables should exist
-        desired_variables = set(ALPHABET[:num_variables])
-
-        # Remove parameters that should not exist
-        to_remove = existing_variables - desired_variables
-        for letter in to_remove:
-            remove_request = RemoveParameterFromNodeRequest(parameter_name=letter, node_name=self.name)
-            result = GriptapeNodes.handle_request(remove_request)
-            if result.failed():
-                # Log error but continue with other parameters
-                pass
-
-        # Add parameters that should exist but don't
-        to_add = desired_variables - existing_variables
-        for letter in to_add:
-            add_request = AddParameterToNodeRequest(
-                node_name=self.name,
-                parameter_name=letter,
-                type="float",
-                input_types=["int", "float", "bool"],
-                tooltip=f"Variable {letter.upper()} value",
-                default_value=0,
-                mode_allowed_input=True,
-                mode_allowed_property=True,
-                mode_allowed_output=False,
-                is_user_defined=True,
-            )
-            result = GriptapeNodes.handle_request(add_request)
-            if result.failed():
-                # Log error but continue with other parameters
-                pass
+            if i < num_variables:
+                param.hide = False
+            else:
+                param.hide = True
 
     def _create_interpreter(self) -> Interpreter:
         """Create an asteval interpreter with variables and math functions."""
@@ -351,9 +321,9 @@ class MathExpression(BaseNode):
         parameter: Parameter,
         value: Any,
     ) -> None:
-        # Handle num_variables change - add/remove variable parameters
+        # Handle num_variables change - update visibility of variable parameters
         if parameter.name == "num_variables":
-            self._update_variable_parameters()
+            self._update_variable_visibility()
 
         # Update result when expression, variables, output_type, or precision changes
         num_variables = self.get_parameter_value("num_variables")
