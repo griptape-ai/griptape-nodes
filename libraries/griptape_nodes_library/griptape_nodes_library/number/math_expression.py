@@ -1,4 +1,5 @@
 import math
+import random
 import re
 from typing import Any
 
@@ -161,6 +162,31 @@ class MathExpression(BaseNode):
             else:
                 return total
 
+        # Helper function for random number generation
+        def safe_rand(*args: float) -> float:
+            """Random number function: rand() returns 0-1, rand(max) returns 0-max, rand(min, max) returns min-max."""
+            max_rand_args = 2
+            try:
+                if not args:
+                    # rand() - return random float between 0 and 1
+                    return random.random()  # noqa: S311
+                if len(args) == 1:
+                    # rand(max) - return random float between 0 and max
+                    max_val = float(args[0])
+                    return random.uniform(0.0, max_val)  # noqa: S311
+                if len(args) == max_rand_args:
+                    # rand(min, max) - return random float between min and max
+                    min_val = float(args[0])
+                    max_val = float(args[1])
+                    if min_val > max_val:
+                        # Swap if min > max
+                        min_val, max_val = max_val, min_val
+                    return random.uniform(min_val, max_val)  # noqa: S311
+                # Too many arguments, return 0.0
+                return 0.0  # noqa: TRY300
+            except (TypeError, ValueError):
+                return 0.0
+
         # Add safe math functions and constants
         interpreter.symtable.update(
             {
@@ -170,6 +196,7 @@ class MathExpression(BaseNode):
                 "min": min,
                 "max": max,
                 "sum": safe_sum,
+                "rand": safe_rand,
                 "pow": pow,
                 "sqrt": math.sqrt,
                 "sin": math.sin,
@@ -259,7 +286,7 @@ class MathExpression(BaseNode):
 
         return expression
 
-    def _evaluate_expression(self, expression: str) -> float | int:
+    def _evaluate_expression(self, expression: str) -> float | int:  # noqa: PLR0911
         """Safely evaluate the mathematical expression using asteval."""
         if not expression or not expression.strip():
             return 0.0
