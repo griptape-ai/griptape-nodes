@@ -108,7 +108,7 @@ class SoraVideoGeneration(SuccessFailureNode):
                 default_value=4,
                 tooltip="Clip duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[4, 6, 8])},
+                traits={Options(choices=[4, 8, 12])},
                 ui_options={"display_name": "Duration (seconds)"},
             )
         )
