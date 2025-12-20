@@ -190,6 +190,45 @@ class AddParameterGroupToNodeResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class AlterParameterGroupDetailsRequest(RequestPayload):
+    """Alter the details and configuration of a ParameterGroup.
+
+    Use when: Modifying ParameterGroup UI options (collapsed state, visibility, etc.),
+    updating group configuration after creation, implementing save/load of group state changes.
+
+    Args:
+        group_name: Name of the ParameterGroup to alter
+        node_name: Name of the node containing the group (None for current context)
+        ui_options: New UI configuration options
+        initial_setup: Skip setup work when loading from file
+
+    Results: AlterParameterGroupDetailsResultSuccess | AlterParameterGroupDetailsResultFailure
+    """
+
+    group_name: str
+    node_name: str | None = None
+    ui_options: dict | None = None
+    initial_setup: bool = False
+
+    @classmethod
+    def relevant_parameters(cls) -> list[str]:
+        return ["group_name", "node_name", "ui_options"]
+
+
+@dataclass
+@PayloadRegistry.register
+class AlterParameterGroupDetailsResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """ParameterGroup details altered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class AlterParameterGroupDetailsResultFailure(ResultPayloadFailure):
+    """ParameterGroup details alteration failed. Common causes: node not found, group not found."""
+
+
+@dataclass
+@PayloadRegistry.register
 class SetParameterValueRequest(RequestPayload):
     """Set the value of a parameter on a node.
 

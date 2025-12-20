@@ -145,6 +145,9 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     AlterParameterDetailsRequest,
     AlterParameterDetailsResultFailure,
     AlterParameterDetailsResultSuccess,
+    AlterParameterGroupDetailsRequest,
+    AlterParameterGroupDetailsResultFailure,
+    AlterParameterGroupDetailsResultSuccess,
     GetCompatibleParametersRequest,
     GetCompatibleParametersResultFailure,
     GetCompatibleParametersResultSuccess,
@@ -245,6 +248,9 @@ class NodeManager:
         event_manager.assign_manager_to_request_type(AddParameterToNodeRequest, self.on_add_parameter_to_node_request)
         event_manager.assign_manager_to_request_type(
             AddParameterGroupToNodeRequest, self.on_add_parameter_group_to_node_request
+        )
+        event_manager.assign_manager_to_request_type(
+            AlterParameterGroupDetailsRequest, self.on_alter_parameter_group_details_request
         )
         event_manager.assign_manager_to_request_type(
             RemoveParameterFromNodeRequest, self.on_remove_parameter_from_node_request
@@ -1919,6 +1925,55 @@ class NodeManager:
         result = AlterParameterDetailsResultSuccess(result_details=details)
         return result
 
+    def on_alter_parameter_group_details_request(  # noqa: PLR0911
+        self, request: AlterParameterGroupDetailsRequest
+    ) -> ResultPayload:
+        """Handle requests to alter ParameterGroup details (primarily ui_options)."""
+        node_name = request.node_name
+        node = None
+
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from node in the Current Context. Failed because there was no such Node."
+                return AlterParameterGroupDetailsResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
+
+        if node is None:
+            obj_mgr = GriptapeNodes.ObjectManager()
+            node = obj_mgr.attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}', but no such Node was found."
+                return AlterParameterGroupDetailsResultFailure(result_details=details)
+
+        if node.lock:
+            details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}'. Failed because the Node was locked."
+            return AlterParameterGroupDetailsResultFailure(result_details=details)
+
+        # Handle ErrorProxyNode parameter group alteration requests
+        if isinstance(node, ErrorProxyNode):
+            if request.initial_setup:
+                node.record_initialization_request(request)
+                details = f"ParameterGroup '{request.group_name}' alteration recorded for ErrorProxyNode '{node_name}'. Original node '{node.original_node_type}' had loading errors - preserving changes for correct recreation when dependency '{node.original_library_name}' is resolved."
+                result_details = ResultDetails(message=details, level=logging.WARNING)
+                return AlterParameterGroupDetailsResultSuccess(result_details=result_details)
+
+            details = f"Cannot modify ParameterGroup '{request.group_name}' on placeholder node '{node_name}'. This placeholder preserves your workflow structure but doesn't allow modifications."
+            return AlterParameterGroupDetailsResultFailure(result_details=details)
+
+        # Find the ParameterGroup
+        group = node.get_element_by_name_and_type(request.group_name, ParameterGroup)
+        if group is None or not isinstance(group, ParameterGroup):
+            details = f"Attempted to alter details for ParameterGroup '{request.group_name}' from Node '{node_name}'. Failed because no such ParameterGroup was found."
+            return AlterParameterGroupDetailsResultFailure(result_details=details)
+
+        # Update ui_options if provided
+        if request.ui_options is not None:
+            group.ui_options = request.ui_options
+
+        details = f"Successfully altered details for ParameterGroup '{request.group_name}' from Node '{node_name}'."
+        return AlterParameterGroupDetailsResultSuccess(result_details=details)
+
     # For C901 (too complex): Need to give customers explicit reasons for failure on each case.
     def on_get_parameter_value_request(self, request: GetParameterValueRequest) -> ResultPayload:
         node_name = request.node_name
@@ -2685,6 +2740,23 @@ class NodeManager:
                         alter_param_request = AlterParameterDetailsRequest.create(**diff)
                         element_modification_commands.append(alter_param_request)
 
+            # Check for ParameterGroup alterations (ui_options changes like collapsed state)
+            if reference_node is not None and not isinstance(node, ErrorProxyNode):
+                # Compare ALL groups against the reference node (not just user-defined)
+                # This matches the pattern used for parameter alterations
+                for group in all_groups:
+                    diff = NodeManager._manage_alter_group_details(group, reference_node)
+                    relevant = False
+                    for key in diff:
+                        if key in AlterParameterGroupDetailsRequest.relevant_parameters():
+                            relevant = True
+                            break
+                    if relevant:
+                        diff["group_name"] = group.name
+                        diff["initial_setup"] = True
+                        alter_group_request = AlterParameterGroupDetailsRequest(**diff)
+                        element_modification_commands.append(alter_group_request)
+
             # Now assignment of values to all of the parameters.
             set_value_commands = []
 
@@ -3065,6 +3137,24 @@ class NodeManager:
             diff = base_param.equals(parameter)
         else:
             return vars(parameter)
+        return diff
+
+    @staticmethod
+    def _manage_alter_group_details(group: ParameterGroup, base_node_obj: BaseNode) -> dict:
+        """Compare a ParameterGroup against its base version and return differences.
+
+        Args:
+            group: The current ParameterGroup to compare
+            base_node_obj: The reference node containing the base version
+
+        Returns:
+            Dictionary of differences, or empty dict if no changes
+        """
+        base_group = base_node_obj.get_element_by_name_and_type(group.name, ParameterGroup)
+        if base_group and isinstance(base_group, ParameterGroup):
+            diff = base_group.equals(group)
+        else:
+            return {"ui_options": group.ui_options}
         return diff
 
     @staticmethod
