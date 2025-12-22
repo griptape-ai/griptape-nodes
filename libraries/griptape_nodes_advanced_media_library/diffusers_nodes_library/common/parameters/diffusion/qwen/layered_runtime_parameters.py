@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
@@ -9,6 +10,7 @@ from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
+from utils.directory_utils import check_cleanup_intermediates_directory, get_intermediates_directory_path
 from utils.image_utils import load_image_from_url_artifact
 
 from diffusers_nodes_library.common.parameters.diffusion.qwen.common import qwen_latents_to_image_pil
@@ -170,6 +172,16 @@ class QwenLayeredPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def remove_output_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("output_image_list")
+
+    def publish_output_image_preview_placeholder(self) -> None:
+        width = int(self.get_width())
+        height = int(self.get_height())
+        check_cleanup_intermediates_directory()
+        preview_placeholder_image = PIL.Image.new("RGB", (width, height), color="black")
+        self._node.publish_update_to_parameter(
+            "output_image_list",
+            [pil_to_image_artifact(preview_placeholder_image, directory_path=get_intermediates_directory_path())],
+        )
 
     def publish_output_image_list(self, output_images_pil: list[Image]) -> None:
         image_artifacts = [pil_to_image_artifact(img) for img in output_images_pil]
