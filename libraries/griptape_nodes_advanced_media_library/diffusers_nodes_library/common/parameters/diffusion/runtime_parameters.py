@@ -133,7 +133,7 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._process_pipeline_output(pipe, callback_on_step_end)
         self._node.log_params.append_to_logs("Done.\n")  # type: ignore[reportAttributeAccessIssue]
 
-    def _process_pipeline_output(self, pipe: DiffusionPipeline, callback_on_step_end: callable) -> None:
+    def _process_pipeline_output(self, pipe: DiffusionPipeline, callback_on_step_end: Any) -> None:
         output_image_pil = pipe(  # type: ignore[reportCallIssue]
             **self.get_pipe_kwargs(),
             output_type="pil",
