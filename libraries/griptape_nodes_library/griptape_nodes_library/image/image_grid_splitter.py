@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 from io import BytesIO
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -19,7 +22,11 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.utils import async_utils
-from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url, save_pil_image_to_static_file
+from griptape_nodes_library.utils.image_utils import (
+    dict_to_image_url_artifact,
+    load_pil_from_url,
+    save_pil_image_to_static_file,
+)
 
 
 class ImageGridSplitter(DataNode):
@@ -35,6 +42,14 @@ class ImageGridSplitter(DataNode):
 
     MIN_GRID = 1
     MAX_GRID = 12
+
+    _DEFAULT_DASH_LEN = 10
+    _DEFAULT_GAP_LEN = 6
+
+    _DETECTION_BAND_PX = 2
+    _DETECTION_MIN_ABS_SCORE = 1.0
+    _DETECTION_STD_PENALTY = 0.15
+    _DETECTION_SCORE_RATIO_THRESHOLD = 1.12
 
     _CELL_PARAM_RE = re.compile(r"^r(\d+)c(\d+)$")
 
@@ -351,8 +366,8 @@ class ImageGridSplitter(DataNode):
         grad_x = np.abs(arr[:, 1:] - arr[:, :-1])
         grad_y = np.abs(arr[1:, :] - arr[:-1, :])
 
-        cols = self._pick_axis_count(grad_x, axis_length=int(arr.shape[1]), axis="x")
-        rows = self._pick_axis_count(grad_y, axis_length=int(arr.shape[0]), axis="y")
+        cols = self._pick_axis_count(grad_x, axis_length=arr.shape[1], axis="x")
+        rows = self._pick_axis_count(grad_y, axis_length=arr.shape[0], axis="y")
 
         return rows, cols
 
@@ -369,69 +384,82 @@ class ImageGridSplitter(DataNode):
         return pil_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
     def _pick_axis_count(self, grad: np.ndarray, *, axis_length: int, axis: str) -> int:
-        # axis_length is the corresponding full image dimension (width for x, height for y).
+        """Pick the most likely grid count along one axis.
+
+        This assumes a regular grid. We score candidates (1..12) based on the mean edge strength
+        near evenly spaced boundaries, with a small penalty for inconsistent boundary strengths.
+        """
         length = axis_length
+        band = self._DETECTION_BAND_PX
+
+        if axis == "x":
+            limit = int(grad.shape[1])
+
+            def sample(lo: int, hi: int) -> np.ndarray:
+                return grad[:, lo:hi]
+
+        else:
+            limit = int(grad.shape[0])
+
+            def sample(lo: int, hi: int) -> np.ndarray:
+                return grad[lo:hi, :]
 
         best_n = 1
         best_score = 0.0
         second_score = 0.0
 
-        band = 2  # pixels around each boundary to average
-        min_abs_score = 1.0  # extremely weak edge fields should fallback to 1
-
         for n in range(self.MIN_GRID, self.MAX_GRID + 1):
-            if n == 1:
-                score = 0.0
-            else:
-                boundary_scores: list[float] = []
-                for k in range(1, n):
-                    # Boundary position in image coordinates: 1..(length-1)
-                    pos = int(round(k * length / n))
-                    if pos <= 0 or pos >= length:
-                        continue
-                    # Map image boundary position to gradient index (pos-1)
-                    idx = pos - 1
-                    lo = max(0, idx - band)
-                    hi = idx + band + 1
-
-                    if axis == "x":
-                        # grad_x is (h, w-1), index is along width-1
-                        hi = min(hi, grad.shape[1])
-                        if hi <= lo:
-                            continue
-                        band_vals = grad[:, lo:hi]
-                    else:
-                        # grad_y is (h-1, w), index is along height-1
-                        hi = min(hi, grad.shape[0])
-                        if hi <= lo:
-                            continue
-                        band_vals = grad[lo:hi, :]
-
-                    boundary_scores.append(float(np.mean(band_vals)))
-
-                if not boundary_scores:
-                    score = 0.0
-                else:
-                    # Mean boundary strength + small bias toward consistent boundaries.
-                    mean_score = float(np.mean(boundary_scores))
-                    std_score = float(np.std(boundary_scores))
-                    score = mean_score - (0.15 * std_score)
-
+            score = self._score_axis_candidate(n, length=length, limit=limit, band=band, sample=sample)
             if score > best_score:
                 second_score = best_score
                 best_score = score
                 best_n = n
-            elif score > second_score:
-                second_score = score
+                continue
+            second_score = max(second_score, score)
 
-        # Require best score to be meaningfully better than the runner-up, otherwise fall back to 1.
-        if best_n != 1:
-            if best_score < min_abs_score:
-                return 1
-            if second_score > 0 and (best_score / second_score) < 1.12:
-                return 1
+        if best_n == 1:
+            return 1
+
+        if best_score < self._DETECTION_MIN_ABS_SCORE:
+            return 1
+
+        if second_score > 0 and (best_score / second_score) < self._DETECTION_SCORE_RATIO_THRESHOLD:
+            return 1
 
         return best_n
+
+    def _score_axis_candidate(
+        self,
+        n: int,
+        *,
+        length: int,
+        limit: int,
+        band: int,
+        sample: Callable[[int, int], np.ndarray],
+    ) -> float:
+        if n <= 1:
+            return 0.0
+
+        boundary_scores: list[float] = []
+        for k in range(1, n):
+            pos = round(k * length / n)
+            if pos <= 0 or pos >= length:
+                continue
+
+            idx = pos - 1
+            lo = max(0, idx - band)
+            hi = min(limit, idx + band + 1)
+            if hi <= lo:
+                continue
+
+            boundary_scores.append(float(np.mean(sample(lo, hi))))
+
+        if not boundary_scores:
+            return 0.0
+
+        mean_score = float(np.mean(boundary_scores))
+        std_score = float(np.std(boundary_scores))
+        return mean_score - (self._DETECTION_STD_PENALTY * std_score)
 
     # -------------------------
     # Preview drawing + splitting
@@ -447,17 +475,17 @@ class ImageGridSplitter(DataNode):
 
         # Vertical boundaries
         for c in range(1, cols):
-            x = int(round(c * w / cols))
+            x = round(c * w / cols)
             self._draw_dotted_line(draw, (x, 0), (x, h - 1), color=color, width=width)
 
         # Horizontal boundaries
         for r in range(1, rows):
-            y = int(round(r * h / rows))
+            y = round(r * h / rows)
             self._draw_dotted_line(draw, (0, y), (w - 1, y), color=color, width=width)
 
         return img
 
-    def _draw_dotted_line(
+    def _draw_dotted_line(  # noqa: PLR0913
         self,
         draw: ImageDraw.ImageDraw,
         start: tuple[int, int],
@@ -465,8 +493,8 @@ class ImageGridSplitter(DataNode):
         *,
         color: tuple[int, int, int],
         width: int,
-        dash_len: int = 10,
-        gap_len: int = 6,
+        dash_len: int = _DEFAULT_DASH_LEN,
+        gap_len: int = _DEFAULT_GAP_LEN,
     ) -> None:
         x0, y0 = start
         x1, y1 = end
@@ -498,8 +526,8 @@ class ImageGridSplitter(DataNode):
         img = self._ensure_rgb(pil_image)
         w, h = img.size
 
-        x_bounds = [int(round(i * w / cols)) for i in range(cols + 1)]
-        y_bounds = [int(round(i * h / rows)) for i in range(rows + 1)]
+        x_bounds = [round(i * w / cols) for i in range(cols + 1)]
+        y_bounds = [round(i * h / rows) for i in range(rows + 1)]
         x_bounds[-1] = w
         y_bounds[-1] = h
 
@@ -576,7 +604,9 @@ class ImageGridSplitter(DataNode):
                 )
                 result = GriptapeNodes.handle_request(request)
                 if not isinstance(result, AddParameterToNodeResultSuccess):
-                    raise RuntimeError(str(getattr(result, "result_details", "Failed to add parameter")))
+                    raise RuntimeError(  # noqa: TRY004
+                        str(getattr(result, "result_details", "Failed to add parameter"))
+                    )
 
     def _remove_existing_cell_outputs(self) -> None:
         to_remove: list[str] = []
@@ -589,8 +619,4 @@ class ImageGridSplitter(DataNode):
                 to_remove.append(param.name)
 
         for name in to_remove:
-            GriptapeNodes.handle_request(
-                RemoveParameterFromNodeRequest(parameter_name=name, node_name=self.name)
-            )
-
-
+            GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=name, node_name=self.name))
