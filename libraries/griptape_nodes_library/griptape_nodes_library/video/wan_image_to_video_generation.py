@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
-import time
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
-    PublicArtifactUrlParameter,
-)
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -29,7 +20,6 @@ PROMPT_TRUNCATE_LENGTH = 100
 
 # Model options with their constraints
 MODEL_OPTIONS = [
-    "wan2.6-i2v",
     "wan2.5-i2v-preview",
     "wan2.2-i2v-flash",
     "wan2.2-i2v-plus",
@@ -39,41 +29,35 @@ MODEL_OPTIONS = [
 
 # Model-specific configurations
 MODEL_CONFIGS = {
-    "wan2.6-i2v": {
-        "resolutions": ["720P", "1080P"],
-        "durations": [5, 10, 15],
-        "supports_audio": True,
-        "supports_shot_type": True,
-    },
     "wan2.5-i2v-preview": {
         "resolutions": ["480P", "720P", "1080P"],
         "durations": [5, 10],
         "supports_audio": True,
-        "supports_shot_type": False,
+        "max_prompt_length": 2000,
     },
     "wan2.2-i2v-flash": {
         "resolutions": ["480P", "720P"],
         "durations": [5],
         "supports_audio": False,
-        "supports_shot_type": False,
+        "max_prompt_length": 800,
     },
     "wan2.2-i2v-plus": {
         "resolutions": ["480P", "1080P"],
         "durations": [5],
         "supports_audio": False,
-        "supports_shot_type": False,
+        "max_prompt_length": 800,
     },
     "wanx2.1-i2v-plus": {
         "resolutions": ["720P"],
         "durations": [5],
         "supports_audio": False,
-        "supports_shot_type": False,
+        "max_prompt_length": 800,
     },
     "wanx2.1-i2v-turbo": {
         "resolutions": ["480P", "720P"],
         "durations": [3, 4, 5],
         "supports_audio": False,
-        "supports_shot_type": False,
+        "max_prompt_length": 800,
     },
 }
 
@@ -84,15 +68,14 @@ STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
 
-class WanImageToVideoGeneration(SuccessFailureNode):
+class WanImageToVideoGeneration(GriptapeProxyNode):
     """Generate videos from images using WAN models via Griptape model proxy.
 
     Documentation: https://www.alibabacloud.com/help/en/model-studio/image-to-video-api-reference
 
     Inputs:
-        - model (str): WAN model to use (default: "wan2.6-i2v")
-            wan2.6-i2v: Supports 720P/1080P, 5-15s duration, audio, shot_type
-            wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio
+        - model (str): WAN model to use (default: "wan2.5-i2v-preview")
+            wan2.5-i2v-preview: Supports 480P/720P/1080P, 5-10s duration, audio, 2000 char prompts
             wan2.2-i2v-flash: Supports 480P/720P, 5s duration, 50% faster than 2.1
             wan2.2-i2v-plus: Supports 480P/1080P, 5s duration, improved stability
             wanx2.1-i2v-plus: Supports 720P, 5s duration
@@ -106,11 +89,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         - negative_prompt (str): Description of content to avoid (max 500 characters)
         - resolution (str): Output video resolution (model-dependent)
         - duration (int): Video duration in seconds (model-dependent)
-        - audio (bool): Auto-generate audio for video (wan2.6-i2v, wan2.5-i2v-preview)
-        - input_audio (AudioUrlArtifact): Input audio file (optional, wan2.6/wan2.5 only)
-            Audio requirements: WAV/MP3, 3-30s duration, max 15MB
-            If audio exceeds video duration, it is truncated. If shorter, remaining video is silent.
-        - shot_type (str): Shot type for video (single/multi, wan2.6-i2v)
+        - audio (bool): Auto-generate audio for video (only for wan2.5-i2v-preview, default: True)
         - prompt_extend (bool): Enable intelligent prompt rewriting (default: False)
         - watermark (bool): Add "AI-generated" watermark (default: False)
         - randomize_seed (bool): If true, randomize the seed on each run
@@ -124,19 +103,10 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         - result_details (str): Details about the generation result or error
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate videos from images using WAN models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model selection
         self.add_parameter(
@@ -144,7 +114,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 name="model",
                 input_types=["str"],
                 type="str",
-                default_value="wan2.6-i2v",
+                default_value="wan2.5-i2v-preview",
                 tooltip="Select the WAN image-to-video model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_OPTIONS)},
@@ -165,14 +135,16 @@ class WanImageToVideoGeneration(SuccessFailureNode):
 
         # Prompt parameter (optional)
         self.add_parameter(
-            ParameterString(
+            Parameter(
                 name="prompt",
+                input_types=["str"],
+                type="str",
                 default_value="",
                 tooltip="Text description of desired video elements (max 800-2000 characters depending on model)",
-                multiline=True,
-                placeholder_text="Describe the video elements you want...",
-                allow_output=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the video elements you want...",
                     "display_name": "Prompt",
                 },
             )
@@ -204,7 +176,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 default_value="1080P",
                 tooltip="Output video resolution (available options depend on selected model)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=MODEL_CONFIGS["wan2.6-i2v"]["resolutions"])},
+                traits={Options(choices=MODEL_CONFIGS["wan2.5-i2v-preview"]["resolutions"])},
             )
         )
 
@@ -217,54 +189,20 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 default_value=5,
                 tooltip="Video duration in seconds (model-dependent)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=MODEL_CONFIGS["wan2.6-i2v"]["durations"])},
+                traits={Options(choices=[3, 4, 5, 10])},
             )
         )
 
-        # Audio auto-generation parameter (for models that support it)
+        # Audio auto-generation parameter (only for wan2.5-i2v-preview)
         self.add_parameter(
             Parameter(
                 name="audio",
                 input_types=["bool"],
                 type="bool",
                 default_value=True,
-                tooltip="Auto-generate audio for video (wan2.6-i2v, wan2.5-i2v-preview)",
+                tooltip="Auto-generate audio for video (only for wan2.5-i2v-preview)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"hide_property": self._should_hide_audio()},
-            )
-        )
-
-        # Input Audio (optional) using PublicArtifactUrlParameter
-        # Hidden by default since audio auto-generation is enabled by default
-        self._public_audio_url_parameter = PublicArtifactUrlParameter(
-            node=self,
-            artifact_url_parameter=Parameter(
-                name="input_audio",
-                input_types=["AudioUrlArtifact"],
-                type="AudioUrlArtifact",
-                default_value="",
-                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound. Only supported by wan2.6 and wan2.5 models.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Audio"},
-                hide=self._should_hide_input_audio(),
-            ),
-            disclaimer_message="The WAN Image-to-Video service utilizes this URL to access the audio file.",
-        )
-        self._public_audio_url_parameter.add_input_parameters()
-        # Hide the upload message since input_audio is hidden by default
-        self.hide_message_by_name("artifact_url_parameter_message_input_audio")
-
-        # Shot type parameter (for models that support it)
-        self.add_parameter(
-            Parameter(
-                name="shot_type",
-                input_types=["str"],
-                type="str",
-                default_value="single",
-                tooltip="Shot type for video: single (continuous shot) or multi (multiple switched shots). Only effective when prompt_extend is true.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["single", "multi"])},
-                ui_options={"hide_property": self._should_hide_shot_type()},
             )
         )
 
@@ -342,27 +280,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         model = self.get_parameter_value("model")
         if not model:
             return False
-        model_config = MODEL_CONFIGS.get(model)
-        if not model_config:
-            return False
-        return not model_config.get("supports_audio", False)
-
-    def _should_hide_input_audio(self) -> bool:
-        """Determine if input_audio should be hidden. Hidden when model doesn't support audio OR when audio auto-generation is enabled."""
-        if self._should_hide_audio():
-            return True
-        audio_enabled = self.get_parameter_value("audio")
-        return audio_enabled is True
-
-    def _should_hide_shot_type(self) -> bool:
-        """Determine if shot_type parameter should be hidden based on model selection."""
-        model = self.get_parameter_value("model")
-        if not model:
-            return False
-        model_config = MODEL_CONFIGS.get(model)
-        if not model_config:
-            return False
-        return not model_config.get("supports_shot_type", False)
+        return model != "wan2.5-i2v-preview"
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes."""
@@ -372,20 +290,11 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if parameter.name == "model" and value in MODEL_CONFIGS:
             model_config = MODEL_CONFIGS[value]
 
-            # Update audio parameter visibility based on model support
+            # Update audio parameter visibility
             if self._should_hide_audio():
                 self.hide_parameter_by_name("audio")
             else:
                 self.show_parameter_by_name("audio")
-
-            # Update input_audio visibility based on model support and audio setting
-            self._update_input_audio_visibility()
-
-            # Update shot_type parameter visibility
-            if self._should_hide_shot_type():
-                self.hide_parameter_by_name("shot_type")
-            else:
-                self.show_parameter_by_name("shot_type")
 
             # Update resolution choices
             current_resolution = self.get_parameter_value("resolution")
@@ -405,73 +314,15 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 # Set to first available duration if current is not supported
                 self._update_option_choices("duration", new_durations, new_durations[0])
 
-        # Update input_audio visibility when audio parameter changes
-        if parameter.name == "audio":
-            self._update_input_audio_visibility()
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation."""
+        return self.get_parameter_value("model") or "wan2.5-i2v-preview"
 
-    def _update_input_audio_visibility(self) -> None:
-        """Update input_audio parameter visibility based on audio setting."""
-        if self._should_hide_input_audio():
-            self.hide_parameter_by_name("input_audio")
-            self.hide_message_by_name("artifact_url_parameter_message_input_audio")
-        else:
-            self.show_parameter_by_name("input_audio")
-            self.show_message_by_name("artifact_url_parameter_message_input_audio")
-
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for WAN image-to-video generation."""
         # Preprocess seed parameter
         self._seed_parameter.preprocess()
 
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        model = params["model"]
-        logger.info("Generating video from image with %s", model)
-
-        # Submit request and get synchronous response
-        try:
-            response = await self._submit_request(params, headers)
-            if not response:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No response returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Handle synchronous response
-        await self._handle_response(response)
-
-        # Cleanup uploaded artifacts
-        self._public_audio_url_parameter.delete_uploaded_artifact()
-
-    def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
         input_image = self.get_parameter_value("input_image")
         resolution = self.get_parameter_value("resolution")
@@ -483,7 +334,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Validate model-specific constraints
-        model_config = MODEL_CONFIGS.get(model, MODEL_CONFIGS["wan2.6-i2v"])
+        model_config = MODEL_CONFIGS.get(model, MODEL_CONFIGS["wan2.5-i2v-preview"])
 
         # Validate resolution
         if resolution not in model_config["resolutions"]:
@@ -496,113 +347,84 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
 
         # Validate audio parameter
-        audio = self.get_parameter_value("audio")
-        if audio and not model_config.get("supports_audio", False):
-            msg = f"{model} does not support audio."
+        if self.get_parameter_value("audio") and not model_config["supports_audio"]:
+            msg = f"{model} does not support audio. Only wan2.5-i2v-preview supports audio parameter."
             raise ValueError(msg)
 
-        # Get audio URL if provided and model supports it
-        audio_url = None
-        if model_config.get("supports_audio", False):
-            input_audio_value = self.get_parameter_value("input_audio")
-            if input_audio_value:
-                audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
-
-        return {
-            "model": model,
-            "input_image": input_image,
-            "prompt": self.get_parameter_value("prompt") or "",
-            "negative_prompt": self.get_parameter_value("negative_prompt") or "",
-            "resolution": resolution,
-            "duration": duration,
-            "audio": audio,
-            "audio_url": audio_url,
-            "shot_type": self.get_parameter_value("shot_type"),
-            "seed": self._seed_parameter.get_seed(),
-            "prompt_extend": self.get_parameter_value("prompt_extend"),
-            "watermark": self.get_parameter_value("watermark"),
-        }
-
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
-        payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
-
-        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=None)
-                response.raise_for_status()
-                response_json = response.json()
-                logger.info("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_msg = error_json.get("error", "")
-                provider_response = error_json.get("provider_response", "")
-                msg_parts = [p for p in [error_msg, provider_response] if p]
-                msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            logger.error("Request failed: %s", e)
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        return response_json
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Process input image to base64 data URI
-        img_url = await self._process_input_image(params["input_image"])
+        img_url = await self._process_input_image(input_image)
         if not img_url:
             msg = "Failed to process input image"
             raise ValueError(msg)
 
         # Build flattened payload (all params at top level)
         payload = {
-            "model": params["model"],
             "img_url": img_url,
-            "resolution": params["resolution"],
-            "duration": params["duration"],
-            "prompt_extend": params["prompt_extend"],
-            "watermark": params["watermark"],
-            "seed": params["seed"],
+            "resolution": resolution,
+            "duration": duration,
+            "prompt_extend": self.get_parameter_value("prompt_extend"),
+            "watermark": self.get_parameter_value("watermark"),
+            "seed": self._seed_parameter.get_seed(),
         }
 
         # Add optional parameters if provided
-        if params["prompt"]:
-            payload["prompt"] = params["prompt"]
+        prompt = self.get_parameter_value("prompt")
+        if prompt:
+            payload["prompt"] = prompt
 
-        if params["negative_prompt"]:
-            payload["negative_prompt"] = params["negative_prompt"]
+        negative_prompt = self.get_parameter_value("negative_prompt")
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
 
-        # Add model-specific parameters
-        model_config = MODEL_CONFIGS.get(params["model"], {})
-
-        # Add audio parameter (for models that support it)
-        if model_config.get("supports_audio", False):
-            payload["audio"] = params["audio"]
-
-        # Add audio_url if provided (for models that support it)
-        if model_config.get("supports_audio", False) and params.get("audio_url"):
-            payload["audio_url"] = params["audio_url"]
-
-        # Add shot_type parameter (for models that support it, only effective when prompt_extend=true)
-        if model_config.get("supports_shot_type", False) and params.get("shot_type"):
-            payload["shot_type"] = params["shot_type"]
+        # Add audio parameter (only for wan2.5-i2v-preview)
+        if model == "wan2.5-i2v-preview":
+            payload["audio"] = self.get_parameter_value("audio")
 
         return payload
+
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse WAN result and save generated video."""
+        # Extract video URL from result
+        video_url = result_json.get("video_url")
+        if not video_url:
+            self.parameter_output_values["video"] = None
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no video URL was found in the response.",
+            )
+            return
+
+        # Download and save the video
+        try:
+            logger.info("Downloading video from URL")
+            video_bytes = await self._download_bytes_from_url(video_url)
+        except Exception as e:
+            logger.error("Failed to download video: %s", e)
+            video_bytes = None
+
+        if video_bytes:
+            try:
+                filename = f"wan_i2v_video_{generation_id}.mp4"
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
+                logger.info("Saved video to static storage as %s", filename)
+                self._set_status_results(
+                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                )
+            except Exception as e:
+                logger.error("Failed to save video: %s", e)
+                self.parameter_output_values["video"] = VideoUrlArtifact(value=video_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                )
+        else:
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=video_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+            )
 
     async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""
@@ -664,113 +486,22 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             logger.error("Failed to download image from URL %s: %s", url, e)
         return None
 
-    async def _handle_response(self, response: dict[str, Any]) -> None:
-        """Handle WAN synchronous response and extract video.
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from failed generation response."""
+        # Check for WAN-specific error patterns first
 
-        Response shape:
-        {
-            "task_id": "...",
-            "task_status": "SUCCEEDED",
-            "video_url": "https://...",
-            "submit_time": "...",
-            "scheduled_time": "...",
-            "end_time": "...",
-            "orig_prompt": "..."
-        }
-        """
-        self.parameter_output_values["provider_response"] = response
-
-        # Extract task_id for generation_id
-        task_id = response.get("task_id", "")
-        self.parameter_output_values["generation_id"] = str(task_id)
-
-        # Extract task status and video URL from top-level fields
-        task_status = response.get("task_status")
-
-        # Check task status
-        if task_status != "SUCCEEDED":
-            logger.error("Generation failed with task_status: %s", task_status)
-            self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
-            self._set_status_results(was_successful=False, result_details=error_details)
-            return
-
-        video_url = response.get("video_url")
-        if video_url:
-            await self._save_video_from_url(video_url)
-        else:
-            logger.warning("No video_url found in response")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no video URL was found in the response.",
-            )
-
-    async def _save_video_from_url(self, video_url: str) -> None:
-        """Download and save the video from the provided URL."""
-        try:
-            logger.info("Downloading video from URL")
-            video_bytes = await self._download_bytes_from_url(video_url)
-            if video_bytes:
-                filename = f"wan_i2v_{int(time.time())}.mp4"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("Saved video to static storage as %s", filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            else:
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Video generation completed but could not download video bytes from URL.",
-                )
-        except Exception as e:
-            logger.error("Failed to save video from URL: %s", e)
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Video generation completed but could not save to static storage: {e}",
-            )
-
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
-
-        Args:
-            response_json: The JSON response from the API that may contain error information
-
-        Returns:
-            A formatted error message string
-        """
-        if not response_json:
-            return "Generation failed with no error details provided by API."
-
-        top_level_error = response_json.get("error")
-        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
-
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
-        if top_level_error:
-            return self._format_top_level_error(top_level_error)
-
-        # Check for status-based errors
+        # Check for status-based errors (moderation, failed, etc)
         status = response_json.get("status")
-
-        # Handle moderation specifically
         if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
             return self._format_moderation_error(response_json)
 
-        # Handle other failure statuses
         if status in [STATUS_FAILED, STATUS_ERROR]:
-            return self._format_failure_status_error(response_json, status)
+            result = response_json.get("result", {})
+            if isinstance(result, dict) and result.get("error"):
+                return f"{self.name} generation failed: {result['error']}"
 
-        # Final fallback
-        return f"Generation failed.\n\nFull API response:\n{response_json}"
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
 
     def _format_moderation_error(self, response_json: dict[str, Any]) -> str:
         """Format error message for moderated content."""
@@ -778,75 +509,11 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         moderation_reasons = details.get("Moderation Reasons", [])
         if moderation_reasons:
             reasons_str = ", ".join(moderation_reasons)
-            return f"Content was moderated and blocked.\nModeration Reasons: {reasons_str}"
-        return "Content was moderated and blocked by safety filters."
-
-    def _format_failure_status_error(self, response_json: dict[str, Any], status: str) -> str:
-        """Format error message for failed/error status."""
-        result = response_json.get("result", {})
-        if isinstance(result, dict) and result.get("error"):
-            return f"Generation failed: {result['error']}"
-        return f"Generation failed with status '{status}'."
-
-    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
-        """Parse provider_response if it's a JSON string."""
-        if isinstance(provider_response, str):
-            try:
-                return json.loads(provider_response)
-            except Exception:
-                return None
-        if isinstance(provider_response, dict):
-            return provider_response
-        return None
-
-    def _format_provider_error(
-        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
-    ) -> str | None:
-        """Format error message from parsed provider response."""
-        if not parsed_provider_response:
-            return None
-
-        provider_error = parsed_provider_response.get("error")
-        if not provider_error:
-            return None
-
-        if isinstance(provider_error, dict):
-            error_message = provider_error.get("message", "")
-            details = f"{error_message}"
-
-            if error_code := provider_error.get("code"):
-                details += f"\nError Code: {error_code}"
-            if error_type := provider_error.get("type"):
-                details += f"\nError Type: {error_type}"
-            if top_level_error:
-                details = f"{top_level_error}\n\n{details}"
-            return details
-
-        error_msg = str(provider_error)
-        if top_level_error:
-            return f"{top_level_error}\n\nProvider error: {error_msg}"
-        return f"Generation failed. Provider error: {error_msg}"
-
-    def _format_top_level_error(self, top_level_error: Any) -> str:
-        """Format error message from top-level error field."""
-        if isinstance(top_level_error, dict):
-            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
-            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
-        return f"Generation failed with error: {top_level_error!s}"
+            return f"{self.name}: Content was moderated and blocked.\\nModeration Reasons: {reasons_str}"
+        return f"{self.name}: Content was moderated and blocked by safety filters."
 
     def _set_safe_defaults(self) -> None:
         """Set safe default values for outputs."""
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video"] = None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

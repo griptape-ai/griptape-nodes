@@ -1,31 +1,22 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
-import os
-import time
-from contextlib import suppress
-from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["QwenImageEdit"]
-
-# Define constant for prompt truncation length
-PROMPT_TRUNCATE_LENGTH = 100
 
 # Model options
 MODEL_OPTIONS = [
@@ -34,17 +25,11 @@ MODEL_OPTIONS = [
     "qwen-image-edit-plus-2025-10-30",
 ]
 
-# Response status constants
-STATUS_FAILED = "Failed"
-STATUS_ERROR = "Error"
-STATUS_REQUEST_MODERATED = "Request Moderated"
-STATUS_CONTENT_MODERATED = "Content Moderated"
-
 # Maximum number of images for editing
 MAX_IMAGES = 6
 
 
-class QwenImageEdit(SuccessFailureNode):
+class QwenImageEdit(GriptapeProxyNode):
     """Edit images using Qwen image editing models via Griptape model proxy.
 
     Supports editing 1-6 input images with text instructions.
@@ -76,19 +61,10 @@ class QwenImageEdit(SuccessFailureNode):
         - result_details (str): Details about the generation result or error
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Edit images using Qwen image editing models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model selection
         self.add_parameter(
@@ -105,13 +81,15 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Editing instruction parameter
         self.add_parameter(
-            ParameterString(
+            Parameter(
                 name="editing_instruction",
+                input_types=["str"],
+                type="str",
                 tooltip="Editing instruction (max 800 characters). Use 'Image 1', 'Image 2', 'Image 3' to refer to specific images.",
-                multiline=True,
-                placeholder_text="Describe the edits you want to make to the image(s)...",
-                allow_output=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the edits you want to make to the image(s)...",
                     "display_name": "Editing Instruction",
                 },
             )
@@ -205,153 +183,65 @@ class QwenImageEdit(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-    async def aprocess(self) -> None:
-        await self._process()
+    def validate_before_node_run(self) -> list[Exception] | None:
+        exceptions = super().validate_before_node_run() or []
 
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        # Preprocess seed parameter
-        self._seed_parameter.preprocess()
-
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        model = params["model"]
-        logger.info("Editing images with %s", model)
-
-        # Submit request and get synchronous response
-        try:
-            response = await self._submit_request(params, headers)
-            if not response:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No response returned from API. Cannot proceed with editing.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Handle synchronous response
-        await self._handle_response(response)
-
-    def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
         images = self.get_parameter_value("images")
 
         # Validate images
         if not images or len(images) == 0:
-            msg = "At least 1 image is required for editing"
-            raise ValueError(msg)
-        if model == "qwen-image-edit" and len(images) != 1:
-            msg = f"qwen-image-edit only supports 1 image for editing (got {len(images)} images)"
-            raise ValueError(msg)
-        if len(images) > MAX_IMAGES:
-            msg = f"Maximum {MAX_IMAGES} images allowed for editing (got {len(images)})"
-            raise ValueError(msg)
+            exceptions.append(ValueError(f"{self.name} requires at least 1 image for editing"))
+        elif model == "qwen-image-edit" and len(images) != 1:
+            exceptions.append(
+                ValueError(f"{self.name} model 'qwen-image-edit' only supports 1 image (got {len(images)} images)")
+            )
+        elif len(images) > MAX_IMAGES:
+            exceptions.append(
+                ValueError(f"{self.name} allows maximum {MAX_IMAGES} images for editing (got {len(images)})")
+            )
 
-        # Automatically set num_images to match the number of input images
+        return exceptions if exceptions else None
+
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation."""
+        return self.get_parameter_value("model") or "qwen-image-edit-plus"
+
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for Qwen image editing."""
+        # Preprocess seed parameter
+        self._seed_parameter.preprocess()
+
+        editing_instruction = self.get_parameter_value("editing_instruction") or ""
+        images = self.get_parameter_value("images") or []
+        negative_prompt = self.get_parameter_value("negative_prompt") or ""
+        watermark = self.get_parameter_value("watermark") or False
+        seed = self._seed_parameter.get_seed()
         num_images = len(images)
 
-        # Validate num_images based on model
-        if model == "qwen-image-edit" and num_images != 1:
-            msg = f"qwen-image-edit only supports 1 image for editing (got {num_images} images)"
-            raise ValueError(msg)
-
-        return {
-            "model": model,
-            "editing_instruction": self.get_parameter_value("editing_instruction") or "",
-            "images": images,
-            "num_images": num_images,
-            "negative_prompt": self.get_parameter_value("negative_prompt") or "",
-            "watermark": self.get_parameter_value("watermark") or False,
-            "seed": self._seed_parameter.get_seed(),
-        }
-
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
-        payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
-
-        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
-        self._log_request(payload)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_json = response.json()
-                logger.info("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            logger.error("Request failed: %s", e)
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        return response_json
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build content array with images first, then text instruction
         content = []
 
         # Process images (1-6 images)
-        images_list = params["images"] if isinstance(params["images"], list) else []
-        for image_input in images_list:
+        for image_input in images:
             image_data = await self._process_input_image(image_input)
             if image_data:
                 content.append({"image": image_data})
 
         # Add editing instruction as text
-        content.append({"text": params["editing_instruction"]})
+        content.append({"text": editing_instruction})
 
         # Flatten structure - parameters should be at top level for MultiModalConversation.call()
         payload = {
-            "model": params["model"],
             "messages": [{"role": "user", "content": content}],
-            "n": params["num_images"],
-            "watermark": params["watermark"],
-            "seed": params["seed"],
+            "n": num_images,
+            "watermark": watermark,
+            "seed": seed,
         }
 
         # Add negative prompt if provided
-        if params["negative_prompt"]:
-            payload["negative_prompt"] = params["negative_prompt"]
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
 
         return payload
 
@@ -407,39 +297,14 @@ class QwenImageEdit(SuccessFailureNode):
         try:
             image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
-                import base64
-
                 b64_string = base64.b64encode(image_bytes).decode("utf-8")
                 return f"data:image/png;base64,{b64_string}"
         except Exception as e:
             logger.error("Failed to download image from URL %s: %s", url, e)
         return None
 
-    def _log_request(self, payload: dict[str, Any]) -> None:
-        with suppress(Exception):
-            sanitized_payload = deepcopy(payload)
-            # Truncate long editing instructions
-            if "messages" in sanitized_payload:
-                for msg in sanitized_payload["messages"]:
-                    if "content" in msg:
-                        for item in msg["content"]:
-                            if "text" in item:
-                                text = item["text"]
-                                if len(text) > PROMPT_TRUNCATE_LENGTH:
-                                    item["text"] = text[:PROMPT_TRUNCATE_LENGTH] + "..."
-                            # Redact base64 image data
-                            if "image" in item:
-                                image_data = item["image"]
-                                if isinstance(image_data, str) and image_data.startswith("data:image/"):
-                                    parts = image_data.split(",", 1)
-                                    header = parts[0] if parts else "data:image/"
-                                    b64_len = len(parts[1]) if len(parts) > 1 else 0
-                                    item["image"] = f"{header},<base64 data length={b64_len}>"
-
-            logger.info("Request payload: %s", json.dumps(sanitized_payload, indent=2))
-
-    async def _handle_response(self, response: dict[str, Any]) -> None:
-        """Handle Qwen synchronous response and extract image.
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse Qwen result and extract image.
 
         Response shape:
         {
@@ -459,23 +324,17 @@ class QwenImageEdit(SuccessFailureNode):
             }
         }
         """
-        self.parameter_output_values["provider_response"] = response
-
-        # Extract request_id for generation_id
-        request_id = response.get("request_id", response.get("id", ""))
-        self.parameter_output_values["generation_id"] = str(request_id)
-
         # Check status_code
-        status_code = response.get("status_code")
+        status_code = result_json.get("status_code")
         if status_code and status_code != HTTPStatus.OK:
             logger.error("Editing failed with status_code: %s", status_code)
             self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
+            error_details = self._extract_error_message(result_json)
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
         try:
-            choices = response.get("choices", [])
+            choices = result_json.get("choices", [])
             choice = choices[0]
             message = choice.get("message", {})
             content = message.get("content", [])
@@ -491,7 +350,7 @@ class QwenImageEdit(SuccessFailureNode):
             return
 
         if image_url:
-            await self._save_image_from_url(image_url)
+            await self._save_image_from_url(image_url, generation_id)
         else:
             logger.warning("No image URL found in content")
             self._set_safe_defaults()
@@ -500,15 +359,15 @@ class QwenImageEdit(SuccessFailureNode):
                 result_details="Editing completed but no image URL was found in the response.",
             )
 
-    async def _save_image_from_url(self, image_url: str) -> None:
+    async def _save_image_from_url(self, image_url: str, generation_id: str) -> None:
         """Download and save the image from the provided URL."""
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         try:
             logger.info("Downloading image from URL")
             image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
-                filename = f"qwen_edit_{int(time.time())}.jpg"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
+                filename = f"qwen_edit_{generation_id}.jpg"
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
@@ -530,59 +389,27 @@ class QwenImageEdit(SuccessFailureNode):
                 result_details=f"Image edited successfully. Using provider URL (could not save to static storage: {e}).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from failed generation response.
 
         Args:
-            response_json: The JSON response from the API that may contain error information
+            response_json: The JSON response from the generation status endpoint
 
         Returns:
-            A formatted error message string
+            str: A formatted error message to display to the user
         """
-        if not response_json:
-            return "Editing failed with no error details provided by API."
-
-        top_level_error = response_json.get("error")
+        # Try to extract from provider response (Qwen-specific legacy pattern)
         parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+        if parsed_provider_response:
+            provider_error = parsed_provider_response.get("error")
+            if provider_error:
+                top_level_error = response_json.get("error")
+                provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+                if provider_error_msg:
+                    return provider_error_msg
 
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
-        if top_level_error:
-            return self._format_top_level_error(top_level_error)
-
-        # Check for status-based errors
-        status = response_json.get("status")
-
-        # Handle moderation specifically
-        if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-            return self._format_moderation_error(response_json)
-
-        # Handle other failure statuses
-        if status in [STATUS_FAILED, STATUS_ERROR]:
-            return self._format_failure_status_error(response_json, status)
-
-        # Final fallback
-        return f"Editing failed.\n\nFull API response:\n{response_json}"
-
-    def _format_moderation_error(self, response_json: dict[str, Any]) -> str:
-        """Format error message for moderated content."""
-        details = response_json.get("details", {})
-        moderation_reasons = details.get("Moderation Reasons", [])
-        if moderation_reasons:
-            reasons_str = ", ".join(moderation_reasons)
-            return f"Content was moderated and blocked.\nModeration Reasons: {reasons_str}"
-        return "Content was moderated and blocked by safety filters."
-
-    def _format_failure_status_error(self, response_json: dict[str, Any], status: str) -> str:
-        """Format error message for failed/error status."""
-        result = response_json.get("result", {})
-        if isinstance(result, dict) and result.get("error"):
-            return f"Editing failed: {result['error']}"
-        return f"Editing failed with status '{status}'."
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
         """Parse provider_response if it's a JSON string."""

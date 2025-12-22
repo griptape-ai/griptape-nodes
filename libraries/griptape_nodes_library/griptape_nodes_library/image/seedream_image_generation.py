@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-import asyncio
-import json as _json
 import logging
-import os
-import time
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -83,7 +77,7 @@ MAX_IMAGES_PER_MODEL = {
 }
 
 
-class SeedreamImageGeneration(SuccessFailureNode):
+class SeedreamImageGeneration(GriptapeProxyNode):
     """Generate images using Seedream models via Griptape model proxy.
 
     Supports four models:
@@ -112,19 +106,10 @@ class SeedreamImageGeneration(SuccessFailureNode):
         - result_details (str): Details about the generation result or error
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate images using Seedream models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # Model selection
         self.add_parameter(
@@ -286,6 +271,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
         # Initialize parameter visibility based on default model (seedream-4.5)
         self._initialize_parameter_visibility()
 
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation, using MODEL_MAPPING."""
+        model = self.get_parameter_value("model") or "seedream-4.5"
+        return MODEL_MAPPING.get(model, model)
+
     def _show_image_output_parameters(self, count: int) -> None:
         """Show image output parameters based on actual result count.
 
@@ -408,139 +398,34 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    async def aprocess(self) -> None:
-        await self._process()
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for Seedream generation."""
+        model = self.get_parameter_value("model") or "seedream-4.5"
+        api_model_id = MODEL_MAPPING.get(model, model)
 
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        params = self._get_parameters()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        model = params["model"]
-        self._log(f"Generating image with {model}")
-
-        # Submit request to get generation ID
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
-
-    def _get_parameters(self) -> dict[str, Any]:
-        params = {
-            "model": self.get_parameter_value("model") or "seedream-4.5",
+        payload = {
+            "model": api_model_id,
             "prompt": self.get_parameter_value("prompt") or "",
-            "image": self.get_parameter_value("image"),
             "size": self.get_parameter_value("size") or "2K",
-            "seed": self.get_parameter_value("seed") or -1,
-            "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
+            "response_format": "url",
             "watermark": False,
         }
 
-        # Get image list for seedream-4.5 and seedream-4.0
-        if params["model"] in ("seedream-4.5", "seedream-4.0"):
-            params["images"] = self.get_parameter_list_value("images") or []
-            params["sequential_image_generation"] = "auto"
-            params["sequential_image_generation_options"] = {
-                "max_images": self.get_parameter_value("max_images"),
-            }
-
-        return params
-
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        payload = await self._build_payload(params)
-        # Map friendly model name to API model ID
-        api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
-        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
-
-        self._log(f"Submitting request to Griptape model proxy with model: {params['model']}")
-        self._log_request(payload)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_json = response.json()
-                self._log("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
-            return str(generation_id)
-        self._log("No generation_id returned from POST response")
-        return None
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
-        model = params["model"]
-        # Map friendly model name to API model ID
-        api_model_id = MODEL_MAPPING.get(model, model)
-        payload = {
-            "model": api_model_id,
-            "prompt": params["prompt"],
-            "size": params["size"],
-            "response_format": "url",
-            "watermark": params["watermark"],
-        }
-
         # Add seed if not -1
-        if params["seed"] != -1:
-            payload["seed"] = params["seed"]
+        seed = self.get_parameter_value("seed") or -1
+        if seed != -1:
+            payload["seed"] = seed
 
         # Model-specific parameters
         if model in ("seedream-4.5", "seedream-4.0"):
             # Add sequential image generation configuration
-            payload["sequential_image_generation"] = params["sequential_image_generation"]
-            payload["sequential_image_generation_options"] = params["sequential_image_generation_options"]
+            payload["sequential_image_generation"] = "auto"
+            payload["sequential_image_generation_options"] = {
+                "max_images": self.get_parameter_value("max_images"),
+            }
 
             # Add multiple images if provided for v4.5/v4.0
-            images = params.get("images", [])
+            images = self.get_parameter_list_value("images") or []
             if images:
                 image_array = []
                 for img in images:
@@ -552,14 +437,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         elif model == "seedream-3.0-t2i":
             # Add guidance scale for v3 t2i
-            payload["guidance_scale"] = params["guidance_scale"]
+            payload["guidance_scale"] = self.get_parameter_value("guidance_scale") or 2.5
 
         elif model == "seededit-3.0-i2i":
             # Add guidance scale and required image for seededit
-            payload["guidance_scale"] = params["guidance_scale"]
-            image_data = await self._process_input_image(params["image"])
+            payload["guidance_scale"] = self.get_parameter_value("guidance_scale") or 2.5
+            image_data = await self._process_input_image(self.get_parameter_value("image"))
             if image_data:
                 payload["image"] = image_data
+
+        # Log request for debugging
+        self._log_request(payload)
 
         return payload
 
@@ -625,6 +513,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
+            import json as _json
+
             sanitized_payload = deepcopy(payload)
             # Truncate long prompts
             prompt = sanitized_payload.get("prompt", "")
@@ -654,90 +544,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 240  # 20 minutes with 5s intervals
-        poll_interval = 5
-
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
-
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
-
-                    if status == "COMPLETED":
-                        # Fetch the actual result
-                        await self._fetch_result(generation_id, headers, client)
-                        return
-                    if status in ["FAILED", "ERROR"]:
-                        self._log(f"Generation failed with status: {status}")
-                        self._set_safe_defaults()
-                        # Extract error details from the response
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing (QUEUED or RUNNING), wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    self._log(f"Error while polling: {e}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            self._log("Polling timed out waiting for result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
-            )
-
-    async def _fetch_result(self, generation_id: str, headers: dict[str, str], client: httpx.AsyncClient) -> None:
-        """Fetch the final result from the generations endpoint."""
-        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
-        self._log(f"Fetching result from {result_url}")
-
-        try:
-            response = await client.get(result_url, headers=headers, timeout=60)
-            response.raise_for_status()
-            result_json = response.json()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
-            self._set_safe_defaults()
-            error_msg = f"Failed to fetch generation result: HTTP {e.response.status_code}"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            return
-        except Exception as e:
-            self._log(f"Error fetching result: {e}")
-            self._set_safe_defaults()
-            error_msg = f"Failed to fetch generation result: {e}"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            return
-
-        # Update provider_response with the final result
-        self.parameter_output_values["provider_response"] = result_json
-
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse the Seedream result and set output parameters."""
         # Extract image data
         data = result_json.get("data", [])
         if not data:
@@ -788,7 +596,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         self._set_status_results(was_successful=True, result_details=details)
 
     async def _save_single_image_from_url(
-        self, image_url: str, generation_id: str | None = None, index: int = 0
+        self, image_url: str, generation_id: str, index: int = 0
     ) -> ImageUrlArtifact | None:
         """Download and save a single image from the provided URL.
 
@@ -807,10 +615,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 self._log(f"Could not download image {index}, using provider URL")
                 return ImageUrlArtifact(value=image_url)
 
-            if generation_id:
-                filename = f"seedream_image_{generation_id}_{index}.jpg"
-            else:
-                filename = f"seedream_image_{int(time.time())}_{index}.jpg"
+            filename = f"seedream_image_{generation_id}_{index}.jpg"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(image_bytes, filename)
@@ -821,139 +626,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._log(f"Failed to save image {index} from URL: {e}")
             return ImageUrlArtifact(value=image_url)
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
-
-        Args:
-            response_json: The JSON response from the API that may contain error information
-
-        Returns:
-            A formatted error message string
-        """
-        if not response_json:
-            return "Generation failed with no error details provided by API."
-
-        # Check for v2 API status_detail first (for FAILED/ERROR statuses)
-        status_detail = response_json.get("status_detail")
-        if status_detail:
-            error_msg = self._format_status_detail_error(status_detail)
-            if error_msg:
-                return error_msg
-
-        top_level_error = response_json.get("error")
-        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
-
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
-        if top_level_error:
-            return self._format_top_level_error(top_level_error)
-
-        # Final fallback
-        return f"Generation failed.\n\nFull API response:\n{response_json}"
-
-    def _format_status_detail_error(self, status_detail: dict[str, Any]) -> str | None:
-        r"""Format error message from v2 API status_detail field.
-
-        Args:
-            status_detail: The status_detail object from a FAILED/ERROR generation response
-            Example: {"error": "invalid input", "details": "{\"error\":{\"code\":\"...\",\"message\":\"...\"}}"}
-
-        Returns:
-            A formatted error message string, or None if status_detail doesn't contain useful error info
-        """
-        if not isinstance(status_detail, dict):
-            return None
-
-        self._log(f"Parsing status_detail: {status_detail}")
-
-        # Extract top-level error message
-        top_error = status_detail.get("error", "")
-
-        # Try to parse the details field (which is a JSON string)
-        details_str = status_detail.get("details")
-        if details_str and isinstance(details_str, str):
-            self._log(f"Found details string, attempting to parse: {details_str[:200]}...")
-            try:
-                details_obj = _json.loads(details_str)
-                self._log(f"Parsed details object: {details_obj}")
-
-                if isinstance(details_obj, dict):
-                    error_info = details_obj.get("error", {})
-                    if isinstance(error_info, dict):
-                        error_code = error_info.get("code", "")
-                        error_message = error_info.get("message", "")
-
-                        self._log(f"Extracted error_code={error_code}, error_message length={len(error_message)}")
-
-                        if error_message:
-                            # Use the detailed error message as the primary message
-                            formatted_msg = error_message
-                            if error_code:
-                                formatted_msg += f"\nError Code: {error_code}"
-                            return formatted_msg
-            except Exception as e:
-                # If we can't parse details, fall through to simpler format
-                self._log(f"Failed to parse status_detail.details JSON: {e}")
-        else:
-            self._log(f"No details string found or details is not a string: {type(details_str)}")
-
-        # If we have a top-level error but couldn't parse details
-        if top_error:
-            return f"Generation failed: {top_error}"
-
-        return None
-
-    def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
-        """Parse provider_response if it's a JSON string."""
-        if isinstance(provider_response, str):
-            try:
-                return _json.loads(provider_response)
-            except Exception:
-                return None
-        if isinstance(provider_response, dict):
-            return provider_response
-        return None
-
-    def _format_provider_error(
-        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
-    ) -> str | None:
-        """Format error message from parsed provider response."""
-        if not parsed_provider_response:
-            return None
-
-        provider_error = parsed_provider_response.get("error")
-        if not provider_error:
-            return None
-
-        if isinstance(provider_error, dict):
-            error_message = provider_error.get("message", "")
-            details = f"{error_message}"
-
-            if error_code := provider_error.get("code"):
-                details += f"\nError Code: {error_code}"
-            if error_type := provider_error.get("type"):
-                details += f"\nError Type: {error_type}"
-            if top_level_error:
-                details = f"{top_level_error}\n\n{details}"
-            return details
-
-        error_msg = str(provider_error)
-        if top_level_error:
-            return f"{top_level_error}\n\nProvider error: {error_msg}"
-        return f"Generation failed. Provider error: {error_msg}"
-
-    def _format_top_level_error(self, top_level_error: Any) -> str:
-        """Format error message from top-level error field."""
-        if isinstance(top_level_error, dict):
-            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
-            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
-        return f"Generation failed with error: {top_level_error!s}"
-
     def _set_safe_defaults(self) -> None:
+        """Clear all output parameters on error."""
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
 
@@ -962,13 +636,19 @@ class SeedreamImageGeneration(SuccessFailureNode):
             param_name = "image_url" if i == 1 else f"image_url_{i}"
             self.parameter_output_values[param_name] = None
 
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from Seedream failed generation response.
+
+        Args:
+            response_json: The JSON response from the generation status endpoint
+
+        Returns:
+            str: A formatted error message to display to the user
+        """
+        # Try top-level details field (Seedream-specific)
+        details = response_json.get("details")
+        if details:
+            return f"{self.name} {details}"
+
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
