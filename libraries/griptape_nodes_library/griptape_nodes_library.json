@@ -1404,6 +1404,16 @@
       }
     },
     {
+      "class_name": "CreateColorBars",
+      "file_path": "griptape_nodes_library/image/create_color_bars.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate standard color bar test patterns including SMPTE, EBU, ARIB, and various test patterns for video calibration",
+        "display_name": "Create Color Bars",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SeedreamImageGeneration",
       "file_path": "griptape_nodes_library/image/seedream_image_generation.py",
       "metadata": {
