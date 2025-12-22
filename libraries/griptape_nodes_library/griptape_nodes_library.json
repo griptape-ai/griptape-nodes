@@ -2467,6 +2467,7 @@
         "display_name": "Topaz Image Enhance",
         "icon": "Sparkles",
         "group": "edit"
+      }
     },
     {
       "class_name": "ImageGridSplitter",
