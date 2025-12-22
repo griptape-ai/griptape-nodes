@@ -18,6 +18,9 @@ from diffusers_nodes_library.common.parameters.diffusion.qwen.edit_plus_paramete
 from diffusers_nodes_library.common.parameters.diffusion.qwen.img2img_parameters import (
     QwenImg2ImgPipelineParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.qwen.layered_parameters import (
+    QwenLayeredPipelineParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.qwen_parameters import (
     QwenPipelineParameters,
 )
@@ -35,6 +38,7 @@ QwenPipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] =
     "QwenImageEditPlusPipeline": QwenImageEditPlusPipelineParameters,
     "QwenImageUpscalePipeline": QwenUpscalePipelineParameters,
     "QwenImageControlNetPipeline": QwenImageControlNetPipelineParameters,
+    "QwenImageLayeredPipeline": QwenLayeredPipelineParameters,
 }
 
 
