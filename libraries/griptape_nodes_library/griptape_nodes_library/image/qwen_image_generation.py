@@ -16,6 +16,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -91,15 +92,13 @@ class QwenImageGeneration(SuccessFailureNode):
 
         # Core parameters
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 tooltip="Text description of the desired image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Describe the image you want to generate...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the image you want to generate...",
                     "display_name": "Prompt",
                 },
             )

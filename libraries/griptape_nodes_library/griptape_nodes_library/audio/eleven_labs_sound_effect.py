@@ -13,6 +13,7 @@ from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.slider import Slider
 
@@ -52,15 +53,13 @@ class ElevenLabsSoundEffectGeneration(SuccessFailureNode):
         # INPUTS / PROPERTIES
         # Text input
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                input_types=["str"],
-                type="str",
                 tooltip="Text description of the sound effect to generate",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Describe the sound effect you want to generate...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the sound effect you want to generate...",
                     "display_name": "Text",
                 },
             )
