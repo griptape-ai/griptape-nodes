@@ -7,10 +7,10 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import (
-    LOCAL_EXECUTION,
-    PRIVATE_EXECUTION,
     BaseNode,
 )
+
+GROUP_SETTINGS_PARAMS_METADATA_KEY = "group_settings_params"
 
 
 class BaseNodeGroup(BaseNode):
@@ -51,18 +51,13 @@ class BaseNodeGroup(BaseNode):
             msg = f"Parameter '{parameter.name}' must allow PROPERTY mode to be added to settings."
             raise ValueError(msg)
 
-        if "execution_environment" not in self.metadata:
-            self.metadata["execution_environment"] = {}
+        if GROUP_SETTINGS_PARAMS_METADATA_KEY not in self.metadata:
+            self.metadata[GROUP_SETTINGS_PARAMS_METADATA_KEY] = []
 
-        execution_environment: dict = self.metadata.get("execution_environment", {})
-        if LOCAL_EXECUTION not in execution_environment:
-            execution_environment[LOCAL_EXECUTION] = {"parameter_names": []}
-        if PRIVATE_EXECUTION not in execution_environment:
-            execution_environment[PRIVATE_EXECUTION] = {"parameter_names": []}
-
-        for library in execution_environment:
-            parameter_names = self.metadata["execution_environment"][library].get("parameter_names", [])
-            self.metadata["execution_environment"][library]["parameter_names"] = [parameter.name, *parameter_names]
+        group_settings_params: list[str] = self.metadata.get(GROUP_SETTINGS_PARAMS_METADATA_KEY, [])
+        if parameter.name not in group_settings_params:
+            group_settings_params.append(parameter.name)
+            self.metadata[GROUP_SETTINGS_PARAMS_METADATA_KEY] = group_settings_params
 
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to this group.
