@@ -32,12 +32,20 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         - prompt (str): Text prompt for the video (supports provider flags like --resolution)
         - model_id (str): Provider model id (default: seedance-1-0-pro-250528)
         - resolution (str): Output resolution (default: 1080p, options: 480p, 720p, 1080p)
-        - ratio (str): Output aspect ratio (default: 16:9, options: 16:9, 4:3, 1:1, 3:4, 9:16, 21:9)
-        - duration (int): Video duration in seconds (default: 5, options: 5, 10)
+        - ratio (str): Output aspect ratio (default: 16:9, options: auto, 21:9, 16:9, 4:3, 1:1, 3:4, 9:16)
+        - duration (int): Video duration in seconds (default: 5, options: 4-12)
         - camerafixed (bool): Camera fixed flag (default: False)
+        - audio (bool): Generate audio with video (default: False, only for seedance-1-5-pro-251215)
         - first_frame (ImageArtifact|ImageUrlArtifact|str): Optional first frame image (URL or base64 data URI)
-        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for i2v model (URL or base64 data URI)
+        - last_frame (ImageArtifact|ImageUrlArtifact|str): Optional last frame image for i2v and 1.5 pro models (URL or base64 data URI)
         (Always polls for result: 5s interval, 10 min timeout)
+
+    Model capabilities:
+        - seedance-1-0-pro-250528: 480p/720p/1080p, 5s/10s duration, first frame only
+        - seedance-1-0-pro-fast-251015: 480p/720p/1080p, 5s/10s duration, first frame only
+        - seedance-1-5-pro-251215: 480p/720p, 4-12s duration, first+last frame, audio support
+        - seedance-1-0-lite-t2v-250428: Text-to-video lite model
+        - seedance-1-0-lite-i2v-250428: Image-to-video lite model with first+last frame
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
@@ -93,6 +101,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                         choices=[
                             "seedance-1-0-pro-250528",
                             "seedance-1-0-pro-fast-251015",
+                            "seedance-1-5-pro-251215",
                             "seedance-1-0-lite-t2v-250428",
                             "seedance-1-0-lite-i2v-250428",
                         ]
@@ -123,7 +132,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 default_value="16:9",
                 tooltip="Output aspect ratio",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"])},
+                traits={Options(choices=["auto", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"])},
             )
         )
 
@@ -136,7 +145,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 default_value=5,
                 tooltip="Video duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[5, 10])},
+                traits={Options(choices=[4, 5, 6, 7, 8, 9, 10, 11, 12])},
             )
         )
 
@@ -148,6 +157,18 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 type="bool",
                 default_value=False,
                 tooltip="Camera fixed",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # Audio generation flag
+        self.add_parameter(
+            Parameter(
+                name="audio",
+                input_types=["bool"],
+                type="bool",
+                default_value=False,
+                tooltip="Generate audio with video",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
@@ -221,12 +242,19 @@ class SeedanceVideoGeneration(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
         if parameter.name == "model_id":
-            # Show last_frame parameter only for i2v model
-            show_last_frame = value == "seedance-1-0-lite-i2v-250428"
+            # Show last_frame parameter for i2v model and 1.5 pro model
+            show_last_frame = value in ("seedance-1-0-lite-i2v-250428", "seedance-1-5-pro-251215")
             if show_last_frame:
                 self.show_parameter_by_name("last_frame")
             else:
                 self.hide_parameter_by_name("last_frame")
+
+            # Show audio parameter only for 1.5 pro model
+            show_audio = value == "seedance-1-5-pro-251215"
+            if show_audio:
+                self.show_parameter_by_name("audio")
+            else:
+                self.hide_parameter_by_name("audio")
 
         return super().after_value_set(parameter, value)
 
@@ -287,6 +315,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             "last_frame": self.get_parameter_value("last_frame"),
             "duration": self.get_parameter_value("duration"),
             "camerafixed": self.get_parameter_value("camerafixed"),
+            "audio": self.get_parameter_value("audio"),
         }
 
     def _validate_api_key(self) -> str:
@@ -345,6 +374,10 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         if params["camerafixed"] is not None:
             cam_str = "true" if bool(params["camerafixed"]) else "false"
             text_parts.append(f"--camerafixed {cam_str}")
+        # Only add audio flag for 1.5 pro model
+        if params["model_id"] == "seedance-1-5-pro-251215" and params["audio"] is not None:
+            audio_str = "true" if bool(params["audio"]) else "false"
+            text_parts.append(f"--audio {audio_str}")
 
         text_payload = "  ".join([p for p in text_parts if p])
         content_list: list[dict[str, Any]] = [{"type": "text", "text": text_payload}]
@@ -360,7 +393,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
 
         if model_id == "seedance-1-0-pro-250528":
             self._add_first_frame_only(content_list, params)
-        elif model_id == "seedance-1-0-lite-i2v-250428":
+        elif model_id in ("seedance-1-0-lite-i2v-250428", "seedance-1-5-pro-251215"):
             self._add_i2v_frames(content_list, params)
         # Add other model handling here as needed
 
