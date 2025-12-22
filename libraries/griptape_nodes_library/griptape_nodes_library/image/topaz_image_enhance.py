@@ -42,40 +42,166 @@ OPERATION_OPTIONS = [
 ]
 
 ENHANCE_MODELS = {
-    "Standard V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
-    "Low Resolution V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
-    "CGI": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
-    "High Fidelity V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "sharpen", "denoise", "fix_compression"],
-    "Text Refine": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "sharpen", "denoise", "fix_compression"],
+    "Standard V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "sharpen",
+        "denoise",
+        "fix_compression",
+    ],
+    "Low Resolution V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "sharpen",
+        "denoise",
+        "fix_compression",
+    ],
+    "CGI": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "sharpen",
+        "denoise",
+        "fix_compression",
+    ],
+    "High Fidelity V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "sharpen",
+        "denoise",
+        "fix_compression",
+    ],
+    "Text Refine": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "sharpen",
+        "denoise",
+        "fix_compression",
+    ],
 }
 
 ENHANCE_GENERATIVE_MODELS = {
     "Redefine": ["prompt", "autoprompt", "creativity", "texture", "sharpen", "denoise"],
-    "Recovery V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "detail"],
+    "Recovery V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "detail",
+    ],
     "Standard MAX": [],
     "Wonder": [],
 }
 
 SHARPEN_MODELS = {
-    "Standard": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
-    "Strong": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength"],
-    "Lens Blur": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
-    "Lens Blur V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
-    "Motion Blur": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
-    "Natural": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
-    "Refocus": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_denoise"],
+    "Standard": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
+    "Strong": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+    ],
+    "Lens Blur": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
+    "Lens Blur V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
+    "Motion Blur": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
+    "Natural": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
+    "Refocus": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_denoise",
+    ],
     "Wildlife": ["denoise_strength", "sharpen_strength"],
     "Portrait": ["denoise_strength", "sharpen_strength"],
 }
 
 SHARPEN_GENERATIVE_MODELS = {
-    "Super Focus V2": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "detail", "focus_boost"],
+    "Super Focus V2": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "detail",
+        "focus_boost",
+    ],
 }
 
 DENOISE_MODELS = {
-    "Normal": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
-    "Strong": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
-    "Extreme": ["face_enhancement", "face_enhancement_strength", "face_enhancement_creativity", "subject_detection", "strength", "minor_deblur", "original_detail"],
+    "Normal": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_deblur",
+        "original_detail",
+    ],
+    "Strong": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_deblur",
+        "original_detail",
+    ],
+    "Extreme": [
+        "face_enhancement",
+        "face_enhancement_strength",
+        "face_enhancement_creativity",
+        "subject_detection",
+        "strength",
+        "minor_deblur",
+        "original_detail",
+    ],
 }
 
 RESTORE_GENERATIVE_MODELS = {
@@ -97,6 +223,24 @@ MATTING_MODELS = {
 TOOL_MODELS = {
     "Transparency Upscale": [],
 }
+
+# Collect all unique parameter names from all model dictionaries
+ALL_MODEL_PARAMS = frozenset(
+    param
+    for models_dict in (
+        ENHANCE_MODELS,
+        ENHANCE_GENERATIVE_MODELS,
+        SHARPEN_MODELS,
+        SHARPEN_GENERATIVE_MODELS,
+        DENOISE_MODELS,
+        RESTORE_GENERATIVE_MODELS,
+        LIGHTING_MODELS,
+        MATTING_MODELS,
+        TOOL_MODELS,
+    )
+    for params_list in models_dict.values()
+    for param in params_list
+)
 
 # Subject detection options
 SUBJECT_DETECTION_OPTIONS = ["Foreground", "Background", "All"]
@@ -667,27 +811,6 @@ class TopazImageEnhance(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
-    # All configurable parameter names that can be shown/hidden based on model
-    ALL_MODEL_PARAMS = [
-        # Standard enhance params
-        "sharpen", "denoise", "fix_compression", "strength",
-        "minor_deblur", "original_detail", "minor_denoise",
-        "face_enhancement", "face_enhancement_strength", "face_enhancement_creativity",
-        "subject_detection",
-        # Wildlife/Portrait sharpen params
-        "denoise_strength", "sharpen_strength",
-        # Generative enhance params
-        "prompt", "autoprompt", "creativity", "texture", "detail",
-        # Super Focus V2 params
-        "focus_boost",
-        # Dust-Scratch V2 grain params
-        "grain", "grain_model", "grain_strength", "grain_density", "grain_size",
-        # Lighting params
-        "color_correction", "exposure", "highlight", "shadow", "temperature", "opacity", "saturation",
-        # Matting params
-        "mode",
-    ]
-
     def _update_visible_params_for_model(self, model_name: str) -> None:
         """Show/hide parameters based on the selected model's supported params."""
         operation = self.get_parameter_value("operation") or "enhance"
@@ -840,9 +963,10 @@ class TopazImageEnhance(SuccessFailureNode):
                 if value is None:
                     continue
                 # Only include face_enhancement_strength/creativity if face_enhancement is enabled
-                if param_name in ("face_enhancement_strength", "face_enhancement_creativity"):
-                    if not params.get("face_enhancement"):
-                        continue
+                if param_name in ("face_enhancement_strength", "face_enhancement_creativity") and not params.get(
+                    "face_enhancement"
+                ):
+                    continue
                 payload[param_name] = value
 
         # Add input image
