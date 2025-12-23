@@ -1461,7 +1461,7 @@
       "metadata": {
         "category": "image",
         "description": "Create an image with text rendered on it",
-        "display_name": "Add Text to Image",
+        "display_name": "Create Text Image",
         "group": "create",
         "icon": "Type"
       }
