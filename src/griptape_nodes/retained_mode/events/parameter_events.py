@@ -669,3 +669,81 @@ class MigrateParameterResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 @PayloadRegistry.register
 class MigrateParameterResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Parameter migration failed."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetParameterToDefaultRequest(RequestPayload):
+    """Check if a parameter can be reset to its default state.
+
+    Use when: Need to validate whether a parameter reset operation is allowed before attempting it,
+    implementing UI state (enabled/disabled reset button), or providing user feedback.
+    Checks for conditions that would prevent reset (locked node, etc.).
+
+    Args:
+        parameter_name: Name of the parameter to check
+        node_name: Name of the node containing the parameter (None for current context node)
+
+    Results: CanResetParameterToDefaultResultSuccess (with can_reset flag and reason) | CanResetParameterToDefaultResultFailure (validation failed)
+    """
+
+    parameter_name: str
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetParameterToDefaultResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Parameter reset check completed successfully.
+
+    Args:
+        can_reset: True if the parameter can be reset to default, False otherwise
+        editor_tooltip_reason: Optional explanation if parameter cannot be reset (e.g., "Node is locked. Unlock the node in order to reset parameters.")
+    """
+
+    can_reset: bool
+    editor_tooltip_reason: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CanResetParameterToDefaultResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Parameter reset check failed.
+
+    Common causes: parameter not found, node not found, no current context.
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetParameterToDefaultRequest(RequestPayload):
+    """Reset a parameter to its default state.
+
+    Use when: Need to reset a parameter's value back to default, clear customizations,
+    fix incorrect parameter values, or restore a parameter to its initial state.
+
+    Args:
+        parameter_name: Name of the parameter to reset
+        node_name: Name of the node containing the parameter (None for current context node)
+
+    Results: ResetParameterToDefaultResultSuccess | ResetParameterToDefaultResultFailure (reset failed)
+    """
+
+    parameter_name: str
+    node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetParameterToDefaultResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Parameter reset to default successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ResetParameterToDefaultResultFailure(ResultPayloadFailure):
+    """Parameter reset to default failed.
+
+    Common causes: parameter not found, node not found, no current context,
+    node is locked, or parameter cannot be reset.
+    """
