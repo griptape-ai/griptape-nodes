@@ -4,7 +4,6 @@ import logging
 import threading
 from pathlib import Path
 
-import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.drivers.storage import StorageBackend
@@ -27,6 +26,7 @@ from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import start_static_server
+from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -158,24 +158,36 @@ class StaticFilesManager:
         """Handle the request to create a presigned URL for downloading a static file.
 
         Args:
-            request: The request object containing the file name.
+            request: The request object containing the file name or file URL.
 
         Returns:
             A result object indicating success or failure.
         """
-        file_name = request.file_name
-
         resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / file_name
+        file_name = request.file_name
+        file_url = request.file_url
+
+        if file_name is not None:
+            full_file_path = Path(resolved_directory) / file_name
+        elif file_url is not None:
+            full_file_path = Path(uri_to_path(file_url))
+        else:
+            return CreateStaticFileDownloadUrlResultFailure(
+                error="Either file_name or file_url must be provided.",
+                result_details="Invalid request parameters.",
+            )
 
         try:
             url = self.storage_driver.create_signed_download_url(full_file_path)
         except Exception as e:
-            msg = f"Failed to create presigned URL for file {file_name}: {e}"
+            identifier = file_name if file_name is not None else file_url
+            msg = f"Failed to create presigned URL for file {identifier}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
-            url=url, result_details="Successfully created static file download URL"
+            url=url,
+            file_url=self.storage_driver.get_asset_url(full_file_path),
+            result_details="Successfully created static file download URL",
         )
 
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
@@ -199,32 +211,29 @@ class StaticFilesManager:
                 - FAIL: Raise FileExistsError if file exists
 
         Returns:
-            The URL of the saved file. Note: the actual filename may differ from the requested
-            file_name when using CREATE_NEW policy.
+            The URL of the saved file for UI display (with cache-busting). Note: the actual filename
+            may differ from the requested file_name when using CREATE_NEW policy.
 
         Raises:
             FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file write fails.
         """
         resolved_directory = self._get_static_files_directory()
         file_path = Path(resolved_directory) / file_name
 
-        # Pass the existing_file_policy to the storage driver
-        response = self.storage_driver.create_signed_upload_url(file_path, existing_file_policy)
-
-        resolved_file_path = Path(response["file_path"])
-
+        # Check failure cases first
         try:
-            upload_response = httpx.request(
-                response["method"], response["url"], content=data, headers=response["headers"], timeout=60
-            )
-            upload_response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            msg = str(e.response.json()) if hasattr(e, "response") else str(e)
+            # Save file and get absolute path
+            saved_path = self.storage_driver.save_file(file_path, data, existing_file_policy)
+        except FileExistsError:
+            # Re-raise FileExistsError for FAIL policy
+            raise
+        except Exception as e:
+            msg = f"Failed to save static file {file_name}: {e}"
             logger.error(msg)
-            raise ValueError(msg) from e
+            raise RuntimeError(msg) from e
 
-        url = self.storage_driver.create_signed_download_url(resolved_file_path)
-        return url
+        return saved_path
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.

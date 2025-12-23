@@ -20,6 +20,7 @@ from griptape_nodes.exe_types.param_components.seed_parameter import SeedParamet
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -782,7 +783,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         if not obj:
             return None
         video_url = obj.get("video_url")
-        if isinstance(video_url, str) and video_url.startswith("http"):
+        if isinstance(video_url, str) and is_url_or_path(video_url) and video_url.startswith(("http://", "https://")):
             return video_url
         return None
 
