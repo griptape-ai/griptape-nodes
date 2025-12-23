@@ -170,6 +170,7 @@ nav:
           - Image Bash: nodes/image/image_bash.md
           - Rescale Image: nodes/image/rescale_image.md
           - Compare Images: nodes/image/compare_images.md
+          - Create Color Bars: nodes/image/create_color_bars.md
           - Display Image Grid: nodes/image/display_image_grid.md
           - Image Grid Splitter: nodes/image/image_grid_splitter.md
           - Extend Canvas: nodes/image/extend_canvas.md
