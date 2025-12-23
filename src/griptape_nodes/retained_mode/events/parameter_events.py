@@ -235,6 +235,7 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
         mode_allowed_input/property/output: Which modes are allowed
         is_user_defined: Whether this is a user-defined parameter
         settable: Whether parameter can be set directly by the user or not (None for non-Parameters)
+        private: Whether this parameter is private
         ui_options: UI configuration options
     """
 
@@ -252,6 +253,7 @@ class GetParameterDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuc
     mode_allowed_output: bool
     is_user_defined: bool
     settable: bool | None
+    private: bool
     ui_options: dict | None
 
 

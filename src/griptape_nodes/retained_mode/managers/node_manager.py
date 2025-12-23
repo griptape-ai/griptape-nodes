@@ -20,6 +20,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
+from griptape_nodes.exe_types.node_groups.base_node_group import BaseNodeGroup
 from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     PRIVATE_EXECUTION,
@@ -487,9 +488,9 @@ class NodeManager:
                         node.end_node = end_node
                         end_node.start_node = node
 
-        # Handle node_names_to_add for SubflowNodeGroup nodes
+        # Handle node_names_to_add for BaseNodeGroup nodes
         if request.node_names_to_add:
-            if isinstance(node, SubflowNodeGroup):
+            if isinstance(node, BaseNodeGroup):
                 nodes_to_add = []
                 for node_name in request.node_names_to_add:
                     try:
@@ -510,7 +511,7 @@ class NodeManager:
             else:
                 warning_details = (
                     f"Attempted to add nodes '{request.node_names_to_add}' to Node '{node.name}'. "
-                    f"Failed because node is not a SubflowNodeGroup."
+                    f"Failed because node is not a BaseNodeGroup."
                 )
                 logger.warning(warning_details)
 
@@ -570,7 +571,7 @@ class NodeManager:
 
     def _get_node_group(
         self, node_group_name: str, node_names: list[str]
-    ) -> SubflowNodeGroup | AddNodesToNodeGroupResultFailure:
+    ) -> BaseNodeGroup | AddNodesToNodeGroupResultFailure:
         """Get the NodeGroup node."""
         try:
             node_group = GriptapeNodes.ObjectManager().get_object_by_name(node_group_name)
@@ -578,7 +579,7 @@ class NodeManager:
             details = f"Attempted to add nodes '{node_names}' to NodeGroup '{node_group_name}'. Failed because NodeGroup was not found."
             return AddNodesToNodeGroupResultFailure(result_details=details)
 
-        if not isinstance(node_group, SubflowNodeGroup):
+        if not isinstance(node_group, BaseNodeGroup):
             details = f"Attempted to add nodes '{node_names}' to '{node_group_name}'. Failed because '{node_group_name}' is not a NodeGroup."
             return AddNodesToNodeGroupResultFailure(result_details=details)
 
@@ -657,7 +658,7 @@ class NodeManager:
 
     def _get_node_group_for_remove(
         self, node_group_name: str, node_names: list[str]
-    ) -> SubflowNodeGroup | RemoveNodeFromNodeGroupResultFailure:
+    ) -> BaseNodeGroup | RemoveNodeFromNodeGroupResultFailure:
         """Get the NodeGroup node for remove operation."""
         try:
             node_group = GriptapeNodes.ObjectManager().get_object_by_name(node_group_name)
@@ -665,7 +666,7 @@ class NodeManager:
             details = f"Attempted to remove nodes '{node_names}' from NodeGroup '{node_group_name}'. Failed because NodeGroup was not found."
             return RemoveNodeFromNodeGroupResultFailure(result_details=details)
 
-        if not isinstance(node_group, SubflowNodeGroup):
+        if not isinstance(node_group, BaseNodeGroup):
             details = f"Attempted to remove nodes '{node_names}' from '{node_group_name}'. Failed because '{node_group_name}' is not a NodeGroup."
             return RemoveNodeFromNodeGroupResultFailure(result_details=details)
 
@@ -1592,6 +1593,7 @@ class NodeManager:
             mode_allowed_output=allows_output,
             is_user_defined=getattr(element, "user_defined", False),
             settable=getattr(element, "settable", None),
+            private=getattr(element, "private", False),
             ui_options=getattr(element, "ui_options", None),
             result_details=details,
         )
