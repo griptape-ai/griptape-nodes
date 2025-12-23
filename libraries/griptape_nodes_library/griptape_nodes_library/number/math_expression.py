@@ -3,7 +3,7 @@ import random
 import re
 from typing import Any
 
-from asteval import Interpreter
+from asteval import Interpreter  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -327,6 +327,11 @@ class MathExpression(BaseNode):
 
         # Handle None result (asteval returns None for invalid expressions)
         if result is None:
+            return 0.0
+
+        # Check if result is numeric (int or float) before converting to float
+        # Exclude complex as it cannot be converted to float
+        if not isinstance(result, (int, float)):
             return 0.0
 
         # Convert result to float
