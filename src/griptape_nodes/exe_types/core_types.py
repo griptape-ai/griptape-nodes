@@ -1181,6 +1181,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     serializable: bool = True
 
     user_defined: bool = False
+    private: bool = False
     _allowed_modes: set = field(
         default_factory=lambda: {
             ParameterMode.OUTPUT,
@@ -1222,6 +1223,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         settable: bool = True,
         serializable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
@@ -1246,6 +1248,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         self._settable = settable
         self.serializable = serializable
         self.user_defined = user_defined
+        self.private = private
 
         # Process allowed_modes - use convenience parameters if allowed_modes not explicitly set
         if allowed_modes is None:
@@ -1401,6 +1404,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         our_dict["is_user_defined"] = self.user_defined
         our_dict["settable"] = self.settable
         our_dict["serializable"] = self.serializable
+        our_dict["private"] = self.private
         our_dict["ui_options"] = self.ui_options
 
         # Let's bundle up the mode details.
@@ -1838,6 +1842,7 @@ class ControlParameter(Parameter, ABC):
         ui_options: dict | None = None,
         *,
         user_defined: bool = False,
+        private: bool = False,
     ):
         # Call parent with a few explicit tweaks.
         super().__init__(
@@ -1857,6 +1862,7 @@ class ControlParameter(Parameter, ABC):
             validators=validators,
             ui_options=ui_options,
             user_defined=user_defined,
+            private=private,
             element_type=self.__class__.__name__,
         )
 
@@ -1875,6 +1881,7 @@ class ControlParameterInput(ControlParameter):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         user_defined: bool = False,
+        private: bool = False,
     ):
         allowed_modes = {ParameterMode.INPUT}
         input_types = [ParameterTypeBuiltin.CONTROL_TYPE.value]
@@ -1899,6 +1906,7 @@ class ControlParameterInput(ControlParameter):
             validators=validators,
             ui_options=ui_options,
             user_defined=user_defined,
+            private=private,
         )
 
 
@@ -1916,6 +1924,7 @@ class ControlParameterOutput(ControlParameter):
         validators: list[Callable[[Parameter, Any], None]] | None = None,
         *,
         user_defined: bool = False,
+        private: bool = False,
     ):
         allowed_modes = {ParameterMode.OUTPUT}
         output_type = ParameterTypeBuiltin.CONTROL_TYPE.value
@@ -1940,6 +1949,7 @@ class ControlParameterOutput(ControlParameter):
             validators=validators,
             ui_options=ui_options,
             user_defined=user_defined,
+            private=private,
         )
 
 
@@ -1970,6 +1980,7 @@ class ParameterContainer(Parameter, ABC):
         hide: bool | None = None,
         settable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
     ):
@@ -1991,6 +2002,7 @@ class ParameterContainer(Parameter, ABC):
             hide=hide,
             settable=settable,
             user_defined=user_defined,
+            private=private,
             element_id=element_id,
             element_type=element_type,
         )
@@ -2040,6 +2052,7 @@ class ParameterList(ParameterContainer):
         hide: bool | None = None,
         settable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
         max_items: int | None = None,
@@ -2080,6 +2093,7 @@ class ParameterList(ParameterContainer):
             hide=hide,
             settable=settable,
             user_defined=user_defined,
+            private=private,
             element_id=element_id,
             element_type=element_type,
         )
@@ -2418,6 +2432,7 @@ class ParameterKeyValuePair(Parameter):
         *,
         settable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
     ):
@@ -2437,6 +2452,7 @@ class ParameterKeyValuePair(Parameter):
             validators=validators,
             settable=settable,
             user_defined=user_defined,
+            private=private,
             element_id=element_id,
             element_type=element_type,
         )
@@ -2538,6 +2554,7 @@ class ParameterDictionary(ParameterContainer):
         *,
         settable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
     ):
@@ -2557,6 +2574,7 @@ class ParameterDictionary(ParameterContainer):
             validators=validators,
             settable=settable,
             user_defined=user_defined,
+            private=private,
             element_id=element_id,
             element_type=element_type,
         )

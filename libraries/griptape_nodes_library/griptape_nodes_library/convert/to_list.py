@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -43,12 +44,24 @@ class ToList(DataNode):
         if isinstance(value, list):
             return value
         if isinstance(value, dict):
+            # If dict has a single key with a list value, return that list directly
+            if len(value) == 1:
+                single_value = next(iter(value.values()))
+                if isinstance(single_value, list):
+                    return single_value
             return list(value.values())
         if isinstance(value, str):
-            return [value]
-        if isinstance(value, (set, tuple, frozenset)):
-            return list(value)
-        return [value]
+            # Try to parse as JSON if it looks like JSON
+            stripped = value.strip()
+            if stripped.startswith(("{", "[")):
+                try:
+                    parsed = json.loads(value)
+                    # Recursively convert the parsed JSON
+                    return self._convert_to_list(parsed)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        # Handle iterables (set, tuple, frozenset) and other types
+        return list(value) if isinstance(value, (set, tuple, frozenset)) else [value]
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "from":

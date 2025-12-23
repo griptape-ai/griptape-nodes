@@ -53,6 +53,7 @@ class Parameter3D(Parameter):
         settable: bool = True,
         serializable: bool = True,
         user_defined: bool = False,
+        private: bool = False,
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
@@ -87,6 +88,7 @@ class Parameter3D(Parameter):
             settable: Whether the parameter is settable
             serializable: Whether the parameter is serializable
             user_defined: Whether the parameter is user-defined
+            private: Whether this parameter is private
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
@@ -140,6 +142,7 @@ class Parameter3D(Parameter):
             settable=settable,
             serializable=serializable,
             user_defined=user_defined,
+            private=private,
             element_id=element_id,
             element_type=element_type,
             parent_container_name=parent_container_name,
