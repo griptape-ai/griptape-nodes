@@ -1244,6 +1244,7 @@ class LibraryManager:
             LibraryRegistry.get_library(name=library_name)
             return RegisterLibraryFromFileResultSuccess(
                 library_name=library_name,
+                was_already_loaded=True,
                 result_details=f"Library '{library_name}' already loaded",
             )
         except KeyError:
@@ -1278,6 +1279,7 @@ class LibraryManager:
                 # Already loaded and good to go
                 return RegisterLibraryFromFileResultSuccess(
                     library_name=library_info.library_name,
+                    was_already_loaded=True,
                     result_details=f"Library '{library_info.library_name}' already loaded",
                 )
 
@@ -3107,7 +3109,7 @@ class LibraryManager:
             problems=problems,
         )
 
-    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002, C901
+    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002, C901, PLR0912
         """Load all libraries from configuration (backward compatibility wrapper).
 
         This is the legacy entry point that loads all configured libraries.
@@ -3153,6 +3155,14 @@ class LibraryManager:
                 library_name = load_result.library_name
             else:
                 library_name = lib_path
+
+            # Check if library was already loaded (skip event emission if so)
+            if isinstance(load_result, RegisterLibraryFromFileResultSuccess) and load_result.was_already_loaded:
+                # Library was already loaded - skip events and continue
+                loaded_count += 1
+                continue
+
+            # Library was actually loaded or failed - emit appropriate events
 
             # Emit loading event
             GriptapeNodes.EventManager().put_event(

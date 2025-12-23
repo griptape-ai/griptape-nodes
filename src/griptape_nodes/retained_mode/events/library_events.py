@@ -352,9 +352,11 @@ class RegisterLibraryFromFileResultSuccess(WorkflowAlteredMixin, ResultPayloadSu
 
     Args:
         library_name: Name of the registered library
+        was_already_loaded: True if the library was already loaded, False if it was loaded by this request
     """
 
     library_name: str
+    was_already_loaded: bool = False
 
 
 @dataclass
