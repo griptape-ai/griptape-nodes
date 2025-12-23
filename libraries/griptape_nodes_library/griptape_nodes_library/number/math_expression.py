@@ -14,6 +14,16 @@ from griptape_nodes.traits.options import Options
 # All 26 letters of the alphabet for variable names
 ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 
+# Constants for variable count limits
+DEFAULT_NUM_VARIABLES = 2
+MIN_NUM_VARIABLES = 1
+MAX_NUM_VARIABLES = 26
+
+# Constants for precision limits
+DEFAULT_PRECISION = 6
+MIN_PRECISION = 0
+MAX_PRECISION = 15
+
 
 class MathExpression(BaseNode):
     """MathExpression Node that evaluates mathematical expressions with variable inputs."""
@@ -37,12 +47,12 @@ class MathExpression(BaseNode):
         self.add_parameter(
             ParameterInt(
                 name="num_variables",
-                tooltip="Number of variables available (1-26, one for each letter a-z)",
-                default_value=2,
+                tooltip=f"Number of variables available ({MIN_NUM_VARIABLES}-{MAX_NUM_VARIABLES}, one for each letter a-z)",
+                default_value=DEFAULT_NUM_VARIABLES,
                 allowed_modes={ParameterMode.PROPERTY},
                 slider=True,
-                min_val=1,
-                max_val=26,
+                min_val=MIN_NUM_VARIABLES,
+                max_val=MAX_NUM_VARIABLES,
             )
         )
 
@@ -80,8 +90,8 @@ class MathExpression(BaseNode):
         self.add_parameter(
             ParameterInt(
                 name="precision",
-                tooltip="Number of decimal places for float output (0-15)",
-                default_value=6,
+                tooltip=f"Number of decimal places for float output ({MIN_PRECISION}-{MAX_PRECISION})",
+                default_value=DEFAULT_PRECISION,
                 allowed_modes={ParameterMode.PROPERTY},
             )
         )
@@ -99,14 +109,7 @@ class MathExpression(BaseNode):
 
     def _update_variable_visibility(self) -> None:
         """Update visibility of variable parameters based on num_variables setting."""
-        num_variables = self.get_parameter_value("num_variables")
-        if num_variables is None:
-            num_variables = 2
-        try:
-            num_variables = int(num_variables)
-            num_variables = max(1, min(26, num_variables))  # Clamp between 1 and 26
-        except (ValueError, TypeError):
-            num_variables = 2
+        num_variables = self._get_num_variables()
 
         # Show/hide variable parameters based on count
         for i, letter in enumerate(ALPHABET):
@@ -123,12 +126,8 @@ class MathExpression(BaseNode):
         """Get and validate the number of variables."""
         num_variables = self.get_parameter_value("num_variables")
         if num_variables is None:
-            return 2
-        try:
-            num_variables = int(num_variables)
-            return max(1, min(26, num_variables))  # Clamp between 1 and 26
-        except (ValueError, TypeError):
-            return 2
+            return DEFAULT_NUM_VARIABLES
+        return max(MIN_NUM_VARIABLES, min(MAX_NUM_VARIABLES, int(num_variables)))  # Clamp between MIN and MAX
 
     def _add_variables_to_interpreter(self, interpreter: Interpreter, num_variables: int) -> None:
         """Add variable values from parameters to the interpreter."""
@@ -148,8 +147,8 @@ class MathExpression(BaseNode):
     def _create_helper_functions(self) -> dict[str, Any]:  # noqa: C901
         """Create helper functions for the interpreter."""
 
-        # Helper function for sum that accepts multiple arguments
-        def safe_sum(*args: float) -> float:
+        # Helper function for sum that accepts multiple arguments (unlike Python's built-in sum)
+        def sum_multiple_args(*args: float) -> float:
             """Sum function that accepts multiple arguments."""
             if not args:
                 return 0.0
@@ -163,8 +162,8 @@ class MathExpression(BaseNode):
             else:
                 return total
 
-        # Helper function for random number generation
-        def safe_rand(*args: float) -> float:
+        # Helper function for random number generation with flexible arguments
+        def rand_flexible(*args: float) -> float:
             """Random number function: rand() returns 0-1, rand(max) returns 0-max, rand(min, max) returns min-max."""
             max_rand_args = 2
             try:
@@ -188,7 +187,7 @@ class MathExpression(BaseNode):
             except (TypeError, ValueError):
                 return 0.0
 
-        return {"sum": safe_sum, "rand": safe_rand}
+        return {"sum": sum_multiple_args, "rand": rand_flexible}
 
     def _get_math_functions_and_constants(self) -> dict[str, Any]:
         """Get dictionary of math functions and constants."""
@@ -244,58 +243,59 @@ class MathExpression(BaseNode):
         return interpreter
 
     def _preprocess_expression(self, expression: str) -> str:
-        """Preprocess expression to handle implicit multiplication (e.g., a(b+c) -> a*(b+c))."""
-        # Pattern for numbers (including decimals and negative numbers)
-        # Matches: 2, 2.5, -2, -2.5, .5, -.5
+        """Preprocess expression to handle implicit multiplication (e.g., a(b+c) -> a*(b+c)).
+
+        This function inserts explicit * operators where implicit multiplication is expected.
+        Handles these cases:
+        - Number before parentheses: 2(a+b) -> 2*(a+b)
+        - Variable before parentheses: a(b+c) -> a*(b+c)
+        - Closing paren before number/variable: (a+b)2 -> (a+b)*2, (a+b)c -> (a+b)*c
+        - Number before variable: 2a -> 2*a
+        - Variable before number: a2 -> a*2
+        - Adjacent variables: ab -> a*b
+        """
+        if not expression:
+            return expression
+
+        # Regex patterns - defined once for clarity
+        # Matches numbers: 2, 2.5, -2, -2.5, .5, -.5
         number_pattern = r"-?(?:\d+\.?\d*|\.\d+)"
-        # Pattern for variable letters (a-z, all 26 letters)
+        # Matches single variable letter (a-z)
         var_pattern = r"[a-z]"
+        # Matches either number or variable
+        number_or_var = f"({number_pattern}|{var_pattern})"
 
-        # Process in order from most specific to least specific patterns
+        # Apply transformations in order of specificity
 
-        # 1. Numbers before parentheses: 2( -> 2*(, 2.5( -> 2.5*(
-        expression = re.sub(r"(" + number_pattern + r")\s*\(", r"\1*(", expression)
+        # 1. Number before opening parenthesis: 2( -> 2*(, 2.5( -> 2.5*(
+        expression = re.sub(rf"({number_pattern})\s*\(", r"\1*(", expression)
 
-        # 2. Variables before parentheses: a( -> a*(
-        expression = re.sub(r"\b(" + var_pattern + r")\s*\(", r"\1*(", expression)
+        # 2. Variable before opening parenthesis: a( -> a*(
+        expression = re.sub(rf"\b({var_pattern})\s*\(", r"\1*(", expression)
 
-        # 3. Closing parentheses before numbers/variables: )a -> )*a, )2 -> )*2
-        expression = re.sub(
-            r"\)\s*(" + number_pattern + r"|" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r")*\1", expression
-        )
-        expression = re.sub(
-            r"\)(" + number_pattern + r"|" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r")*\1", expression
-        )
+        # 3. Closing parenthesis before number or variable: )2 -> )*2, )a -> )*a
+        expression = re.sub(rf"\)\s*({number_or_var})\b", r")*\1", expression)
+        expression = re.sub(rf"\)({number_or_var})\b", r")*\1", expression)
 
-        # 4. Numbers before variables: 2a -> 2*a, 2.5a -> 2.5*a
-        expression = re.sub(
-            r"(" + number_pattern + r")\s*(" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
-        )
-        expression = re.sub(
-            r"(" + number_pattern + r")(" + var_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
-        )
+        # 4. Number before variable: 2a -> 2*a, 2.5a -> 2.5*a
+        expression = re.sub(rf"({number_pattern})\s*({var_pattern})\b", r"\1*\2", expression)
+        expression = re.sub(rf"({number_pattern})({var_pattern})\b", r"\1*\2", expression)
 
-        # 5. Variables before numbers: a2 -> a*2, a2.5 -> a*2.5
-        expression = re.sub(
-            r"\b(" + var_pattern + r")\s*(" + number_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
-        )
-        expression = re.sub(
-            r"\b(" + var_pattern + r")(" + number_pattern + r")(?=\s|$|[^a-zA-Z0-9.])", r"\1*\2", expression
-        )
+        # 5. Variable before number: a2 -> a*2, a2.5 -> a*2.5
+        expression = re.sub(rf"\b({var_pattern})\s*({number_pattern})\b", r"\1*\2", expression)
+        expression = re.sub(rf"\b({var_pattern})({number_pattern})\b", r"\1*\2", expression)
 
-        # 6. Adjacent variables: ab -> a*b, abc -> a*b*c (iterative to handle chains)
-        for _ in range(10):  # Max 10 iterations should handle long chains
-            new_expr = re.sub(
-                r"\b(" + var_pattern + r")\s*(" + var_pattern + r")(?=\s|$|[^a-zA-Z])", r"\1*\2", expression
-            )
-            new_expr = re.sub(r"\b(" + var_pattern + r")(" + var_pattern + r")(?=\s|$|[^a-zA-Z])", r"\1*\2", new_expr)
+        # 6. Adjacent variables: ab -> a*b, abc -> a*b*c (iterative for chains)
+        for _ in range(10):  # Max 10 iterations handles long chains
+            new_expr = re.sub(rf"\b({var_pattern})\s*({var_pattern})\b", r"\1*\2", expression)
+            new_expr = re.sub(rf"\b({var_pattern})({var_pattern})\b", r"\1*\2", new_expr)
             if new_expr == expression:
                 break
             expression = new_expr
 
-        # 7. Clean up: remove extra asterisks and spaces
-        expression = re.sub(r"\*\*\*+", r"*", expression)  # *** -> *
-        expression = re.sub(r"(?<!\*)\s*\*\s*(?!\*)", r"*", expression)  # Clean spaces around *
+        # 7. Cleanup: normalize multiple asterisks and spaces
+        expression = re.sub(r"\*\*\*+", "*", expression)  # Multiple * -> single *
+        expression = re.sub(r"\s*\*\s*", "*", expression)  # Normalize spaces around *
 
         return expression
 
@@ -344,12 +344,12 @@ class MathExpression(BaseNode):
         output_type = self.get_parameter_value("output_type") or "float"
         precision = self.get_parameter_value("precision")
 
-        # Handle precision (ensure it's a valid integer between 0 and 15)
+        # Handle precision (ensure it's a valid integer between MIN and MAX)
         try:
-            precision = int(precision) if precision is not None else 6
-            precision = max(0, min(15, precision))  # Clamp between 0 and 15
+            precision = int(precision) if precision is not None else DEFAULT_PRECISION
+            precision = max(MIN_PRECISION, min(MAX_PRECISION, precision))  # Clamp between MIN and MAX
         except (ValueError, TypeError):
-            precision = 6
+            precision = DEFAULT_PRECISION
 
         # Format result based on output type
         if output_type == "int":
@@ -371,14 +371,7 @@ class MathExpression(BaseNode):
             self._update_variable_visibility()
 
         # Update result when expression, variables, output_type, or precision changes
-        num_variables = self.get_parameter_value("num_variables")
-        if num_variables is None:
-            num_variables = 2
-        try:
-            num_variables = int(num_variables)
-            num_variables = max(1, min(26, num_variables))
-        except (ValueError, TypeError):
-            num_variables = 2
+        num_variables = self._get_num_variables()
 
         active_variables = set(ALPHABET[:num_variables])
         if (
