@@ -6,8 +6,9 @@ from griptape_nodes.exe_types.node_types import BaseNode
 
 
 class SeedParameter:
-    def __init__(self, node: BaseNode):
+    def __init__(self, node: BaseNode, max_seed: int = 2**32 - 1) -> None:
         self._node = node
+        self._max_seed = max_seed
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(
@@ -51,7 +52,7 @@ class SeedParameter:
     def preprocess(self) -> None:
         if self._node.get_parameter_value("randomize_seed"):
             # Not using for cryptographic purposes
-            seed = random.randint(0, 2**32 - 1)  # noqa: S311
+            seed = random.randint(0, self._max_seed)  # noqa: S311
             self._node.set_parameter_value("seed", seed)
             self._node.publish_update_to_parameter("seed", seed)
 
