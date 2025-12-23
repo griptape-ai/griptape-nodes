@@ -727,6 +727,50 @@
       }
     },
     {
+      "class_name": "KlingTextToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/kling_text_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video from text using Kling AI models via Griptape Cloud model proxy.",
+        "display_name": "Kling Text to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "KlingImageToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/kling_image_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video from an image using Kling AI models via Griptape Cloud model proxy.",
+        "display_name": "Kling Image to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "KlingVideoExtension",
+      "file_path": "griptape_nodes_library/video/kling_video_extension.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extend an existing Kling AI video by 4-5 seconds via Griptape Cloud model proxy.",
+        "display_name": "Kling Video Extension",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "KlingOmniVideoGeneration",
+      "file_path": "griptape_nodes_library/video/kling_omni_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos using Kling Omni AI with advanced templating and multi-modal references via Griptape Cloud model proxy.",
+        "display_name": "Kling Omni Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {
