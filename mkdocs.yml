@@ -158,6 +158,7 @@ nav:
           - Paint Mask: nodes/image/paint_mask.md
           - Invert Mask: nodes/image/invert_mask.md
           - Apply Mask: nodes/image/apply_mask.md
+          - Combine Masks: nodes/image/combine_masks.md
           - Add Text to Existing Image: nodes/image/add_text_to_existing_image.md
           - Add Bounding Boxes: nodes/image/add_bounding_boxes.md
           - Adjust Image EQ: nodes/image/adjust_image_eq.md
