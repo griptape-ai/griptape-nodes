@@ -1802,6 +1802,18 @@
       }
     },
     {
+      "class_name": "Group",
+      "file_path": "griptape_nodes_library/group.py",
+      "metadata": {
+        "category": "misc",
+        "description": "Create a group node to organize your workflow",
+        "display_name": "Group",
+        "icon": "vault",
+        "group": "create",
+        "is_node_group": true
+      }
+    },
+    {
       "class_name": "ColorPickerNode",
       "file_path": "griptape_nodes_library/misc/color_picker.py",
       "metadata": {
