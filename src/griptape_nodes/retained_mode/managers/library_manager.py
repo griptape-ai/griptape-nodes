@@ -170,7 +170,7 @@ from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
 from griptape_nodes.utils.dict_utils import merge_dicts
-from griptape_nodes.utils.file_utils import find_file_in_directory
+from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
     GitCloneError,
     GitPullError,
@@ -3240,8 +3240,8 @@ class LibraryManager:
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
             if path.is_dir():
-                # Process all library JSON files recursively in the directory
-                discovered_libraries.update(path.rglob(LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
+                # Recursively find library files, skipping hidden directories
+                discovered_libraries.update(find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
             elif path.suffix == ".json":
                 discovered_libraries.add(path)
 
