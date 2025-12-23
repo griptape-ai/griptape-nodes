@@ -6,7 +6,7 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image, ImageChops
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -23,10 +23,15 @@ class CombineMasks(DataNode):
         super().__init__(**kwargs)
 
         self.add_parameter(
-            Parameter(
+            ParameterList(
                 name="masks",
-                type="list",
-                input_types=["list", "list[ImageUrlArtifact]", "list[ImageArtifact]"],
+                input_types=[
+                    "ImageUrlArtifact",
+                    "ImageArtifact",
+                    "list",
+                    "list[ImageUrlArtifact]",
+                    "list[ImageArtifact]",
+                ],
                 default_value=None,
                 tooltip="List of mask images to combine into a single mask (union/max).",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -48,18 +53,7 @@ class CombineMasks(DataNode):
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions: list[Exception] = []
 
-        masks_value = self.get_parameter_value("masks")
-        if masks_value is None:
-            msg = f"{self.name}: At least one mask is required"
-            exceptions.append(ValueError(msg))
-            return exceptions
-
-        if not isinstance(masks_value, list):
-            msg = f"{self.name}: masks must be a list of ImageArtifact or ImageUrlArtifact"
-            exceptions.append(ValueError(msg))
-            return exceptions
-
-        masks = [v for v in masks_value if v is not None]
+        masks = self.get_parameter_list_value("masks")
         if not masks:
             msg = f"{self.name}: At least one mask is required"
             exceptions.append(ValueError(msg))
@@ -94,11 +88,7 @@ class CombineMasks(DataNode):
     def process(self) -> None:
         self.parameter_output_values["output_mask"] = None
 
-        masks_value = self.get_parameter_value("masks")
-        if not isinstance(masks_value, list):
-            return
-
-        masks = [v for v in masks_value if v is not None]
+        masks = self.get_parameter_list_value("masks")
         if not masks:
             return
 
