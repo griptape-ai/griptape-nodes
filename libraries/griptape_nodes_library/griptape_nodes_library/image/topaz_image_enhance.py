@@ -817,7 +817,7 @@ class TopazImageEnhance(SuccessFailureNode):
         models_dict = OPERATION_MODELS.get(operation, {})
         supported_params = set(models_dict.get(model_name, []))
 
-        for param_name in self.ALL_MODEL_PARAMS:
+        for param_name in ALL_MODEL_PARAMS:
             if param_name in supported_params:
                 self.show_parameter_by_name(param_name)
             else:
