@@ -1,8 +1,5 @@
 """Unit tests for MathExpression implicit multiplication preprocessing."""
 
-import pytest
-
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes_library.number.math_expression import MathExpression
 
 
@@ -156,7 +153,7 @@ class TestMathExpressionPreprocessing:
         """Test cleanup of multiple asterisks."""
         # This tests the cleanup regex that converts *** to *
         # Note: The current implementation might not handle all cases perfectly
-        pass  # Would need to test if we accidentally create *** patterns
+        # Would need to test if we accidentally create *** patterns
 
     # Real-world examples
     def test_real_world_examples(self) -> None:
