@@ -167,4 +167,3 @@ class TestMathExpressionPreprocessing:
         assert self.preprocess("sin(a) + cos(b)") == "sin(a)+cos(b)"
         assert self.preprocess("2sin(a)") == "2*sin(a)"
         assert self.preprocess("asin(0.5)") == "asin(0.5)"  # Function name, not a*sin
-
