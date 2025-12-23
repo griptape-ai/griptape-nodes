@@ -1593,6 +1593,7 @@ class NodeManager:
             mode_allowed_output=allows_output,
             is_user_defined=getattr(element, "user_defined", False),
             settable=getattr(element, "settable", None),
+            private=getattr(element, "private", False),
             ui_options=getattr(element, "ui_options", None),
             result_details=details,
         )

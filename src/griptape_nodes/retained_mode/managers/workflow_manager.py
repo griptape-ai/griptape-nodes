@@ -3617,6 +3617,7 @@ class WorkflowManager:
             "ui_options",
             "settable",
             "is_user_defined",
+            "private",
             "parent_container_name",
             "parent_element_name",
         ]
