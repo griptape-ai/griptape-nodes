@@ -16,6 +16,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -104,15 +105,13 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Editing instruction parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="editing_instruction",
-                input_types=["str"],
-                type="str",
                 tooltip="Editing instruction (max 800 characters). Use 'Image 1', 'Image 2', 'Image 3' to refer to specific images.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Describe the edits you want to make to the image(s)...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the edits you want to make to the image(s)...",
                     "display_name": "Editing Instruction",
                 },
             )

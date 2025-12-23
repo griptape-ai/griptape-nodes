@@ -143,10 +143,8 @@ class DeleteFile(SuccessFailureNode):
             # Reset variant to warning when parameters change
             self.deletion_warning.variant = "warning"
 
-            # Normalize input to list
-            param_values = self.get_parameter_list_value(self.file_paths.name)
-            # Dupe strip
-            paths = set(param_values)
+            # Get paths from param list, clean them, and remove duplicates
+            paths = self._get_and_clean_file_paths()
 
             if paths:
                 # Collect all files/directories that will be deleted
@@ -159,14 +157,26 @@ class DeleteFile(SuccessFailureNode):
                 # Reset to default warning when no paths specified
                 self.deletion_warning.value = DEFAULT_DELETION_WARNING
 
+    def _get_and_clean_file_paths(self) -> set[str]:
+        """Get file paths from parameter list, clean them, and remove duplicates.
+
+        Returns:
+            Set of cleaned file paths with newlines/carriage returns removed
+        """
+        param_values = self.get_parameter_list_value(self.file_paths.name)
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        cleaned_paths = [
+            GriptapeNodes.OSManager().sanitize_path_string(str(p)) if p is not None else p for p in param_values
+        ]
+        # Remove duplicates
+        return set(cleaned_paths)
+
     def process(self) -> None:
         """Execute the file deletion."""
         self._clear_execution_status()
 
-        # Get paths from param list.
-        param_values = self.get_parameter_list_value(self.file_paths.name)
-        # Dupe strip
-        paths = set(param_values)
+        # Get paths from param list, clean them, and remove duplicates
+        paths = self._get_and_clean_file_paths()
 
         # Handle empty paths as success with info message
         if not paths:
@@ -260,10 +270,8 @@ class DeleteFile(SuccessFailureNode):
 
         Called when the user clicks the Refresh List button.
         """
-        # Get current file paths
-        param_values = self.get_parameter_list_value(self.file_paths.name)
-        # Dupe strip
-        paths = set(param_values)
+        # Get paths from param list, clean them, and remove duplicates
+        paths = self._get_and_clean_file_paths()
 
         if paths:
             # Re-scan file system

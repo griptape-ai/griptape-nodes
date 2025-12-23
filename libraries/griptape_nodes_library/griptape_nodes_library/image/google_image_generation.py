@@ -14,6 +14,7 @@ from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import shrink_image_to_size
@@ -38,7 +39,14 @@ class GoogleImageGeneration(SuccessFailureNode):
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
     SUPPORTED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
+        "Nano Banana Pro": "gemini-3-pro-image-preview",
+    }
+    DEPRECATED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "nano-banana-3-pro": "gemini-3-pro-image-preview",
+    }
+    ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
+        **SUPPORTED_MODELS_TO_API_MODELS,
+        **DEPRECATED_MODELS_TO_API_MODELS,
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -73,14 +81,13 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Prompt
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 default_value="",
                 tooltip="Text prompt for image generation",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Enter prompt..."},
+                multiline=True,
+                placeholder_text="Enter prompt...",
+                allow_output=False,
             )
         )
 
@@ -314,7 +321,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
 
         payload = {
-            "model": self.SUPPORTED_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
+            "model": self.ALL_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"],

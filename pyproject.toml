@@ -1,6 +1,6 @@
 [project]
 name = "griptape-nodes"
-version = "0.65.4"
+version = "0.66.2"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12.0, <3.13"
@@ -124,6 +124,9 @@ mypy-init-return = true
 convention = "google"
 
 [tool.typos]
+files.extend-exclude = [
+  "libraries/**/templates/*",
+]
 default.extend-ignore-re = [
   # Ignore any line that ends with this comment:
   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",

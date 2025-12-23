@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.52.3",
+    "library_version": "0.53.2",
     "engine_version": "0.65.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
@@ -716,6 +716,17 @@
       }
     },
     {
+      "class_name": "MinimaxHailuoVideoGeneration",
+      "file_path": "griptape_nodes_library/video/minimax_hailuo_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video using the MiniMax Hailuo models via Griptape Cloud model proxy.",
+        "display_name": "MiniMax Hailuo Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {
@@ -766,6 +777,17 @@
         "category": "video",
         "description": "Generate animated videos from images using WAN Animate models via Griptape model proxy",
         "display_name": "WAN Animate Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "WanReferenceToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/wan_reference_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos from reference videos using WAN models via Griptape model proxy",
+        "display_name": "WAN Reference to Video Generation",
         "icon": "Sparkles",
         "group": "create"
       }
@@ -1394,8 +1416,8 @@
       "file_path": "griptape_nodes_library/image/flux_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Flux models via Griptape model proxy",
-        "display_name": "Flux Image Generation",
+        "description": "Generate images using FLUX.1 models via Griptape model proxy",
+        "display_name": "FLUX.1 Image Generation",
         "group": "create",
         "icon": "Zap"
       }
@@ -1405,8 +1427,8 @@
       "file_path": "griptape_nodes_library/image/flux_2_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Flux-2 models via Griptape model proxy",
-        "display_name": "Flux 2 Image Generation",
+        "description": "Generate images using FLUX.2 models via Griptape model proxy",
+        "display_name": "FLUX.2 Image Generation",
         "group": "create",
         "icon": "Zap"
       }
@@ -2204,6 +2226,18 @@
       }
     },
     {
+      "class_name": "ForEachGroupNode",
+      "file_path": "griptape_nodes_library/execution/for_each_group.py",
+      "metadata": {
+        "category": "execution_flow",
+        "description": "Group node that iterates over a list or dictionary, executing child nodes for each item",
+        "display_name": "ForEach Group",
+        "icon": "repeat",
+        "group": "iteration",
+        "is_node_group": true
+      }
+    },
+    {
       "class_name": "StandardSubflowNodeGroup",
       "file_path": "griptape_nodes_library/engine/standard_subflow_node_group.py",
       "metadata": {
@@ -2242,6 +2276,16 @@
         "description": "Loads a 3D file into your workflow",
         "display_name": "Load 3D",
         "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "Rodin23DGeneration",
+      "file_path": "griptape_nodes_library/three_d/rodin_2_3d_generation.py",
+      "metadata": {
+        "category": "3D",
+        "description": "Generate 3D models using Rodin Gen-2 via Griptape model proxy",
+        "display_name": "Rodin 3D Generation",
+        "group": "create"
       }
     },
     {
@@ -2400,14 +2444,51 @@
         "display_name": "Rename File",
         "icon": "Edit"
       }
+    },
+    {
+      "class_name": "TempDirectory",
+      "file_path": "griptape_nodes_library/files/temp_directory.py",
+      "metadata": {
+        "category": "files",
+        "description": "Get the system temporary directory path. Works cross-platform (Windows, macOS, Linux).",
+        "display_name": "Temp Directory",
+        "icon": "Folder"
+      }
+    },
+    {
+      "class_name": "TempFilename",
+      "file_path": "griptape_nodes_library/files/temp_filename.py",
+      "metadata": {
+        "category": "files",
+        "description": "Generate a unique temporary filename using Python's tempfile module. Supports optional directory, suffix, prefix, and can return absolute path or just filename.",
+        "display_name": "Temp Filename",
+        "icon": "FileText"
+      }
+    },
+    {
+      "class_name": "ImageGridSplitter",
+      "file_path": "griptape_nodes_library/image/image_grid_splitter.py",
+      "metadata": {
+        "category": "image",
+        "description": "Split a grid image into individual images (auto or manual grid detection).",
+        "display_name": "Image Grid Splitter",
+        "icon": "grid-3x3",
+        "group": "edit"
+      }
     }
   ],
   "workflows": [
-    "workflows/templates/fill_in_the_story.py",
-    "workflows/templates/prompt_an_image.py",
-    "workflows/templates/coordinating_agents.py",
     "workflows/templates/compare_prompts.py",
-    "workflows/templates/photography_team.py"
+    "workflows/templates/coordinating_agents.py",
+    "workflows/templates/fill_in_the_story.py",
+    "workflows/templates/flux_2_-_magazine_cover.py",
+    "workflows/templates/nano_banana_-_image_collage.py",
+    "workflows/templates/nano_banana_pro_-_image_collage.py",
+    "workflows/templates/nano_banana_pro_-_product_advertisement.py",
+    "workflows/templates/photography_team.py",
+    "workflows/templates/prompt_an_image.py",
+    "workflows/templates/qwen-image_-_band_poster.py",
+    "workflows/templates/rodin_3d_-_3d_model_from_image.py"
   ],
   "is_default_library": true
 }

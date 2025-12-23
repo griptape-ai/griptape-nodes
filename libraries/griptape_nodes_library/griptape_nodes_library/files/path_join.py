@@ -4,6 +4,7 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class PathJoin(DataNode):
@@ -50,7 +51,8 @@ class PathJoin(DataNode):
         path_components = []
         for component_value in components_list:
             if component_value is not None:
-                component_str = str(component_value).strip()
+                # Clean path component to remove newlines/carriage returns that cause Windows errors
+                component_str = GriptapeNodes.OSManager().sanitize_path_string(str(component_value))
                 # Filter out empty inputs
                 if component_str == "":
                     continue

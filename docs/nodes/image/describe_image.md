@@ -35,12 +35,15 @@ Use this node when you want to:
 ### Parameters
 
 - **agent**: An optional existing agent configuration to use for image description
+- **model**: Select a vision-capable prompt model (or connect a Prompt Model Config). Ignored when **agent** is connected.
 - **image**: The image you would like to describe (required)
 - **prompt**: Instructions for how you want the image described (defaults to "Describe the image")
+- **description_only**: If enabled, returns only the description (no conversation)
+- **output_schema**: Optional JSON Schema for structured output. Accepts either a JSON schema object or a JSON string. When connected, **output** switches to JSON.
 
 ### Outputs
 
-- **output**: The textual description of the provided image
+- **output**: The image description. Returns **text** by default, or **JSON** when **output_schema** is provided.
 - **agent**: The agent object used for the description, which can be connected to other nodes
 
 ## Example
@@ -53,10 +56,19 @@ Imagine you want to get a detailed description of a landscape photograph:
 1. Run the node
 1. The "output" will contain a detailed description of the landscape image
 
+### Structured Output Example (JSON)
+
+If you want the output in a specific JSON shape:
+
+1. Add a `CreateAgentSchema` node and provide an example JSON object (the shape you want back)
+1. Connect `CreateAgentSchema.schema` to `DescribeImage.output_schema`
+1. Run `DescribeImage`
+1. The `output` will be JSON matching your schema (or the run will fail validation)
+
 ## Important Notes
 
 - The node requires a valid Griptape API key set up in your environment as `GT_CLOUD_API_KEY`
-- By default, the node uses the gpt-4o model through the Griptape Cloud API
+- By default, the node uses the `gpt-5.2` model through the Griptape Cloud API
 - If no prompt is provided, the default "Describe the image" will be used
 - If no image is provided, the output will be "No image provided"
 - You can provide your own agent configuration for more customized behavior

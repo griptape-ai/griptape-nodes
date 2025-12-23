@@ -136,25 +136,33 @@ class RenameFile(FileOperationBaseNode):
         Returns:
             Full resolved new path
         """
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
+        new_path = GriptapeNodes.OSManager().sanitize_path_string(new_path)
+
         new_path_obj = Path(new_path)
         old_path_obj = Path(old_path)
 
-        # Check if new_path is just a filename (no directory separators)
-        # A filename-only path will have parent "." (current directory)
-        # or be a relative path with no parent directory component
-        new_path_str = str(new_path_obj)
-        has_directory_separator = "/" in new_path_str or "\\" in new_path_str
+        # If new_path is absolute (full path), use it as-is
+        # This works cross-platform:
+        # - Unix: paths starting with / are absolute
+        # - Windows: paths with drive letter (C:\) or UNC (\\server\share) are absolute
+        if new_path_obj.is_absolute():
+            return str(new_path_obj)
 
-        # Also check if parent is "." or empty
-        parent_str = str(new_path_obj.parent)
-        is_just_filename = parent_str in {".", ""} or not has_directory_separator
+        # Check if new_path is just a filename (no directory parts)
+        # Path.parent for a simple filename returns Path('.') on all platforms
+        # A simple filename has only one part and parent is "."
+        parent_path = new_path_obj.parent
+        is_just_filename = str(parent_path) in {".", ""} and len(new_path_obj.parts) == 1
 
         if is_just_filename:
             # Just a filename - use old_path's parent directory
             return str(old_path_obj.parent / new_path_obj.name)
 
-        # Otherwise, use new_path as-is (it's a full path)
-        return new_path
+        # Otherwise, it's a relative path with directory parts - return normalized
+        # Path normalizes separators automatically (handles / and \ cross-platform)
+        return str(new_path_obj)
 
     def process(self) -> None:
         """Execute the file rename operation."""
@@ -164,6 +172,10 @@ class RenameFile(FileOperationBaseNode):
         old_path = self.get_parameter_value("old_path")
         new_path_input = self.get_parameter_value("new_path")
         overwrite = self.get_parameter_value("overwrite") or False
+
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
+        new_path_input = GriptapeNodes.OSManager().sanitize_path_string(new_path_input)
 
         # Resolve new path
         new_path = self._resolve_new_path(old_path, new_path_input)
@@ -192,7 +204,17 @@ class RenameFile(FileOperationBaseNode):
             delete_result = GriptapeNodes.handle_request(delete_request)
 
             if isinstance(delete_result, DeleteFileResultFailure):
-                msg = f"{self.name} attempted to rename but failed to delete existing destination: {delete_result.failure_reason.value}"
+                failure_reason = (
+                    delete_result.failure_reason.value
+                    if hasattr(delete_result.failure_reason, "value")
+                    else "Unknown error"
+                )
+                # Include detailed error message if available
+                error_details = ""
+                if delete_result.result_details:
+                    # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                    error_details = f" - {delete_result.result_details}"
+                msg = f"{self.name} attempted to rename but failed to delete existing destination: {failure_reason}{error_details}"
                 self.set_parameter_value(self.old_path_output.name, "")
                 self.set_parameter_value(self.new_path_output.name, "")
                 self._set_status_results(was_successful=False, result_details=msg)
@@ -203,7 +225,17 @@ class RenameFile(FileOperationBaseNode):
         rename_result = GriptapeNodes.handle_request(rename_request)
 
         if isinstance(rename_result, RenameFileResultFailure):
-            msg = f"{self.name} failed to rename: {rename_result.failure_reason.value}"
+            failure_reason = (
+                rename_result.failure_reason.value
+                if hasattr(rename_result.failure_reason, "value")
+                else "Unknown error"
+            )
+            # Include detailed error message if available
+            error_details = ""
+            if rename_result.result_details:
+                # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
+                error_details = f" - {rename_result.result_details}"
+            msg = f"{self.name} failed to rename: {failure_reason}{error_details}"
             self.set_parameter_value(self.old_path_output.name, "")
             self.set_parameter_value(self.new_path_output.name, "")
             self._set_status_results(was_successful=False, result_details=msg)

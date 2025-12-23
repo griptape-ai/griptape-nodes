@@ -10,12 +10,13 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
+from griptape_nodes.exe_types import node_types
 from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeEndNode,
     BaseIterativeStartNode,
 )
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
+from griptape_nodes.exe_types.node_groups import BaseIterativeNodeGroup, SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
@@ -197,6 +198,12 @@ class NodeExecutor:
             node: The BaseNode to execute
             library_name: The library that the execute method should come from.
         """
+        # Handle iterative node groups (ForEachGroup, ForLoopGroup, etc.)
+        # Check this BEFORE SubflowNodeGroup since BaseIterativeNodeGroup extends SubflowNodeGroup
+        if isinstance(node, BaseIterativeNodeGroup):
+            await self.handle_iterative_group_execution(node)
+            return
+
         if isinstance(node, SubflowNodeGroup):
             execution_type = node.get_parameter_value(node.execution_environment.name)
             if execution_type == LOCAL_EXECUTION:
@@ -814,7 +821,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially by running one flow instance N times.
 
@@ -1234,6 +1241,325 @@ class NodeExecutor:
             node.name,
         )
 
+    async def handle_iterative_group_execution(self, node: BaseIterativeNodeGroup) -> None:
+        """Handle execution of an iterative node group by running its child nodes for each iteration.
+
+        This method is similar to handle_loop_execution but simplified for node groups:
+        - Child nodes are already known (node.get_all_nodes())
+        - No need to find/validate start-end node connections
+        - The group itself holds iteration parameters (items, current_item, index, results)
+
+        Args:
+            node: The BaseIterativeNodeGroup to execute
+        """
+        # Initialize iteration data to determine total iterations
+        node._initialize_iteration_data()
+
+        total_iterations = node._get_total_iterations()
+        if total_iterations == 0:
+            logger.info("No iterations for empty iterative group '%s'", node.name)
+            node._output_results_list()
+            return
+
+        # Get execution environment
+        execution_type = node.get_parameter_value(node.execution_environment.name)
+
+        # Check if we should run in order (default is sequential/True)
+        run_in_order = node.get_parameter_value("run_in_order")
+
+        if run_in_order:
+            # Sequential execution
+            await self._handle_sequential_iterative_group_execution(node, execution_type)
+            return
+
+        # Parallel execution - package and run all iterations concurrently
+        package_result = await self._package_iterative_group_body(node)
+
+        # Handle empty group (no child nodes)
+        if package_result is None:
+            logger.info("Empty iterative group '%s' - no child nodes to execute", node.name)
+            node._output_results_list()
+            return
+
+        # Get parameter values for each iteration
+        parameter_values_to_set_before_run = self._get_merged_parameter_values_for_iterative_group(node, package_result)
+
+        # Execute all iterations based on execution environment
+        match execution_type:
+            case node_types.LOCAL_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_locally(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
+                )
+            case node_types.PRIVATE_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_privately(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
+                )
+            case _:
+                # Cloud publisher execution (Deadline Cloud, etc.)
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_via_publisher(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_to_set_before_run,
+                    end_loop_node=node,
+                    execution_type=execution_type,
+                )
+
+        if len(successful_iterations) != total_iterations:
+            failed_count = total_iterations - len(successful_iterations)
+            msg = f"Iterative group execution failed: {failed_count} of {total_iterations} iterations failed"
+            raise RuntimeError(msg)
+
+        logger.info(
+            "Successfully completed parallel execution of %d iterations for iterative group '%s'",
+            total_iterations,
+            node.name,
+        )
+
+        # Build results list in iteration order
+        node._results_list = []
+        for iteration_index in sorted(iteration_results.keys()):
+            value = iteration_results[iteration_index]
+            node._results_list.append(value)
+
+        # Output final results to the results parameter
+        node._output_results_list()
+
+        # Apply last iteration values to the original child nodes in main flow
+        self._apply_last_iteration_to_packaged_nodes(
+            last_iteration_values=last_iteration_values,
+            package_result=package_result,
+        )
+
+        logger.info(
+            "Successfully aggregated %d results for iterative group '%s'",
+            len(iteration_results),
+            node.name,
+        )
+
+    async def _handle_sequential_iterative_group_execution(
+        self, node: BaseIterativeNodeGroup, execution_type: str
+    ) -> None:
+        """Handle sequential execution of an iterative node group.
+
+        Args:
+            node: The BaseIterativeNodeGroup to execute
+            execution_type: The execution environment type
+        """
+        total_iterations = node._get_total_iterations()
+        logger.info(
+            "Executing iterative group '%s' sequentially for %d iterations",
+            node.name,
+            total_iterations,
+        )
+
+        # Package the group body (child nodes)
+        package_result = await self._package_iterative_group_body(node)
+
+        # Handle empty group (no child nodes)
+        if package_result is None:
+            logger.info("Empty iterative group '%s' - no child nodes to execute", node.name)
+            node._output_results_list()
+            return
+
+        # Get parameter values per iteration
+        parameter_values_per_iteration = self._get_merged_parameter_values_for_iterative_group(node, package_result)
+
+        # Execute iterations sequentially based on execution environment
+        match execution_type:
+            case node_types.LOCAL_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_sequentially(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
+                )
+            case node_types.PRIVATE_EXECUTION:
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_sequentially_private(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
+                )
+            case _:
+                # Cloud publisher execution
+                (
+                    iteration_results,
+                    successful_iterations,
+                    last_iteration_values,
+                ) = await self._execute_loop_iterations_sequentially_via_publisher(
+                    package_result=package_result,
+                    total_iterations=total_iterations,
+                    parameter_values_per_iteration=parameter_values_per_iteration,
+                    end_loop_node=node,
+                    execution_type=execution_type,
+                )
+
+        # Check if execution stopped early due to break (not failure)
+        if len(successful_iterations) < total_iterations:
+            expected_count = len(successful_iterations)
+            actual_count = len(iteration_results)
+            if expected_count != actual_count:
+                failed_count = expected_count - actual_count
+                msg = f"Iterative group execution failed: {failed_count} of {expected_count} iterations failed"
+                raise RuntimeError(msg)
+            logger.info(
+                "Iterative group execution stopped early at %d of %d iterations (break signal)",
+                len(successful_iterations),
+                total_iterations,
+            )
+
+        # Build results list in iteration order
+        node._results_list = []
+        for iteration_index in sorted(iteration_results.keys()):
+            value = iteration_results[iteration_index]
+            node._results_list.append(value)
+
+        logger.info(
+            "Iterative group '%s': Built results list with %d items from sequential iterations",
+            node.name,
+            len(node._results_list),
+        )
+
+        # Output final results
+        node._output_results_list()
+
+        # Apply last iteration values to the original child nodes
+        self._apply_last_iteration_to_packaged_nodes(
+            last_iteration_values=last_iteration_values,
+            package_result=package_result,
+        )
+
+        logger.info(
+            "Completed sequential iterative group execution for '%s' with %d results",
+            node.name,
+            len(iteration_results),
+        )
+
+    async def _package_iterative_group_body(
+        self, node: BaseIterativeNodeGroup
+    ) -> PackageNodesAsSerializedFlowResultSuccess | None:
+        """Package the child nodes of an iterative group into a serialized flow.
+
+        Args:
+            node: The BaseIterativeNodeGroup whose children should be packaged
+
+        Returns:
+            PackageNodesAsSerializedFlowResultSuccess if successful, None if no child nodes
+        """
+        # Get all child node names
+        all_nodes = node.get_all_nodes()
+        node_names = list(all_nodes.keys())
+
+        if not node_names:
+            return None
+
+        # Get execution type to determine start/end node types
+        execution_type = node.get_parameter_value(node.execution_environment.name)
+
+        # Determine library and node types
+        library = None
+        if execution_type not in (LOCAL_EXECUTION, PRIVATE_EXECUTION):
+            try:
+                library = LibraryRegistry.get_library(name=execution_type)
+            except KeyError:
+                logger.error("Could not find library '%s' for iterative group execution", execution_type)
+                raise
+
+        workflow_start_end_nodes = await self._get_workflow_start_end_nodes(library)
+
+        # Create the packaging request
+        sanitized_node_name = node.name.replace(" ", "_")
+        output_parameter_prefix = f"{sanitized_node_name}_iterative_group_"
+
+        request = PackageNodesAsSerializedFlowRequest(
+            node_names=node_names,
+            start_node_type=workflow_start_end_nodes.start_flow_node_type,
+            end_node_type=workflow_start_end_nodes.end_flow_node_type,
+            start_node_library_name=workflow_start_end_nodes.start_flow_node_library_name,
+            end_node_library_name=workflow_start_end_nodes.end_flow_node_library_name,
+            output_parameter_prefix=output_parameter_prefix,
+            entry_control_node_name=None,
+            entry_control_parameter_name=None,
+            node_group_name=node.name,
+        )
+
+        package_result = GriptapeNodes.handle_request(request)
+        if not isinstance(package_result, PackageNodesAsSerializedFlowResultSuccess):
+            msg = f"Failed to package iterative group '{node.name}'. Error: {package_result.result_details}"
+            raise TypeError(msg)
+
+        logger.info(
+            "Successfully packaged %d nodes for iterative group '%s'",
+            len(node_names),
+            node.name,
+        )
+
+        # Remove packaged nodes from global queue
+        self._remove_packaged_nodes_from_queue(set(node_names))
+
+        return package_result
+
+    def _get_merged_parameter_values_for_iterative_group(
+        self, node: BaseIterativeNodeGroup, package_result: PackageNodesAsSerializedFlowResultSuccess
+    ) -> dict[int, dict[str, Any]]:
+        """Get parameter values for each iteration with resolved upstream values merged in.
+
+        Args:
+            node: The iterative node group
+            package_result: The packaged flow result
+
+        Returns:
+            Dict mapping iteration_index -> {parameter_name: value}
+        """
+        # Get parameter values that vary per iteration (current_item, index mappings)
+        parameter_values_per_iteration = self.get_parameter_values_per_iteration(node, package_result)
+
+        # Get resolved upstream values (constant across all iterations)
+        resolved_upstream_values = self.get_resolved_upstream_values(
+            packaged_node_names=package_result.packaged_node_names, package_result=package_result
+        )
+
+        # Merge upstream values into each iteration
+        if resolved_upstream_values:
+            for iteration_index in parameter_values_per_iteration:
+                for param_name, param_value in resolved_upstream_values.items():
+                    if param_name not in parameter_values_per_iteration[iteration_index]:
+                        parameter_values_per_iteration[iteration_index][param_name] = param_value
+            logger.info(
+                "Added %d resolved upstream values to %d iterations for group '%s'",
+                len(resolved_upstream_values),
+                len(parameter_values_per_iteration),
+                node.name,
+            )
+
+        return parameter_values_per_iteration
+
     def _get_iteration_value_for_parameter(
         self,
         source_param_name: str,
@@ -1263,7 +1589,7 @@ class NodeExecutor:
 
     def get_parameter_values_per_iteration(  # noqa: C901, Needed to add special handling for node groups.
         self,
-        start_node: BaseIterativeStartNode,
+        iteration_source: BaseIterativeStartNode | BaseIterativeNodeGroup,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
     ) -> dict[int, dict[str, Any]]:
         """Get parameter values for each iteration of the loop.
@@ -1272,30 +1598,29 @@ class NodeExecutor:
         Useful for: setting local values, sending as input for cloud publishing, or private workflow execution.
 
         Args:
-            start_node: The start loop node (ForEach or ForLoop)
-
+            iteration_source: The node providing iteration values (BaseIterativeStartNode or BaseIterativeNodeGroup)
             package_result: PackageNodesAsSerializedFlowResultSuccess containing parameter_name_mappings
 
         Returns:
             Dict mapping iteration_index -> {startflow_param_name: value}
         """
-        total_iterations = start_node._get_total_iterations()
+        total_iterations = iteration_source._get_total_iterations()
 
         # Calculate current_item values for ForEach nodes
-        current_item_values = []
-        iteration_items = start_node._get_iteration_items()
+        iteration_items = iteration_source._get_iteration_items()
         current_item_values = list(iteration_items)
 
         # Calculate index values for ForLoop nodes
         # For ForLoop, we need actual loop values (start, start+step, start+2*step, ...)
         # not just 0-based iteration indices
-        index_values = []
-        index_values = start_node.get_all_iteration_values()
+        index_values = iteration_source.get_all_iteration_values()
 
-        list_connections_request = ListConnectionsForNodeRequest(node_name=start_node.name)
+        list_connections_request = ListConnectionsForNodeRequest(node_name=iteration_source.name)
         list_connections_result = GriptapeNodes.handle_request(list_connections_request)
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
-            msg = f"Failed to list connections for node {start_node.name}: {list_connections_result.result_details}"
+            msg = (
+                f"Failed to list connections for node {iteration_source.name}: {list_connections_result.result_details}"
+            )
             raise RuntimeError(msg)  # noqa: TRY004 This should be a runtime error because it happens during execution.
         # Build parameter values for each iteration
         outgoing_connections = list_connections_result.outgoing_connections
@@ -1304,7 +1629,7 @@ class NodeExecutor:
         start_node_mapping = self.get_node_parameter_mappings(package_result, "start")
         start_node_param_mappings = start_node_mapping.parameter_mappings
 
-        # For each outgoing connection from start_node, find the corresponding StartFlow parameter
+        # For each outgoing connection from iteration_source, find the corresponding StartFlow parameter
         # The start_node_param_mappings tells us: startflow_param_name -> OriginalNodeParameter(target_node, target_param)
         # We need to match the target of each connection to find the right startflow parameter
         parameter_val_mappings = {}
@@ -1312,7 +1637,7 @@ class NodeExecutor:
             iteration_values = {}
             # iteration_values is going to be startflow parameter name -> value to set
 
-            # For each outgoing data connection from start_node
+            # For each outgoing data connection from iteration_source
             for conn in outgoing_connections:
                 source_param_name = conn.source_parameter_name
                 target_node_name = conn.target_node_name
@@ -1324,7 +1649,7 @@ class NodeExecutor:
                 try:
                     target_node = node_manager.get_node_by_name(target_node_name)
                 except ValueError:
-                    msg = f"Failed to get node {target_node_name} for connection {conn} from start node {start_node.name}. Can't get parameter value iterations."
+                    msg = f"Failed to get node {target_node_name} for connection {conn} from node {iteration_source.name}. Can't get parameter value iterations."
                     logger.error(msg)
                     raise RuntimeError(msg)  # noqa: B904
                 if isinstance(target_node, SubflowNodeGroup):
@@ -1542,7 +1867,7 @@ class NodeExecutor:
 
     def get_parameter_values_from_iterations(
         self,
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         deserialized_flows: list[tuple[int, str, dict[str, str]]],
         package_flow_result_success: PackageNodesAsSerializedFlowResultSuccess,
     ) -> dict[int, Any]:
@@ -1698,7 +2023,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations locally by deserializing and running flows.
 
@@ -1885,7 +2210,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         workflow_path: Path,
         workflow_result: Any,  # noqa: ARG002 - Used by wrapper methods for cleanup
         file_name_prefix: str,
@@ -2013,7 +2338,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially in private subprocesses (no cloud publishing)."""
         workflow_path, workflow_result = await self._save_workflow_file_for_loop(
@@ -2049,7 +2374,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations in parallel via private subprocesses (no cloud publishing)."""
         workflow_path, workflow_result = await self._save_workflow_file_for_loop(
@@ -2082,7 +2407,7 @@ class NodeExecutor:
 
     async def _save_workflow_file_for_loop(
         self,
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         *,
         pickle_control_flow_result: bool,
@@ -2121,7 +2446,7 @@ class NodeExecutor:
         self,
         iteration_outputs: list[tuple[int, bool, dict[str, Any] | None]],
         package_result: PackageNodesAsSerializedFlowResultSuccess,
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Extract results from subprocess iteration outputs.
 
@@ -2178,7 +2503,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations sequentially via cloud publisher (Deadline Cloud, etc.)."""
@@ -2221,7 +2546,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
-        end_loop_node: BaseIterativeEndNode,
+        end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
         execution_type: str,
     ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
         """Execute loop iterations in parallel via cloud publisher (Deadline Cloud, etc.)."""

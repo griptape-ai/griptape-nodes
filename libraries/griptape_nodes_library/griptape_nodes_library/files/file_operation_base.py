@@ -99,6 +99,42 @@ class FileOperationBaseNode(SuccessFailureNode):
         # Not a localhost workspace URL, return as-is
         return url
 
+    def _clean_source_paths(self, paths: list[str | Any]) -> list[str]:
+        """Clean a list of source paths to remove newlines/carriage returns that cause Windows errors.
+
+        Args:
+            paths: List of path strings that may contain newlines/carriage returns
+
+        Returns:
+            List of cleaned path strings with newlines/carriage returns removed
+        """
+        cleaned_paths = []
+        for path in paths:
+            cleaned_path = GriptapeNodes.OSManager().sanitize_path_string(path)
+            cleaned_paths.append(cleaned_path)
+        return cleaned_paths
+
+    def _extract_and_clean_source_paths(self, source_paths_raw: list[Any]) -> list[str]:
+        """Extract values from artifacts, clean source paths, and remove duplicates.
+
+        This is a common pattern used by copy_files and move_files nodes:
+        1. Extract string values from artifacts
+        2. Clean paths to remove newlines/carriage returns
+        3. Remove duplicate paths
+
+        Args:
+            source_paths_raw: Raw list of path values (may include artifacts)
+
+        Returns:
+            List of cleaned, deduplicated path strings with artifacts extracted and newlines removed
+        """
+        # Extract values from artifacts
+        source_paths = [self._extract_value_from_artifact(p) for p in source_paths_raw if p is not None]
+        # Clean paths to remove newlines/carriage returns
+        cleaned_paths = self._clean_source_paths(source_paths)
+        # Remove duplicates
+        return list(set(cleaned_paths))
+
     def _extract_value_from_artifact(self, value: Any) -> str:  # noqa: PLR0911
         """Extract string value from artifact objects, dicts, or strings.
 
@@ -209,6 +245,10 @@ class FileOperationBaseNode(SuccessFailureNode):
         Returns:
             Full destination path
         """
+        # Clean paths to remove newlines/carriage returns that cause Windows errors
+        destination_dir = GriptapeNodes.OSManager().sanitize_path_string(destination_dir)
+        source_path = GriptapeNodes.OSManager().sanitize_path_string(source_path)
+
         destination_path_obj = Path(destination_dir)
 
         # Check if destination_dir looks like a file path (has an extension)

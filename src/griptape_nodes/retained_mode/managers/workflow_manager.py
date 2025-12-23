@@ -938,9 +938,17 @@ class WorkflowManager:
         # Use provided metadata object as the new metadata
         new_metadata = request.workflow_metadata
         # Allow JSON dicts from frontend by coercing to WorkflowMetadata
+        # Merge with existing metadata to ensure required fields are present
         if isinstance(new_metadata, dict):
+            # Start with existing metadata as base, then overlay provided fields
+            existing_metadata_dict = resolution.workflow.metadata.model_dump()
+            # Only overlay non-None values from the incoming dict to preserve required fields
+            for key, value in new_metadata.items():
+                if value is not None or key in ("description", "image", "branched_from", "workflow_shape"):
+                    # Allow explicit None for optional fields, but preserve required fields if incoming is None
+                    existing_metadata_dict[key] = value
             try:
-                new_metadata = WorkflowMetadata.model_validate(new_metadata)
+                new_metadata = WorkflowMetadata.model_validate(existing_metadata_dict)
             except Exception as e:
                 return SetWorkflowMetadataResultFailure(result_details=f"Invalid workflow_metadata: {e!s}")
         # Refresh last_modified_date to reflect this change
@@ -1562,6 +1570,41 @@ class WorkflowManager:
         else:
             return None
 
+    def _generate_unique_filename(self, base_name: str) -> str:
+        """Generate a unique filename for a workflow, avoiding collisions.
+
+        Uses the same logic as object_manager:
+        1. If base name has no collision, use it as-is
+        2. If collision exists and name ends in a number, find first free prefix + integer
+        3. If collision exists and name doesn't end in a number, append _1, _2, etc.
+
+        Args:
+            base_name: The desired base name for the workflow
+
+        Returns:
+            A unique filename that doesn't exist in the workspace
+        """
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        base_path = workspace_path.joinpath(f"{base_name}.py")
+        if not base_path.exists():
+            return base_name
+
+        pattern_match = re.search(r"\d+$", base_name)
+        if pattern_match is not None:
+            # Name ends in a number - strip it and find first free integer
+            incremental_prefix = base_name[: pattern_match.start()]
+        else:
+            # Name doesn't end in a number - append underscore prefix
+            incremental_prefix = f"{base_name}_"
+
+        curr_idx = 1
+        while True:
+            candidate_name = f"{incremental_prefix}{curr_idx}"
+            candidate_path = workspace_path.joinpath(f"{candidate_name}.py")
+            if not candidate_path.exists():
+                return candidate_name
+            curr_idx += 1
+
     def _determine_save_target(
         self, requested_file_name: str | None, current_workflow_name: str | None
     ) -> SaveWorkflowTargetInfo:
@@ -1587,27 +1630,25 @@ class WorkflowManager:
             current_workflow = WorkflowRegistry.get_workflow_by_name(current_workflow_name)
 
         # Determine scenario and build target info
-        if (target_workflow and target_workflow.metadata.is_template) or (
-            current_workflow and current_workflow.metadata.is_template
-        ):
-            # Template workflows always create new copies with unique names
+        # Only treat as SAVE_FROM_TEMPLATE if this is a Griptape-provided template.
+        # User-marked templates (is_template=True but is_griptape_provided=False) should be saved normally.
+        target_is_griptape_template = (
+            target_workflow and target_workflow.metadata.is_template and target_workflow.metadata.is_griptape_provided
+        )
+        current_is_griptape_template = (
+            current_workflow
+            and current_workflow.metadata.is_template
+            and current_workflow.metadata.is_griptape_provided
+        )
+        if target_is_griptape_template or current_is_griptape_template:
+            # Griptape-provided template workflows always create new copies with unique names
             scenario = WorkflowManager.SaveWorkflowScenario.SAVE_FROM_TEMPLATE
             template_workflow = target_workflow or current_workflow
             if template_workflow is None:
                 msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
                 raise ValueError(msg)
             base_name = requested_file_name if requested_file_name else template_workflow.metadata.name
-
-            # Find unique filename
-            curr_idx = 1
-            while True:
-                candidate_name = f"{base_name}_{curr_idx}"
-                candidate_path = GriptapeNodes.ConfigManager().workspace_path.joinpath(f"{candidate_name}.py")
-                if not candidate_path.exists():
-                    break
-                curr_idx += 1
-
-            file_name = candidate_name
+            file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
             relative_file_path = f"{file_name}.py"

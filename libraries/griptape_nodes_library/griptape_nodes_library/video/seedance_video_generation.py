@@ -16,6 +16,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -63,15 +64,13 @@ class SeedanceVideoGeneration(SuccessFailureNode):
 
         # INPUTS / PROPERTIES
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                type="str",
                 tooltip="Text prompt for the video (supports provider flags)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Describe the video...",
+                allow_output=False,
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the video...",
                     "display_name": "Prompt",
                 },
             )

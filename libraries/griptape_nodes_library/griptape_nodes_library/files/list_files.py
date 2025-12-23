@@ -144,6 +144,9 @@ class ListFiles(SuccessFailureNode):
     def process(self) -> None:
         self._clear_execution_status()
         directory_path = self.get_parameter_value("directory_path")
+        # Clean directory path to remove newlines/carriage returns that cause Windows errors
+        if directory_path:
+            directory_path = GriptapeNodes.OSManager().sanitize_path_string(directory_path)
         show_hidden = self.get_parameter_value("show_hidden")
         list_options = self.get_parameter_value("list_options")
         use_absolute_paths = self.get_parameter_value("use_absolute_paths")
