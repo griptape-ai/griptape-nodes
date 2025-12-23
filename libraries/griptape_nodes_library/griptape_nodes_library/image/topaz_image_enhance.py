@@ -1057,6 +1057,14 @@ class TopazImageEnhance(SuccessFailureNode):
                     self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
                     response = await client.get(get_url, headers=headers, timeout=60)
                     response.raise_for_status()
+
+                    # Check if response is binary image data (JPEG starts with 0xff 0xd8)
+                    content_type = response.headers.get("content-type", "")
+                    if content_type.startswith("image/") or (response.content and response.content[:2] == b"\xff\xd8"):
+                        self._log("Received binary image data directly from API")
+                        await self._handle_binary_image_response(response.content)
+                        return
+
                     result_json = response.json()
 
                     self.parameter_output_values["provider_response"] = result_json
@@ -1088,18 +1096,16 @@ class TopazImageEnhance(SuccessFailureNode):
 
                 except httpx.HTTPStatusError as e:
                     self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
+                    self._set_safe_defaults()
+                    error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    return
                 except Exception as e:
                     self._log(f"Error while polling: {e}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
+                    self._set_safe_defaults()
+                    error_msg = f"Failed to poll generation status: {e}"
+                    self._set_status_results(was_successful=False, result_details=error_msg)
+                    return
 
             self._log("Polling timed out waiting for result")
             self._set_safe_defaults()
@@ -1112,6 +1118,25 @@ class TopazImageEnhance(SuccessFailureNode):
         """Handle successful processing result."""
         self.parameter_output_values["provider_response"] = response
         await self._save_image_from_url(image_url)
+
+    async def _handle_binary_image_response(self, image_bytes: bytes) -> None:
+        """Handle binary image data returned directly from the API."""
+        try:
+            filename = f"topaz_enhanced_{int(time.time())}.jpg"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            self.parameter_output_values["image_output"] = ImageUrlArtifact(value=saved_url, name=filename)
+            self._log(f"Saved binary image to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Image processed successfully and saved as {filename}."
+            )
+        except Exception as e:
+            self._log(f"Failed to save binary image: {e}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Image processing succeeded but failed to save: {e}",
+            )
 
     async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
