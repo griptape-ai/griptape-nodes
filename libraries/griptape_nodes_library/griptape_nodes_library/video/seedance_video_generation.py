@@ -31,7 +31,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
     Inputs:
         - prompt (str): Text prompt for the video (supports provider flags like --resolution)
         - model_id (str): Provider model id (default: seedance-1-0-pro-250528)
-        - resolution (str): Output resolution (default: 1080p, options: 480p, 720p, 1080p)
+        - resolution (str): Output resolution (default: 720p, options: 480p, 720p, 1080p)
         - ratio (str): Output aspect ratio (default: 16:9, options: auto, 21:9, 16:9, 4:3, 1:1, 3:4, 9:16)
         - duration (int): Video duration in seconds (default: 5, options: 4-12)
         - camerafixed (bool): Camera fixed flag (default: False)
@@ -125,7 +125,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 name="resolution",
                 input_types=["str"],
                 type="str",
-                default_value="1080p",
+                default_value="720p",
                 tooltip="Output resolution",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["480p", "720p", "1080p"])},
@@ -402,7 +402,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return {
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": model_id,
-            "resolution": self.get_parameter_value("resolution") or "1080p",
+            "resolution": self.get_parameter_value("resolution") or "720p",
             "ratio": self.get_parameter_value("ratio") or "adaptive",
             "first_frame": self.get_parameter_value("first_frame"),
             "last_frame": self.get_parameter_value("last_frame"),
