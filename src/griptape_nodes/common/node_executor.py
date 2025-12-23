@@ -1772,6 +1772,12 @@ class NodeExecutor:
         Returns:
             The upstream value if criteria met, None otherwise
         """
+        # If upstream is a BaseIterativeNodeGroup (e.g., ForEach Group) that's currently executing,
+        # we need to trace through its proxy parameter to find the actual resolved source.
+        # This handles the case where: ExternalNode -> ForEachGroup.proxy_param -> InternalNode
+        if isinstance(upstream_node, BaseIterativeNodeGroup) and upstream_node.state != NodeResolutionState.RESOLVED:
+            return self._get_value_through_iterative_group_proxy(upstream_node, upstream_param, packaged_node_names)
+
         if upstream_node.state != NodeResolutionState.RESOLVED:
             return None
 
@@ -1782,6 +1788,77 @@ class NodeExecutor:
             return upstream_node.parameter_output_values[upstream_param.name]
 
         return upstream_node.get_parameter_value(upstream_param.name)
+
+    def _get_value_through_iterative_group_proxy(
+        self,
+        iterative_group: BaseIterativeNodeGroup,
+        proxy_param: Any,
+        packaged_node_names: list[str],
+    ) -> Any | None:
+        """Trace through an iterative group's proxy parameter to get value from the actual resolved source.
+
+        When a packaged node inside a ForEach Group has an incoming connection from the group's
+        proxy parameter, we need to find the external node that connects TO that proxy parameter
+        and get the value from there.
+
+        Connection chain: ResolvedExternalNode -> IterativeGroup.proxy_param -> PackagedInternalNode
+        We want to get the value from ResolvedExternalNode.
+
+        Args:
+            iterative_group: The BaseIterativeNodeGroup with the proxy parameter
+            proxy_param: The proxy parameter on the iterative group
+            packaged_node_names: List of packaged node names to exclude
+
+        Returns:
+            The value from the resolved external source, or None if not found
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+
+        # Find the incoming connection TO the proxy parameter on the iterative group
+        # This will give us the actual external source node
+        incoming_to_proxy = connections.get_incoming_connections_to_parameter(iterative_group, proxy_param)
+
+        for conn in incoming_to_proxy:
+            # Skip internal connections (from nodes inside the group)
+            if conn.is_node_group_internal:
+                continue
+
+            source_node = conn.source_node
+            source_param = conn.source_parameter
+
+            # Skip if the source is also inside the packaged nodes
+            if source_node.name in packaged_node_names:
+                continue
+
+            # The source must be resolved for us to get its value
+            if source_node.state != NodeResolutionState.RESOLVED:
+                logger.debug(
+                    "Source node '%s' for proxy param '%s.%s' is not resolved (state: %s)",
+                    source_node.name,
+                    iterative_group.name,
+                    proxy_param.name,
+                    source_node.state,
+                )
+                continue
+
+            # Get the value from the resolved source node
+            if source_param.name in source_node.parameter_output_values:
+                value = source_node.parameter_output_values[source_param.name]
+            else:
+                value = source_node.get_parameter_value(source_param.name)
+
+            logger.debug(
+                "Traced through proxy: %s.%s -> %s.%s (value type: %s)",
+                source_node.name,
+                source_param.name,
+                iterative_group.name,
+                proxy_param.name,
+                type(value).__name__ if value is not None else "None",
+            )
+            return value
+
+        return None
 
     def _map_to_startflow_parameter(
         self,
