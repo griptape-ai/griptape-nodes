@@ -3,6 +3,7 @@ from typing import Any
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -112,18 +113,18 @@ class RescaleImage(BaseImageProcessor):
             )
 
             # Target width parameter (for width and height mode)
-            target_width_param = Parameter(
+            target_width_param = ParameterInt(
                 name="target_width",
-                type="int",
+                max_val=self.MAX_TARGET_SIZE,
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target width in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_width_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
             # Target height parameter (for width and height mode)
-            target_height_param = Parameter(
+            target_height_param = ParameterInt(
                 name="target_height",
-                type="int",
+                max_val=self.MAX_TARGET_SIZE,
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target height in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
