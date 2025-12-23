@@ -12,7 +12,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.video_utils import get_video_duration
 
 logger = logging.getLogger("griptape_nodes")

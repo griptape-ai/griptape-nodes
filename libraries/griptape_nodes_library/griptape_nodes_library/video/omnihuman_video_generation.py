@@ -19,7 +19,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")

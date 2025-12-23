@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.base_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
