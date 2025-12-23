@@ -1163,6 +1163,7 @@ def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dic
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
+        repo = None  # Initialize for finally block
 
         try:
             # Use SSH callbacks for SSH URLs
@@ -1222,6 +1223,11 @@ def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dic
         except pygit2.GitError as e:
             msg = f"Git error during clone from {remote_url}: {e}"
             raise GitCloneError(msg) from e
+        finally:
+            # Release repository file handles before temp directory cleanup
+            # Critical on Windows where open handles prevent directory deletion
+            if repo is not None:
+                repo.free()
 
         return (library_version, commit_sha, library_data)
 

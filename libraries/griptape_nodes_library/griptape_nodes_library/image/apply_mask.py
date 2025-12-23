@@ -219,8 +219,18 @@ class ApplyMask(DataNode):
             combined = [int(a * e / 255) for a, e in zip(alpha_array, edge_array, strict=True)]
             alpha.putdata(combined)
 
-        # Apply alpha channel to input image
-        input_pil.putalpha(alpha)
+        # Apply mask to all channels (RGB and alpha)
+        # Split the image into channels
+        r, g, b, _a = input_pil.split()
+
+        # Multiply each RGB channel by the mask (normalized to 0-1)
+        # This zeros out RGB values where the mask is black
+        r = Image.composite(r, Image.new("L", r.size, 0), alpha)
+        g = Image.composite(g, Image.new("L", g.size, 0), alpha)
+        b = Image.composite(b, Image.new("L", b.size, 0), alpha)
+
+        # Merge channels back together with the mask as alpha
+        input_pil = Image.merge("RGBA", (r, g, b, alpha))
 
         # Save output image and create URL artifact with proper filename
         filename = generate_filename(

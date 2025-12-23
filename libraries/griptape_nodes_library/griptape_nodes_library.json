@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.53.0",
+    "library_version": "0.53.1",
     "engine_version": "0.65.0",
     "tags": [
       "Griptape",
@@ -2468,6 +2468,17 @@
         "description": "Generate a unique temporary filename using Python's tempfile module. Supports optional directory, suffix, prefix, and can return absolute path or just filename.",
         "display_name": "Temp Filename",
         "icon": "FileText"
+      }
+    },
+    {
+      "class_name": "ImageGridSplitter",
+      "file_path": "griptape_nodes_library/image/image_grid_splitter.py",
+      "metadata": {
+        "category": "image",
+        "description": "Split a grid image into individual images (auto or manual grid detection).",
+        "display_name": "Image Grid Splitter",
+        "icon": "grid-3x3",
+        "group": "edit"
       }
     }
   ],
