@@ -1,29 +1,22 @@
 from __future__ import annotations
 
-import contextlib
 import json as _json
 import logging
-import os
 from typing import Any, ClassVar
-from urllib.parse import urljoin
-
-import httpx
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import extract_image_url
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["OmnihumanSubjectDetection"]
 
 
-class OmnihumanSubjectDetection(SuccessFailureNode):
+class OmnihumanSubjectDetection(GriptapeProxyNode):
     """Detect and locate subjects in an image, returning masks and bounding boxes.
 
     This is Step 2 of the OmniHuman workflow (optional). It detects subjects in the image
@@ -40,8 +33,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         - result_details (str): Details about the detection result or error
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
     MODEL_IDS: ClassVar[list[str]] = [
         "omnihuman-1-5-subject-detection",
     ]
@@ -50,12 +41,6 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Detect subjects and generate masks using OmniHuman Subject Detection via Griptape Cloud"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # INPUTS
         self.add_parameter(
@@ -115,87 +100,68 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
-    def _log(self, message: str) -> None:
-        """Log a message."""
-        with contextlib.suppress(Exception):
-            logger.info("%s: %s", self.name, message)
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation."""
+        return self.get_parameter_value("model_id") or "omnihuman-1-5-subject-detection"
+
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for subject detection."""
+        # Get image URL
+        image_url = self.get_parameter_value("image_url")
+        if not image_url:
+            msg = "image_url parameter is required."
+            raise ValueError(msg)
+
+        # Get public URL from parameter
+        public_image_url = self._public_image_url_parameter.get_public_url_for_parameter()
+
+        # Build payload
+        model_id = self._get_api_model_id()
+        return {
+            "req_key": self._get_req_key(model_id),
+            "image_url": public_image_url,
+        }
+
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        """Parse subject detection result."""
+        # Parse nested resp_data JSON string
+        resp_data_str = result_json.get("data", {}).get("resp_data", "{}")
+        if not resp_data_str:
+            self.parameter_output_values["contains_subject"] = False
+            self.parameter_output_values["mask_image_urls"] = []
+            self._set_status_results(
+                was_successful=False,
+                result_details="No response data found in result.",
+            )
+            return
+
+        resp_data = _json.loads(resp_data_str)
+        contains_human = resp_data.get("status") == 1
+        mask_urls = resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
+
+        self.parameter_output_values["contains_subject"] = contains_human
+        self.parameter_output_values["mask_image_urls"] = mask_urls
+
+        result_msg = (
+            f"Subject detection completed successfully. Contains subject: {contains_human}, Masks: {len(mask_urls)}"
+        )
+        self._set_status_results(
+            was_successful=True,
+            result_details=result_msg,
+        )
+
+    def _set_safe_defaults(self) -> None:
+        """Set safe default values for outputs on error."""
+        self.parameter_output_values["mask_image_urls"] = []
+        self.parameter_output_values["contains_subject"] = False
 
     async def aprocess(self) -> None:
-        """Process the subject detection request asynchronously."""
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        # Get and validate parameters
-        model_id = self.get_parameter_value("model_id")
-        image_url = extract_image_url(self.get_parameter_value("image_url"))
-        if not image_url:
-            self._set_status_results(was_successful=False, result_details="Image URL is required")
-            return
-
-        # Validate API key
+        """Process subject detection with cleanup."""
         try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Submit detection request
-        try:
-            public_image_url = self._public_image_url_parameter.get_public_url_for_parameter()
-            await self._submit_detection_request(model_id, public_image_url, api_key)
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+            await super().aprocess()
         finally:
+            # Cleanup uploaded artifacts
             self._public_image_url_parameter.delete_uploaded_artifact()
-
-    def _validate_api_key(self) -> str:
-        """Validate that the API key is available."""
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_detection_request(self, model_id: str, image_url: str, api_key: str) -> None:
-        """Submit the subject detection request via Griptape Cloud proxy."""
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        # Build payload matching BytePlus API format
-        provider_params = {
-            "req_key": self._get_req_key(model_id),
-            "image_url": image_url,
-        }
-
-        post_url = urljoin(self._proxy_base, f"models/{model_id}")
-        self._log("Submitting subject detection request via proxy")
-
-        try:
-            # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3041
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    post_url,
-                    json=provider_params,
-                    headers=headers,
-                    timeout=300.0,  # 5 minutes
-                )
-
-                if response.status_code >= 400:  # noqa: PLR2004
-                    error_msg = f"Proxy request failed with status {response.status_code}: {response.text}"
-                    self._log(error_msg)
-                    raise RuntimeError(error_msg)
-
-                response_json = response.json()
-                self._process_response(response_json)
-
-        except httpx.RequestError as e:
-            error_msg = f"Failed to connect to Griptape Cloud proxy: {e}"
-            self._log(error_msg)
-            raise RuntimeError(error_msg) from e
 
     def _get_req_key(self, model_id: str) -> str:
         """Get the request key based on model_id."""
@@ -204,20 +170,3 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         msg = f"Unsupported model_id: {model_id}"
         raise ValueError(msg)
-
-    def _process_response(self, response_json: dict[str, Any]) -> None:
-        """Process the API response from Griptape Cloud proxy."""
-        # Extract provider response from Griptape Cloud format
-        resp_data = _json.loads(response_json.get("data", {}).get("resp_data", {}))
-
-        contains_human = resp_data.get("status") == 1
-        mask_urls = resp_data.get("object_detection_result", {}).get("mask", {}).get("url", [])
-
-        self.parameter_output_values["contains_subject"] = contains_human
-        self.parameter_output_values["mask_image_urls"] = mask_urls
-
-        result_msg = f"Subject detection completed successfully. response: {resp_data}. "
-        self._set_status_results(
-            was_successful=True,
-            result_details=result_msg,
-        )

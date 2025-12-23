@@ -3,21 +3,17 @@ from __future__ import annotations
 import base64
 import json as _json
 import logging
-import os
-import time
 from contextlib import suppress
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +41,7 @@ VOICE_PRESET_MAP = {  # spellchecker:disable-line
 }
 
 
-class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
+class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
     """Generate speech from text using Eleven Labs text-to-speech models via Griptape model proxy.
 
     Supports two models:
@@ -59,19 +55,10 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         - normalized_alignment (dict): Normalized character alignment data
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate speech from text using Eleven Labs text-to-speech models"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/models/")
 
         # INPUTS / PROPERTIES
         # Model Selection
@@ -242,6 +229,17 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
 
         self.add_parameter(
             Parameter(
+                name="provider_response",
+                output_type="dict",
+                type="dict",
+                tooltip="Verbatim response from Griptape model proxy",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={"hide_property": True},
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
                 name="audio_url",
                 output_type="AudioUrlArtifact",
                 type="AudioUrlArtifact",
@@ -292,68 +290,16 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
 
         return super().after_value_set(parameter, value)
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Validate that required configuration is available before running the node."""
-        errors = []
-
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            errors.append(
-                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
-            )
-
-        return errors or None
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation."""
+        return self.get_parameter_value("model") or "eleven_v3"
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
 
-    def process(self) -> None:
-        pass
-
-    async def aprocess(self) -> None:
-        await self._process_async()
-
-    async def _process_async(self) -> None:
-        """Async implementation of the processing logic."""
-        self._clear_execution_status()
-
-        model = self.get_parameter_value("model") or "eleven_v3"
-
-        try:
-            params = self._get_parameters(model)
-        except Exception as e:
-            self._set_safe_defaults()
-            error_message = str(e)
-            self._set_status_results(was_successful=False, result_details=error_message)
-            self._handle_failure_exception(e)
-            # EARLY OUT OF PROCESS.
-            return
-
-        api_key = self._get_api_key()
-        headers = self._build_headers(api_key)
-
-        model_names = {
-            "eleven_multilingual_v2": "Eleven Multilingual v2",
-            "eleven_v3": "Eleven v3",
-        }
-        self._log(f"Generating speech with {model_names.get(model, model)} via Griptape proxy")
-
-        try:
-            response_bytes = await self._submit_request(model, params, headers)
-            if response_bytes:
-                self._handle_response(response_bytes)
-                self._set_status_results(was_successful=True, result_details="Speech generated successfully")
-            else:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="No audio data received from API")
-        except Exception as e:
-            self._set_safe_defaults()
-            error_message = str(e)
-            self._set_status_results(was_successful=False, result_details=error_message)
-            self._handle_failure_exception(e)
-
-    def _get_parameters(self, model: str) -> dict[str, Any]:  # noqa: C901, PLR0912
+    async def _build_payload(self) -> dict[str, Any]:  # noqa: C901, PLR0912
+        """Build the request payload for Eleven Labs TTS generation."""
         text = self.get_parameter_value("text") or ""
         language_code = self.get_parameter_value("language_code")
         seed = self.get_parameter_value("seed")
@@ -370,6 +316,7 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         elif voice_preset:
             voice_id = VOICE_PRESET_MAP.get(voice_preset)
 
+        model = self.get_parameter_value("model") or "eleven_v3"
         params = {"text": text, "model_id": model}
 
         # Add optional parameters if they have values
@@ -405,77 +352,10 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         if voice_settings:
             params["voice_settings"] = voice_settings
 
-        return params
-
-    def _get_api_key(self) -> str:
-        """Get the API key - validation is done in validate_before_node_run()."""
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
-            raise RuntimeError(msg)
-        return api_key
-
-    def _build_headers(self, api_key: str) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-    async def _submit_request(self, model: str, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
-        # Map model names to proxy model IDs
-        model_id_map = {
-            "eleven_multilingual_v2": "eleven_multilingual_v2",
-            "eleven_v3": "eleven_v3",
-        }
-        model_id = model_id_map.get(model, model)
-        url = urljoin(self._proxy_base, model_id)
-
-        self._log(f"Submitting request to Griptape model proxy with model: {model_id}")
+        # Log request
         self._log_request(params)
 
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(url, json=params, headers=headers)
-                response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"Request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        self._log("Request submitted successfully")
-        return response.content
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information for the user."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "provider_response" in error_data:
-                provider_response_str = error_data["provider_response"]
-                provider_data = _json.loads(provider_response_str)
-
-                if "detail" in provider_data:
-                    detail = provider_data["detail"]
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-
-            if "error" in error_data:
-                return f"Error: {error_data['error']}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except (_json.JSONDecodeError, KeyError, TypeError):
-            return f"API Error ({status_code}): Unable to parse error response"
+        return params
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -488,67 +368,86 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    def _handle_response(self, response_bytes: bytes) -> None:
-        """Handle JSON response format with base64 audio and alignment data."""
-        try:
-            response_data = _json.loads(response_bytes.decode("utf-8"))
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse the Eleven Labs TTS result and set output parameters."""
+        # Check if we received raw audio bytes (in case API returns raw bytes)
+        audio_bytes_raw = result_json.get("audio_bytes")
+        if audio_bytes_raw:
+            audio_bytes = audio_bytes_raw
+            self._log("Received raw audio bytes from API")
+        else:
+            # Fall back to base64-encoded audio (expected for this model)
+            audio_base64 = result_json.get("audio_base64")
+            if not audio_base64:
+                self._log("No audio data in response")
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="Generation completed but no audio data was found in the response.",
+                )
+                return
 
-            # Extract and decode base64 audio
-            audio_base64 = response_data.get("audio_base64")
-            if audio_base64:
+            try:
                 audio_bytes = base64.b64decode(audio_base64)
-                self._save_audio_from_bytes(audio_bytes)
-            else:
-                self._log("No audio_base64 in JSON response")
-                self.parameter_output_values["audio_url"] = None
+                self._log("Decoded base64 audio")
+            except Exception as e:
+                self._log(f"Failed to decode base64 audio: {e}")
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Failed to decode audio data: {e}",
+                )
+                return
 
-            # Extract alignment data
-            alignment = response_data.get("alignment")
-            normalized_alignment = response_data.get("normalized_alignment")
-
-            if alignment:
-                self.parameter_output_values["alignment"] = alignment
-                self._log("Extracted character alignment data")
-            else:
-                self.parameter_output_values["alignment"] = None
-
-            if normalized_alignment:
-                self.parameter_output_values["normalized_alignment"] = normalized_alignment
-                self._log("Extracted normalized alignment data")
-            else:
-                self.parameter_output_values["normalized_alignment"] = None
-
-        except _json.JSONDecodeError as e:
-            self._log(f"Failed to parse JSON response: {e}")
-            self.parameter_output_values["audio_url"] = None
-            self.parameter_output_values["alignment"] = None
-            self.parameter_output_values["normalized_alignment"] = None
-            raise
-        except Exception as e:
-            self._log(f"Failed to process JSON response: {e}")
-            self.parameter_output_values["audio_url"] = None
-            self.parameter_output_values["alignment"] = None
-            self.parameter_output_values["normalized_alignment"] = None
-            raise
-
-        # Set generation ID (using timestamp since proxy doesn't provide one)
-        self.parameter_output_values["generation_id"] = str(int(time.time()))
-
-    def _save_audio_from_bytes(self, audio_bytes: bytes) -> None:
+        # Save audio
         try:
-            self._log("Processing audio bytes from proxy response")
-            filename = f"eleven_tts_{int(time.time())}.mp3"
-
+            filename = f"eleven_tts_{generation_id}.mp3"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)
             self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
             self._log(f"Saved audio to static storage as {filename}")
         except Exception as e:
-            self._log(f"Failed to save audio from bytes: {e}")
-            self.parameter_output_values["audio_url"] = None
+            self._log(f"Failed to save audio: {e}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to save audio file: {e}",
+            )
+            return
+
+        # Extract alignment data
+        alignment = result_json.get("alignment")
+        normalized_alignment = result_json.get("normalized_alignment")
+
+        if alignment:
+            self.parameter_output_values["alignment"] = alignment
+            self._log("Extracted character alignment data")
+        else:
+            self.parameter_output_values["alignment"] = None
+
+        if normalized_alignment:
+            self.parameter_output_values["normalized_alignment"] = normalized_alignment
+            self._log("Extracted normalized alignment data")
+        else:
+            self.parameter_output_values["normalized_alignment"] = None
+
+        # Set success status
+        self._set_status_results(was_successful=True, result_details="Speech generated successfully")
+
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from Eleven Labs TTS failed generation response."""
+        # Try top-level details field (ElevenLabs-specific)
+        details = response_json.get("details")
+        if details:
+            return f"{self.name} {details}"
+
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
 
     def _set_safe_defaults(self) -> None:
+        """Set safe default values for outputs."""
         self.parameter_output_values["generation_id"] = ""
+        self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["audio_url"] = None
         self.parameter_output_values["alignment"] = None
         self.parameter_output_values["normalized_alignment"] = None

@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import base64
+import io as _io
 import json as _json
 import logging
-import os
-from time import time
 from typing import Any, ClassVar
-from urllib.parse import urljoin
 
 import httpx
+import PIL.Image
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import shrink_image_to_size
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -33,31 +30,17 @@ MAX_HUMAN_IMAGES = 5
 MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
 
 
-class GoogleImageGeneration(SuccessFailureNode):
+class GoogleImageGeneration(GriptapeProxyNode):
     """Generate images using Google Gemini models via Griptape Cloud model proxy."""
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
     SUPPORTED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
-        "Nano Banana Pro": "gemini-3-pro-image-preview",
-    }
-    DEPRECATED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "nano-banana-3-pro": "gemini-3-pro-image-preview",
-    }
-    ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
-        **SUPPORTED_MODELS_TO_API_MODELS,
-        **DEPRECATED_MODELS_TO_API_MODELS,
     }
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate images using Google Gemini models via Griptape Cloud model proxy"
-
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model ID
         self.add_parameter(
@@ -81,13 +64,14 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Prompt
         self.add_parameter(
-            ParameterString(
+            Parameter(
                 name="prompt",
+                input_types=["str"],
+                type="str",
                 default_value="",
                 tooltip="Text prompt for image generation",
-                multiline=True,
-                placeholder_text="Enter prompt...",
-                allow_output=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"multiline": True, "placeholder_text": "Enter prompt..."},
             )
         )
 
@@ -260,33 +244,12 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    async def aprocess(self) -> None:
-        self._clear_execution_status()
+    def _get_api_model_id(self) -> str:
+        """Map friendly model name to API model ID."""
+        friendly_name = self.get_parameter_value("model") or next(iter(self.SUPPORTED_MODELS_TO_API_MODELS.keys()))
+        return self.SUPPORTED_MODELS_TO_API_MODELS.get(friendly_name, friendly_name)
 
-        # Validate API key
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            params = await self._get_parameters()
-        except ValueError as e:
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        try:
-            await self._submit_request_and_process(params, headers)
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-    async def _get_parameters(self) -> dict[str, Any]:
+    async def _build_payload(self) -> dict[str, Any]:
         """Build the request payload matching Gemini API structure."""
         prompt = self.get_parameter_value("prompt")
         aspect_ratio = self.get_parameter_value("aspect_ratio")
@@ -310,18 +273,12 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Add all input images
         for img in all_images:
-            try:
-                result = await self._process_input_image(img, auto_image_resize=auto_image_resize)
-            except ValueError as e:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details=str(e))
-                raise
+            result = await self._process_input_image(img, auto_image_resize=auto_image_resize)
             if result:
                 mime_type, image_data = result
                 parts.append({"inlineData": {"mimeType": mime_type, "data": image_data}})
 
         payload = {
-            "model": self.ALL_MODELS_TO_API_MODELS.get(self.get_parameter_value("model")),
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"],
@@ -336,51 +293,9 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return payload
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_request_and_process(self, params: dict[str, Any], headers: dict[str, str]) -> None:
-        post_url = urljoin(self._proxy_base, f"models/{params['model']}")
-        payload = params
-
-        msg = f"{self.name} submitting request to proxy model={params['model']}"
-        logger.info(msg)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                post_resp = await client.post(post_url, json=payload, headers=headers, timeout=None)
-                post_resp.raise_for_status()
-                response_json = post_resp.json()
-        except httpx.HTTPStatusError as e:
-            self._set_safe_defaults()
-            msg = f"{self.name} proxy POST error status={e.response.status_code} headers={dict(e.response.headers)} body={e.response.text}"
-            logger.info(msg)
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{self.name} {error_details}"
-            except Exception:
-                msg = f"{self.name} proxy POST error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            self._set_safe_defaults()
-            msg = f"{self.name} proxy POST request failed: {e}"
-            logger.info(msg)
-            raise RuntimeError(msg) from e
-
-        msg = f"{self.name} received response from API"
-        logger.info(msg)
-
-        # Process the response immediately
-        await self._handle_response(response_json)
-
-    async def _handle_response(self, response_json: dict[str, Any] | None) -> None:
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse Gemini API response structure and extract images and text."""
-        if not response_json:
+        if not result_json:
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
@@ -388,7 +303,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             )
             return
 
-        candidates = response_json.get("candidates", [])
+        candidates = result_json.get("candidates", [])
         if not candidates:
             self._set_safe_defaults()
             self._set_status_results(
@@ -401,7 +316,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         text_outputs = []
 
         for candidate_idx, candidate in enumerate(candidates):
-            self._process_candidate(candidate, candidate_idx, image_artifacts, text_outputs)
+            self._process_candidate(candidate, candidate_idx, image_artifacts, text_outputs, generation_id)
 
         self._store_results(image_artifacts, text_outputs)
 
@@ -411,21 +326,23 @@ class GoogleImageGeneration(SuccessFailureNode):
         candidate_idx: int,
         image_artifacts: list[ImageUrlArtifact],
         text_outputs: list[str],
+        generation_id: str,
     ) -> None:
         """Process a single candidate and extract images and text."""
         content = candidate.get("content", {})
         parts = content.get("parts", [])
 
         for part_idx, part in enumerate(parts):
-            self._process_part(part, candidate_idx, part_idx, image_artifacts, text_outputs)
+            self._process_part(part, candidate_idx, part_idx, image_artifacts, text_outputs, generation_id)
 
-    def _process_part(
+    def _process_part(  # noqa: PLR0913
         self,
         part: dict[str, Any],
         candidate_idx: int,
         part_idx: int,
         image_artifacts: list[ImageUrlArtifact],
         text_outputs: list[str],
+        generation_id: str,
     ) -> None:
         """Process a single part and extract text or image data."""
         if "text" in part:
@@ -433,7 +350,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         inline_data = part.get("inlineData")
         if inline_data:
-            self._process_inline_image(inline_data, candidate_idx, part_idx, image_artifacts)
+            self._process_inline_image(inline_data, candidate_idx, part_idx, image_artifacts, generation_id)
 
     def _process_inline_image(
         self,
@@ -441,6 +358,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         candidate_idx: int,
         part_idx: int,
         image_artifacts: list[ImageUrlArtifact],
+        generation_id: str,
     ) -> None:
         """Process inline image data and save to static storage."""
         mime_type = inline_data.get("mimeType", "image/png")
@@ -451,9 +369,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         try:
             image_bytes = base64.b64decode(base64_data)
-            timestamp = int(time())
             ext = "png" if "png" in mime_type else "jpg"
-            filename = f"google_image_{timestamp}_{candidate_idx}_{part_idx}.{ext}"
+            filename = f"google_image_{generation_id}_{candidate_idx}_{part_idx}.{ext}"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(image_bytes, filename)
@@ -484,24 +401,6 @@ class GoogleImageGeneration(SuccessFailureNode):
             if text_outputs:
                 details += "\n\nModel text output:\n" + "\n".join(text_outputs)
             self._set_status_results(was_successful=False, result_details=details)
-
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response."""
-        if not response_json:
-            return f"{self.name} generation failed with no error details provided by API."
-
-        top_level_error = response_json.get("error")
-        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
-
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        if top_level_error:
-            return self._format_top_level_error(top_level_error)
-
-        status = self._extract_status(response_json) or "unknown"
-        return f"{self.name} generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
         """Parse provider_response if it's a JSON string."""
@@ -553,6 +452,28 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["image"] = None
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
+
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from failed generation response.
+
+        Args:
+            response_json: The JSON response from the generation status endpoint
+
+        Returns:
+            str: A formatted error message to display to the user
+        """
+        # Try to extract from provider response (Google-specific pattern)
+        parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+        if parsed_provider_response:
+            provider_error = parsed_provider_response.get("error")
+            if provider_error:
+                top_level_error = response_json.get("error")
+                provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
+                if provider_error_msg:
+                    return provider_error_msg
+
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
 
     async def _process_input_image(self, image_input: Any, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
         """Process input image and convert to base64 with mime type.
@@ -630,6 +551,69 @@ class GoogleImageGeneration(SuccessFailureNode):
         except IndexError:
             return None
 
+    def _shrink_image(self, image_bytes: bytes) -> bytes:
+        """Best-effort shrink using Pillow to ensure <= byte_limit while maximizing quality.
+
+        Uses a strategy that finds the largest file size (best quality) that still
+        fits under the limit, rather than returning the first valid result.
+
+        Args:
+            image_bytes: Raw image bytes
+
+        Returns:
+            Possibly converted/compressed bytes, or original if shrinking fails
+        """
+        try:
+            img = PIL.Image.open(_io.BytesIO(image_bytes))
+            img = img.convert("RGBA") if img.mode in ("P", "LA") else img
+            # Prefer WEBP for better compression and alpha support
+            target_format = "WEBP"
+
+            orig_w, orig_h = img.size
+
+            # Try lossless first (best quality)
+            buf = _io.BytesIO()
+            img.save(buf, format=target_format, lossless=True, method=6)
+            data = buf.getvalue()
+            image_size_bytes = len(data)
+            logger.info(
+                "%s downscale attempt: lossless size=%.2fMB",
+                self.name,
+                image_size_bytes / (1024 * 1024),
+            )
+            if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
+                logger.info("%s shrunk image to %.2fMB (lossless)", self.name, image_size_bytes / (1024 * 1024))
+                return data
+
+            # Finer-grained scales for better quality preservation
+            scales = [1.0, 0.75, 0.5]
+            qualities = [100, 95, 85]
+
+            for scale in scales:
+                w = max(1, int(orig_w * scale))
+                h = max(1, int(orig_h * scale))
+                resized = img.resize((w, h)) if (w, h) != (orig_w, orig_h) else img
+
+                for q in qualities:
+                    buf = _io.BytesIO()
+                    resized.save(buf, format=target_format, quality=q, method=6)
+                    data = buf.getvalue()
+                    image_size_bytes = len(data)
+                    logger.info(
+                        "%s downscale attempt: scale=%.2f quality=%d size=%.2fMB",
+                        self.name,
+                        scale,
+                        q,
+                        image_size_bytes / (1024 * 1024),
+                    )
+                    if image_size_bytes <= MAX_IMAGE_SIZE_BYTES:
+                        logger.info("%s shrunk image to %.2fMB (q=%d)", self.name, image_size_bytes / (1024 * 1024), q)
+                        return data
+        except Exception as e:
+            logger.warning("%s downscale failed: %s", self.name, e)
+        logger.warning("%s returning original image bytes after downscale attempts", self.name)
+        return image_bytes
+
     def _validate_image_size(
         self, base64_data: str, mime_type: str, *, auto_image_resize: bool = True
     ) -> tuple[str, str] | None:
@@ -666,7 +650,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Try to shrink the image
         logger.info("%s image is %.2fMB, attempting to shrink...", self.name, size_mb)
-        shrunk_bytes = shrink_image_to_size(image_bytes, MAX_IMAGE_SIZE_BYTES, self.name)
+        shrunk_bytes = self._shrink_image(image_bytes)
 
         if len(shrunk_bytes) <= MAX_IMAGE_SIZE_BYTES:
             # Successfully shrunk - encode back to base64 with new WEBP mime type
