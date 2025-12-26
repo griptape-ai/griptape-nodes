@@ -22,6 +22,7 @@ class QwenEditPipelineParameters(DiffusionPipelineTypePipelineParameters):
             repo_ids=[
                 "Qwen/Qwen-Image-Edit",
                 "Qwen/Qwen-Image-Edit-2509",
+                "Qwen/Qwen-Image-Edit-2511",
             ],
             parameter_name="model",
             list_all_models=list_all_models,
