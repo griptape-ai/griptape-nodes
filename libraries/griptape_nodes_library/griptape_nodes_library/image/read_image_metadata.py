@@ -221,9 +221,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
                     node_name=self.name, group_name="Other", ui_options={"collapsed": True}, is_user_defined=True
                 )
             )
-            if result.failed():
-                logger.warning(f"{self.name}: Failed to create Other group: {result.result_details}")
-            else:
+            if result.succeeded():
                 param_group = self.get_element_by_name_and_type("Other")
                 if param_group and isinstance(param_group, ParameterGroup):
                     self._dynamic_groups["Other"] = param_group
@@ -235,7 +233,8 @@ class ReadImageMetadataNode(SuccessFailureNode):
             RemoveParameterFromNodeRequest(node_name=self.name, parameter_name="metadata")
         )
         if result.failed():
-            logger.warning(f"{self.name}: Failed to remove metadata parameter: {result.result_details}")
+            msg = f"{self.name}: Failed to remove metadata parameter for relocation: {result.result_details}"
+            raise ValueError(msg)
 
         # Then add it back to the "Other" group
         result = GriptapeNodes.handle_request(
@@ -254,7 +253,8 @@ class ReadImageMetadataNode(SuccessFailureNode):
             )
         )
         if result.failed():
-            logger.warning(f"{self.name}: Failed to add metadata parameter to Other group: {result.result_details}")
+            msg = f"{self.name}: Failed to add metadata parameter to Other group: {result.result_details}"
+            raise ValueError(msg)
 
         # Reorder status group to appear after dynamic groups (direct manipulation - OK)
         status_group = self.status_component.get_parameter_group()

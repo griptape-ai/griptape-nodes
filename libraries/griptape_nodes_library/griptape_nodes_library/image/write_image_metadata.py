@@ -15,9 +15,11 @@ from griptape_nodes_library.utils.image_utils import load_pil_image_from_artifac
 # Image format to file extension mapping
 IMAGE_FORMAT_TO_EXTENSION = {
     "PNG": "png",
+    "JPG": "jpg",
     "JPEG": "jpg",
     "TIFF": "tiff",
     "MPO": "mpo",
+    "WEPP": "webp",
 }
 
 
