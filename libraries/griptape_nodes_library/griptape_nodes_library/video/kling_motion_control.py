@@ -541,17 +541,46 @@ class KlingMotionControl(SuccessFailureNode):
                 result_details="Video generated successfully. Using provider URL (could not download video bytes).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0911, PLR0912
+    def _extract_error_details(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Extract detailed error message from API response.
 
         The v2 API provides errors in multiple possible locations:
-        1. status_detail.details (JSON string with nested error info)
-        2. status_detail.error (top-level error message)
-        3. provider_response.error (provider-specific error)
-        4. error (top-level error field)
+        1. error + details (JSON string with nested error info)
+        2. status_detail.details (JSON string with nested error info)
+        3. status_detail.error (top-level error message)
+        4. provider_response.error (provider-specific error)
+        5. error (top-level error field)
         """
         if not response_json:
             return f"{self.name}: Generation failed with no error details"
+
+        # Check for top-level 'details' field, which may be a JSON string
+        details_str = response_json.get("details")
+        if details_str and isinstance(details_str, str):
+            try:
+                details_obj = _json.loads(details_str)
+                if isinstance(details_obj, dict):
+                    # Handles {"code": ..., "message": ...}
+                    error_message = details_obj.get("message")
+                    if error_message:
+                        msg = f"{self.name}: {error_message}"
+                        error_code = details_obj.get("code")
+                        if error_code:
+                            msg += f" (Error Code: {error_code})"
+                        return msg
+
+                    # Handles {"error": {"message": ...}}
+                    error_info = details_obj.get("error", {})
+                    if isinstance(error_info, dict):
+                        error_message = error_info.get("message", "")
+                        error_code = error_info.get("code", "")
+                        if error_message:
+                            msg = f"{self.name}: {error_message}"
+                            if error_code:
+                                msg += f" (Error Code: {error_code})"
+                            return msg
+            except (_json.JSONDecodeError, ValueError):
+                pass  # Fall through to other checks
 
         # Check v2 API status_detail first
         status_detail = response_json.get("status_detail")
@@ -562,6 +591,16 @@ class KlingMotionControl(SuccessFailureNode):
                 try:
                     details_obj = _json.loads(details_str)
                     if isinstance(details_obj, dict):
+                        # Handles {"code": ..., "message": ...}
+                        error_message = details_obj.get("message")
+                        if error_message:
+                            msg = f"{self.name}: {error_message}"
+                            error_code = details_obj.get("code")
+                            if error_code:
+                                msg += f" (Error Code: {error_code})"
+                            return msg
+
+                        # Handles {"error": {"message": ...}}
                         error_info = details_obj.get("error", {})
                         if isinstance(error_info, dict):
                             error_message = error_info.get("message", "")
