@@ -40,7 +40,7 @@ class KlingMotionControl(SuccessFailureNode):
         - prompt (str): Text prompt for additional guidance (optional, max 2500 chars)
         - reference_image (ImageArtifact|ImageUrlArtifact): Reference image with character (required)
         - reference_video (VideoUrlArtifact): Reference video with actions to transfer (required)
-        - keep_original_sound (str): Keep original video sound - yes or no (default: yes)
+        - keep_original_sound (bool): Keep original video sound (default: True)
         - character_orientation (str): Character orientation - image or video (required)
         - mode (str): Video generation mode - std (Standard) or pro (Professional) (required)
         (Always polls for result: 5s interval, 20 min timeout)
@@ -89,7 +89,7 @@ class KlingMotionControl(SuccessFailureNode):
                 artifact_url_parameter=Parameter(
                     name="reference_image",
                     input_types=["ImageArtifact", "ImageUrlArtifact"],
-                    type="ImageArtifact",
+                    type="ImageUrlArtifact",
                     tooltip="Reference image with character (required). Supports .jpg/.jpeg/.png, max 10MB.",
                     allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ),
@@ -114,12 +114,13 @@ class KlingMotionControl(SuccessFailureNode):
             )
             self._public_video_url_parameter.add_input_parameters()
 
-            ParameterString(
+            Parameter(
                 name="keep_original_sound",
-                default_value="yes",
+                input_types=["bool"],
+                type="bool",
+                default_value=True,
                 tooltip="Keep original video sound",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["yes", "no"])},
                 ui_options={"display_name": "keep original sound"},
             )
         video_group.ui_options = {"hide": False}
@@ -278,11 +279,15 @@ class KlingMotionControl(SuccessFailureNode):
         if reference_video_param:
             video_url = self._public_video_url_parameter.get_public_url_for_parameter()
 
+        keep_sound = self.get_parameter_value("keep_original_sound")
+        if keep_sound is None:
+            keep_sound = True
+
         return {
             "prompt": (self.get_parameter_value("prompt") or "").strip(),
             "image_url": image_url,
             "video_url": video_url,
-            "keep_original_sound": self.get_parameter_value("keep_original_sound") or "yes",
+            "keep_original_sound": "yes" if keep_sound else "no",
             "character_orientation": self.get_parameter_value("character_orientation") or "video",
             "mode": self.get_parameter_value("mode") or "pro",
         }
