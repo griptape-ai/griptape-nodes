@@ -16,6 +16,31 @@ if TYPE_CHECKING:
     import builtins
 
 
+def default_json_encoder(obj: Any) -> Any:
+    """Custom JSON encoder for various object types.
+
+    Attempts the following encodings in order:
+    1. If the object is a SerializableMixin, call to_dict()
+    2. If the object is a Pydantic model, call model_dump()
+    3. Attempt to use the default JSON encoder
+    4. If all else fails, return the string representation of the object
+
+    Args:
+        obj: The object to encode
+
+    Returns:
+        JSON-serializable representation of the object
+    """
+    if isinstance(obj, SerializableMixin):
+        return obj.to_dict()
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    try:
+        return json.JSONEncoder().default(obj)
+    except TypeError:
+        return str(obj)
+
+
 @dataclass
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
@@ -70,6 +95,22 @@ class ResultDetails:
 # The Payload class is a marker interface
 class Payload(ABC):  # noqa: B024
     """Base class for all payload types. Customers will derive from this."""
+
+    def to_json(self, **kwargs) -> str:
+        """Serialize this payload to JSON string.
+
+        Returns:
+            JSON string representation of the payload
+        """
+        # Convert payload to dict
+        if is_dataclass(self):
+            payload_dict = asdict(self)
+        elif hasattr(self, "__dict__"):
+            payload_dict = self.__dict__
+        else:
+            payload_dict = str(self)
+
+        return json.dumps(payload_dict, default=default_json_encoder, **kwargs)
 
 
 # Request payload base class with optional request ID
@@ -228,32 +269,7 @@ class BaseEvent(BaseModel, ABC):
 
     def json(self, **kwargs) -> str:
         """Serialize to JSON string."""
-
-        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/906
-        def default_encoder(obj: Any) -> Any:
-            """Custom JSON encoder for various object types.
-
-            Attempts the following encodings in order:
-            1. If the object is a SerializableMixin, call to_dict()
-            2. If the object is a Pydantic model, call model_dump()
-            3. Attempt to use the default JSON encoder
-            4. If all else fails, return the string representation of the object
-
-            Args:
-                obj: The object to encode
-
-
-            """
-            if isinstance(obj, SerializableMixin):
-                return obj.to_dict()
-            if isinstance(obj, BaseModel):
-                return obj.model_dump()
-            try:
-                return json.JSONEncoder().default(obj)
-            except TypeError:
-                return str(obj)
-
-        return json.dumps(self.dict(), default=default_encoder, **kwargs)
+        return json.dumps(self.dict(), default=default_json_encoder, **kwargs)
 
     @abstractmethod
     def get_request(self) -> Payload:
