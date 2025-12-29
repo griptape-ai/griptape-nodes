@@ -45,6 +45,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
                 output_type="dict",
                 default_value={},
                 allowed_modes={ParameterMode.OUTPUT},
+                hide_property=True,
                 tooltip="Dictionary of all metadata key-value pairs",
             )
         )
