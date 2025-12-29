@@ -36,7 +36,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
             )
         )
 
-        # Add metadata output parameter (will be placed in "Other" group)
+        # Add metadata output parameter
         # Note: Must use direct method during __init__ - node not registered yet
         self.add_parameter(
             Parameter(
@@ -143,7 +143,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
                 logger.warning(f"{self.name}: Failed to remove group {group_name}: {result.result_details}")
         self._dynamic_groups.clear()
 
-    def _create_dynamic_parameters(self, metadata: dict[str, str]) -> None:  # noqa: C901, PLR0912
+    def _create_dynamic_parameters(self, metadata: dict[str, str]) -> None:
         """Create individual parameters for each metadata key, organized by prefix.
 
         Args:
@@ -159,7 +159,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
             sorted_prefixes.append(None)
 
         # Create groups and parameters
-        other_group_name = None
         for prefix in sorted_prefixes:
             metadata_subset = grouped[prefix]
 
@@ -185,10 +184,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
                 if param_group and isinstance(param_group, ParameterGroup):
                     self._dynamic_groups[group_name] = param_group
 
-            # Track the "Other" group for later
-            if group_name == "Other":
-                other_group_name = group_name
-
             # Create parameters and add them to the group using request API
             for key in sorted(metadata_subset.keys()):
                 result = GriptapeNodes.handle_request(
@@ -212,49 +207,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
                     self._dynamic_parameters.append(key)
                     # Set the output value
                     self.parameter_output_values[key] = metadata_subset[key]
-
-        # Ensure "Other" group exists and add the raw metadata parameter to it
-        if other_group_name is None:
-            # No "Other" group exists yet, create one using request API
-            result = GriptapeNodes.handle_request(
-                AddParameterGroupToNodeRequest(
-                    node_name=self.name, group_name="Other", ui_options={"collapsed": True}, is_user_defined=True
-                )
-            )
-            if result.succeeded():
-                param_group = self.get_element_by_name_and_type("Other")
-                if param_group and isinstance(param_group, ParameterGroup):
-                    self._dynamic_groups["Other"] = param_group
-                other_group_name = "Other"
-
-        # Move the raw metadata parameter to the "Other" group
-        # First remove it from its current location
-        result = GriptapeNodes.handle_request(
-            RemoveParameterFromNodeRequest(node_name=self.name, parameter_name="metadata")
-        )
-        if result.failed():
-            msg = f"{self.name}: Failed to remove metadata parameter for relocation: {result.result_details}"
-            raise ValueError(msg)
-
-        # Then add it back to the "Other" group
-        result = GriptapeNodes.handle_request(
-            AddParameterToNodeRequest(
-                node_name=self.name,
-                parameter_name="metadata",
-                type="dict",
-                output_type="dict",
-                default_value={},
-                mode_allowed_input=False,
-                mode_allowed_property=False,
-                mode_allowed_output=True,
-                tooltip="Dictionary of all metadata key-value pairs",
-                parent_element_name=other_group_name,
-                is_user_defined=False,
-            )
-        )
-        if result.failed():
-            msg = f"{self.name}: Failed to add metadata parameter to Other group: {result.result_details}"
-            raise ValueError(msg)
 
         # Reorder status group to appear after dynamic groups (direct manipulation - OK)
         status_group = self.status_component.get_parameter_group()
