@@ -35,7 +35,7 @@ class ExifMetadataDriver(BaseImageMetadataDriver):
         Returns:
             List containing "JPEG", "TIFF", "MPO"
         """
-        return ["JPEG", "TIFF", "MPO"]
+        return ["JPEG", "TIFF", "MPO", "WEBP"]
 
     def inject_metadata(self, pil_image: Image.Image, metadata: dict[str, str]) -> bytes:
         """Inject metadata into EXIF UserComment field as JSON.
