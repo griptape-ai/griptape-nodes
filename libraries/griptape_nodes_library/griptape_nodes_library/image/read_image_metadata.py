@@ -136,6 +136,120 @@ class ReadImageMetadataNode(SuccessFailureNode):
                 logger.warning(f"{self.name}: Failed to remove group {group_name}: {result.result_details}")
         self._dynamic_groups.clear()
 
+    def _remove_group_if_empty(self, group_name: str) -> None:
+        """Remove a parameter group if it has no remaining parameters.
+
+        Args:
+            group_name: Name of the group to check and potentially remove
+        """
+        group = self.get_group_by_name_or_element_id(group_name)
+        if group is None:
+            return
+
+        parameters = group.find_elements_by_type(Parameter)
+
+        if len(parameters) == 0:
+            result = GriptapeNodes.handle_request(
+                RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=group_name)
+            )
+            if result.failed():
+                logger.warning(f"{self.name}: Failed to remove empty group {group_name}: {result.result_details}")
+
+            if group_name in self._dynamic_groups:
+                del self._dynamic_groups[group_name]
+
+    def _get_or_create_group(self, group_name: str) -> None:
+        """Get existing group or create new one, tracking it for later removal.
+
+        Args:
+            group_name: Name of the parameter group
+        """
+        param_group = self.get_group_by_name_or_element_id(group_name)
+        if param_group is None:
+            # Create ParameterGroup using request API
+            result = GriptapeNodes.handle_request(
+                AddParameterGroupToNodeRequest(
+                    node_name=self.name, group_name=group_name, ui_options={"collapsed": True}, is_user_defined=True
+                )
+            )
+            if result.failed():
+                logger.warning(f"{self.name}: Failed to create group {group_name}: {result.result_details}")
+            else:
+                # Track the created group for later removal
+                param_group = self.get_element_by_name_and_type(group_name)
+                if param_group and isinstance(param_group, ParameterGroup):
+                    self._dynamic_groups[group_name] = param_group
+        else:
+            # Group already exists, track it for reuse
+            self._dynamic_groups[group_name] = param_group
+
+    def _get_or_create_parameter(self, key: str, group_name: str, value: str) -> None:
+        """Get existing parameter or create new one, setting its value.
+
+        Args:
+            key: Parameter name
+            group_name: Name of parent parameter group
+            value: Value to set for the parameter
+        """
+        existing_param = self.get_parameter_by_name(key)
+        if existing_param is None:
+            # Create new parameter
+            result = GriptapeNodes.handle_request(
+                AddParameterToNodeRequest(
+                    node_name=self.name,
+                    parameter_name=key,
+                    type="str",
+                    output_type="str",
+                    default_value="",
+                    mode_allowed_input=False,
+                    mode_allowed_property=False,
+                    mode_allowed_output=True,
+                    tooltip=f"Metadata value for '{key}'",
+                    parent_element_name=group_name,
+                    is_user_defined=True,
+                )
+            )
+            if result.failed():
+                logger.warning(f"{self.name}: Failed to create parameter {key}: {result.result_details}")
+            else:
+                self._dynamic_parameters.append(key)
+                # Set the output value
+                self.parameter_output_values[key] = value
+        else:
+            # Parameter already exists, just update its value
+            self.parameter_output_values[key] = value
+
+    def _sync_dynamic_parameters(self, new_metadata: dict[str, str]) -> None:
+        """Sync dynamic parameters with new metadata - add, update, or remove as needed.
+
+        Args:
+            new_metadata: New metadata dictionary to sync with
+        """
+        old_keys = set(self._dynamic_parameters)
+        new_keys = set(new_metadata.keys())
+
+        keys_to_remove = old_keys - new_keys
+        groups_to_check = set()
+
+        for key in keys_to_remove:
+            param = self.get_parameter_by_name(key)
+            if param and param.parent_element_name:
+                groups_to_check.add(param.parent_element_name)
+
+            result = GriptapeNodes.handle_request(
+                RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=key)
+            )
+            if result.failed():
+                logger.warning(f"{self.name}: Failed to remove parameter {key}: {result.result_details}")
+
+            if key in self._dynamic_parameters:
+                self._dynamic_parameters.remove(key)
+
+        for group_name in groups_to_check:
+            self._remove_group_if_empty(group_name)
+
+        self._create_dynamic_parameters(new_metadata)
+
     def _create_dynamic_parameters(self, metadata: dict[str, str]) -> None:
         """Create individual parameters for each metadata key, organized by prefix.
 
@@ -163,43 +277,12 @@ class ReadImageMetadataNode(SuccessFailureNode):
             else:
                 group_name = prefix
 
-            # Create ParameterGroup using request API
-            result = GriptapeNodes.handle_request(
-                AddParameterGroupToNodeRequest(
-                    node_name=self.name, group_name=group_name, ui_options={"collapsed": True}, is_user_defined=True
-                )
-            )
-            if result.failed():
-                logger.warning(f"{self.name}: Failed to create group {group_name}: {result.result_details}")
-            else:
-                # Track the created group for later removal
-                param_group = self.get_element_by_name_and_type(group_name)
-                if param_group and isinstance(param_group, ParameterGroup):
-                    self._dynamic_groups[group_name] = param_group
+            # Get or create the parameter group
+            self._get_or_create_group(group_name)
 
-            # Create parameters and add them to the group using request API
+            # Create parameters and add them to the group
             for key in sorted(metadata_subset.keys()):
-                result = GriptapeNodes.handle_request(
-                    AddParameterToNodeRequest(
-                        node_name=self.name,
-                        parameter_name=key,
-                        type="str",
-                        output_type="str",
-                        default_value="",
-                        mode_allowed_input=False,
-                        mode_allowed_property=False,
-                        mode_allowed_output=True,
-                        tooltip=f"Metadata value for '{key}'",
-                        parent_element_name=group_name,
-                        is_user_defined=True,
-                    )
-                )
-                if result.failed():
-                    logger.warning(f"{self.name}: Failed to create parameter {key}: {result.result_details}")
-                else:
-                    self._dynamic_parameters.append(key)
-                    # Set the output value
-                    self.parameter_output_values[key] = metadata_subset[key]
+                self._get_or_create_parameter(key, group_name, metadata_subset[key])
 
     def _read_and_populate_metadata(self, image: Any) -> None:
         """Read metadata from image and populate output parameter.
@@ -213,14 +296,12 @@ class ReadImageMetadataNode(SuccessFailureNode):
         # Clear metadata output first
         self.parameter_output_values["metadata"] = {}
 
-        # Remove dynamic parameters when clearing
-        self._remove_dynamic_parameters()
-
         # Handle None/empty case - clear output and return
         if not image:
             error_msg = "No image provided"
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
+            self._remove_dynamic_parameters()
             return
 
         # Load PIL image
@@ -229,6 +310,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
         except (TypeError, ValueError) as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
+            self._remove_dynamic_parameters()
             return
 
         # Detect format
@@ -238,6 +320,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
             logger.warning(f"{self.name}: {error_msg}")
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
+            self._remove_dynamic_parameters()
             return
 
         # Read metadata using driver
@@ -253,17 +336,14 @@ class ReadImageMetadataNode(SuccessFailureNode):
                 logger.warning(f"{self.name}: {error_msg}")
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
+                self._remove_dynamic_parameters()
                 return
 
         # Success - set outputs
         self.parameter_output_values["metadata"] = metadata
 
-        # Remove previous dynamic parameters and groups
-        self._remove_dynamic_parameters()
-
-        # Create new dynamic parameters for current metadata
-        if metadata:
-            self._create_dynamic_parameters(metadata)
+        # Sync dynamic parameters intelligently (add, update, or remove as needed)
+        self._sync_dynamic_parameters(metadata)
 
         count = len(metadata)
         if count > 0:
