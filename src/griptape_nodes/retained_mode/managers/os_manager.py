@@ -2033,7 +2033,7 @@ class OSManager:
                 mode=file_mode,  # type: ignore[arg-type]
                 encoding=encoding if isinstance(content, str) else None,
                 timeout=0,  # Non-blocking
-                flags=portalocker.LockFlags.EXCLUSIVE,
+                flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
             ) as fh:
                 fh.write(content)
 
