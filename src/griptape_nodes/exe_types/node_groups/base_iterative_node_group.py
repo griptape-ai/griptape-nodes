@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from abc import abstractmethod
 from typing import Any
 
@@ -12,8 +11,16 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.node_groups.subflow_node_group import SubflowNodeGroup
+from griptape_nodes.traits.options import Options
 
-logger = logging.getLogger("griptape_nodes")
+# Execution mode choices and their corresponding boolean values (True = run in order)
+EXECUTION_MODE_ONE_AT_A_TIME = "Run Group Items One at a Time"
+EXECUTION_MODE_ALL_AT_ONCE = "Run Group Items All at Once"
+EXECUTION_MODE_CHOICES = [EXECUTION_MODE_ONE_AT_A_TIME, EXECUTION_MODE_ALL_AT_ONCE]
+EXECUTION_MODE_VALUE_LOOKUP = {
+    EXECUTION_MODE_ONE_AT_A_TIME: True,
+    EXECUTION_MODE_ALL_AT_ONCE: False,
+}
 
 
 class BaseIterativeNodeGroup(SubflowNodeGroup):
@@ -37,7 +44,6 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
     _items: list[Any]
     _current_iteration_count: int
     _total_iterations: int
-    is_parallel: bool
 
     # Results storage
     _results_list: list[Any]
@@ -53,19 +59,30 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         self._items = []
         self._current_iteration_count = 0
         self._total_iterations = 0
-        self.is_parallel = False
         self._results_list = []
 
-        # Add parallel execution control parameter
+        # Hidden boolean parameter used by node_executor for execution logic
         self.run_in_order = Parameter(
             name="run_in_order",
             tooltip="Execute all iterations in order or concurrently",
             type=ParameterTypeBuiltin.BOOL.value,
             allowed_modes={ParameterMode.PROPERTY},
             default_value=True,
-            ui_options={"display_name": "Run in Order"},
+            hide=True,
         )
         self.add_parameter(self.run_in_order)
+
+        # User selection that controls run_in_order
+        self.execution_mode = Parameter(
+            name="execution_mode",
+            tooltip="Execute all iterations in order or concurrently",
+            type=ParameterTypeBuiltin.STR.value,
+            allowed_modes={ParameterMode.PROPERTY},
+            default_value=EXECUTION_MODE_ONE_AT_A_TIME,
+            traits={Options(choices=EXECUTION_MODE_CHOICES, show_search=False)},
+            ui_options={"display_name": "Execution Mode"},
+        )
+        self.add_parameter(self.execution_mode)
 
         # Index parameter - available in all iterative nodes (left side - feeds into group)
         self.index_param = Parameter(
@@ -108,8 +125,10 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes."""
         super().after_value_set(parameter, value)
-        if parameter == self.run_in_order:
-            self.is_parallel = not value
+        if parameter == self.execution_mode:
+            # Convert string choice to boolean and update run_in_order parameter
+            run_in_order = EXECUTION_MODE_VALUE_LOOKUP.get(value, True)
+            self.set_parameter_value("run_in_order", run_in_order)
 
     @abstractmethod
     def _get_iteration_items(self) -> list[Any]:

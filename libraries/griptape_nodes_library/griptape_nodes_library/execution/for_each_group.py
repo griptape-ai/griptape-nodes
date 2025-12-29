@@ -76,8 +76,8 @@ class ForEachGroupNode(BaseIterativeNodeGroup):
 
         self.move_element_to_position("items", 0)
         self.move_element_to_position("results", 1)
-        self.move_element_to_position("run_in_order", 2)
-        self.add_parameter_to_group_settings(self.run_in_order)
+        self.move_element_to_position("execution_mode", 2)
+        self.add_parameter_to_group_settings(self.execution_mode)
 
     def _get_iteration_items(self) -> list[Any]:
         """Get the list of items to iterate over.
