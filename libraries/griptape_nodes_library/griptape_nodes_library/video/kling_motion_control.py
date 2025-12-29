@@ -75,7 +75,7 @@ class KlingMotionControl(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
-                    "placeholder_text": "Optional: Add motion effects through prompt words...",
+                    "placeholder_text": "Optional: Add additional control with a text prompt...",
                     "display_name": "prompt",
                 },
             )
