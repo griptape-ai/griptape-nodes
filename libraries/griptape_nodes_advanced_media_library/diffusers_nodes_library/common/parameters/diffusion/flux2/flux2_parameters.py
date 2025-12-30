@@ -13,7 +13,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 QUANTIZED_FLUX_2_REPO_IDS = ["diffusers/FLUX.2-dev-bnb-4bit"]
 
-FLUX_2_REPO_IDS = [*QUANTIZED_FLUX_2_REPO_IDS, "black-forest-labs/FLUX.2-dev"]
+FLUX_2_REPO_IDS = [*QUANTIZED_FLUX_2_REPO_IDS, "black-forest-labs/FLUX.2-dev", "fal/FLUX.2-dev-Turbo"]
 
 
 class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
