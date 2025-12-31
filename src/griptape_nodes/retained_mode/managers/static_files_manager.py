@@ -1,6 +1,7 @@
 import base64
 import binascii
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -22,6 +23,9 @@ from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileUploadUrlRequest,
     CreateStaticFileUploadUrlResultFailure,
     CreateStaticFileUploadUrlResultSuccess,
+    CreateWorkspaceFileDownloadUrlRequest,
+    CreateWorkspaceFileDownloadUrlResultFailure,
+    CreateWorkspaceFileDownloadUrlResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
@@ -94,6 +98,9 @@ class StaticFilesManager:
             )
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
+            )
+            event_manager.assign_manager_to_request_type(
+                CreateWorkspaceFileDownloadUrlRequest, self.on_handle_create_workspace_file_download_url_request
             )
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
@@ -178,6 +185,34 @@ class StaticFilesManager:
             url=url, result_details="Successfully created static file download URL"
         )
 
+    def on_handle_create_workspace_file_download_url_request(
+        self,
+        request: CreateWorkspaceFileDownloadUrlRequest,
+    ) -> CreateWorkspaceFileDownloadUrlResultSuccess | CreateWorkspaceFileDownloadUrlResultFailure:
+        """Handle the request to create a download URL for a workspace file.
+
+        Args:
+            request: The request object containing the file path relative to workspace.
+
+        Returns:
+            A result object indicating success or failure.
+        """
+        file_name = request.file_name
+
+        # Use relative path for storage driver (it serves from workspace root)
+        relative_file_path = Path(file_name)
+
+        try:
+            url = self.storage_driver.create_signed_download_url(relative_file_path)
+        except ValueError as e:
+            msg = f"Failed to create download URL for workspace file {file_name}: {e}"
+            logger.error(msg)
+            return CreateWorkspaceFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        return CreateWorkspaceFileDownloadUrlResultSuccess(
+            url=url, result_details="Successfully created workspace file download URL"
+        )
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         # Start static server in daemon thread if enabled
         if isinstance(self.storage_driver, LocalStorageDriver):
@@ -225,6 +260,41 @@ class StaticFilesManager:
 
         url = self.storage_driver.create_signed_download_url(resolved_file_path)
         return url
+
+    def create_external_file_url(self, file_path: Path) -> str:
+        """Create URL for external file to be accessed by editor.
+
+        Args:
+            file_path: Absolute path to file outside workspace
+
+        Returns:
+            URL string for editor to access the file
+
+        Raises:
+            ValueError: If storage backend is not LOCAL
+            FileNotFoundError: If file doesn't exist
+            PermissionError: If file not readable
+        """
+        if self.storage_backend != StorageBackend.LOCAL:
+            msg = "External file URLs only supported with local storage backend"
+            raise ValueError(msg)
+
+        # Validate file
+        resolved = file_path.resolve()
+        if not resolved.exists():
+            msg = f"File not found: {resolved}"
+            raise FileNotFoundError(msg)
+        if not resolved.is_file():
+            msg = f"Path is not a file: {resolved}"
+            raise ValueError(msg)
+        if not os.access(resolved, os.R_OK):
+            msg = f"File not readable: {resolved}"
+            raise PermissionError(msg)
+
+        # Encode path for URL
+        encoded_path = base64.urlsafe_b64encode(str(resolved).encode()).decode()
+
+        return f"http://localhost:8124/external-file?path={encoded_path}"
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.
