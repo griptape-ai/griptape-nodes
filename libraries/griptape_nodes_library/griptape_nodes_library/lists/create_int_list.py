@@ -14,4 +14,5 @@ class CreateIntList(BaseCreateListNode):
             output_type="list",
             default_value=None,
             items_tooltip="List of integer items to add to",
+            ui_options={"hide_property": False},
         )
