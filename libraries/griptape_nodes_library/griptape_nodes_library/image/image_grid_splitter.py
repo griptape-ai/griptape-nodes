@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,29 @@ from griptape_nodes_library.utils.image_utils import (
 )
 
 
+@dataclass
+class _EdgeBounds:
+    top: int
+    bottom: int
+    left: int
+    right: int
+
+
+@dataclass(frozen=True)
+class _EdgeTrimSettings:
+    threshold: float
+    max_trim: int
+
+
+@dataclass(frozen=True)
+class _GapAxisInfo:
+    std: np.ndarray
+    mean: np.ndarray
+    bounds: list[int]
+    length: int
+    is_vertical: bool
+
+
 class ImageGridSplitter(DataNode):
     """Split a regular image grid into individual images.
 
@@ -53,6 +77,19 @@ class ImageGridSplitter(DataNode):
 
     _CELL_PARAM_RE = re.compile(r"^r(\d+)c(\d+)$")
 
+    _GAP_STD_THRESHOLD = 8.0
+    _GAP_SEARCH_WINDOW_PX = 12
+    _GAP_PADDING_PX = 3
+    _GAP_EXPAND_STD_MAX = 25.0
+    _GAP_COLOR_DISTANCE_THRESHOLD = 55.0
+    _RGB_CHANNELS = 3
+    _EDGE_STRIP_STD_THRESHOLD = 10.0
+    _EDGE_STRIP_MAX_PX = 12
+    _EDGE_STRIP_COLOR_DISTANCE_THRESHOLD = 60.0
+    _EDGE_STRIP_COLOR_COVERAGE_MIN = 0.15
+    _GAP_COLOR_DEDUP_L2_THRESHOLD = 5.0
+    _CELL_INSET_PX_ON_GAPS = 2
+
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
@@ -68,6 +105,9 @@ class ImageGridSplitter(DataNode):
             collapsed=True,
         )
         self.add_node_element(self._detections_group)
+
+        # Captured per-split so we can strip dotted/aliased divider pixels at cell edges.
+        self._last_gap_strip_colors: list[np.ndarray] = []
 
         self.add_parameter(
             Parameter(
@@ -531,22 +571,378 @@ class ImageGridSplitter(DataNode):
         x_bounds[-1] = w
         y_bounds[-1] = h
 
+        x_starts, x_ends, y_starts, y_ends, gap_colors = self._compute_gap_trimmed_bounds(img, x_bounds, y_bounds)
+        self._last_gap_strip_colors = gap_colors
+
         grid: list[list[Image.Image]] = []
         for r in range(rows):
             row_imgs: list[Image.Image] = []
-            y0 = y_bounds[r]
-            y1 = y_bounds[r + 1]
+            y0 = y_starts[r]
+            y1 = y_ends[r]
             if y1 <= y0:
                 y1 = min(h, y0 + 1)
             for c in range(cols):
-                x0 = x_bounds[c]
-                x1 = x_bounds[c + 1]
+                x0 = x_starts[c]
+                x1 = x_ends[c]
                 if x1 <= x0:
                     x1 = min(w, x0 + 1)
                 cell = img.crop((x0, y0, x1, y1))
+                cell = self._trim_uniform_edge_strips(cell)
                 row_imgs.append(cell)
             grid.append(row_imgs)
         return grid
+
+    def _compute_gap_trimmed_bounds(
+        self,
+        img: Image.Image,
+        x_bounds: list[int],
+        y_bounds: list[int],
+    ) -> tuple[list[int], list[int], list[int], list[int], list[np.ndarray]]:
+        """Compute per-cell crop bounds with separator gaps removed.
+
+        This looks for low-variance vertical/horizontal stripes near each internal boundary. When found,
+        the stripe is removed from both adjacent cells so output images do not include visible borders.
+        """
+        arr = np.asarray(img, dtype=np.float32)
+        if arr.ndim != self._RGB_CHANNELS or arr.shape[2] < self._RGB_CHANNELS:
+            cols = len(x_bounds) - 1
+            rows = len(y_bounds) - 1
+            return (
+                [x_bounds[i] for i in range(cols)],
+                [x_bounds[i + 1] for i in range(cols)],
+                [y_bounds[i] for i in range(rows)],
+                [y_bounds[i + 1] for i in range(rows)],
+                [],
+            )
+
+        col_std = arr.std(axis=0).mean(axis=1)  # shape: (w,)
+        row_std = arr.std(axis=1).mean(axis=1)  # shape: (h,)
+        col_mean = arr.mean(axis=0)[:, :3]  # shape: (w, 3)
+        row_mean = arr.mean(axis=1)[:, :3]  # shape: (h, 3)
+
+        x_starts, x_ends = self._apply_gap_strips_to_axis(col_std, means=col_mean, bounds=x_bounds)
+        y_starts, y_ends = self._apply_gap_strips_to_axis(row_std, means=row_mean, bounds=y_bounds)
+        x_axis = _GapAxisInfo(std=col_std, mean=col_mean, bounds=x_bounds, length=int(arr.shape[1]), is_vertical=True)
+        y_axis = _GapAxisInfo(std=row_std, mean=row_mean, bounds=y_bounds, length=int(arr.shape[0]), is_vertical=False)
+        gap_colors = self._collect_gap_strip_colors(arr, x_axis=x_axis, y_axis=y_axis)
+        return x_starts, x_ends, y_starts, y_ends, gap_colors
+
+    def _collect_gap_strip_colors(
+        self,
+        arr: np.ndarray,
+        *,
+        x_axis: _GapAxisInfo,
+        y_axis: _GapAxisInfo,
+    ) -> list[np.ndarray]:
+        """Collect representative divider colors used for edge stripping.
+
+        Some dividers are dotted/aliased and won't be removed by uniform edge stripping alone.
+        We sample divider bands (when detected) and use their mean colors as a reference.
+        """
+        colors: list[np.ndarray] = []
+        self._collect_internal_gap_colors(colors, arr=arr, axis=x_axis)
+        self._collect_internal_gap_colors(colors, arr=arr, axis=y_axis)
+        self._collect_outer_edge_gap_colors(colors, arr=arr, axis=x_axis)
+        self._collect_outer_edge_gap_colors(colors, arr=arr, axis=y_axis)
+        return colors
+
+    def _add_gap_color(self, colors: list[np.ndarray], color: np.ndarray) -> None:
+        # De-duplicate by rounding to reduce noise.
+        rounded = np.round(color, 0)
+        for existing in colors:
+            if np.linalg.norm(np.round(existing, 0) - rounded) <= self._GAP_COLOR_DEDUP_L2_THRESHOLD:
+                return
+        colors.append(color)
+
+    def _collect_internal_gap_colors(self, colors: list[np.ndarray], *, arr: np.ndarray, axis: _GapAxisInfo) -> None:
+        for boundary in axis.bounds[1:-1]:
+            gap = self._find_gap_segment(axis.std, means=axis.mean, boundary=boundary)
+            if gap is None:
+                continue
+            gap_start, gap_end = gap
+            band = self._extract_gap_band(arr, axis=axis, start=gap_start, end=gap_end)
+            self._add_gap_color(colors, band.mean(axis=0))
+
+    def _collect_outer_edge_gap_colors(self, colors: list[np.ndarray], *, arr: np.ndarray, axis: _GapAxisInfo) -> None:
+        for boundary in (0, axis.length - 1):
+            gap = self._find_gap_segment(axis.std, means=axis.mean, boundary=boundary)
+            if gap is None:
+                continue
+            gap_start, gap_end = gap
+            if gap_start > self._GAP_SEARCH_WINDOW_PX and gap_end < (axis.length - 1 - self._GAP_SEARCH_WINDOW_PX):
+                continue
+            band = self._extract_gap_band(arr, axis=axis, start=gap_start, end=gap_end)
+            self._add_gap_color(colors, band.mean(axis=0))
+
+    def _extract_gap_band(self, arr: np.ndarray, *, axis: _GapAxisInfo, start: int, end: int) -> np.ndarray:
+        if axis.is_vertical:
+            return arr[:, start : end + 1, :3].reshape(-1, 3)
+        return arr[start : end + 1, :, :3].reshape(-1, 3)
+
+    def _apply_gap_strips_to_axis(
+        self, stds: np.ndarray, *, means: np.ndarray, bounds: list[int]
+    ) -> tuple[list[int], list[int]]:
+        n = len(bounds) - 1
+        starts = [bounds[i] for i in range(n)]
+        ends = [bounds[i + 1] for i in range(n)]
+        pad = self._GAP_PADDING_PX
+
+        for i in range(1, n):
+            boundary = bounds[i]
+            gap = self._find_gap_segment(stds, means=means, boundary=boundary)
+            if gap is None:
+                continue
+
+            gap_start, gap_end = gap
+            ends[i - 1] = min(ends[i - 1], gap_start - pad)
+            starts[i] = max(starts[i], gap_end + 1 + pad)
+
+        limit = int(stds.shape[0])
+        for i in range(n):
+            starts[i] = max(0, min(limit, starts[i]))
+            ends[i] = max(0, min(limit, ends[i]))
+            if ends[i] <= starts[i]:
+                ends[i] = min(limit, starts[i] + 1)
+
+        return starts, ends
+
+    def _find_gap_segment(self, stds: np.ndarray, *, means: np.ndarray, boundary: int) -> tuple[int, int] | None:
+        window = self._GAP_SEARCH_WINDOW_PX
+        threshold = self._GAP_STD_THRESHOLD
+
+        limit = int(stds.shape[0])
+        lo = max(0, boundary - window)
+        hi = min(limit, boundary + window + 1)
+        if hi - lo <= 1:
+            return None
+
+        mask = stds[lo:hi] <= threshold
+        if not bool(np.any(mask)):
+            return None
+
+        segments = self._collect_true_segments(mask, offset=lo)
+        core = self._choose_closest_segment(segments, stds=stds, boundary=boundary)
+        if core is None:
+            return None
+        return self._expand_gap_segment(core, stds=stds, means=means, lo=lo, hi=hi)
+
+    def _expand_gap_segment(
+        self,
+        core: tuple[int, int],
+        *,
+        stds: np.ndarray,
+        means: np.ndarray,
+        lo: int,
+        hi: int,
+    ) -> tuple[int, int]:
+        core_start, core_end = core
+        core_color = means[core_start : core_end + 1].mean(axis=0)
+
+        max_std = self._GAP_EXPAND_STD_MAX
+        max_dist = self._GAP_COLOR_DISTANCE_THRESHOLD
+
+        start = core_start
+        x = core_start - 1
+        while x >= lo:
+            if float(stds[x]) > max_std:
+                break
+            dist = float(np.linalg.norm(means[x] - core_color))
+            if dist > max_dist:
+                break
+            start = x
+            x -= 1
+
+        end = core_end
+        x = core_end + 1
+        while x < hi:
+            if float(stds[x]) > max_std:
+                break
+            dist = float(np.linalg.norm(means[x] - core_color))
+            if dist > max_dist:
+                break
+            end = x
+            x += 1
+
+        return start, end
+
+    def _collect_true_segments(self, mask: np.ndarray, *, offset: int) -> list[tuple[int, int]]:
+        segments: list[tuple[int, int]] = []
+        start: int | None = None
+        values = mask.tolist()
+        for idx, is_true in enumerate(values):
+            x = offset + idx
+            if is_true and start is None:
+                start = x
+                continue
+            if (not is_true) and start is not None:
+                segments.append((start, x - 1))
+                start = None
+        if start is not None:
+            segments.append((start, offset + len(values) - 1))
+        return segments
+
+    def _segment_distance_to_boundary(self, seg: tuple[int, int], boundary: int) -> int:
+        seg_start, seg_end = seg
+        if seg_start <= boundary <= seg_end:
+            return 0
+        if boundary < seg_start:
+            return seg_start - boundary
+        return boundary - seg_end
+
+    def _choose_closest_segment(
+        self,
+        segments: list[tuple[int, int]],
+        *,
+        stds: np.ndarray,
+        boundary: int,
+    ) -> tuple[int, int] | None:
+        if not segments:
+            return None
+
+        best_seg: tuple[int, int] | None = None
+        best_dist: int | None = None
+        best_mean: float | None = None
+
+        for seg in segments:
+            dist = self._segment_distance_to_boundary(seg, boundary)
+            seg_start, seg_end = seg
+            seg_mean = float(np.mean(stds[seg_start : seg_end + 1]))
+            if best_seg is None or best_dist is None or best_mean is None:
+                best_seg = seg
+                best_dist = dist
+                best_mean = seg_mean
+                continue
+
+            if dist < best_dist or (dist == best_dist and seg_mean < best_mean):
+                best_seg = seg
+                best_dist = dist
+                best_mean = seg_mean
+
+        return best_seg
+
+    def _trim_uniform_edge_strips(self, cell: Image.Image) -> Image.Image:
+        """Trim uniform edge strips from a cell.
+
+        Some grids have divider pixels that are not perfectly detected as a contiguous gap band.
+        As a safety net, remove uniform rows/columns at the edges of each cell and (when available)
+        strip rows/columns that match detected divider colors.
+        """
+        if cell.width <= 1 or cell.height <= 1:
+            return cell
+
+        arr = np.asarray(cell, dtype=np.float32)
+        if arr.ndim != self._RGB_CHANNELS or arr.shape[2] < self._RGB_CHANNELS:
+            return cell
+
+        bounds = _EdgeBounds(top=0, bottom=int(arr.shape[0]), left=0, right=int(arr.shape[1]))
+        settings = _EdgeTrimSettings(threshold=self._EDGE_STRIP_STD_THRESHOLD, max_trim=self._EDGE_STRIP_MAX_PX)
+
+        bounds.top = self._trim_top_edge(arr, bounds=bounds, settings=settings)
+        bounds.bottom = self._trim_bottom_edge(arr, bounds=bounds, settings=settings)
+        bounds.left = self._trim_left_edge(arr, bounds=bounds, settings=settings)
+        bounds.right = self._trim_right_edge(arr, bounds=bounds, settings=settings)
+
+        if bounds.top == 0 and bounds.left == 0 and bounds.bottom == arr.shape[0] and bounds.right == arr.shape[1]:
+            return cell
+
+        if bounds.right <= bounds.left or bounds.bottom <= bounds.top:
+            return cell
+
+        cropped = cell.crop((bounds.left, bounds.top, bounds.right, bounds.bottom))
+
+        # Final safety net: if we detected divider colors for this split, trim a tiny inset on all
+        # sides to remove residual divider pixels that are not a clean stripe (e.g., dotted/aliased).
+        if getattr(self, "_last_gap_strip_colors", []):
+            inset = self._CELL_INSET_PX_ON_GAPS
+            if cropped.width > (inset * 2 + 1) and cropped.height > (inset * 2 + 1):
+                return cropped.crop((inset, inset, cropped.width - inset, cropped.height - inset))
+
+        return cropped
+
+    def _edge_matches_gap_color(self, edge_rgb: np.ndarray) -> bool:
+        colors = getattr(self, "_last_gap_strip_colors", [])
+        if not colors:
+            return False
+
+        # edge_rgb expected shape: (n, 3)
+        threshold = self._EDGE_STRIP_COLOR_DISTANCE_THRESHOLD
+        min_coverage = self._EDGE_STRIP_COLOR_COVERAGE_MIN
+        for color in colors:
+            dists = np.linalg.norm(edge_rgb - color, axis=1)
+            coverage = float((dists <= threshold).mean())
+            if coverage >= min_coverage:
+                return True
+        return False
+
+    def _should_strip_edge(self, edge_rgb: np.ndarray, *, uniform_threshold: float) -> bool:
+        edge_std = float(edge_rgb.std(axis=0).mean())
+        if edge_std <= uniform_threshold:
+            return True
+        return self._edge_matches_gap_color(edge_rgb)
+
+    def _trim_top_edge(
+        self,
+        arr: np.ndarray,
+        *,
+        bounds: _EdgeBounds,
+        settings: _EdgeTrimSettings,
+    ) -> int:
+        trimmed = 0
+        while trimmed < settings.max_trim and bounds.top < bounds.bottom - 1:
+            edge = arr[bounds.top, bounds.left : bounds.right, :3]
+            if not self._should_strip_edge(edge, uniform_threshold=settings.threshold):
+                break
+            bounds.top += 1
+            trimmed += 1
+        return bounds.top
+
+    def _trim_bottom_edge(
+        self,
+        arr: np.ndarray,
+        *,
+        bounds: _EdgeBounds,
+        settings: _EdgeTrimSettings,
+    ) -> int:
+        trimmed = 0
+        while trimmed < settings.max_trim and bounds.bottom - 1 > bounds.top:
+            edge = arr[bounds.bottom - 1, bounds.left : bounds.right, :3]
+            if not self._should_strip_edge(edge, uniform_threshold=settings.threshold):
+                break
+            bounds.bottom -= 1
+            trimmed += 1
+        return bounds.bottom
+
+    def _trim_left_edge(
+        self,
+        arr: np.ndarray,
+        *,
+        bounds: _EdgeBounds,
+        settings: _EdgeTrimSettings,
+    ) -> int:
+        trimmed = 0
+        while trimmed < settings.max_trim and bounds.left < bounds.right - 1:
+            edge = arr[bounds.top : bounds.bottom, bounds.left, :3]
+            if not self._should_strip_edge(edge, uniform_threshold=settings.threshold):
+                break
+            bounds.left += 1
+            trimmed += 1
+        return bounds.left
+
+    def _trim_right_edge(
+        self,
+        arr: np.ndarray,
+        *,
+        bounds: _EdgeBounds,
+        settings: _EdgeTrimSettings,
+    ) -> int:
+        trimmed = 0
+        while trimmed < settings.max_trim and bounds.right - 1 > bounds.left:
+            edge = arr[bounds.top : bounds.bottom, bounds.right - 1, :3]
+            if not self._should_strip_edge(edge, uniform_threshold=settings.threshold):
+                break
+            bounds.right -= 1
+            trimmed += 1
+        return bounds.right
 
     def _ensure_rgb(self, pil_image: Image.Image) -> Image.Image:
         if pil_image.mode == "RGB":
