@@ -27,11 +27,16 @@ class ForEachGroupNode(BaseIterativeNodeGroup):
         current_item (output, left): Current item being processed - connect to internal nodes
         index (output, left): Current iteration index - connect to internal nodes
         new_item_to_add (input, right): Item to collect from each iteration
+        skip_iteration (control input, right): Skip current item and continue to next iteration
+        break_loop (control input, right): Break out of loop immediately
         results (output, right): Collected results from all iterations
 
     The node supports both sequential and parallel execution modes via the
     'run_in_order' property, and can execute locally, in a private subprocess,
     or via cloud services depending on the 'execution_environment' setting.
+
+    Note: skip_iteration and break_loop are only available in sequential mode
+    (Run Group Items One at a Time). They are hidden in parallel mode.
     """
 
     def __init__(
