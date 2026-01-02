@@ -14,4 +14,5 @@ class CreateTextList(BaseCreateListNode):
             output_type="list[str]",
             default_value=None,
             items_tooltip="List of text items to add to",
+            ui_options={"hide_property": False},
         )
