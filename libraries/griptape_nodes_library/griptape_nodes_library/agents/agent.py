@@ -196,10 +196,8 @@ class Agent(ControlNode):
 
         # Optional additional context for the prompt.
         self.add_parameter(
-            Parameter(
-                "additional_context",
-                input_types=["str", "int", "float", "dict", "json"],
-                type="str",
+            ParameterString(
+                name="additional_context",
                 tooltip=(
                     "Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs."
                 ),
@@ -243,9 +241,8 @@ class Agent(ControlNode):
 
         # Parameter for the agent's final text output.
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
-                type="str",
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
