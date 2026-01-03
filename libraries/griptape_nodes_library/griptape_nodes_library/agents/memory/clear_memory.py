@@ -45,4 +45,3 @@ class ClearMemory(ControlNode):
         updated_agent_dict = agent.to_dict()
         self.parameter_output_values["agent"] = updated_agent_dict
         self.publish_update_to_parameter("agent", updated_agent_dict)
-
