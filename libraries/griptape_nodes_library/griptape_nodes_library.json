@@ -70,6 +70,14 @@
       }
     },
     {
+      "agents/memory": {
+        "color": "border-purple-500",
+        "title": "Memory",
+        "description": "Nodes related to Agent Memory",
+        "icon": "Brain"
+      }
+    },
+    {
       "agents/prompt_models": {
         "color": "border-indigo-500",
         "title": "Prompt Models",
@@ -505,6 +513,42 @@
         "description": "Creates an AI agent with conversation memory and the ability to use tools",
         "display_name": "Agent",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "DisplayAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/display_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Displays the memory of an agent",
+        "display_name": "Display Agent Memory"
+      }
+    },
+    {
+      "class_name": "ReplaceItemInMemory",
+      "file_path": "griptape_nodes_library/agents/memory/replace_item_in_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Replaces an item in the memory of an agent",
+        "display_name": "Replace Item In Memory"
+      }
+    },
+    {
+      "class_name": "SummarizeMemory",
+      "file_path": "griptape_nodes_library/agents/memory/summarize_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Summarizes an agent's conversation memory and replaces it with a single summary run",
+        "display_name": "Summarize Memory"
+      }
+    },
+    {
+      "class_name": "ClearMemory",
+      "file_path": "griptape_nodes_library/agents/memory/clear_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Clears an agent's conversation memory",
+        "display_name": "Clear Memory"
       }
     },
     {
