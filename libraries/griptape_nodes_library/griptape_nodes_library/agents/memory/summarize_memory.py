@@ -73,11 +73,10 @@ class SummarizeMemory(ControlNode):
 
         summary_text = agent.output.value if hasattr(agent.output, "value") else str(agent.output)
 
-        # Set the summary parameter value
+        # Success path - set summary and replace memory
         self.parameter_output_values["summary"] = summary_text
         self.publish_update_to_parameter("summary", summary_text)
 
-        # Replace the conversation memory with a single run containing the summary
         agent.conversation_memory.runs = [
             Run(
                 input=TextArtifact(value="conversation summary"),
@@ -85,7 +84,6 @@ class SummarizeMemory(ControlNode):
             )
         ]
 
-        # Output the updated agent
         updated_agent_dict = agent.to_dict()
         self.parameter_output_values["agent"] = updated_agent_dict
         self.publish_update_to_parameter("agent", updated_agent_dict)

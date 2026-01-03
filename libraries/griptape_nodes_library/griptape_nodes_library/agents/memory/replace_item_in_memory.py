@@ -264,6 +264,7 @@ class ReplaceItemInMemory(ControlNode):
         else:
             output_value = new_output_value
 
+        # Success path - replace the memory run
         agent.conversation_memory.runs[index] = Run(
             input=TextArtifact(value=input_value),
             output=TextArtifact(value=output_value),

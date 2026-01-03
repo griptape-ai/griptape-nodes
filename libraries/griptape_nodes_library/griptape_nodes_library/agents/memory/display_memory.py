@@ -94,6 +94,7 @@ class DisplayAgentMemory(ControlNode):
             self._set_output({"runs": []})
             return
 
+        # Success path - transform and output memory
         transformed_runs = self._transform_runs(memory)
         transformed_memory = {"runs": transformed_runs}
         self._set_output(transformed_memory)
