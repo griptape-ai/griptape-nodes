@@ -73,99 +73,75 @@ logger = logging.getLogger("griptape_nodes")
 
 
 class GriptapeNodes(metaclass=SingletonMeta):
+    # CRITICAL managers - initialized eagerly for workflow execution
     _event_manager: EventManager
-    _os_manager: OSManager
     _config_manager: ConfigManager
     _secrets_manager: SecretsManager
-    _object_manager: ObjectManager
+    _resource_manager: ResourceManager
+    _library_manager: LibraryManager
     _node_manager: NodeManager
     _flow_manager: FlowManager
     _context_manager: ContextManager
-    _library_manager: LibraryManager
-    _model_manager: ModelManager
     _workflow_manager: WorkflowManager
     _workflow_variables_manager: VariablesManager
-    _arbitrary_code_exec_manager: ArbitraryCodeExecManager
-    _operation_depth_manager: OperationDepthManager
-    _static_files_manager: StaticFilesManager
-    _agent_manager: AgentManager
-    _version_compatibility_manager: VersionCompatibilityManager
-    _session_manager: SessionManager
-    _engine_identity_manager: EngineIdentityManager
-    _mcp_manager: MCPManager
-    _resource_manager: ResourceManager
-    _sync_manager: SyncManager
-    _user_manager: UserManager
-    _project_manager: ProjectManager
+    _os_manager: OSManager
+    _model_manager: ModelManager
 
-    def __init__(self) -> None:  # noqa: PLR0915
-        from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
-        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
-            ArbitraryCodeExecManager,
-        )
+    # OPTIONAL managers - initialized lazily when accessed
+    _engine_identity_manager: EngineIdentityManager | None = None
+    _session_manager: SessionManager | None = None
+    _static_files_manager: StaticFilesManager | None = None
+    _agent_manager: AgentManager | None = None
+    _mcp_manager: MCPManager | None = None
+    _sync_manager: SyncManager | None = None
+    _user_manager: UserManager | None = None
+    _project_manager: ProjectManager | None = None
+    _arbitrary_code_exec_manager: ArbitraryCodeExecManager | None = None
+    _object_manager: ObjectManager | None = None
+    _version_compatibility_manager: VersionCompatibilityManager | None = None
+    _operation_depth_manager: OperationDepthManager | None = None
+
+    def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-        from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-        from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
         from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-        from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-        from griptape_nodes.retained_mode.managers.operation_manager import (
-            OperationDepthManager,
-        )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
         from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
-        from griptape_nodes.retained_mode.managers.static_files_manager import (
-            StaticFilesManager,
-        )
-        from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
-        from griptape_nodes.retained_mode.managers.user_manager import UserManager
         from griptape_nodes.retained_mode.managers.variable_manager import (
             VariablesManager,
-        )
-        from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
-            VersionCompatibilityManager,
         )
         from griptape_nodes.retained_mode.managers.workflow_manager import (
             WorkflowManager,
         )
 
-        # Initialize only if our managers haven't been created yet
+        # Initialize only CRITICAL managers for workflow execution
         if not hasattr(self, "_event_manager"):
+            # Core event system
             self._event_manager = EventManager()
+
+            # Configuration and resources
             self._resource_manager = ResourceManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
-            self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
-            self._object_manager = ObjectManager(self._event_manager)
+
+            # File system and models
+            self._os_manager = OSManager(self._event_manager)
+            self._model_manager = ModelManager(self._event_manager)
+
+            # Core workflow execution managers
+            self._library_manager = LibraryManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
             self._context_manager = ContextManager(self._event_manager)
-            self._library_manager = LibraryManager(self._event_manager)
-            self._model_manager = ModelManager(self._event_manager)
             self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
-            self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
-            self._operation_depth_manager = OperationDepthManager(self._config_manager)
-            self._static_files_manager = StaticFilesManager(
-                self._config_manager, self._secrets_manager, self._event_manager
-            )
-            self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
-            self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
-            self._engine_identity_manager = EngineIdentityManager(self._event_manager)
-            self._session_manager = SessionManager(self._engine_identity_manager, self._event_manager)
-            self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
-            self._sync_manager = SyncManager(self._event_manager, self._config_manager)
-            self._user_manager = UserManager(self._secrets_manager)
-            self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
 
-            # Assign handlers now that these are created.
+            # Assign handlers for core requests
             self._event_manager.assign_manager_to_request_type(
                 GetEngineVersionRequest, self.handle_engine_version_request
             )
@@ -246,29 +222,34 @@ class GriptapeNodes(metaclass=SingletonMeta):
     def get_engine_id(cls) -> str | None:
         return GriptapeNodes.EngineIdentityManager().active_engine_id
 
+    # CRITICAL manager accessors - always available
     @classmethod
     def EventManager(cls) -> EventManager:
         return GriptapeNodes.get_instance()._event_manager
+
+    @classmethod
+    def ConfigManager(cls) -> ConfigManager:
+        return GriptapeNodes.get_instance()._config_manager
+
+    @classmethod
+    def SecretsManager(cls) -> SecretsManager:
+        return GriptapeNodes.get_instance()._secrets_manager
+
+    @classmethod
+    def ResourceManager(cls) -> ResourceManager:
+        return GriptapeNodes.get_instance()._resource_manager
 
     @classmethod
     def LibraryManager(cls) -> LibraryManager:
         return GriptapeNodes.get_instance()._library_manager
 
     @classmethod
-    def ModelManager(cls) -> ModelManager:
-        return GriptapeNodes.get_instance()._model_manager
-
-    @classmethod
-    def ObjectManager(cls) -> ObjectManager:
-        return GriptapeNodes.get_instance()._object_manager
+    def NodeManager(cls) -> NodeManager:
+        return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
     def FlowManager(cls) -> FlowManager:
         return GriptapeNodes.get_instance()._flow_manager
-
-    @classmethod
-    def NodeManager(cls) -> NodeManager:
-        return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
     def ContextManager(cls) -> ContextManager:
@@ -279,68 +260,137 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._workflow_manager
 
     @classmethod
-    def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
-        return GriptapeNodes.get_instance()._arbitrary_code_exec_manager
-
-    @classmethod
-    def ConfigManager(cls) -> ConfigManager:
-        return GriptapeNodes.get_instance()._config_manager
+    def VariablesManager(cls) -> VariablesManager:
+        return GriptapeNodes.get_instance()._workflow_variables_manager
 
     @classmethod
     def OSManager(cls) -> OSManager:
         return GriptapeNodes.get_instance()._os_manager
 
     @classmethod
-    def SecretsManager(cls) -> SecretsManager:
-        return GriptapeNodes.get_instance()._secrets_manager
+    def ModelManager(cls) -> ModelManager:
+        return GriptapeNodes.get_instance()._model_manager
+
+    # OPTIONAL manager accessors - lazy initialized
+    @classmethod
+    def ObjectManager(cls) -> ObjectManager:
+        instance = GriptapeNodes.get_instance()
+        if instance._object_manager is None:
+            from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+
+            instance._object_manager = ObjectManager(instance._event_manager)
+        return instance._object_manager
+
+    @classmethod
+    def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
+        instance = GriptapeNodes.get_instance()
+        if instance._arbitrary_code_exec_manager is None:
+            from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+                ArbitraryCodeExecManager,
+            )
+
+            instance._arbitrary_code_exec_manager = ArbitraryCodeExecManager(instance._event_manager)
+        return instance._arbitrary_code_exec_manager
 
     @classmethod
     def OperationDepthManager(cls) -> OperationDepthManager:
-        return GriptapeNodes.get_instance()._operation_depth_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._operation_depth_manager is None:
+            from griptape_nodes.retained_mode.managers.operation_manager import (
+                OperationDepthManager,
+            )
+
+            instance._operation_depth_manager = OperationDepthManager(instance._config_manager)
+        return instance._operation_depth_manager
 
     @classmethod
     def StaticFilesManager(cls) -> StaticFilesManager:
-        return GriptapeNodes.get_instance()._static_files_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._static_files_manager is None:
+            from griptape_nodes.retained_mode.managers.static_files_manager import (
+                StaticFilesManager,
+            )
+
+            instance._static_files_manager = StaticFilesManager(
+                instance._config_manager, instance._secrets_manager, instance._event_manager
+            )
+        return instance._static_files_manager
 
     @classmethod
     def AgentManager(cls) -> AgentManager:
-        return GriptapeNodes.get_instance()._agent_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._agent_manager is None:
+            from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
+
+            instance._agent_manager = AgentManager(cls.StaticFilesManager(), instance._event_manager)
+        return instance._agent_manager
 
     @classmethod
     def VersionCompatibilityManager(cls) -> VersionCompatibilityManager:
-        return GriptapeNodes.get_instance()._version_compatibility_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._version_compatibility_manager is None:
+            from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
+                VersionCompatibilityManager,
+            )
+
+            instance._version_compatibility_manager = VersionCompatibilityManager(instance._event_manager)
+        return instance._version_compatibility_manager
 
     @classmethod
     def SessionManager(cls) -> SessionManager:
-        return GriptapeNodes.get_instance()._session_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._session_manager is None:
+            from griptape_nodes.retained_mode.managers.session_manager import SessionManager
+
+            instance._session_manager = SessionManager(cls.EngineIdentityManager(), instance._event_manager)
+        return instance._session_manager
 
     @classmethod
     def MCPManager(cls) -> MCPManager:
-        return GriptapeNodes.get_instance()._mcp_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._mcp_manager is None:
+            from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
+
+            instance._mcp_manager = MCPManager(instance._event_manager, instance._config_manager)
+        return instance._mcp_manager
 
     @classmethod
     def EngineIdentityManager(cls) -> EngineIdentityManager:
-        return GriptapeNodes.get_instance()._engine_identity_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._engine_identity_manager is None:
+            from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
 
-    @classmethod
-    def ResourceManager(cls) -> ResourceManager:
-        return GriptapeNodes.get_instance()._resource_manager
+            instance._engine_identity_manager = EngineIdentityManager(instance._event_manager)
+        return instance._engine_identity_manager
 
     @classmethod
     def SyncManager(cls) -> SyncManager:
-        return GriptapeNodes.get_instance()._sync_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._sync_manager is None:
+            from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
 
-    @classmethod
-    def VariablesManager(cls) -> VariablesManager:
-        return GriptapeNodes.get_instance()._workflow_variables_manager
+            instance._sync_manager = SyncManager(instance._event_manager, instance._config_manager)
+        return instance._sync_manager
 
     @classmethod
     def UserManager(cls) -> UserManager:
-        return GriptapeNodes.get_instance()._user_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._user_manager is None:
+            from griptape_nodes.retained_mode.managers.user_manager import UserManager
+
+            instance._user_manager = UserManager(instance._secrets_manager)
+        return instance._user_manager
 
     @classmethod
     def ProjectManager(cls) -> ProjectManager:
-        return GriptapeNodes.get_instance()._project_manager
+        instance = GriptapeNodes.get_instance()
+        if instance._project_manager is None:
+            from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
+
+            instance._project_manager = ProjectManager(
+                instance._event_manager, instance._config_manager, instance._secrets_manager
+            )
+        return instance._project_manager
 
     @classmethod
     def clear_data(cls) -> None:

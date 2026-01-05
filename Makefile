@@ -43,7 +43,15 @@ run: ## Run the project.
 .PHONY: run/watch
 run/watch: ## Run the project in watch mode.
 	uv run src/griptape_nodes/app/watch.py
-	
+
+.PHONY: importtime
+importtime: ## Profile import times for the package.
+	uv run python -X importtime -c "import griptape_nodes.cli.main" 2>&1 | tee importtime.log
+
+.PHONY: profile
+profile: ## Profile startup time with detailed tracking (use: make profile or make profile ARGS="--version")
+	GRIPTAPE_NODES_PROFILE=1 uv run griptape-nodes --no-update $(ARGS)
+
 .PHONY: install
 install: ## Install all dependencies.
 	@make install/all
