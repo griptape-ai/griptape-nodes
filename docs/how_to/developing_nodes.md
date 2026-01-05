@@ -2,7 +2,8 @@
 
 This page is for developers who are **new to the Griptape Nodes ecosystem** and want to build custom nodes with confidence.
 
-It’s a beginner-friendly “front door” to the deeper, exhaustive technical material in the Node Development Guide (`griptape-nodes-node-development-guide/node-development-guide-v3.md`).
+It’s a beginner-friendly “front door” to the deeper, exhaustive technical material in the
+[Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md).
 
 ## What you’ll build (mentally) before you write code
 
@@ -99,7 +100,8 @@ These helpers are useful because they:
 - often support `accept_any=True` to convert values safely
 - expose several UI options as Python properties for runtime updates
 
-If you need a quick reference, see the **Parameter helper constructs** section in `node-development-guide-v3.md`.
+If you need a quick reference, see the **Parameter helper constructs** section in the
+[Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md).
 
 ### Containers: `ParameterList` and `ParameterDictionary`
 
@@ -146,5 +148,5 @@ When a node needs an API key or other secret:
 
 ## Next steps
 
-- Read the deeper technical guide: `griptape-nodes-node-development-guide/node-development-guide-v3.md`
+- Read the deeper technical guide: [Node Development Guide](https://github.com/griptape-ai/griptape-nodes-node-development-guide/blob/main/node-development-guide-v3.md)
 - Browse a few nodes in the standard library and copy patterns that match your use case
