@@ -475,7 +475,7 @@ class Agent(ControlNode):
             if original_driver is not None:
                 new_memory.conversation_memory_driver = original_driver
             agent.conversation_memory = new_memory
-            return True
+            return True  # noqa: TRY300
         except (ValueError, TypeError, AttributeError):
             # Fall back to manual conversion if from_dict() fails with expected errors
             return False
@@ -498,9 +498,8 @@ class Agent(ControlNode):
             return
 
         # Try to use ConversationMemory.from_dict() only for full format
-        if not self._is_simplified_format(parsed_data):
-            if self._apply_memory_via_from_dict(agent, parsed_data):
-                return
+        if not self._is_simplified_format(parsed_data) and self._apply_memory_via_from_dict(agent, parsed_data):
+            return
 
         # Success path - manual conversion
         if agent.conversation_memory is None:
