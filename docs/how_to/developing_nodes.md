@@ -23,29 +23,15 @@ At a high level:
 
 If you’re unsure, start with a `DataNode` and only graduate to `ControlNode`/loop nodes when you need it.
 
-## How we recommend documenting node development in `griptape-nodes/docs`
+## Quick start (recommended path)
 
-To turn a deep guide into newcomer-friendly docs, the key is **progressive disclosure**:
+If you’ve never built a Griptape Node before, this is the fastest path to a working node:
 
-- Start with a short “happy path” for first success.
-- Add reference material only after the user has a working mental model.
-- Keep advanced patterns in dedicated sections, and always link back to the deeper guide.
-
-### Suggested docs section structure
-
-If we expand this beyond a single page, the docs section under `docs/how_to/` could be organized like this:
-
-- `how_to/developing_nodes.md` (this page): newcomer onboarding + common patterns
-- `how_to/node_parameters.md`: parameters, types, traits, containers (reference + examples)
-- `how_to/node_lifecycle_and_validation.md`: lifecycle callbacks, validation, connection rules
-- `how_to/control_flow_and_async.md`: control flow, iterative nodes, async nodes
-- `how_to/publishing_node_libraries.md`: packaging, dependencies, secrets, docs expectations
-
-### How to add a new docs page
-
-1. Add a markdown file under `docs/how_to/` (or a relevant subfolder).
-1. Add the page to `mkdocs.yml` under the `nav:` section (usually under **How-To**).
-1. Keep headings consistent and prefer short sections with code examples.
+- Start from the template: [Making Custom Nodes](making_custom_nodes.md)
+- Build a single `DataNode` first (no control flow).
+- Prefer the built-in `Parameter*` helper constructs for common types.
+- Validate inputs with `validate_before_node_run()`.
+- Add secrets through `GriptapeNodes.SecretsManager()` when needed.
 
 ## Your first node (minimal example)
 
@@ -82,6 +68,13 @@ class UppercaseText(DataNode):
         text = self.get_parameter_value("text") or ""
         self.parameter_output_values["uppercased"] = text.upper()
 ```
+
+### Test as you go
+
+- After adding/editing a node, run it in a simple flow and verify:
+    - the parameter UI looks correct (inputs, properties, outputs)
+    - output values update in the UI
+    - validation errors are actionable
 
 ## Parameters: the practical model
 
@@ -132,6 +125,12 @@ For newcomers, a good default is:
 - Use `validate_before_node_run()` for parameter validation
 - Fail early with actionable messages (tell the user what to connect or set)
 - If the node can fail but you want the workflow to continue, use `SuccessFailureNode` and route failure explicitly
+
+## Common gotchas
+
+- **`get_parameter_list_value()` drops falsey items**: if your list can contain `0` or `False`, use `get_parameter_value()` and flatten manually.
+- **`ui_options` conflicts**: if you pass both `hide=...` and `ui_options={"hide": ...}`, the `ui_options` value wins.
+- **Secrets**: do not hardcode API keys. Use `GriptapeNodes.SecretsManager().get_secret(...)`.
 
 ## Secrets and configuration
 
