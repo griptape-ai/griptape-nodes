@@ -149,9 +149,11 @@ temperature = Parameter(
     type="float",
     default_value=0.7,
     tooltip="Sampling temperature (higher = more random)",
-    allowed_modes={ParameterMode.PROPERTY},
+    # This can be a pure PROPERTY, or INPUT+PROPERTY if you want to allow wiring.
+    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+    # Common pattern in the codebase: attach traits inline via the `traits` argument.
+    traits={Slider(min_val=0.0, max_val=2.0)},
 )
-temperature.add_trait(Slider(min_val=0.0, max_val=2.0))
 self.add_parameter(temperature)
 ```
 
