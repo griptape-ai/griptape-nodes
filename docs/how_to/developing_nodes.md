@@ -39,33 +39,51 @@ If you’ve never built a Griptape Node before, this is the fastest path to a wo
 This is the smallest useful node you can build: read a string, transform it, emit a string.
 
 ```python
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 
 
 class UppercaseText(DataNode):
     def __init__(self, **kwargs) -> None:
+        # Always call the parent constructor so the engine can initialize
+        # the node’s internal state and register the node context.
         super().__init__(**kwargs)
 
+        # add_parameter(...) registers a Parameter with the node.
+        # Parameters define:
+        # - what users can configure (PROPERTY mode),
+        # - what can be connected from other nodes (INPUT mode),
+        # - what can be connected to other nodes (OUTPUT mode).
         self.add_parameter(
             Parameter(
                 name="text",
+                # A parameter's "type" is its primary data type in the engine.
+                # It influences UI defaults and connection type checking.
                 type="str",
+                # input_types controls what types can connect INTO this parameter.
+                # You can allow multiple incoming types if you need flexible wiring.
                 input_types=["str"],
+                # default_value is used when nothing is connected and the user
+                # hasn't set a value in the UI.
+                default_value="",
                 tooltip="Input text",
             )
         )
 
+        # This is an OUTPUT-only parameter. We set settable=False so users don't edit it.
         self.add_parameter(
             Parameter(
                 name="uppercased",
                 type="str",
-                output_type="str",
+                allowed_modes={ParameterMode.OUTPUT},
+                settable=False,
                 tooltip="Uppercased output",
             )
         )
 
     def process(self) -> None:
+        # process() is called when the node executes in a flow.
+        # Read inputs via get_parameter_value(...) and write outputs via parameter_output_values.
         text = self.get_parameter_value("text") or ""
         self.parameter_output_values["uppercased"] = text.upper()
 ```
@@ -120,6 +138,23 @@ Common traits you’ll use:
 - `Slider(min_val, max_val)`: slider UI + range validation
 - `FileSystemPicker(...)`: file/directory picking UI (with filters and workspace constraints)
 
+Example: a numeric slider parameter:
+
+```python
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.traits.slider import Slider
+
+temperature = Parameter(
+    name="temperature",
+    type="float",
+    default_value=0.7,
+    tooltip="Sampling temperature (higher = more random)",
+    allowed_modes={ParameterMode.PROPERTY},
+)
+temperature.add_trait(Slider(min_val=0.0, max_val=2.0))
+self.add_parameter(temperature)
+```
+
 ## Validation, error handling, and user experience
 
 For newcomers, a good default is:
@@ -127,6 +162,10 @@ For newcomers, a good default is:
 - Use `validate_before_node_run()` for parameter validation
 - Fail early with actionable messages (tell the user what to connect or set)
 - If the node can fail but you want the workflow to continue, use `SuccessFailureNode` and route failure explicitly
+
+Examples you can reference in the docs:
+
+- [Start Flow](../nodes/execution/start_flow.md) and [End Flow](../nodes/execution/end_flow.md) for control-flow concepts and status reporting.
 
 ## Common gotchas
 
