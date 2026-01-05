@@ -11,8 +11,8 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.traits.options import Options
 
 
-class ReplaceItemInMemory(ControlNode):
-    """ReplaceItemInMemory Node that replaces an item in the memory of an agent."""
+class ReplaceItemInAgentMemory(ControlNode):
+    """ReplaceItemInAgentMemory Node that replaces an item in the memory of an agent."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)

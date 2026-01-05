@@ -517,7 +517,7 @@
     },
     {
       "class_name": "DisplayAgentMemory",
-      "file_path": "griptape_nodes_library/agents/memory/display_memory.py",
+      "file_path": "griptape_nodes_library/agents/memory/display_agent_memory.py",
       "metadata": {
         "category": "agents/memory",
         "description": "Displays the memory of an agent",
@@ -525,30 +525,30 @@
       }
     },
     {
-      "class_name": "ReplaceItemInMemory",
-      "file_path": "griptape_nodes_library/agents/memory/replace_item_in_memory.py",
+      "class_name": "ReplaceItemInAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/replace_item_in_agent_memory.py",
       "metadata": {
         "category": "agents/memory",
         "description": "Replaces an item in the memory of an agent",
-        "display_name": "Replace Item In Memory"
+        "display_name": "Replace Item In Agent Memory"
       }
     },
     {
-      "class_name": "SummarizeMemory",
-      "file_path": "griptape_nodes_library/agents/memory/summarize_memory.py",
+      "class_name": "SummarizeAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/summarize_agent_memory.py",
       "metadata": {
         "category": "agents/memory",
         "description": "Summarizes an agent's conversation memory and replaces it with a single summary run",
-        "display_name": "Summarize Memory"
+        "display_name": "Summarize Agent Memory"
       }
     },
     {
-      "class_name": "ClearMemory",
-      "file_path": "griptape_nodes_library/agents/memory/clear_memory.py",
+      "class_name": "ClearAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/clear_agent_memory.py",
       "metadata": {
         "category": "agents/memory",
         "description": "Clears an agent's conversation memory",
-        "display_name": "Clear Memory"
+        "display_name": "Clear Agent Memory"
       }
     },
     {

@@ -9,7 +9,7 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 
-class SummarizeMemory(ControlNode):
+class SummarizeAgentMemory(ControlNode):
     """SummarizeMemory Node that summarizes an agent's conversation memory and replaces it with a single summary run."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:

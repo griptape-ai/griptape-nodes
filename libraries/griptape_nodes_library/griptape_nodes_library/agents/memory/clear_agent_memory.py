@@ -6,8 +6,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
 
 
-class ClearMemory(ControlNode):
-    """ClearMemory Node that clears an agent's conversation memory."""
+class ClearAgentMemory(ControlNode):
+    """ClearAgentMemory Node that clears an agent's conversation memory."""
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
