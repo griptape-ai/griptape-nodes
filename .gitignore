@@ -189,6 +189,7 @@ request_payload_schemas.json
 
 # Profile Output
 profiles/
+importtime.log
 
 # JetBrains
 .idea/
