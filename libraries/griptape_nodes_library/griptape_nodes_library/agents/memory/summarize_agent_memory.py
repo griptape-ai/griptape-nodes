@@ -24,6 +24,15 @@ class SummarizeAgentMemory(ControlNode):
 
         self.add_parameter(self.agent)
 
+        self.prompt = ParameterString(
+            name="prompt",
+            tooltip="The prompt to use to summarize the agent's conversation memory",
+            multiline=True,
+            hide=True,
+            default_value="Summarize our conversation. Include specific and useful details about the conversation, but only output only the summary, no other text. Do not include this exchange as part of that summary.",
+        )
+        self.add_parameter(self.prompt)
+
         self.summary = ParameterString(
             name="summary",
             tooltip="The summary of the agent's conversation memory",
@@ -48,6 +57,7 @@ class SummarizeAgentMemory(ControlNode):
 
     def process(self) -> None:
         agent = self._get_agent()
+        prompt = self.get_parameter_value("prompt")
         if agent is None or agent.conversation_memory is None:
             return
 
@@ -60,7 +70,6 @@ class SummarizeAgentMemory(ControlNode):
             return
 
         # Run the agent with the summarize prompt
-        prompt = "summarize our conversation. Include specific and useful details about the conversation, but only output only the summary, no other text. Do not include this exchange as part of that summary."
         agent.run(prompt)
 
         # Get the summary from the agent's output
