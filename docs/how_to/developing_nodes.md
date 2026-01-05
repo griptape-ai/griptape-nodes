@@ -11,8 +11,8 @@ At a high level:
 - A **Node** is a Python class that defines **parameters** (inputs/outputs/properties) and a `process()` method.
 - A **Workflow (Flow)** is a graph of nodes connected by parameters.
 - Parameters are both:
-  - **UI elements** (what a user sees/edits/connects), and
-  - **type-checked connection points** (what can connect to what).
+    - **UI elements** (what a user sees/edits/connects), and
+    - **type-checked connection points** (what can connect to what).
 
 ### Choose the right base node type
 
@@ -44,8 +44,8 @@ If we expand this beyond a single page, the docs section under `docs/how_to/` co
 ### How to add a new docs page
 
 1. Add a markdown file under `docs/how_to/` (or a relevant subfolder).
-2. Add the page to `mkdocs.yml` under the `nav:` section (usually under **How-To**).
-3. Keep headings consistent and prefer short sections with code examples.
+1. Add the page to `mkdocs.yml` under the `nav:` section (usually under **How-To**).
+1. Keep headings consistent and prefer short sections with code examples.
 
 ## Your first node (minimal example)
 
@@ -111,8 +111,8 @@ If you need a quick reference, see the **Parameter helper constructs** section i
 ### Containers: `ParameterList` and `ParameterDictionary`
 
 - **`ParameterList`**: use when you want “many of the same thing” in a node UI.
-  - Retrieval: `get_parameter_list_value()` flattens nested iterables.
-  - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
+    - Retrieval: `get_parameter_list_value()` flattens nested iterables.
+    - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
 - **`ParameterDictionary`**: use when you want ordered key/value entries in the UI.
 
 ### Traits: UI behaviors and validation
@@ -149,5 +149,3 @@ When a node needs an API key or other secret:
 
 - Read the deeper technical guide: `griptape-nodes-node-development-guide/node-development-guide-v3.md`
 - Browse a few nodes in the standard library and copy patterns that match your use case
-
-
