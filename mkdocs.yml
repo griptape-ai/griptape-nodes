@@ -84,6 +84,7 @@ nav:
       - Scripting: retained_mode.md
   - How-To:
       - Making Custom Nodes: how_to/making_custom_nodes.md
+      - Developing Nodes (Developer Onboarding): how_to/developing_nodes.md
       - Making Custom Scripts: how_to/making_custom_scripts.md
       - External Resources:
           - Keys:
