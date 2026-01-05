@@ -65,7 +65,7 @@ class UppercaseText(DataNode):
                 input_types=["str"],
                 # default_value is used when nothing is connected and the user
                 # hasn't set a value in the UI.
-                default_value="",
+                default_value="Hello Griptape Nodes",
                 tooltip="Input text",
             )
         )
