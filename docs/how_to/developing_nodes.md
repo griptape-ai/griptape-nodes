@@ -12,8 +12,8 @@ At a high level:
 - A **Node** is a Python class that defines **parameters** (inputs/outputs/properties) and a `process()` method.
 - A **Workflow (Flow)** is a graph of nodes connected by parameters.
 - Parameters are both:
-    - **UI elements** (what a user sees/edits/connects), and
-    - **type-checked connection points** (what can connect to what).
+  - **UI elements** (what a user sees/edits/connects), and
+  - **type-checked connection points** (what can connect to what).
 
 ### Choose the right base node type
 
@@ -124,8 +124,8 @@ If you need a quick reference, see the **Parameter helper constructs** section i
 ### Containers: `ParameterList` and `ParameterDictionary`
 
 - **`ParameterList`**: use when you want “many of the same thing” in a node UI.
-    - Retrieval: `get_parameter_list_value()` flattens nested iterables.
-    - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
+  - Retrieval: `get_parameter_list_value()` flattens nested iterables.
+  - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
 - **`ParameterDictionary`**: use when you want ordered key/value entries in the UI.
 
 ### Traits: UI behaviors and validation
