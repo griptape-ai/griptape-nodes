@@ -91,9 +91,9 @@ class UppercaseText(DataNode):
 ### Test as you go
 
 - After adding/editing a node, run it in a simple flow and verify:
-    - the parameter UI looks correct (inputs, properties, outputs)
-    - output values update in the UI
-    - validation errors are actionable
+  - the parameter UI looks correct (inputs, properties, outputs)
+  - output values update in the UI
+  - validation errors are actionable
 
 ## Parameters: the practical model
 
