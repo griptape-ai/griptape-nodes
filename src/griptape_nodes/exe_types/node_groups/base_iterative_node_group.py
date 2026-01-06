@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from enum import StrEnum
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
@@ -22,6 +23,14 @@ EXECUTION_MODE_VALUE_LOOKUP = {
     EXECUTION_MODE_ONE_AT_A_TIME: True,
     EXECUTION_MODE_ALL_AT_ONCE: False,
 }
+
+
+class IterationControlParam(StrEnum):
+    """Parameter names for iteration control on iterative node groups."""
+
+    LOOP_COMPLETE = "loop_complete"
+    SKIP_ITERATION = "skip_iteration"
+    BREAK_LOOP = "break_loop"
 
 
 class BaseIterativeNodeGroup(SubflowNodeGroup):
@@ -104,7 +113,7 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         # Control input for loop completion (right side - primary loop completion path)
         self.loop_complete = ControlParameterInput(
             tooltip="Signal that this iteration is complete and continue to next iteration",
-            name="loop_complete",
+            name=IterationControlParam.LOOP_COMPLETE.value,
         )
         self.loop_complete.ui_options = {"display_name": "Loop Complete"}
         self.add_parameter(self.loop_complete)
@@ -121,14 +130,14 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         # Skip and Break control inputs (right side - for loop control)
         self.skip_iteration = ControlParameterInput(
             tooltip="Skip current item and continue to next iteration",
-            name="skip_iteration",
+            name=IterationControlParam.SKIP_ITERATION.value,
         )
         self.skip_iteration.ui_options = {"display_name": "Skip to Next Iteration"}
         self.add_parameter(self.skip_iteration)
 
         self.break_loop = ControlParameterInput(
             tooltip="Break out of loop immediately",
-            name="break_loop",
+            name=IterationControlParam.BREAK_LOOP.value,
         )
         self.break_loop.ui_options = {"display_name": "Break Out of Loop"}
         self.add_parameter(self.break_loop)
@@ -145,7 +154,13 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
         if "right_parameters" not in self.metadata:
             self.metadata["right_parameters"] = []
         self.metadata["right_parameters"].extend(
-            ["loop_complete", "new_item_to_add", "skip_iteration", "break_loop", "results"]
+            [
+                IterationControlParam.LOOP_COMPLETE.value,
+                "new_item_to_add",
+                IterationControlParam.SKIP_ITERATION.value,
+                IterationControlParam.BREAK_LOOP.value,
+                "results",
+            ]
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
@@ -160,12 +175,12 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
             # Skip and Break are only supported in sequential mode (run_in_order=True)
             if run_in_order:
                 # Show controls when running sequentially
-                self.skip_iteration.ui_options["hide"] = False
-                self.break_loop.ui_options["hide"] = False
+                self.show_parameter_by_name(self.skip_iteration.name)
+                self.show_parameter_by_name(self.break_loop.name)
             else:
                 # Hide controls when running in parallel (not supported)
-                self.skip_iteration.ui_options["hide"] = True
-                self.break_loop.ui_options["hide"] = True
+                self.hide_parameter_by_name(self.skip_iteration.name)
+                self.hide_parameter_by_name(self.break_loop.name)
 
     @abstractmethod
     def _get_iteration_items(self) -> list[Any]:
