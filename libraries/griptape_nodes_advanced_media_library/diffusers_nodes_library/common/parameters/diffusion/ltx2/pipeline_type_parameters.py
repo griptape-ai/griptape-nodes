@@ -17,8 +17,8 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 LTX2PipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
-    "LTXPipeline": LTX2PipelineParameters,
-    "LTXImageToVideoPipeline": LTX2ImageToVideoPipelineParameters,
+    "LTX2Pipeline": LTX2PipelineParameters,
+    "LTX2ImageToVideoPipeline": LTX2ImageToVideoPipelineParameters,
 }
 
 

@@ -41,7 +41,7 @@ class LTX2ImageToVideoPipelineParameters(DiffusionPipelineTypePipelineParameters
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.LTXImageToVideoPipeline
+        return diffusers.LTX2ImageToVideoPipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -51,11 +51,11 @@ class LTX2ImageToVideoPipelineParameters(DiffusionPipelineTypePipelineParameters
 
         return errors or None
 
-    def build_pipeline(self) -> diffusers.LTXImageToVideoPipeline:
+    def build_pipeline(self) -> diffusers.LTX2ImageToVideoPipeline:
         repo_id, variant, revision = self._model_repo_parameter.get_repo_variant_revision()
-        return diffusers.LTXImageToVideoPipeline.from_pretrained(
+        return diffusers.LTX2ImageToVideoPipeline.from_pretrained(
             pretrained_model_name_or_path=repo_id,
-            subfolder=variant,
+            transformer_id=variant,
             revision=revision,
             torch_dtype=torch.bfloat16,
             local_files_only=True,

@@ -62,8 +62,15 @@ def _list_variants_in_cache(repo_id: str, variants: list[str]) -> list[tuple[str
     results = []
 
     for variant in variants:
-        variant_path = snapshot_path / variant
-        if variant_path.exists() and variant_path.is_dir():
+        # Check for variant as a directory (subfolder model structure)
+        variant_dir_path = snapshot_path / variant
+        if variant_dir_path.exists() and variant_dir_path.is_dir():
+            results.append((repo_id, variant, revision))
+            continue
+
+        # Check for variant as a .safetensors file (single-file model structure)
+        variant_file_path = snapshot_path / f"{variant}.safetensors"
+        if variant_file_path.exists() and variant_file_path.is_file():
             results.append((repo_id, variant, revision))
 
     return results

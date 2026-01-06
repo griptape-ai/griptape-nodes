@@ -150,7 +150,7 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def get_num_frames(self) -> int:
         return int(self._node.get_parameter_value("num_frames"))
 
-    def latents_to_video_mp4(self, pipe: diffusers.LTXPipeline, latents: Any) -> Path:
+    def latents_to_video_mp4(self, pipe: diffusers.LTX2Pipeline, latents: Any) -> Path:
         """Convert latents to video frames and export as MP4 file."""
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
             temp_file = Path(temp_file_obj.name)
@@ -184,7 +184,7 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         else:
             return temp_file
 
-    def publish_output_video_preview_latents(self, pipe: diffusers.LTXPipeline, latents: Any) -> None:
+    def publish_output_video_preview_latents(self, pipe: diffusers.LTX2Pipeline, latents: Any) -> None:
         """Publish a preview video from latents during generation."""
         preview_video_path = None
         try:

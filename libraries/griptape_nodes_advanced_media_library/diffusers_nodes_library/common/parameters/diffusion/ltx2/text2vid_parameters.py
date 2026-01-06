@@ -41,7 +41,7 @@ class LTX2PipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.LTXPipeline
+        return diffusers.LTX2Pipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -51,12 +51,12 @@ class LTX2PipelineParameters(DiffusionPipelineTypePipelineParameters):
 
         return errors or None
 
-    def build_pipeline(self) -> diffusers.LTXPipeline:
+    def build_pipeline(self) -> diffusers.LTX2Pipeline:
         repo_id, variant, revision = self._model_repo_parameter.get_repo_variant_revision()
 
-        return diffusers.LTXPipeline.from_pretrained(
+        return diffusers.LTX2Pipeline.from_pretrained(
             pretrained_model_name_or_path=repo_id,
-            subfolder=variant,
+            transformer_id=variant,
             revision=revision,
             torch_dtype=torch.bfloat16,
             local_files_only=True,
