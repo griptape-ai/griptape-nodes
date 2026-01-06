@@ -7,7 +7,7 @@ from diffusers_nodes_library.common.parameters.diffusion.ltx2.img2vid_parameters
     LTX2ImageToVideoPipelineParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.ltx2.text2vid_parameters import (
-    LTX2TextToVideoPipelineParameters,
+    LTX2PipelineParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
@@ -17,7 +17,7 @@ logger = logging.getLogger("diffusers_nodes_library")
 
 
 LTX2PipelineTypeDict: dict[str, type[DiffusionPipelineTypePipelineParameters]] = {
-    "LTXTextToVideoPipeline": LTX2TextToVideoPipelineParameters,
+    "LTXPipeline": LTX2PipelineParameters,
     "LTXImageToVideoPipeline": LTX2ImageToVideoPipelineParameters,
 }
 

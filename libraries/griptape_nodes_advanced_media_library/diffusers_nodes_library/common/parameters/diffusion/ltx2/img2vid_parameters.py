@@ -15,11 +15,24 @@ QUANTIZED_LTX_2_I2V_REPO_IDS = ["Lightricks/LTX-2:ltx-2-19b-dev-fp8", "Lightrick
 
 LTX_2_I2V_REPO_IDS = [*QUANTIZED_LTX_2_I2V_REPO_IDS, "Lightricks/LTX-2:ltx-2-19b-dev"]
 
+# TODO: Remove this class once models are downloaded - temporary bypass for testing
+SKIP_DOWNLOAD_CHECK = True
+
+
+class LTX2I2VRepoParameter(HuggingFaceRepoParameter):
+    """Temporary subclass that bypasses cache check for testing."""
+
+    def fetch_repo_revisions(self) -> list[tuple[str, str]]:
+        if SKIP_DOWNLOAD_CHECK:
+            # Return all repo IDs with empty revision for testing
+            return [(repo_id, "") for repo_id in self._repo_ids]
+        return super().fetch_repo_revisions()
+
 
 class LTX2ImageToVideoPipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
-        self._model_repo_parameter = HuggingFaceRepoParameter(
+        self._model_repo_parameter = LTX2I2VRepoParameter(
             node,
             repo_ids=LTX_2_I2V_REPO_IDS,
             parameter_name="model",

@@ -18,7 +18,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class LTX2TextToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
+class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 

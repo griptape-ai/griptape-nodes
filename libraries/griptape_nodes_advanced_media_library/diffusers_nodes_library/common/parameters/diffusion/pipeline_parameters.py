@@ -47,7 +47,7 @@ from diffusers_nodes_library.common.parameters.diffusion.ltx2.img2vid_runtime_pa
     LTX2ImageToVideoPipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.ltx2.text2vid_runtime_parameters import (
-    LTX2TextToVideoPipelineRuntimeParameters,
+    LTX2PipelineRuntimeParameters,
 )
 from diffusers_nodes_library.common.parameters.diffusion.qwen.controlnet_runtime_parameters import (
     QwenImageControlNetPipelineRuntimeParameters,
@@ -141,8 +141,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
             case "Flux2Pipeline":
                 self._runtime_parameters = Flux2PipelineRuntimeParameters(self._node)
-            case "LTXTextToVideoPipeline":
-                self._runtime_parameters = LTX2TextToVideoPipelineRuntimeParameters(self._node)
+            case "LTXPipeline":
+                self._runtime_parameters = LTX2PipelineRuntimeParameters(self._node)
             case "LTXImageToVideoPipeline":
                 self._runtime_parameters = LTX2ImageToVideoPipelineRuntimeParameters(self._node)
             case "AllegroPipeline":
