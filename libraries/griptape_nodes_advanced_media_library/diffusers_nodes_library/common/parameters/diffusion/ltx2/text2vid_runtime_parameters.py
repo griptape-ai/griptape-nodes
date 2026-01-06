@@ -8,6 +8,12 @@ import diffusers  # type: ignore[reportMissingImports]
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
+from diffusers_nodes_library.common.parameters.diffusion.ltx2.validation import (
+    get_nearest_valid_dimension,
+    get_valid_num_frames_hint,
+    is_valid_dimension,
+    is_valid_num_frames,
+)
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
 )
@@ -74,6 +80,63 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def remove_output_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("output_video")
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Validate num_frames follows the pattern (n * 8) + 1
+        if parameter.name == "num_frames" and value is not None:
+            num_frames = int(value)
+            if not is_valid_num_frames(num_frames):
+                hint = get_valid_num_frames_hint(num_frames)
+                logger.warning(
+                    "num_frames (%d) is invalid. LTX-2 requires num_frames to follow pattern (n × 8) + 1. %s",
+                    num_frames,
+                    hint,
+                )
+
+        # Validate width is divisible by 32
+        if parameter.name == "width" and value is not None:
+            width = int(value)
+            if not is_valid_dimension(width):
+                nearest = get_nearest_valid_dimension(width)
+                logger.warning(
+                    "width (%d) must be divisible by 32. Nearest valid value: %d",
+                    width,
+                    nearest,
+                )
+
+        # Validate height is divisible by 32
+        if parameter.name == "height" and value is not None:
+            height = int(value)
+            if not is_valid_dimension(height):
+                nearest = get_nearest_valid_dimension(height)
+                logger.warning(
+                    "height (%d) must be divisible by 32. Nearest valid value: %d",
+                    height,
+                    nearest,
+                )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        errors = []
+
+        # Validate num_frames follows the pattern (n * 8) + 1
+        num_frames = self.get_num_frames()
+        if not is_valid_num_frames(num_frames):
+            hint = get_valid_num_frames_hint(num_frames)
+            errors.append(ValueError(f"num_frames ({num_frames}) is invalid. {hint}"))
+
+        # Validate dimensions are divisible by 32 (LTX-2 requirement)
+        width = self.get_width()
+        height = self.get_height()
+        if not is_valid_dimension(width):
+            nearest = get_nearest_valid_dimension(width)
+            errors.append(ValueError(f"Width ({width}) must be divisible by 32. Nearest valid value: {nearest}"))
+        if not is_valid_dimension(height):
+            nearest = get_nearest_valid_dimension(height)
+            errors.append(ValueError(f"Height ({height}) must be divisible by 32. Nearest valid value: {nearest}"))
+
+        return errors or None
 
     def _get_pipe_kwargs(self) -> dict:
         return {
