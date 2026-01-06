@@ -539,7 +539,12 @@ class CreateAgentSchema(SuccessFailureNode):
             self.set_parameter_value("agent_ruleset", None)
             return
 
-        ruleset = Ruleset(name="schema_ruleset", rules=[Rule(rule) for rule in ruleset_value.split("\n\n")])
+        rule_strings = [rule.strip() for rule in ruleset_value.split("\n\n") if rule.strip()]
+        if not rule_strings:
+            self.set_parameter_value("agent_ruleset", None)
+            return
+
+        ruleset = Ruleset(name="schema_ruleset", rules=[Rule(rule) for rule in rule_strings])
         self.set_parameter_value("agent_ruleset", ruleset)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
