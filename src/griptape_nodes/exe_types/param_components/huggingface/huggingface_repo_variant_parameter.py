@@ -123,8 +123,7 @@ class HuggingFaceRepoVariantParameter(HuggingFaceModelParameter):
         """
         variant_revisions = _list_variants_in_cache(self._repo_id, self._variants)
         return [
-            (self._repo_variant_to_key(repo_id, variant), revision)
-            for repo_id, variant, revision in variant_revisions
+            (self._repo_variant_to_key(repo_id, variant), revision) for repo_id, variant, revision in variant_revisions
         ]
 
     def get_download_commands(self) -> list[str]:
