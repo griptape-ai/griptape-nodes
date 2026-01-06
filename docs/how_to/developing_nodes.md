@@ -12,8 +12,8 @@ At a high level:
 - A **Node** is a Python class that defines **parameters** (inputs/outputs/properties) and a `process()` method.
 - A **Workflow (Flow)** is a graph of nodes connected by parameters.
 - Parameters are both:
-    - **UI elements** (what a user sees/edits/connects), and
-    - **type-checked connection points** (what can connect to what).
+  - **UI elements** (what a user sees/edits/connects), and
+  - **type-checked connection points** (what can connect to what).
 
 ### Choose the right base node type
 
@@ -66,17 +66,17 @@ class UppercaseText(DataNode):
                 # default_value is used when nothing is connected and the user
                 # hasn't set a value in the UI.
                 default_value="Hello Griptape Nodes",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Input text",
             )
         )
 
-        # This is an OUTPUT-only parameter. We set settable=False so users don't edit it.
         self.add_parameter(
             Parameter(
                 name="uppercased",
                 type="str",
+                output_type="str",
                 allowed_modes={ParameterMode.OUTPUT},
-                settable=False,
                 tooltip="Uppercased output",
             )
         )
@@ -124,8 +124,8 @@ If you need a quick reference, see the **Parameter helper constructs** section i
 ### Containers: `ParameterList` and `ParameterDictionary`
 
 - **`ParameterList`**: use when you want “many of the same thing” in a node UI.
-    - Retrieval: `get_parameter_list_value()` flattens nested iterables.
-    - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
+  - Retrieval: `get_parameter_list_value()` flattens nested iterables.
+  - Note: the current implementation drops falsey items (e.g. `0`, `False`). Preserve those by using `get_parameter_value()` and flattening manually.
 - **`ParameterDictionary`**: use when you want ordered key/value entries in the UI.
 
 ### Traits: UI behaviors and validation
@@ -144,17 +144,18 @@ Example: a numeric slider parameter:
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.traits.slider import Slider
 
-temperature = Parameter(
-    name="temperature",
-    type="float",
-    default_value=0.7,
-    tooltip="Sampling temperature (higher = more random)",
-    # This can be a pure PROPERTY, or INPUT+PROPERTY if you want to allow wiring.
-    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-    # Common pattern in the codebase: attach traits inline via the `traits` argument.
-    traits={Slider(min_val=0.0, max_val=2.0)},
+self.add_parameter(
+    Parameter(
+        name="temperature",
+        type="float",
+        default_value=0.7,
+        tooltip="Sampling temperature (higher = more random)",
+        # This can be a pure PROPERTY, or INPUT+PROPERTY if you want to allow wiring.
+        allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        # Common pattern in the codebase: attach traits inline via the `traits` argument.
+        traits={Slider(min_val=0.0, max_val=2.0)},
+    )
 )
-self.add_parameter(temperature)
 ```
 
 ## Validation, error handling, and user experience
