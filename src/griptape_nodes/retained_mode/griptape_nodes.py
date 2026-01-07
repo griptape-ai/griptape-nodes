@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import (
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
@@ -33,13 +32,7 @@ if TYPE_CHECKING:
         RequestPayload,
         ResultPayload,
     )
-    from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
-    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
-        ArbitraryCodeExecManager,
-    )
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-    from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-    from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -47,26 +40,14 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.model_manager import ModelManager
     from griptape_nodes.retained_mode.managers.node_manager import NodeManager
     from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-    from griptape_nodes.retained_mode.managers.operation_manager import (
-        OperationDepthManager,
-    )
     from griptape_nodes.retained_mode.managers.os_manager import OSManager
-    from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
-    from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-    from griptape_nodes.retained_mode.managers.session_manager import SessionManager
     from griptape_nodes.retained_mode.managers.static_files_manager import (
         StaticFilesManager,
     )
-    from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
-    from griptape_nodes.retained_mode.managers.user_manager import UserManager
     from griptape_nodes.retained_mode.managers.variable_manager import (
         VariablesManager,
     )
-    from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
-        VersionCompatibilityManager,
-    )
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
 
 
 logger = logging.getLogger("griptape_nodes")
@@ -80,32 +61,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _object_manager: ObjectManager
     _node_manager: NodeManager
     _flow_manager: FlowManager
-    _context_manager: ContextManager
     _library_manager: LibraryManager
     _model_manager: ModelManager
-    _workflow_manager: WorkflowManager
     _workflow_variables_manager: VariablesManager
-    _arbitrary_code_exec_manager: ArbitraryCodeExecManager
-    _operation_depth_manager: OperationDepthManager
     _static_files_manager: StaticFilesManager
-    _agent_manager: AgentManager
-    _version_compatibility_manager: VersionCompatibilityManager
-    _session_manager: SessionManager
-    _engine_identity_manager: EngineIdentityManager
     _mcp_manager: MCPManager
-    _resource_manager: ResourceManager
-    _sync_manager: SyncManager
-    _user_manager: UserManager
-    _project_manager: ProjectManager
 
-    def __init__(self) -> None:  # noqa: PLR0915
-        from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
-        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
-            ArbitraryCodeExecManager,
-        )
+    def __init__(self) -> None:
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-        from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-        from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
         from griptape_nodes.retained_mode.managers.event_manager import EventManager
         from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
         from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
@@ -113,57 +76,31 @@ class GriptapeNodes(metaclass=SingletonMeta):
         from griptape_nodes.retained_mode.managers.model_manager import ModelManager
         from griptape_nodes.retained_mode.managers.node_manager import NodeManager
         from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-        from griptape_nodes.retained_mode.managers.operation_manager import (
-            OperationDepthManager,
-        )
         from griptape_nodes.retained_mode.managers.os_manager import OSManager
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
-        from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
         from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
         from griptape_nodes.retained_mode.managers.static_files_manager import (
             StaticFilesManager,
         )
-        from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
-        from griptape_nodes.retained_mode.managers.user_manager import UserManager
         from griptape_nodes.retained_mode.managers.variable_manager import (
             VariablesManager,
-        )
-        from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
-            VersionCompatibilityManager,
-        )
-        from griptape_nodes.retained_mode.managers.workflow_manager import (
-            WorkflowManager,
         )
 
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()
-            self._resource_manager = ResourceManager(self._event_manager)
             self._config_manager = ConfigManager(self._event_manager)
             self._os_manager = OSManager(self._event_manager)
             self._secrets_manager = SecretsManager(self._config_manager, self._event_manager)
             self._object_manager = ObjectManager(self._event_manager)
             self._node_manager = NodeManager(self._event_manager)
             self._flow_manager = FlowManager(self._event_manager)
-            self._context_manager = ContextManager(self._event_manager)
             self._library_manager = LibraryManager(self._event_manager)
             self._model_manager = ModelManager(self._event_manager)
-            self._workflow_manager = WorkflowManager(self._event_manager)
             self._workflow_variables_manager = VariablesManager(self._event_manager)
-            self._arbitrary_code_exec_manager = ArbitraryCodeExecManager(self._event_manager)
-            self._operation_depth_manager = OperationDepthManager(self._config_manager)
             self._static_files_manager = StaticFilesManager(
                 self._config_manager, self._secrets_manager, self._event_manager
             )
-            self._agent_manager = AgentManager(self._static_files_manager, self._event_manager)
-            self._version_compatibility_manager = VersionCompatibilityManager(self._event_manager)
-            self._engine_identity_manager = EngineIdentityManager(self._event_manager)
-            self._session_manager = SessionManager(self._engine_identity_manager, self._event_manager)
             self._mcp_manager = MCPManager(self._event_manager, self._config_manager)
-            self._sync_manager = SyncManager(self._event_manager, self._config_manager)
-            self._user_manager = UserManager(self._secrets_manager)
-            self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -240,11 +177,11 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
     @classmethod
     def get_session_id(cls) -> str | None:
-        return GriptapeNodes.SessionManager().active_session_id
+        return None
 
     @classmethod
     def get_engine_id(cls) -> str | None:
-        return GriptapeNodes.EngineIdentityManager().active_engine_id
+        return None
 
     @classmethod
     def EventManager(cls) -> EventManager:
@@ -271,18 +208,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._node_manager
 
     @classmethod
-    def ContextManager(cls) -> ContextManager:
-        return GriptapeNodes.get_instance()._context_manager
-
-    @classmethod
-    def WorkflowManager(cls) -> WorkflowManager:
-        return GriptapeNodes.get_instance()._workflow_manager
-
-    @classmethod
-    def ArbitraryCodeExecManager(cls) -> ArbitraryCodeExecManager:
-        return GriptapeNodes.get_instance()._arbitrary_code_exec_manager
-
-    @classmethod
     def ConfigManager(cls) -> ConfigManager:
         return GriptapeNodes.get_instance()._config_manager
 
@@ -295,52 +220,16 @@ class GriptapeNodes(metaclass=SingletonMeta):
         return GriptapeNodes.get_instance()._secrets_manager
 
     @classmethod
-    def OperationDepthManager(cls) -> OperationDepthManager:
-        return GriptapeNodes.get_instance()._operation_depth_manager
-
-    @classmethod
     def StaticFilesManager(cls) -> StaticFilesManager:
         return GriptapeNodes.get_instance()._static_files_manager
-
-    @classmethod
-    def AgentManager(cls) -> AgentManager:
-        return GriptapeNodes.get_instance()._agent_manager
-
-    @classmethod
-    def VersionCompatibilityManager(cls) -> VersionCompatibilityManager:
-        return GriptapeNodes.get_instance()._version_compatibility_manager
-
-    @classmethod
-    def SessionManager(cls) -> SessionManager:
-        return GriptapeNodes.get_instance()._session_manager
 
     @classmethod
     def MCPManager(cls) -> MCPManager:
         return GriptapeNodes.get_instance()._mcp_manager
 
     @classmethod
-    def EngineIdentityManager(cls) -> EngineIdentityManager:
-        return GriptapeNodes.get_instance()._engine_identity_manager
-
-    @classmethod
-    def ResourceManager(cls) -> ResourceManager:
-        return GriptapeNodes.get_instance()._resource_manager
-
-    @classmethod
-    def SyncManager(cls) -> SyncManager:
-        return GriptapeNodes.get_instance()._sync_manager
-
-    @classmethod
     def VariablesManager(cls) -> VariablesManager:
         return GriptapeNodes.get_instance()._workflow_variables_manager
-
-    @classmethod
-    def UserManager(cls) -> UserManager:
-        return GriptapeNodes.get_instance()._user_manager
-
-    @classmethod
-    def ProjectManager(cls) -> ProjectManager:
-        return GriptapeNodes.get_instance()._project_manager
 
     @classmethod
     def clear_data(cls) -> None:
@@ -391,22 +280,15 @@ class GriptapeNodes(metaclass=SingletonMeta):
             # Get current workflow information
             workflow_info = self._get_current_workflow_info()
 
-            # Get engine name
-            engine_name = GriptapeNodes.EngineIdentityManager().engine_name
-
-            # Get user and organization
-            user = GriptapeNodes.UserManager().user
-            user_organization = GriptapeNodes.UserManager().user_organization
-
             return EngineHeartbeatResultSuccess(
                 heartbeat_id=request.heartbeat_id,
                 engine_version=engine_version,
-                engine_name=engine_name,
-                engine_id=GriptapeNodes.EngineIdentityManager().active_engine_id,
-                session_id=GriptapeNodes.SessionManager().active_session_id,
+                engine_name=None,
+                engine_id=None,
+                session_id=None,
                 timestamp=datetime.now(tz=UTC).isoformat(),
-                user=user,
-                user_organization=user_organization,
+                user=None,
+                user_organization=None,
                 result_details="Engine heartbeat successful",
                 **instance_info,
                 **workflow_info,
@@ -442,23 +324,5 @@ class GriptapeNodes(metaclass=SingletonMeta):
             "workflow_file_path": None,
             "has_active_flow": False,
         }
-
-        try:
-            context_manager = self._context_manager
-
-            # Check if there's an active workflow
-            if context_manager.has_current_workflow():
-                workflow_name = context_manager.get_current_workflow_name()
-                workflow_info["current_workflow"] = workflow_name
-                workflow_info["has_active_flow"] = context_manager.has_current_flow()
-
-                # Get workflow file path from registry
-                if WorkflowRegistry.has_workflow_with_name(workflow_name):
-                    workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-                    absolute_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
-                    workflow_info["workflow_file_path"] = absolute_path
-
-        except Exception as err:
-            logger.warning("Failed to get current workflow info: %s", err)
 
         return workflow_info
