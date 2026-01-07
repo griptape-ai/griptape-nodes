@@ -15,7 +15,7 @@ from griptape_nodes.common.macro_parser import (
     ParsedMacro,
 )
 from griptape_nodes.common.project_templates import (
-    DEFAULT_PROJECT_TEMPLATE,
+    LEGACY_PROJECT_TEMPLATE,
     DirectoryDefinition,
     ProjectTemplate,
     ProjectValidationInfo,
@@ -883,8 +883,19 @@ class ProjectManager:
                 return context_manager.get_current_workflow_name()
 
             case "workflow_dir":
-                msg = f"{BUILTIN_WORKFLOW_DIR} not yet implemented"
-                raise NotImplementedError(msg)
+                from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+
+                context_manager = GriptapeNodes.ContextManager()
+                if not context_manager.has_current_workflow():
+                    msg = "No current workflow for workflow_dir variable"
+                    raise RuntimeError(msg)
+
+                workflow_name = context_manager.get_current_workflow_name()
+                workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+                workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+                workflow_directory = workflow_file_path.parent
+
+                return str(workflow_directory)
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
@@ -1024,7 +1035,7 @@ class ProjectManager:
     def _load_system_defaults(self) -> None:
         """Load bundled system default template.
 
-        System defaults are now defined in Python as DEFAULT_PROJECT_TEMPLATE.
+        System defaults use LEGACY_PROJECT_TEMPLATE which models workspace + staticfiles layout.
         This is always valid by construction.
         """
         logger.debug("Loading system default template")
@@ -1047,15 +1058,15 @@ class ProjectManager:
             raise RuntimeError(msg) from e
 
         # Parse all macros BEFORE creating ProjectInfo (system defaults should always be valid)
-        situation_schemas = self._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
-        directory_schemas = self._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+        situation_schemas = self._parse_situation_macros(LEGACY_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = self._parse_directory_macros(LEGACY_PROJECT_TEMPLATE.directories, validation)
 
         # Create consolidated ProjectInfo with fully populated macro caches
         project_info = ProjectInfo(
             project_id=SYSTEM_DEFAULTS_KEY,
             project_file_path=None,  # No actual file for system defaults
             project_base_dir=workspace_dir,  # Use workspace as base
-            template=DEFAULT_PROJECT_TEMPLATE,
+            template=LEGACY_PROJECT_TEMPLATE,
             validation=validation,
             parsed_situation_schemas=situation_schemas,
             parsed_directory_schemas=directory_schemas,

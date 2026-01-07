@@ -272,7 +272,8 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
-        assert "workflow_dir not yet implemented" in str(result.result_details)
+        assert "workflow_dir" in str(result.result_details)
+        assert "cannot be resolved" in str(result.result_details)
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""

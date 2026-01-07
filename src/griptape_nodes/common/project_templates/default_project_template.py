@@ -8,6 +8,8 @@ from griptape_nodes.common.project_templates.situation import (
     SituationTemplate,
 )
 
+__all__ = ["DEFAULT_PROJECT_TEMPLATE", "LEGACY_PROJECT_TEMPLATE"]
+
 # Default project template matching the values from project_template.yml
 DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
     project_template_schema_version="0.1.0",
@@ -83,5 +85,27 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
+    },
+)
+
+# Legacy project template that models workspace + staticfiles directory structure
+# Uses builtin variables to properly represent the legacy workspace behavior
+LEGACY_PROJECT_TEMPLATE = ProjectTemplate(
+    project_template_schema_version="0.1.0",
+    name="Legacy Workspace Layout",
+    description="Models the legacy workspace + staticfiles directory structure using builtin variables",
+    directories={},
+    environment={},
+    situations={
+        "save_file": SituationTemplate(
+            name="save_file",
+            description="Generic file save operation",
+            macro="{workflow_dir}/staticfiles/{file_name_base}{_index?:03}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.CREATE_NEW,
+                create_dirs=True,
+            ),
+            fallback=None,
+        )
     },
 )

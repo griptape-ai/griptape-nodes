@@ -72,13 +72,19 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_upload_response: dict[str, Any],
         mock_download_url: str,
     ) -> None:
-        """Test line 187: Verify default behavior unchanged (backward compatibility)."""
+        """Test default situation is 'save_file' and resolves to appropriate policy."""
+        from pathlib import Path
+
         # Setup mocks
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
         mock_static_files_manager.storage_driver.create_signed_download_url.return_value = mock_download_url
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.CREATE_NEW),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Setup successful HTTP response
@@ -86,13 +92,16 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            # Call save_static_file WITHOUT policy parameter (tests line 187 default)
+            # Call save_static_file WITHOUT situation_name parameter (tests default)
             result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME)
 
-            # Verify the default policy (OVERWRITE) was passed to storage driver (line 212)
+            # Verify the default situation "save_file" was used
+            mock_resolve.assert_called_once_with(situation_name="save_file", file_name=TEST_FILE_NAME, variables=None)
+
+            # Verify the resolved policy was passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert args[0][1] == ExistingFilePolicy.OVERWRITE  # Second positional argument
+            assert args[0][1] == ExistingFilePolicy.CREATE_NEW
 
             # Verify successful return
             assert result == mock_download_url
@@ -103,13 +112,19 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_upload_response: dict[str, Any],
         mock_download_url: str,
     ) -> None:
-        """Test line 212: Explicitly pass OVERWRITE policy."""
+        """Test custom situation that resolves to OVERWRITE policy."""
+        from pathlib import Path
+
         # Setup mocks
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
         mock_static_files_manager.storage_driver.create_signed_download_url.return_value = mock_download_url
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.OVERWRITE),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Setup successful HTTP response
@@ -117,15 +132,20 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            # Call save_static_file WITH explicit OVERWRITE policy (tests line 212)
+            # Call save_static_file WITH custom situation that has OVERWRITE policy
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE
+                TEST_FILE_DATA, TEST_FILE_NAME, situation_name="custom_overwrite_situation"
             )
 
-            # Verify the OVERWRITE policy was passed to storage driver (line 212)
+            # Verify the custom situation was used
+            mock_resolve.assert_called_once_with(
+                situation_name="custom_overwrite_situation", file_name=TEST_FILE_NAME, variables=None
+            )
+
+            # Verify the OVERWRITE policy was passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert args[0][1] == ExistingFilePolicy.OVERWRITE  # Second positional argument
+            assert args[0][1] == ExistingFilePolicy.OVERWRITE
 
             # Verify successful return
             assert result == mock_download_url
@@ -136,13 +156,19 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_upload_response: dict[str, Any],
         mock_download_url: str,
     ) -> None:
-        """Test line 212: Pass FAIL policy when file doesn't exist (success case)."""
+        """Test situation with FAIL policy when file doesn't exist (success case)."""
+        from pathlib import Path
+
         # Setup mocks
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
         mock_static_files_manager.storage_driver.create_signed_download_url.return_value = mock_download_url
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.FAIL),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Setup successful HTTP response
@@ -150,13 +176,20 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            # Call save_static_file WITH FAIL policy (tests line 212)
-            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL)
+            # Call save_static_file with situation that has FAIL policy
+            result = mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, situation_name="custom_fail_situation"
+            )
 
-            # Verify the FAIL policy was passed to storage driver (line 212)
+            # Verify the custom situation was used
+            mock_resolve.assert_called_once_with(
+                situation_name="custom_fail_situation", file_name=TEST_FILE_NAME, variables=None
+            )
+
+            # Verify the FAIL policy was passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert args[0][1] == ExistingFilePolicy.FAIL  # Second positional argument
+            assert args[0][1] == ExistingFilePolicy.FAIL
 
             # Verify successful return (file didn't exist so FAIL policy succeeded)
             assert result == mock_download_url
@@ -164,26 +197,41 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_fail_policy_raises_file_exists_error(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
-        """Test line 212: Pass FAIL policy when file exists (failure case)."""
+        """Test situation with FAIL policy when file exists (failure case)."""
+        from pathlib import Path
+
         # Mock storage driver to raise FileExistsError (simulating file exists)
         mock_static_files_manager.storage_driver.create_signed_upload_url.side_effect = FileExistsError(
             f"File {TEST_FILE_NAME} already exists"
         )
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITH FAIL policy should raise FileExistsError
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_path_via_situation",
+            return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.FAIL),
+        ) as mock_resolve:
+            # Call save_static_file with FAIL policy situation should raise FileExistsError
             with pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"):
-                mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL)
+                mock_static_files_manager.save_static_file(
+                    TEST_FILE_DATA, TEST_FILE_NAME, situation_name="custom_fail_situation"
+                )
 
-            # Verify the FAIL policy was passed to storage driver (line 212)
+            # Verify the situation was resolved
+            mock_resolve.assert_called_once_with(
+                situation_name="custom_fail_situation", file_name=TEST_FILE_NAME, variables=None
+            )
+
+            # Verify the FAIL policy was passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert args[0][1] == ExistingFilePolicy.FAIL  # Second positional argument
+            assert args[0][1] == ExistingFilePolicy.FAIL
 
     def test_save_static_file_create_new_policy(
         self, mock_static_files_manager: StaticFilesManager, mock_upload_response: dict[str, Any]
     ) -> None:
-        """Test line 212: Pass CREATE_NEW policy."""
+        """Test situation with CREATE_NEW policy."""
+        from pathlib import Path
+
         # Setup mocks - storage driver handles unique filename generation
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
         mock_static_files_manager.storage_driver.create_signed_download_url.return_value = (
@@ -191,7 +239,11 @@ class TestStaticFilesManagerSaveStaticFile:
         )
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.CREATE_NEW),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Setup successful HTTP response
@@ -199,15 +251,20 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            # Call save_static_file WITH CREATE_NEW policy (tests line 212)
+            # Call save_static_file with situation that has CREATE_NEW policy
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW
+                TEST_FILE_DATA, TEST_FILE_NAME, situation_name="custom_create_new_situation"
             )
 
-            # Verify the CREATE_NEW policy was passed to storage driver (line 212)
+            # Verify the custom situation was used
+            mock_resolve.assert_called_once_with(
+                situation_name="custom_create_new_situation", file_name=TEST_FILE_NAME, variables=None
+            )
+
+            # Verify the CREATE_NEW policy was passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert args[0][1] == ExistingFilePolicy.CREATE_NEW  # Second positional argument
+            assert args[0][1] == ExistingFilePolicy.CREATE_NEW
 
             # Verify successful return with potentially modified filename
             assert TEST_ALTERNATIVE_NAME in result
@@ -215,16 +272,25 @@ class TestStaticFilesManagerSaveStaticFile:
     def test_save_static_file_storage_driver_exception_propagation(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
-        """Test that storage driver exceptions are propagated as ValueError."""
+        """Test that storage driver exceptions are propagated."""
+        from pathlib import Path
+
         # Mock storage driver to raise a generic exception
         mock_static_files_manager.storage_driver.create_signed_upload_url.side_effect = RuntimeError(
             "Storage driver connection failed"
         )
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file should propagate exception as ValueError
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_path_via_situation",
+            return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.OVERWRITE),
+        ) as mock_resolve:
+            # Call save_static_file should propagate exception
             with pytest.raises(RuntimeError, match="Storage driver connection failed"):
-                mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE)
+                mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME)
+
+            # Verify situation was resolved
+            mock_resolve.assert_called_once()
 
             # Verify storage driver was called before exception
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
@@ -233,11 +299,17 @@ class TestStaticFilesManagerSaveStaticFile:
         self, mock_static_files_manager: StaticFilesManager, mock_upload_response: dict[str, Any]
     ) -> None:
         """Test HTTP upload failure handling."""
+        from pathlib import Path
+
         # Setup mocks
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.OVERWRITE),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Mock httpx.request to raise HTTPStatusError
@@ -246,9 +318,12 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_error = httpx.HTTPStatusError("Upload failed", request=Mock(), response=mock_response)
             mock_request.side_effect = mock_error
 
-            # Call save_static_file should raise ValueError (existing behavior)
+            # Call save_static_file should raise ValueError
             with pytest.raises(ValueError, match="Upload failed"):
-                mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE)
+                mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME)
+
+            # Verify situation was resolved
+            mock_resolve.assert_called_once_with(situation_name="save_file", file_name=TEST_FILE_NAME, variables=None)
 
             # Verify storage driver was called successfully before HTTP failure
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
@@ -261,13 +336,19 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_upload_response: dict[str, Any],
         mock_download_url: str,
     ) -> None:
-        """Test end-to-end success path with new policy parameter."""
+        """Test end-to-end success path with situation-based API."""
+        from pathlib import Path
+
         # Setup mocks for complete success flow
         mock_static_files_manager.storage_driver.create_signed_upload_url.return_value = mock_upload_response
         mock_static_files_manager.storage_driver.create_signed_download_url.return_value = mock_download_url
 
         with (
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_path_via_situation",
+                return_value=(Path("staticfiles/test_image.jpg"), ExistingFilePolicy.CREATE_NEW),
+            ) as mock_resolve,
             patch("griptape_nodes.retained_mode.managers.static_files_manager.httpx.request") as mock_request,
         ):
             # Setup successful HTTP response
@@ -275,26 +356,31 @@ class TestStaticFilesManagerSaveStaticFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            # Call save_static_file with CREATE_NEW policy for full flow test
+            # Call save_static_file with custom situation for full flow test
             result = mock_static_files_manager.save_static_file(
-                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW
+                TEST_FILE_DATA, TEST_FILE_NAME, situation_name="custom_situation", variables={"node_name": "TestNode"}
             )
 
             # Verify complete workflow
-            # 1. Policy passed to storage driver (line 212)
+            # 1. Situation resolved with correct parameters
+            mock_resolve.assert_called_once_with(
+                situation_name="custom_situation", file_name=TEST_FILE_NAME, variables={"node_name": "TestNode"}
+            )
+
+            # 2. Policy passed to storage driver
             mock_static_files_manager.storage_driver.create_signed_upload_url.assert_called_once()
             upload_args = mock_static_files_manager.storage_driver.create_signed_upload_url.call_args
-            assert upload_args[0][1] == ExistingFilePolicy.CREATE_NEW  # Second positional argument
+            assert upload_args[0][1] == ExistingFilePolicy.CREATE_NEW
 
-            # 2. HTTP request made with correct parameters
+            # 3. HTTP request made with correct parameters
             mock_request.assert_called_once()
             request_args = mock_request.call_args
             assert request_args[0] == (mock_upload_response["method"], mock_upload_response["url"])
             assert request_args[1]["content"] == TEST_FILE_DATA
             assert request_args[1]["headers"] == mock_upload_response["headers"]
 
-            # 3. Download URL generated after successful upload
+            # 4. Download URL generated after successful upload
             mock_static_files_manager.storage_driver.create_signed_download_url.assert_called_once()
 
-            # 4. Correct URL returned
+            # 5. Correct URL returned
             assert result == mock_download_url

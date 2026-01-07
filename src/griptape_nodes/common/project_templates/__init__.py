@@ -1,6 +1,9 @@
 """Project template system for managing project.yml files and situations."""
 
-from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+from griptape_nodes.common.project_templates.default_project_template import (
+    DEFAULT_PROJECT_TEMPLATE,
+    LEGACY_PROJECT_TEMPLATE,
+)
 from griptape_nodes.common.project_templates.directory import DirectoryDefinition
 from griptape_nodes.common.project_templates.loader import (
     ProjectOverlayData,
@@ -28,6 +31,7 @@ from griptape_nodes.common.project_templates.validation import (
 
 __all__ = [
     "DEFAULT_PROJECT_TEMPLATE",
+    "LEGACY_PROJECT_TEMPLATE",
     "DirectoryDefinition",
     "ProjectOverlayData",
     "ProjectOverride",
