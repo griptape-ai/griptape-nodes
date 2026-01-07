@@ -495,11 +495,11 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             msg = f"{model} does not support duration {duration}s. Available durations: {', '.join(str(d) for d in model_config['durations'])}s"
             raise ValueError(msg)
 
-        # Validate audio parameter
-        audio = self.get_parameter_value("audio")
-        if audio and not model_config.get("supports_audio", False):
-            msg = f"{model} does not support audio."
-            raise ValueError(msg)
+        # Get audio parameter (only for models that support it)
+        # For models that don't support audio, set to None so it won't be sent
+        audio = None
+        if model_config.get("supports_audio", False):
+            audio = self.get_parameter_value("audio")
 
         # Get audio URL if provided and model supports it
         audio_url = None
@@ -507,6 +507,12 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             input_audio_value = self.get_parameter_value("input_audio")
             if input_audio_value:
                 audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
+
+        # Get shot_type parameter (only for models that support it)
+        # For models that don't support shot_type, set to None so it won't be sent
+        shot_type = None
+        if model_config.get("supports_shot_type", False):
+            shot_type = self.get_parameter_value("shot_type")
 
         return {
             "model": model,
@@ -517,7 +523,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "duration": duration,
             "audio": audio,
             "audio_url": audio_url,
-            "shot_type": self.get_parameter_value("shot_type"),
+            "shot_type": shot_type,
             "seed": self._seed_parameter.get_seed(),
             "prompt_extend": self.get_parameter_value("prompt_extend"),
             "watermark": self.get_parameter_value("watermark"),
@@ -591,7 +597,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         model_config = MODEL_CONFIGS.get(params["model"], {})
 
         # Add audio parameter (for models that support it)
-        if model_config.get("supports_audio", False):
+        if model_config.get("supports_audio", False) and params.get("audio") is not None:
             payload["audio"] = params["audio"]
 
         # Add audio_url if provided (for models that support it)
@@ -599,7 +605,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             payload["audio_url"] = params["audio_url"]
 
         # Add shot_type parameter (for models that support it, only effective when prompt_extend=true)
-        if model_config.get("supports_shot_type", False) and params.get("shot_type"):
+        if model_config.get("supports_shot_type", False) and params.get("shot_type") is not None:
             payload["shot_type"] = params["shot_type"]
 
         return payload
