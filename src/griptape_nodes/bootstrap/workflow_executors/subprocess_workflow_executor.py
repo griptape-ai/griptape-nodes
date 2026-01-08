@@ -175,6 +175,7 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
     def _start_websocket_thread(self) -> None:
         """Run WebSocket tasks in a separate thread with its own async loop."""
+        loop = None
         try:
             # Create a new event loop for this thread
             loop = asyncio.new_event_loop()
@@ -193,6 +194,8 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         except Exception as e:
             logger.error("WebSocket listener thread error: %s", e)
         finally:
+            if loop is not None:
+                loop.close()  # Close event loop to release socket pairs
             self._websocket_event_loop = None
             self._websocket_event_loop_ready.clear()
             self._shutdown_event = None

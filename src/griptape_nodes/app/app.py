@@ -143,6 +143,7 @@ async def astart_app() -> None:
 def _start_websocket_connection() -> None:
     """Run WebSocket tasks in a separate thread with its own async loop."""
     global websocket_event_loop  # noqa: PLW0603
+    loop = None
     try:
         # Create a new event loop for this thread
         loop = asyncio.new_event_loop()
@@ -158,6 +159,8 @@ def _start_websocket_connection() -> None:
         logger.error("WebSocket thread error: %s", e)
         raise
     finally:
+        if loop is not None:
+            loop.close()  # Close event loop to release socket pairs
         websocket_event_loop = None
         websocket_event_loop_ready.clear()
 
