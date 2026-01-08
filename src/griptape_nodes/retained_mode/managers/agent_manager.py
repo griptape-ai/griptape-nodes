@@ -73,6 +73,7 @@ from griptape_nodes.retained_mode.managers.static_files_manager import (
     StaticFilesManager,
 )
 from griptape_nodes.servers.mcp import start_mcp_server
+from griptape_nodes.utils.mcp_utils import create_ruleset_from_rules_string
 
 if TYPE_CHECKING:
     from griptape.tools.mcp.sessions import StreamableHttpConnection
@@ -389,6 +390,30 @@ class AgentManager:
         driver = self.thread_storage_driver.get_conversation_memory_driver(thread_id)
         conversation_memory = ConversationMemory(conversation_memory_driver=driver)
 
+        # Collect MCP server rulesets
+        mcp_rulesets = []
+
+        # Collect server names to get rules for
+        server_names_to_check = []
+        if self.mcp_tool is not None:
+            server_names_to_check.append("griptape-nodes-local")
+        if additional_mcp_servers:
+            server_names_to_check.extend(additional_mcp_servers)
+
+        # Get rules for all MCP servers
+        if server_names_to_check:
+            app = GriptapeNodes()
+            enabled_request = GetEnabledMCPServersRequest()
+            enabled_result = app.handle_request(enabled_request)
+            if isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
+                for server_name in server_names_to_check:
+                    if server_name in enabled_result.servers:
+                        server_config = enabled_result.servers[server_name]
+                        rules_string = server_config.get("rules")
+                        ruleset = create_ruleset_from_rules_string(rules_string, server_name)
+                        if ruleset is not None:
+                            mcp_rulesets.append(ruleset)
+
         return Agent(
             prompt_driver=self.prompt_driver,
             conversation_memory=conversation_memory,
@@ -429,6 +454,7 @@ class AgentManager:
                         ),
                     ],
                 ),
+                *mcp_rulesets,
             ],
         )
 

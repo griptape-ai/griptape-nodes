@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.mcp_utils import create_ruleset_from_rules_string
 from griptape_nodes_library.utils.mcp_utils import (
     create_mcp_tool,
     get_available_mcp_servers,
@@ -215,6 +216,13 @@ class MCPTaskNode(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
             logger.error(f"{self.name}: {error_details}")
             return
+
+        # Get MCP server rules and create ruleset
+        rules_string = server_config.get("rules")
+        if rules_string:
+            mcp_ruleset = create_ruleset_from_rules_string(rules_string, mcp_server_name)
+            if mcp_ruleset is not None:
+                rulesets = list(rulesets) + [mcp_ruleset]
 
         # Add task to agent
         if not self._add_task_to_agent(agent, tool, driver, tools, rulesets, max_subtasks):

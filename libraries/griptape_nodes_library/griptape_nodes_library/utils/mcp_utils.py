@@ -3,6 +3,7 @@
 from typing import Any
 
 from griptape.tools import MCPTool
+from griptape_nodes.utils.mcp_utils import create_ruleset_from_rules_string
 
 from griptape_nodes.retained_mode.events.mcp_events import (
     GetEnabledMCPServersRequest,
