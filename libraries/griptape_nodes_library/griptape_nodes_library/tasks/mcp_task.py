@@ -222,7 +222,7 @@ class MCPTaskNode(SuccessFailureNode):
         if rules_string:
             mcp_ruleset = create_ruleset_from_rules_string(rules_string, mcp_server_name)
             if mcp_ruleset is not None:
-                rulesets = list(rulesets) + [mcp_ruleset]
+                rulesets = [*list(rulesets), mcp_ruleset]
 
         # Add task to agent
         if not self._add_task_to_agent(agent, tool, driver, tools, rulesets, max_subtasks):
