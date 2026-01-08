@@ -11,7 +11,7 @@ import logging
 import subprocess
 import sys
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from griptape_cloud_client.models.update_structure_response_content import Updat
 
 from griptape_cloud.publish_workflow.griptape_cloud_published_workflow import GriptapeCloudPublishedWorkflow
 from griptape_cloud.publish_workflow.griptape_cloud_start_flow import GriptapeCloudStartFlow
+from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
@@ -314,13 +315,16 @@ def main():
             pass
         """
 
+        # Get supported fields from AddParameterToNodeRequest dataclass
+        supported_fields = {f.name for f in fields(AddParameterToNodeRequest)}
+
         script = ""
         for param in params:
-            param_config = dict(param)
-            param_name = param_config.pop("name")
-            param_config["parameter_name"] = param_name
-            param_config.pop("settable", None)
+            param_name = param.get("name")
             if param_name not in omit_parameters:
+                # Build param_config with only fields supported by AddParameterToNodeRequest
+                param_config = {k: v for k, v in param.items() if k in supported_fields}
+                param_config["parameter_name"] = param_name
                 script += f"""
             GriptapeNodes.handle_request(AddParameterToNodeRequest(
                 **{param_config},
