@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _INHERIT_ENV_VARS = [
     "PATH",
     "HOME",
+    "USERPROFILE",
     "TEMP",
     "TMP",
     "COMSPEC",
