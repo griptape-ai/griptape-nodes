@@ -110,6 +110,7 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
     You can optionally add custom rules in the **Rules** text area to provide instructions for the AI agent when using this MCP server. These rules are automatically applied when the agent uses tools from this server.
 
     For example, you might enter:
+
     ```
     Always validate URLs before fetching. Return errors in JSON format if a fetch fails.
     ```
