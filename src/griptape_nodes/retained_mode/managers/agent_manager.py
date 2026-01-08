@@ -391,6 +391,21 @@ class AgentManager:
         conversation_memory = ConversationMemory(conversation_memory_driver=driver)
 
         # Collect MCP server rulesets
+        mcp_rulesets = self._collect_mcp_server_rulesets(additional_mcp_servers)
+
+        # Get default rulesets
+        default_rulesets = self._get_default_rulesets()
+
+        return Agent(
+            prompt_driver=self.prompt_driver,
+            conversation_memory=conversation_memory,
+            tools=tools,
+            output_schema=output_schema,
+            rulesets=[*default_rulesets, *mcp_rulesets],
+        )
+
+    def _collect_mcp_server_rulesets(self, additional_mcp_servers: list[str] | None) -> list[Ruleset]:
+        """Collect rulesets from MCP server configurations."""
         mcp_rulesets = []
 
         # Collect server names to get rules for
@@ -401,62 +416,65 @@ class AgentManager:
             server_names_to_check.extend(additional_mcp_servers)
 
         # Get rules for all MCP servers
-        if server_names_to_check:
-            app = GriptapeNodes()
-            enabled_request = GetEnabledMCPServersRequest()
-            enabled_result = app.handle_request(enabled_request)
-            if isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
-                for server_name in server_names_to_check:
-                    if server_name in enabled_result.servers:
-                        server_config = enabled_result.servers[server_name]
-                        rules_string = server_config.get("rules")
-                        ruleset = create_ruleset_from_rules_string(rules_string, server_name)
-                        if ruleset is not None:
-                            mcp_rulesets.append(ruleset)
+        if not server_names_to_check:
+            return mcp_rulesets
 
-        return Agent(
-            prompt_driver=self.prompt_driver,
-            conversation_memory=conversation_memory,
-            tools=tools,
-            output_schema=output_schema,
-            rulesets=[
-                Ruleset(
-                    name="generated_image_urls",
-                    rules=[
-                        Rule("Do not hallucinate generated_image_urls."),
-                        Rule("Only set generated_image_urls with images generated with your tools."),
-                    ],
-                ),
-                # Note: Griptape's MCPTool automatically wraps arguments in a 'values' key, but our MCP server
-                # expects arguments directly. This ruleset instructs the agent to provide arguments without
-                # the 'values' wrapper to avoid validation errors. If MCPTool behavior changes in the future,
-                # this ruleset may need to be updated or removed.
-                Ruleset(
-                    name="mcp_tool_usage",
-                    rules=[
-                        Rule(
-                            "When calling MCP tools (mcpGriptapeNodes), provide arguments directly without wrapping them in a 'values' key. "
-                            "For example, use {'node_type': 'FluxImageGeneration', 'node_name': 'MyNode'} not {'values': {'node_type': 'FluxImageGeneration'}}."
-                        ),
-                    ],
-                ),
-                Ruleset(
-                    name="node_rulesets",
-                    rules=[
-                        Rule(
-                            "When asked to create a node, use ListNodeTypesInLibraryRequest or GetAllInfoForAllLibrariesRequest to check available node types and find the appropriate node."
-                        ),
-                        Rule(
-                            "When matching user requests to node types, account for variations: users may include spaces (e.g., 'Image Generation' vs 'ImageGeneration') or reorder words (e.g., 'Generate Image' vs 'Image Generation'). Match based on the words present, not exact spelling."
-                        ),
-                        Rule(
-                            "If you cannot determine the correct node type or node creation fails, ask the user for clarification."
-                        ),
-                    ],
-                ),
-                *mcp_rulesets,
-            ],
-        )
+        app = GriptapeNodes()
+        enabled_request = GetEnabledMCPServersRequest()
+        enabled_result = app.handle_request(enabled_request)
+        if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
+            return mcp_rulesets
+
+        for server_name in server_names_to_check:
+            if server_name not in enabled_result.servers:
+                continue
+
+            server_config = enabled_result.servers[server_name]
+            rules_string = server_config.get("rules")
+            ruleset = create_ruleset_from_rules_string(rules_string, server_name)
+            if ruleset is not None:
+                mcp_rulesets.append(ruleset)
+
+        return mcp_rulesets
+
+    def _get_default_rulesets(self) -> list[Ruleset]:
+        """Get the default rulesets for agents."""
+        return [
+            Ruleset(
+                name="generated_image_urls",
+                rules=[
+                    Rule("Do not hallucinate generated_image_urls."),
+                    Rule("Only set generated_image_urls with images generated with your tools."),
+                ],
+            ),
+            # Note: Griptape's MCPTool automatically wraps arguments in a 'values' key, but our MCP server
+            # expects arguments directly. This ruleset instructs the agent to provide arguments without
+            # the 'values' wrapper to avoid validation errors. If MCPTool behavior changes in the future,
+            # this ruleset may need to be updated or removed.
+            Ruleset(
+                name="mcp_tool_usage",
+                rules=[
+                    Rule(
+                        "When calling MCP tools (mcpGriptapeNodes), provide arguments directly without wrapping them in a 'values' key. "
+                        "For example, use {'node_type': 'FluxImageGeneration', 'node_name': 'MyNode'} not {'values': {'node_type': 'FluxImageGeneration'}}."
+                    ),
+                ],
+            ),
+            Ruleset(
+                name="node_rulesets",
+                rules=[
+                    Rule(
+                        "When asked to create a node, use ListNodeTypesInLibraryRequest or GetAllInfoForAllLibrariesRequest to check available node types and find the appropriate node."
+                    ),
+                    Rule(
+                        "When matching user requests to node types, account for variations: users may include spaces (e.g., 'Image Generation' vs 'ImageGeneration') or reorder words (e.g., 'Generate Image' vs 'Image Generation'). Match based on the words present, not exact spelling."
+                    ),
+                    Rule(
+                        "If you cannot determine the correct node type or node creation fails, ask the user for clarification."
+                    ),
+                ],
+            ),
+        ]
 
     def _validate_thread_for_run(self, thread_id: str | None) -> str:
         """Validate and return thread_id for agent run, or raise ValueError."""
