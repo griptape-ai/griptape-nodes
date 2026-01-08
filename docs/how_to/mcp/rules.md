@@ -25,17 +25,17 @@ Rules help you:
 When creating a new MCP server, you can add rules in the **Rules** text area:
 
 1. Go to **Settings** → **MCP Servers**
-2. Click **+ New MCP Server**
-3. Fill in the server configuration (name, connection type, etc.)
-4. In the **Rules** text area, enter your custom rules
-5. Click **Create Server**
+1. Click **+ New MCP Server**
+1. Fill in the server configuration (name, connection type, etc.)
+1. In the **Rules** text area, enter your custom rules
+1. Click **Create Server**
 
 ### When Editing a Server
 
 1. Go to **Settings** → **MCP Servers**
-2. Click the **Edit** button on the server you want to modify
-3. Modify the text in the **Rules** text area
-4. Save your changes
+1. Click the **Edit** button on the server you want to modify
+1. Modify the text in the **Rules** text area
+1. Save your changes
 
 ## Example Rules
 
@@ -66,9 +66,9 @@ Always validate SQL queries before executing them. Never execute DROP or DELETE 
 ## How Rules Work
 
 1. **Storage**: Rules are stored as part of the MCP server configuration
-2. **Application**: When an agent uses tools from that server, the rules are automatically added as a ruleset
-3. **Scope**: Rules apply only when using that specific MCP server
-4. **Format**: Rules are a single string - you can include multiple instructions separated by periods or newlines
+1. **Application**: When an agent uses tools from that server, the rules are automatically added as a ruleset
+1. **Scope**: Rules apply only when using that specific MCP server
+1. **Format**: Rules are a single string - you can include multiple instructions separated by periods or newlines
 
 ## Best Practices
 
@@ -95,8 +95,8 @@ Always validate SQL queries before executing them. Never execute DROP or DELETE 
 After adding rules, test them with your MCP server to ensure they work as expected:
 
 1. Create an MCPTask node using the server
-2. Run a test prompt
-3. Verify the agent follows the rules you specified
+1. Run a test prompt
+1. Verify the agent follows the rules you specified
 
 ## Rules in Different Contexts
 
@@ -127,4 +127,3 @@ When using the Agent node with MCP servers configured, rules from all enabled MC
 - **[Getting Started Tutorial](./getting_started.md)** - Learn how to set up your first MCP server
 - **[Connection Types](./index.md#connection-types)** - Learn about different connection methods
 - **[Example Servers](./servers/index.md)** - See examples of configured MCP servers
-
