@@ -20,4 +20,3 @@ def create_ruleset_from_rules_string(rules_string: str | None, server_name: str)
     ruleset_name = f"mcp_{server_name}_rules"
 
     return Ruleset(name=ruleset_name, rules=[Rule(rules_text)])
-
