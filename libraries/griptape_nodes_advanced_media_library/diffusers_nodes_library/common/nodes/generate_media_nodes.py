@@ -8,16 +8,10 @@ from diffusers_nodes_library.common.nodes.diffusion_pipeline_runtime_node import
 class GenerateVideoNode(DiffusionPipelineRuntimeNode):
     """Generate videos via Diffusers Pipelines."""
 
-    pass
-
 
 class GenerateAudioNode(DiffusionPipelineRuntimeNode):
     """Generate audio via Diffusers Pipelines."""
 
-    pass
-
 
 class GenerateImageNode(DiffusionPipelineRuntimeNode):
     """Generate images via Diffusers Pipelines."""
-
-    pass
