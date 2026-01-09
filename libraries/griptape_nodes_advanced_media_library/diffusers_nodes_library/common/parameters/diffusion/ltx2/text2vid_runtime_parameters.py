@@ -28,6 +28,35 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
         super().__init__(node)
 
+    def add_input_parameters(self) -> None:
+        self._add_input_parameters()
+        # Override parent defaults with LTX-2 specific values from documentation
+        self._node.add_parameter(
+            Parameter(
+                name="width",
+                default_value=768,
+                type="int",
+                tooltip="The width in pixels of the generated video. Must be divisible by 32.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="height",
+                default_value=512,
+                type="int",
+                tooltip="The height in pixels of the generated video. Must be divisible by 32.",
+            )
+        )
+        self._node.add_parameter(
+            Parameter(
+                name="num_inference_steps",
+                default_value=40,
+                type="int",
+                tooltip="The number of denoising steps. More denoising steps usually lead to a higher quality video at the expense of slower inference.",
+            )
+        )
+        self._seed_parameter.add_input_parameters()
+
     def _add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
@@ -48,15 +77,15 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.add_parameter(
             Parameter(
                 name="num_frames",
-                default_value=97,
+                default_value=121,
                 type="int",
-                tooltip="Number of frames to generate (must be divisible by 8 + 1, e.g., 9, 17, 25, ..., 97)",
+                tooltip="Number of frames to generate (must be divisible by 8 + 1, e.g., 9, 17, 25, ..., 121)",
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="guidance_scale",
-                default_value=7.5,
+                default_value=4.0,
                 type="float",
                 tooltip="CFG guidance scale (higher = more prompt adherence)",
             )
