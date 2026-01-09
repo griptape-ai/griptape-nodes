@@ -81,6 +81,10 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def remove_output_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("output_video")
 
+    def publish_output_image_preview_placeholder(self) -> None:
+        # Video pipelines don't use image placeholders
+        pass
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
@@ -144,8 +148,27 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             "negative_prompt": self._node.get_parameter_value("negative_prompt"),
             "num_frames": self.get_num_frames(),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
-            "output_type": "pil",
         }
+
+    def _process_pipeline_output(self, pipe: diffusers.LTX2Pipeline, callback_on_step_end: Any) -> None:
+        """Process LTX2 video pipeline output."""
+        output = pipe(
+            **self.get_pipe_kwargs(),
+            output_type="pil",
+            callback_on_step_end=callback_on_step_end,
+        )
+        frames = output.frames[0]
+
+        # Export frames to video
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
+            temp_file = Path(temp_file_obj.name)
+
+        try:
+            diffusers.utils.export_to_video(frames, str(temp_file), fps=24)
+            self.publish_output_video(temp_file)
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()
 
     def get_num_frames(self) -> int:
         return int(self._node.get_parameter_value("num_frames"))

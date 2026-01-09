@@ -107,6 +107,10 @@ class LTX2ImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParamete
     def remove_output_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("output_video")
 
+    def publish_output_image_preview_placeholder(self) -> None:
+        # Video pipelines don't use image placeholders
+        pass
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
@@ -171,6 +175,44 @@ class LTX2ImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParamete
             "num_frames": self.get_num_frames(),
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
         }
+
+    def _process_pipeline_output(self, pipe: diffusers.LTX2ImageToVideoPipeline, callback_on_step_end: Any) -> None:
+        """Process LTX2 image-to-video pipeline output."""
+        # Get and prepare input image
+        image = self.get_input_image_pil()
+        if self.get_auto_resize_input_image():
+            # LTX-2 requires width/height divisible by 32
+            max_area = 768 * 512
+            aspect_ratio = image.height / image.width
+            mod_value = 32
+            height = round(np.sqrt(max_area * aspect_ratio)) // mod_value * mod_value
+            width = round(np.sqrt(max_area / aspect_ratio)) // mod_value * mod_value
+            image = image.resize((width, height))
+        else:
+            width = self.get_width()
+            height = self.get_height()
+
+        output = pipe(
+            **self._get_pipe_kwargs(),
+            image=image,
+            width=width,
+            height=height,
+            num_inference_steps=self.get_num_inference_steps(),
+            output_type="pil",
+            callback_on_step_end=callback_on_step_end,
+        )
+        frames = output.frames[0]
+
+        # Export frames to video
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:
+            temp_file = Path(temp_file_obj.name)
+
+        try:
+            diffusers.utils.export_to_video(frames, str(temp_file), fps=24)
+            self.publish_output_video(temp_file)
+        finally:
+            if temp_file.exists():
+                temp_file.unlink()
 
     def publish_output_video_preview_placeholder(self) -> None:
         # Create a small black video placeholder
