@@ -176,9 +176,7 @@ class LTX2ImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParamete
             "guidance_scale": self._node.get_parameter_value("guidance_scale"),
         }
 
-    def _process_pipeline_output(
-        self, pipe: diffusers.LTX2ImageToVideoPipeline, callback_on_step_end: Any
-    ) -> None:
+    def _process_pipeline_output(self, pipe: diffusers.LTX2ImageToVideoPipeline, callback_on_step_end: Any) -> None:
         """Process LTX2 image-to-video pipeline output."""
         # Get and prepare input image
         image = self.get_input_image_pil()
