@@ -116,7 +116,7 @@ class LTX2ImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParamete
             if not is_valid_num_frames(num_frames):
                 hint = get_valid_num_frames_hint(num_frames)
                 logger.warning(
-                    "num_frames (%d) is invalid. LTX-2 requires num_frames to follow pattern (n × 8) + 1. %s",
+                    "num_frames (%d) is invalid. LTX-2 requires num_frames to follow pattern (n x 8) + 1. %s",
                     num_frames,
                     hint,
                 )
@@ -201,7 +201,7 @@ class LTX2ImageToVideoPipelineRuntimeParameters(DiffusionPipelineRuntimeParamete
     def get_num_frames(self) -> int:
         return int(self._node.get_parameter_value("num_frames"))
 
-    def get_image_for_model(self, pipe: Any, repo_id: str) -> tuple[Image, int, int]:
+    def get_image_for_model(self, _pipe: Any, repo_id: str) -> tuple[Image, int, int]:
         """Prepare input image with proper resizing and update pipe_kwargs."""
         image = self.get_input_image_pil()
 

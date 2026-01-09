@@ -90,7 +90,7 @@ class LTX2PipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             if not is_valid_num_frames(num_frames):
                 hint = get_valid_num_frames_hint(num_frames)
                 logger.warning(
-                    "num_frames (%d) is invalid. LTX-2 requires num_frames to follow pattern (n × 8) + 1. %s",
+                    "num_frames (%d) is invalid. LTX-2 requires num_frames to follow pattern (n x 8) + 1. %s",
                     num_frames,
                     hint,
                 )

@@ -118,7 +118,7 @@ class HuggingFaceRepoVariantParameter(HuggingFaceModelParameter):
         Key format: "owner/repo/variant"
         """
         parts = key.rsplit("/", 1)
-        if len(parts) == 2:
+        if len(parts) == 2:  # noqa: PLR2004
             return parts[0], parts[1]
         # Fallback: treat entire key as repo_id with empty variant
         return key, ""

@@ -6,7 +6,7 @@ def is_valid_num_frames(num_frames: int) -> bool:
 
     LTX-2 requires frame counts of 9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89, 97, etc.
     """
-    return (num_frames - 1) % 8 == 0 and num_frames >= 9
+    return (num_frames - 1) % 8 == 0 and num_frames >= 9  # noqa: PLR2004
 
 
 def get_valid_num_frames_hint(num_frames: int) -> str:
@@ -14,9 +14,8 @@ def get_valid_num_frames_hint(num_frames: int) -> str:
     # Find the nearest valid values
     lower = ((num_frames - 1) // 8) * 8 + 1
     upper = lower + 8
-    if lower < 9:
-        lower = 9
-    return f"Valid values: {lower}, {upper}, etc. (pattern: (n × 8) + 1 where n ≥ 1)"
+    lower = max(lower, 9)
+    return f"Valid values: {lower}, {upper}, etc. (pattern: (n x 8) + 1 where n >= 1)"
 
 
 def is_valid_dimension(value: int) -> bool:
