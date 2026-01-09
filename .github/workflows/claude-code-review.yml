@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0 # Full history for better diff analysis
       - name: PR Review
-        uses: anthropics/claude-code-action@v1.0.27
+        uses: anthropics/claude-code-action
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
