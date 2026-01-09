@@ -209,6 +209,9 @@ class ExifMetadataDriver(BaseImageMetadataDriver):
             # Merge custom metadata directly into metadata dict
             for key, value in custom_metadata.items():
                 metadata[key] = str(value)
+
+            if custom_metadata:
+                logger.debug("Merged %d custom metadata entries from EXIF UserComment", len(custom_metadata))
         except (json.JSONDecodeError, ValueError) as e:
             logger.debug("Could not parse UserComment as JSON: %s", e)
         except Exception as e:

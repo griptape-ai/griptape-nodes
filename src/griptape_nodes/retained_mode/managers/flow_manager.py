@@ -8,9 +8,9 @@ from io import BytesIO
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
-from urllib.request import urlopen
 from uuid import uuid4
 
+import httpx
 from PIL import Image
 
 from griptape_nodes.common.node_executor import NodeExecutor
@@ -158,6 +158,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.image_metadata_injector import FLOW_COMMANDS_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -3634,10 +3635,9 @@ class FlowManager:
         if is_url:
             # Handle URL: download the image
             try:
-                # URL scheme already validated above - only http:// and https:// allowed
-                with urlopen(file_url_or_path) as response:  # noqa: S310
-                    image_data = response.read()
-                    pil_image = Image.open(BytesIO(image_data))
+                response = httpx.get(file_url_or_path, timeout=30.0)
+                response.raise_for_status()
+                pil_image = Image.open(BytesIO(response.content))
             except Exception as e:
                 return ExtractFlowCommandsFromImageMetadataResultFailure(
                     result_details=f"Failed to download or open image from URL: {e}",
@@ -3678,14 +3678,13 @@ class FlowManager:
         metadata_keys = [str(key) for key in metadata]
 
         # Validation: Check if flow commands metadata exists
-        flow_commands_key = "gtn_flow_commands"
-        if flow_commands_key not in metadata:
+        if FLOW_COMMANDS_KEY not in metadata:
             return ExtractFlowCommandsFromImageMetadataResultFailure(
                 result_details=f"No flow commands metadata found in image. Available keys: {metadata_keys}",
                 file_path=file_url_or_path,
             )
 
-        encoded_flow_commands = metadata[flow_commands_key]
+        encoded_flow_commands = metadata[FLOW_COMMANDS_KEY]
 
         # Decode base64
         try:
@@ -3724,7 +3723,6 @@ class FlowManager:
             return ExtractFlowCommandsFromImageMetadataResultSuccess(
                 result_details=f"Successfully extracted and deserialized flow '{deserialize_result.flow_name}' from image metadata",
                 serialized_flow_commands=serialized_flow_commands,
-                metadata_keys=metadata_keys,
                 flow_name=deserialize_result.flow_name,
                 node_name_mappings=deserialize_result.node_name_mappings,
                 altered_workflow_state=True,
@@ -3734,7 +3732,6 @@ class FlowManager:
         return ExtractFlowCommandsFromImageMetadataResultSuccess(
             result_details="Successfully extracted flow commands from image metadata",
             serialized_flow_commands=serialized_flow_commands,
-            metadata_keys=metadata_keys,
             altered_workflow_state=False,
         )
 

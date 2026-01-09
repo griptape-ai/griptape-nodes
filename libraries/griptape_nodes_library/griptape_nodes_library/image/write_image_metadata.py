@@ -19,7 +19,7 @@ IMAGE_FORMAT_TO_EXTENSION = {
     "JPEG": "jpg",
     "TIFF": "tiff",
     "MPO": "mpo",
-    "WEPP": "webp",
+    "WEBP": "webp",
 }
 
 
@@ -78,97 +78,86 @@ class WriteImageMetadataNode(SuccessFailureNode):
         # Reset execution state
         self._clear_execution_status()
 
-        # Validate inputs
-        validation_result = self._validate_inputs()
-        if validation_result is None:
-            return
-        image, metadata_dict = validation_result
-
-        # Validate metadata keys
-        if not self._validate_metadata_keys(metadata_dict):
-            return
-
-        # Load PIL image
         try:
+            # Validate inputs
+            image, metadata_dict = self._validate_inputs()
+
+            # Validate metadata keys
+            self._validate_metadata_keys(metadata_dict)
+
+            # Load PIL image
             pil_image = load_pil_image_from_artifact(image, self.name)
+
+            # Write metadata
+            image_bytes = self._write_metadata_to_image(pil_image, metadata_dict)
+
+            # Save to storage
+            output_artifact = self._save_image_to_storage(image_bytes, pil_image)
+
+            # Success
+            self.parameter_output_values["output_image"] = output_artifact
+            success_msg = f"Successfully wrote {len(metadata_dict)} metadata entries to {pil_image.format} image"
+            self._set_status_results(was_successful=True, result_details=success_msg)
+            logger.info(f"{self.name}: {success_msg}")
         except (TypeError, ValueError) as e:
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
-            return
+        except Exception as e:
+            error_msg = f"Unexpected error: {e}"
+            self._set_status_results(was_successful=False, result_details=error_msg)
+            self._handle_failure_exception(e)
 
-        # Write metadata
-        image_bytes = self._write_metadata_to_image(pil_image, metadata_dict)
-        if image_bytes is None:
-            return
-
-        # Save to storage
-        output_artifact = self._save_image_to_storage(image_bytes, pil_image)
-        if output_artifact is None:
-            return
-
-        # Success
-        self.parameter_output_values["output_image"] = output_artifact
-        success_msg = f"Successfully wrote {len(metadata_dict)} metadata entries to {pil_image.format} image"
-        self._set_status_results(was_successful=True, result_details=success_msg)
-        logger.info(f"{self.name}: {success_msg}")
-
-    def _validate_inputs(self) -> tuple[Any, dict] | None:
+    def _validate_inputs(self) -> tuple[Any, dict]:
         """Validate image and metadata inputs.
 
         Returns:
-            Tuple of (image, metadata_dict) if valid, None if validation failed
+            Tuple of (image, metadata_dict) if valid
+
+        Raises:
+            ValueError: If inputs are invalid
+            TypeError: If metadata is not a dict
         """
         # Validate image input
         image = self.get_parameter_value("input_image")
         if not image:
             error_msg = f"{self.name}: No input image provided"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return None
+            raise ValueError(error_msg)
 
         # Validate metadata input
         metadata_dict = self.get_parameter_value("metadata")
         if not metadata_dict:
             error_msg = f"{self.name}: No metadata provided"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return None
+            raise ValueError(error_msg)
 
         if not isinstance(metadata_dict, dict):
             error_msg = f"{self.name}: Metadata must be dict, got {type(metadata_dict).__name__}"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(TypeError(error_msg))
-            return None
+            raise TypeError(error_msg)
 
         return (image, metadata_dict)
 
-    def _validate_metadata_keys(self, metadata_dict: dict) -> bool:
+    def _validate_metadata_keys(self, metadata_dict: dict) -> None:
         """Validate metadata keys don't use reserved namespace.
 
         Args:
             metadata_dict: Metadata dictionary to validate
 
-        Returns:
-            True if valid, False if validation failed
+        Raises:
+            ValueError: If metadata contains reserved 'gtn_' prefix keys
         """
         reserved_keys = [key for key in metadata_dict if str(key).startswith("gtn_")]
-        if not reserved_keys:
-            return True
+        if reserved_keys:
+            error_msg = (
+                f"{self.name}: Cannot write metadata keys starting with 'gtn_' "
+                f"(reserved for auto-injected workflow metadata). "
+                f"Offending keys: {', '.join(reserved_keys)}"
+            )
+            logger.warning(error_msg)
+            raise ValueError(error_msg)
 
-        error_msg = (
-            f"{self.name}: Cannot write metadata keys starting with 'gtn_' "
-            f"(reserved for auto-injected workflow metadata). "
-            f"Offending keys: {', '.join(reserved_keys)}"
-        )
-        logger.warning(error_msg)
-        self._set_status_results(was_successful=False, result_details=error_msg)
-        self._handle_failure_exception(ValueError(error_msg))
-        return False
-
-    def _write_metadata_to_image(self, pil_image: Image.Image, metadata_dict: dict) -> bytes | None:
+    def _write_metadata_to_image(self, pil_image: Image.Image, metadata_dict: dict) -> bytes:
         """Write metadata to image using appropriate driver.
 
         Args:
@@ -176,24 +165,24 @@ class WriteImageMetadataNode(SuccessFailureNode):
             metadata_dict: Metadata to write
 
         Returns:
-            Image bytes with metadata, or None if operation failed
+            Image bytes with metadata
+
+        Raises:
+            ValueError: If image format cannot be detected or is unsupported
+            Exception: If metadata injection fails
         """
         # Check format is available
         if not pil_image.format:
             error_msg = f"{self.name}: Could not detect image format"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return None
+            raise ValueError(error_msg)
 
         # Get driver for this format
         driver = ImageMetadataDriverRegistry.get_driver_for_format(pil_image.format)
         if driver is None:
             error_msg = f"{self.name}: Unsupported format '{pil_image.format}'. Supported formats: PNG, JPEG, TIFF, MPO"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return None
+            raise ValueError(error_msg)
 
         # Write metadata using driver
         try:
@@ -201,11 +190,9 @@ class WriteImageMetadataNode(SuccessFailureNode):
         except Exception as e:
             error_msg = f"{self.name}: Failed to write metadata: {e}"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(e)
-            return None
+            raise
 
-    def _save_image_to_storage(self, image_bytes: bytes, pil_image: Image.Image) -> ImageUrlArtifact | None:
+    def _save_image_to_storage(self, image_bytes: bytes, pil_image: Image.Image) -> ImageUrlArtifact:
         """Save image bytes to static storage.
 
         Args:
@@ -213,7 +200,10 @@ class WriteImageMetadataNode(SuccessFailureNode):
             pil_image: PIL Image (for format detection)
 
         Returns:
-            ImageUrlArtifact with saved URL, or None if save failed
+            ImageUrlArtifact with saved URL
+
+        Raises:
+            Exception: If save operation fails
         """
         try:
             # Use format if available, otherwise default to png
@@ -230,6 +220,4 @@ class WriteImageMetadataNode(SuccessFailureNode):
         except Exception as e:
             error_msg = f"{self.name}: Failed to save image: {e}"
             logger.warning(error_msg)
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(e)
-            return None
+            raise

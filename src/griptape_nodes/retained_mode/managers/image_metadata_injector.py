@@ -38,6 +38,9 @@ logger = logging.getLogger("griptape_nodes")
 # Metadata namespace prefix for all auto-injected fields
 METADATA_NAMESPACE = "gtn_"
 
+# Metadata key for storing flow commands
+FLOW_COMMANDS_KEY = f"{METADATA_NAMESPACE}flow_commands"
+
 # Recognized image formats for file extension mapping (not all support metadata injection)
 SUPPORTED_FORMATS = {
     ".jpg": "JPEG",
@@ -263,7 +266,7 @@ def collect_workflow_metadata() -> dict[str, str]:
             # This captures all nodes, connections, and parameter values in the flow
             flow_commands = _serialize_flow()
             if flow_commands:
-                metadata[f"{METADATA_NAMESPACE}flow_commands"] = flow_commands
+                metadata[FLOW_COMMANDS_KEY] = flow_commands
 
             if resolving_nodes:
                 # Collect parameter values from the first resolving node
