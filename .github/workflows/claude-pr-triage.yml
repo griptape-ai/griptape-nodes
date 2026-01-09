@@ -106,7 +106,7 @@ jobs:
           EOF
 
       - name: Run Claude Code for PR Triage
-        uses: anthropics/claude-code-action
+        uses: anthropics/claude-code-action@v1
         with:
           prompt_file: /tmp/claude-prompts/triage-prompt.txt
           allowed_tools: "Bash(gh label list),mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__update_issue,mcp__github__get_pull_request_files,mcp__github__search_issues,mcp__github__list_pull_requests"
