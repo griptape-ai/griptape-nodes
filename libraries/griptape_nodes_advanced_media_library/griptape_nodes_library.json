@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.65.1",
+    "library_version": "0.65.2",
     "engine_version": "0.67.0",
     "tags": [
       "Griptape",
@@ -293,15 +293,35 @@
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
-        "category": "image",
+        "category": "diffusion",
         "description": "Build and cache 🤗 Diffusers Pipelines for reuse across multiple execution nodes.",
         "display_name": "Diffusion Pipeline Builder",
         "group": "diffusion"
       }
     },
     {
-      "class_name": "DiffusionPipelineRuntimeNode",
-      "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_runtime_node.py",
+      "class_name": "GenerateVideoNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Video (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "GenerateAudioNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate audio via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Audio (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "GenerateImageNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
       "metadata": {
         "category": "image",
         "description": "Generate images via 🤗 Diffusers Pipelines.",
