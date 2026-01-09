@@ -56,10 +56,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
             result_details_placeholder="Details on the read operation will be presented here.",
         )
 
-        # Track dynamically created parameter groups and parameters
-        self._dynamic_groups: dict[str, ParameterGroup] = {}
-        self._dynamic_parameters: list[str] = []
-
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Automatically process metadata when image parameter receives a value.
 
@@ -117,24 +113,33 @@ class ReadImageMetadataNode(SuccessFailureNode):
         return grouped
 
     def _remove_dynamic_parameters(self) -> None:
-        """Remove all dynamically created parameters and groups."""
-        # Remove all dynamic parameters
-        for param_name in self._dynamic_parameters:
-            result = GriptapeNodes.handle_request(
-                RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=param_name)
-            )
-            if result.failed():
-                logger.warning(f"{self.name}: Failed to remove parameter {param_name}: {result.result_details}")
-        self._dynamic_parameters.clear()
+        """Remove all dynamically created parameters and groups by scanning current state."""
+        # Get all current parameter groups (excluding fixed groups)
+        fixed_groups = {"STATUS"}  # Known fixed group names
 
-        # Remove all dynamic groups
-        for group_name in self._dynamic_groups:
+        # Find all dynamic groups (metadata groups like "GPS", "Griptape Nodes", "Other")
+        all_groups = self.root_ui_element.find_elements_by_type(ParameterGroup)
+        dynamic_groups = [group for group in all_groups if group.name not in fixed_groups and group.user_defined]
+
+        # Remove all user-defined parameters in dynamic groups
+        for group in dynamic_groups:
+            parameters = group.find_elements_by_type(Parameter)
+            for param in parameters:
+                # Only remove user-defined parameters
+                if param.user_defined:
+                    result = GriptapeNodes.handle_request(
+                        RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=param.name)
+                    )
+                    if result.failed():
+                        logger.warning(f"{self.name}: Failed to remove parameter {param.name}: {result.result_details}")
+
+        # Remove the dynamic groups themselves (already filtered to user_defined above)
+        for group in dynamic_groups:
             result = GriptapeNodes.handle_request(
-                RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=group_name)
+                RemoveParameterFromNodeRequest(node_name=self.name, parameter_name=group.name)
             )
             if result.failed():
-                logger.warning(f"{self.name}: Failed to remove group {group_name}: {result.result_details}")
-        self._dynamic_groups.clear()
+                logger.warning(f"{self.name}: Failed to remove group {group.name}: {result.result_details}")
 
     def _remove_group_if_empty(self, group_name: str) -> None:
         """Remove a parameter group if it has no remaining parameters.
@@ -155,11 +160,8 @@ class ReadImageMetadataNode(SuccessFailureNode):
             if result.failed():
                 logger.warning(f"{self.name}: Failed to remove empty group {group_name}: {result.result_details}")
 
-            if group_name in self._dynamic_groups:
-                del self._dynamic_groups[group_name]
-
     def _get_or_create_group(self, group_name: str) -> None:
-        """Get existing group or create new one, tracking it for later removal.
+        """Get existing group or create new one.
 
         Args:
             group_name: Name of the parameter group
@@ -174,14 +176,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
             )
             if result.failed():
                 logger.warning(f"{self.name}: Failed to create group {group_name}: {result.result_details}")
-            else:
-                # Track the created group for later removal
-                param_group = self.get_element_by_name_and_type(group_name)
-                if param_group and isinstance(param_group, ParameterGroup):
-                    self._dynamic_groups[group_name] = param_group
-        else:
-            # Group already exists, track it for reuse
-            self._dynamic_groups[group_name] = param_group
 
     def _get_or_create_parameter(self, key: str, group_name: str, value: str) -> None:
         """Get existing parameter or create new one, setting its value.
@@ -212,7 +206,6 @@ class ReadImageMetadataNode(SuccessFailureNode):
             if result.failed():
                 logger.warning(f"{self.name}: Failed to create parameter {key}: {result.result_details}")
             else:
-                self._dynamic_parameters.append(key)
                 # Set the output value
                 self.parameter_output_values[key] = value
         else:
@@ -225,7 +218,9 @@ class ReadImageMetadataNode(SuccessFailureNode):
         Args:
             new_metadata: New metadata dictionary to sync with
         """
-        old_keys = set(self._dynamic_parameters)
+        # Get current dynamic parameters by scanning
+        current_dynamic_params = self._get_current_dynamic_parameters()
+        old_keys = {p.name for p in current_dynamic_params}
         new_keys = set(new_metadata.keys())
 
         keys_to_remove = old_keys - new_keys
@@ -242,13 +237,28 @@ class ReadImageMetadataNode(SuccessFailureNode):
             if result.failed():
                 logger.warning(f"{self.name}: Failed to remove parameter {key}: {result.result_details}")
 
-            if key in self._dynamic_parameters:
-                self._dynamic_parameters.remove(key)
-
         for group_name in groups_to_check:
             self._remove_group_if_empty(group_name)
 
         self._create_dynamic_parameters(new_metadata)
+
+    def _get_current_dynamic_parameters(self) -> list[Parameter]:
+        """Get all current dynamically created metadata parameters by scanning state.
+
+        Returns:
+            List of user-defined parameters that are in dynamic metadata groups
+        """
+        fixed_groups = {"STATUS"}
+        dynamic_params = []
+
+        all_groups = self.root_ui_element.find_elements_by_type(ParameterGroup)
+        for group in all_groups:
+            if group.name not in fixed_groups and group.user_defined:
+                # Only include user-defined parameters
+                parameters = group.find_elements_by_type(Parameter)
+                dynamic_params.extend([p for p in parameters if p.user_defined])
+
+        return dynamic_params
 
     def _create_dynamic_parameters(self, metadata: dict[str, str]) -> None:
         """Create individual parameters for each metadata key, organized by prefix.
@@ -299,18 +309,17 @@ class ReadImageMetadataNode(SuccessFailureNode):
         # Handle None/empty case - clear output and return
         if not image:
             error_msg = "No image provided"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
             self._remove_dynamic_parameters()
+            self._set_status_results(was_successful=False, result_details=error_msg)
             return
 
         # Load PIL image
         try:
             pil_image = load_pil_image_from_artifact(image, self.name)
         except (TypeError, ValueError) as e:
+            self._remove_dynamic_parameters()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
-            self._remove_dynamic_parameters()
             return
 
         # Detect format
@@ -318,9 +327,9 @@ class ReadImageMetadataNode(SuccessFailureNode):
         if not image_format:
             error_msg = "Could not detect image format"
             logger.warning(f"{self.name}: {error_msg}")
+            self._remove_dynamic_parameters()
             self._set_status_results(was_successful=False, result_details=error_msg)
             self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
-            self._remove_dynamic_parameters()
             return
 
         # Read metadata using driver
@@ -334,9 +343,9 @@ class ReadImageMetadataNode(SuccessFailureNode):
             except Exception as e:
                 error_msg = f"Failed to read metadata: {e}"
                 logger.warning(f"{self.name}: {error_msg}")
+                self._remove_dynamic_parameters()
                 self._set_status_results(was_successful=False, result_details=error_msg)
                 self._handle_failure_exception(ValueError(f"{self.name}: {error_msg}"))
-                self._remove_dynamic_parameters()
                 return
 
         # Success - set outputs
