@@ -12,6 +12,16 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class TestLockNodes:
+    def test_lock_without_current_context_returns_failure(self) -> None:
+        # Ensure no current node in context
+        ctx = GriptapeNodes.ContextManager()
+        while ctx.has_current_node():
+            ctx.pop_node()
+
+        res = GriptapeNodes.handle_request(SetLockNodeStateRequest(lock=True))
+        assert isinstance(res, SetLockNodeStateResultFailure)
+        assert "Current Context" in str(res.result_details)
+
     @pytest.fixture
     def create_node(self) -> str:
         """Create a single test node and return its name."""
@@ -117,4 +127,10 @@ class TestLockNodes:
         res = GriptapeNodes.handle_request(SetLockNodeStateRequest(lock=True, node_names=[existing, missing]))
         assert isinstance(res, SetLockNodeStateResultFailure)
         # Ensure the error mentions the missing node
+        assert missing in str(res.result_details)
+
+    def test_lock_single_missing_node_returns_failure(self) -> None:
+        missing = "not_here_456"
+        res = GriptapeNodes.handle_request(SetLockNodeStateRequest(lock=True, node_name=missing))
+        assert isinstance(res, SetLockNodeStateResultFailure)
         assert missing in str(res.result_details)
