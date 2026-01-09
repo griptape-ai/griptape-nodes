@@ -334,13 +334,11 @@ class ExtractFlowCommandsFromImageMetadataResultSuccess(ResultPayloadSuccess):
 
     Args:
         serialized_flow_commands: The extracted and decoded SerializedFlowCommands object
-        metadata_keys: List of all metadata keys found in the image (for debugging)
         flow_name: Name of the deserialized flow (only present if deserialize=True)
         node_name_mappings: Mapping from original to deserialized node names (only present if deserialize=True)
     """
 
     serialized_flow_commands: SerializedFlowCommands
-    metadata_keys: list[str] = field(default_factory=list)
     flow_name: str | None = None
     node_name_mappings: dict[str, str] = field(default_factory=dict)
 

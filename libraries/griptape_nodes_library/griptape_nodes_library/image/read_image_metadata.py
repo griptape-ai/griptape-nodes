@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import (
     ImageMetadataDriverRegistry,
@@ -21,6 +21,9 @@ class ReadImageMetadataNode(SuccessFailureNode):
     Delegates to format-specific drivers for extraction.
     Outputs the metadata as a dictionary.
     """
+
+    # Fixed parameter group names that should not be removed when syncing
+    FIXED_GROUPS: ClassVar[set[str]] = {"STATUS"}
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -115,7 +118,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
     def _remove_dynamic_parameters(self) -> None:
         """Remove all dynamically created parameters and groups by scanning current state."""
         # Get all current parameter groups (excluding fixed groups)
-        fixed_groups = {"STATUS"}  # Known fixed group names
+        fixed_groups = self.FIXED_GROUPS  # Known fixed group names
 
         # Find all dynamic groups (metadata groups like "GPS", "Griptape Nodes", "Other")
         all_groups = self.root_ui_element.find_elements_by_type(ParameterGroup)
@@ -248,7 +251,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
         Returns:
             List of user-defined parameters that are in dynamic metadata groups
         """
-        fixed_groups = {"STATUS"}
+        fixed_groups = self.FIXED_GROUPS
         dynamic_params = []
 
         all_groups = self.root_ui_element.find_elements_by_type(ParameterGroup)
@@ -317,6 +320,7 @@ class ReadImageMetadataNode(SuccessFailureNode):
         try:
             pil_image = load_pil_image_from_artifact(image, self.name)
         except (TypeError, ValueError) as e:
+            logger.warning(f"{self.name}: Failed to load image: {e}")
             self._remove_dynamic_parameters()
             self._set_status_results(was_successful=False, result_details=str(e))
             self._handle_failure_exception(e)
