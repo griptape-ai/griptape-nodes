@@ -5,6 +5,7 @@ import asyncio
 import logging
 import pickle
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -16,7 +17,7 @@ from griptape_nodes.exe_types.base_iterative_nodes import (
     BaseIterativeStartNode,
 )
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
-from griptape_nodes.exe_types.node_groups import BaseIterativeNodeGroup, SubflowNodeGroup
+from griptape_nodes.exe_types.node_groups import BaseIterativeNodeGroup, IterationControlParam, SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     CONTROL_INPUT_PARAMETER,
     LOCAL_EXECUTION,
@@ -105,6 +106,15 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class IterationControlAction(StrEnum):
+    """Enum for iterative group control actions."""
+
+    ADD = "add"  # Normal path - add result to list
+    SKIP = "skip"  # Skip this iteration, don't add result
+    BREAK = "break"  # Break out of loop immediately
+
 
 LOOP_EVENTS_TO_SUPPRESS = {
     CreateFlowResultSuccess,
@@ -816,13 +826,153 @@ class NodeExecutor:
         # Check if it's the break signal
         return next_control_output == deserialized_end_node.break_loop_signal_output
 
-    async def _execute_loop_iterations_sequentially(  # noqa: PLR0915
+    def _get_iteration_control_action_for_group(
+        self,
+        end_loop_node: BaseIterativeNodeGroup,
+        node_name_mappings: dict[str, str],
+    ) -> IterationControlAction:
+        """Determine which control action was taken during iteration for an iterative group.
+
+        Checks if any internal nodes have executed their control outputs that connect to the
+        group's control parameters (loop_complete, skip_iteration, break_loop). This is done by
+        checking the source node's parameter_output_values for CONTROL_INPUT_PARAMETER.
+
+        Args:
+            end_loop_node: The BaseIterativeNodeGroup being executed
+            node_name_mappings: Mapping from original to deserialized node names
+
+        Returns:
+            IterationControlAction indicating which control path was taken
+        """
+        # Get incoming connections to the end_loop_node (the iterative group)
+        list_connections_request = ListConnectionsForNodeRequest(node_name=end_loop_node.name)
+        list_connections_result = GriptapeNodes.handle_request(list_connections_request)
+        if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):
+            logger.warning("Failed to list connections for node %s", end_loop_node.name)
+            return IterationControlAction.ADD
+
+        incoming_connections = list_connections_result.incoming_connections
+
+        # Check each control parameter to see if its source node has fired
+        # Priority: BREAK > SKIP > LOOP_COMPLETE > default ADD
+        break_source = self._find_source_for_control_param(incoming_connections, IterationControlParam.BREAK_LOOP)
+        skip_source = self._find_source_for_control_param(incoming_connections, IterationControlParam.SKIP_ITERATION)
+        loop_complete_source = self._find_source_for_control_param(
+            incoming_connections, IterationControlParam.LOOP_COMPLETE
+        )
+
+        # Check if break was triggered
+        if self._check_control_source_fired(break_source, node_name_mappings):
+            return IterationControlAction.BREAK
+
+        # Check if skip was triggered
+        if self._check_control_source_fired(skip_source, node_name_mappings):
+            return IterationControlAction.SKIP
+
+        # Check if loop_complete was triggered
+        if self._check_control_source_fired(loop_complete_source, node_name_mappings):
+            return IterationControlAction.ADD
+
+        # If none of the control parameters were triggered, default to ADD
+        # This preserves backward compatibility for workflows without explicit loop_complete connections
+        return IterationControlAction.ADD
+
+    def _check_control_source_fired(
+        self,
+        source: tuple[str, str] | None,
+        node_name_mappings: dict[str, str],
+    ) -> bool:
+        """Check if a control source node has fired its control output.
+
+        Args:
+            source: Tuple of (source_node_name, source_parameter_name) or None
+            node_name_mappings: Mapping from original to deserialized node names
+
+        Returns:
+            True if the source node's next control output matches the specified parameter
+        """
+        if source is None:
+            return False
+
+        source_node_name, source_param_name = source
+        deserialized_source_name = node_name_mappings.get(source_node_name)
+        if deserialized_source_name is None:
+            return False
+
+        node_manager = GriptapeNodes.NodeManager()
+        try:
+            deserialized_source_node = node_manager.get_node_by_name(deserialized_source_name)
+        except ValueError:
+            return False
+
+        if deserialized_source_node is None:
+            return False
+
+        # Check if the node's next control output matches the source parameter
+        next_control_output = deserialized_source_node.get_next_control_output()
+        if next_control_output is None:
+            return False
+
+        # Get the parameter object to compare
+        source_param = deserialized_source_node.get_parameter_by_name(source_param_name)
+        return next_control_output == source_param
+
+    def _find_source_for_control_param(
+        self,
+        incoming_connections: list,
+        control_param_name: str,
+    ) -> tuple[str, str] | None:
+        """Find the source node and parameter that connects to a control parameter on the iterative group.
+
+        Args:
+            incoming_connections: List of incoming connections to the iterative group
+            control_param_name: Name of the control parameter to find (e.g., "break_loop")
+
+        Returns:
+            Tuple of (source_node_name, source_parameter_name), or None if not found
+        """
+        flow_manager = GriptapeNodes.FlowManager()
+        connections = flow_manager.get_connections()
+
+        for conn in incoming_connections:
+            if conn.target_parameter_name != control_param_name:
+                continue
+
+            source_node_name = conn.source_node_name
+            source_param_name = conn.source_parameter_name
+
+            # If source is a SubflowNodeGroup, follow the internal connection to get the actual source
+            node_manager = GriptapeNodes.NodeManager()
+            try:
+                source_node = node_manager.get_node_by_name(source_node_name)
+            except ValueError:
+                continue
+
+            if isinstance(source_node, SubflowNodeGroup):
+                # Get connections to this proxy parameter to find the actual internal source
+                proxy_param = source_node.get_parameter_by_name(source_param_name)
+                if proxy_param:
+                    internal_connections = connections.get_all_incoming_connections(source_node)
+                    for internal_conn in internal_connections:
+                        if (
+                            internal_conn.target_parameter.name == source_param_name
+                            and internal_conn.is_node_group_internal
+                        ):
+                            source_node_name = internal_conn.source_node.name
+                            source_param_name = internal_conn.source_parameter.name
+                            break
+
+            return (source_node_name, source_param_name)
+
+        return None
+
+    async def _execute_loop_iterations_sequentially(  # noqa: PLR0915, C901, PLR0912
         self,
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         total_iterations: int,
         parameter_values_per_iteration: dict[int, dict[str, Any]],
         end_loop_node: BaseIterativeEndNode | BaseIterativeNodeGroup,
-    ) -> tuple[dict[int, Any], list[int], dict[str, Any]]:
+    ) -> tuple[dict[int, Any], list[int], dict[str, Any], int, bool]:
         """Execute loop iterations sequentially by running one flow instance N times.
 
         Args:
@@ -834,8 +984,10 @@ class NodeExecutor:
         Returns:
             Tuple of:
             - iteration_results: Dict mapping iteration_index -> result value
-            - successful_iterations: List of iteration indices that succeeded
+            - successful_iterations: List of iteration indices that executed without error
             - last_iteration_values: Dict mapping parameter names -> values from last iteration
+            - skipped_count: Number of iterations that were skipped via skip control signal
+            - break_occurred: True if the loop exited early due to a break signal
         """
         # Deserialize flow once
         context_manager = GriptapeNodes.ContextManager()
@@ -868,6 +1020,8 @@ class NodeExecutor:
 
         iteration_results: dict[int, Any] = {}
         successful_iterations: list[int] = []
+        skipped_count = 0
+        break_occurred = False
 
         # Build reverse mapping: packaged_name → original_name for event translation
         reverse_node_mapping = {
@@ -927,6 +1081,39 @@ class NodeExecutor:
 
                 successful_iterations.append(iteration_index)
 
+                # For BaseIterativeNodeGroup, check control action to handle skip/break
+                if isinstance(end_loop_node, BaseIterativeNodeGroup):
+                    control_action = self._get_iteration_control_action_for_group(end_loop_node, node_name_mappings)
+
+                    if control_action == IterationControlAction.SKIP:
+                        logger.info(
+                            "Skip detected at iteration %d/%d - skipping result collection",
+                            iteration_index + 1,
+                            total_iterations,
+                        )
+                        skipped_count += 1
+                        continue
+
+                    if control_action == IterationControlAction.BREAK:
+                        logger.info(
+                            "Break detected at iteration %d/%d - collecting result then stopping",
+                            iteration_index + 1,
+                            total_iterations,
+                        )
+                        # Extract result from this iteration before breaking
+                        # (the work was done, so we should collect the result)
+                        deserialized_flows = [(iteration_index, flow_name, node_name_mappings)]
+                        single_iteration_results = self.get_parameter_values_from_iterations(
+                            end_loop_node=end_loop_node,
+                            deserialized_flows=deserialized_flows,
+                            package_flow_result_success=package_result,
+                        )
+                        iteration_results.update(single_iteration_results)
+                        break_occurred = True
+                        break
+
+                    # control_action == ADD: fall through to extract result
+
                 # Extract result from this iteration
                 deserialized_flows = [(iteration_index, flow_name, node_name_mappings)]
                 single_iteration_results = self.get_parameter_values_from_iterations(
@@ -938,13 +1125,14 @@ class NodeExecutor:
 
                 logger.info("Completed sequential iteration %d/%d", iteration_index + 1, total_iterations)
 
-                # Check if the end node signaled a break
+                # Check if the end node signaled a break (for BaseIterativeEndNode)
                 if self._should_break_loop(node_name_mappings, package_result):
                     logger.info(
                         "Loop break detected at iteration %d/%d - stopping execution early",
                         iteration_index + 1,
                         total_iterations,
                     )
+                    break_occurred = True
                     break
 
             # Extract last iteration values from the last successful iteration
@@ -956,7 +1144,7 @@ class NodeExecutor:
                 total_iterations=len(successful_iterations),
             )
 
-            return iteration_results, successful_iterations, last_iteration_values
+            return iteration_results, successful_iterations, last_iteration_values, skipped_count, break_occurred
 
         finally:
             # Cleanup - delete the flow
@@ -1018,6 +1206,8 @@ class NodeExecutor:
                 iteration_results,
                 successful_iterations,
                 last_iteration_values,
+                _skipped_count,
+                _break_occurred,
             ) = await self._execute_loop_iterations_sequentially(
                 package_result=package_result,
                 total_iterations=total_iterations,
@@ -1383,12 +1573,16 @@ class NodeExecutor:
         parameter_values_per_iteration = self._get_merged_parameter_values_for_iterative_group(node, package_result)
 
         # Execute iterations sequentially based on execution environment
+        skipped_count = 0
+        break_occurred = False
         match execution_type:
             case node_types.LOCAL_EXECUTION:
                 (
                     iteration_results,
                     successful_iterations,
                     last_iteration_values,
+                    skipped_count,
+                    break_occurred,
                 ) = await self._execute_loop_iterations_sequentially(
                     package_result=package_result,
                     total_iterations=total_iterations,
@@ -1420,19 +1614,25 @@ class NodeExecutor:
                     execution_type=execution_type,
                 )
 
-        # Check if execution stopped early due to break (not failure)
+        # Check if execution stopped early
         if len(successful_iterations) < total_iterations:
-            expected_count = len(successful_iterations)
-            actual_count = len(iteration_results)
-            if expected_count != actual_count:
-                failed_count = expected_count - actual_count
-                msg = f"Iterative group execution failed: {failed_count} of {expected_count} iterations failed"
-                raise RuntimeError(msg)
-            logger.info(
-                "Iterative group execution stopped early at %d of %d iterations (break signal)",
-                len(successful_iterations),
-                total_iterations,
-            )
+            if break_occurred:
+                # Early exit due to break signal - this is expected behavior
+                logger.info(
+                    "Iterative group execution stopped early at %d of %d iterations (break signal)",
+                    len(successful_iterations),
+                    total_iterations,
+                )
+            else:
+                # Early exit not due to break - check for failures
+                # successful_iterations includes skipped iterations, but iteration_results does not
+                # So we need to account for skipped iterations when checking for failures
+                expected_result_count = len(successful_iterations) - skipped_count
+                actual_result_count = len(iteration_results)
+                if expected_result_count != actual_result_count:
+                    failed_count = expected_result_count - actual_result_count
+                    msg = f"Iterative group execution failed: {failed_count} of {len(successful_iterations)} iterations failed"
+                    raise RuntimeError(msg)
 
         # Build results list in iteration order
         node._results_list = []

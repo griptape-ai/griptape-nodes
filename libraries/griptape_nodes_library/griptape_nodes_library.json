@@ -27,8 +27,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.55.0",
-    "engine_version": "0.65.0",
+    "library_version": "0.56.1",
+    "engine_version": "0.67.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
@@ -67,6 +67,14 @@
         "title": "Agent",
         "description": "Nodes related to Agents",
         "icon": "UserCircle"
+      }
+    },
+    {
+      "agents/memory": {
+        "color": "border-purple-500",
+        "title": "Memory",
+        "description": "Nodes related to Agent Memory",
+        "icon": "Brain"
       }
     },
     {
@@ -505,6 +513,42 @@
         "description": "Creates an AI agent with conversation memory and the ability to use tools",
         "display_name": "Agent",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "DisplayAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/display_agent_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Displays the memory of an agent",
+        "display_name": "Display Agent Memory"
+      }
+    },
+    {
+      "class_name": "ReplaceItemInAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/replace_item_in_agent_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Replaces an item in the memory of an agent",
+        "display_name": "Replace Item In Agent Memory"
+      }
+    },
+    {
+      "class_name": "SummarizeAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/summarize_agent_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Summarizes an agent's conversation memory and replaces it with a single summary run",
+        "display_name": "Summarize Agent Memory"
+      }
+    },
+    {
+      "class_name": "ClearAgentMemory",
+      "file_path": "griptape_nodes_library/agents/memory/clear_agent_memory.py",
+      "metadata": {
+        "category": "agents/memory",
+        "description": "Clears an agent's conversation memory",
+        "display_name": "Clear Agent Memory"
       }
     },
     {

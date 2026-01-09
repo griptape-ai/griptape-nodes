@@ -2319,11 +2319,12 @@ class FlowManager:
                     start_node_parameter_value_commands.append(param_value_command)
 
             # Create parameter command for start node (following single-node pattern exactly)
+            # Use source parameter's default value to ensure type-safe propagation during connection creation
             add_param_request = AddParameterToNodeRequest(
                 node_name=start_node_name,
                 parameter_name=param_name,
                 type=source_param.output_type,
-                default_value=None,
+                default_value=source_param.default_value,
                 tooltip=f"Parameter {target_parameter_name} from node {target_node_name} in packaged flow",
                 initial_setup=True,
             )

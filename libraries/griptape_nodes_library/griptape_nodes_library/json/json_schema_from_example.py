@@ -8,6 +8,7 @@ output without manually writing JSON schema syntax.
 import json
 from typing import Any
 
+from griptape.rules import Rule, Ruleset
 from json_repair import repair_json
 from pydantic import BaseModel, create_model
 
@@ -32,12 +33,24 @@ EXAMPLE_TEMPLATES = {
     "Product Information": '{"product_name": "Widget", "price": 29.99, "in_stock": true, "categories": ["electronics", "gadgets"], "specifications": {"weight": 1.5, "dimensions": {"width": 10, "height": 5}}}',
     "User Profile": '{"username": "johndoe", "email": "john@example.com", "age": 30, "active": true, "roles": ["user", "admin"], "metadata": null}',
     "Image Generation Prompt": '{"subject": "a futuristic cityscape", "style": "cyberpunk", "environment": "neon-lit urban night", "lighting": "dramatic neon", "camera": {"angle": "eye-level", "focus": "sharp", "depth_of_field": "shallow"}, "composition": {"position": "centered", "shadow": "dramatic"}, "mood": "energetic", "use_case": "concept art"}',
+    "Image Grid Generation Prompt": '{"subject": "str","additional_details": ["str", "str"],"grid_description": "str","grid_split_color": "#000", "grid_panels": [{"position": "top_left","description": "str"},{"position": "top_right","description": "str"},{"position": "bottom_left","description": "str"},{"position": "bottom_right","description": "str"}],"lighting_and_mood": {"lighting": {"type": "str","sources": ["str","str"],"effect": "str"},"tone": "str","feeling": "str"},"style": {"type": "str","qualities": ["str","str","str"],"exclusions": ["str","str"]},"negative_prompt": ["str","str"]}',
     "Video Generation Prompt": '{"subject": "hero walking through rain", "style": "film noir", "environment": "dark city street", "lighting": "low-key streetlights", "shots": [{"shot_number": 1, "camera_angle": "low angle", "camera_movement": "slow tracking", "focus": "selective", "depth_of_field": "shallow", "composition": "leading lines", "duration": 3}, {"shot_number": 2, "camera_angle": "eye-level", "camera_movement": "static", "focus": "sharp", "depth_of_field": "deep", "composition": "rule of thirds", "duration": 2}, {"shot_number": 3, "camera_angle": "overhead", "camera_movement": "crane down", "focus": "selective", "depth_of_field": "shallow", "composition": "centered", "duration": 4}], "mood": "mysterious", "use_case": "short film", "color_grade": "desaturated blue", "framerate": 24}',
     "API Request": '{"method": "POST", "endpoint": "/api/users", "headers": {"Content-Type": "application/json", "Authorization": "Bearer token123"}, "body": {"name": "John", "email": "john@example.com"}}',
     "Task List": '{"tasks": [{"id": 1, "title": "Complete project", "status": "in_progress", "due_date": "2024-12-31", "assignee": "Alice"}, {"id": 2, "title": "Review code", "status": "pending", "due_date": "2024-12-25", "assignee": "Bob"}]}',
     "Form Submission": '{"form_id": "contact_form", "fields": {"name": "Jane Doe", "email": "jane@example.com", "message": "Hello world", "newsletter": true}, "timestamp": "2024-01-15T10:30:00Z", "ip_address": "192.168.1.1"}',
     "Event Log": '{"event_type": "user_action", "user_id": "user_123", "action": "click", "target": "button", "metadata": {"page": "/dashboard", "timestamp": 1705312200, "session_id": "sess_456"}}',
     "Configuration Object": '{"app_name": "MyApp", "version": "1.0.0", "settings": {"debug": false, "max_connections": 100, "timeout": 30}, "features": {"feature_a": true, "feature_b": false}, "database": {"host": "localhost", "port": 5432, "name": "mydb"}}',
+}
+
+EXAMPLE_RULES = {
+    "Object with Array Field": "Tags can contain only these options: 'electronics', 'gadgets', 'clothing', 'accessories', 'home', 'garden', 'tools', 'other'",
+    "Object with Nested Object": "Addresses must always include a country",
+    "Restaurant Review": "Ratings must be between 1 and 5, price range must be one of: $, $$, $$$",
+    "Product Information": "Product dimensions must be in the format: 'width x height x depth'.\nExample: '10 x 5 x 2'",
+    "User Profile": "Username must be unique and cannot contain spaces",
+    "Image Generation Prompt": "Always include unique and specific details in the prompt to ensure the image has a strong visual identity.",
+    "Image Grid Generation Prompt": "Be very specific about the grid description.\nExample: 'A single IMAGE composed as a 3x2 GRID (6 panels)'.\n\nDefault grid split color is #000 and is always specified in HEX values.\n\nAlways include at least watermark, blurry image, and low resolution in 'negative_prompt'.",
+    "Task List": "Dates should be in the following format: YYYY-MM-DD.\nStatus should be one of: 'in_progress', 'pending', 'completed', 'cancelled'.",
 }
 
 
@@ -245,6 +258,25 @@ class CreateAgentSchema(SuccessFailureNode):
         """
         super().__init__(name, metadata)
 
+        # -- Converters --
+        # Converters modify parameter values before they are used by the node's logic.
+        def convert_to_ruleset(value: str) -> Ruleset:
+            """Converts a string value to a Ruleset object.
+
+            Args:
+                value: The input string.
+
+            Returns:
+                The Ruleset object.
+            """
+            name = "schema_ruleset"
+
+            if not value:
+                return Ruleset(name=name, rules=[])
+
+            sep_rules = [Rule(rule) for rule in value.split("\n\n")]
+            return Ruleset(name=name, rules=sep_rules)
+
         self.add_parameter(
             ParameterString(
                 name="example_template",
@@ -267,6 +299,27 @@ class CreateAgentSchema(SuccessFailureNode):
                     "multiline": True,
                     "placeholder_text": '{"name": "John", "age": 30, "email": "john@example.com"}',
                 },
+            )
+        )
+
+        self.add_parameter(
+            ParameterString(
+                "ruleset_example",
+                default_value="",
+                tooltip="Some examples contain helpful rulesets you can add to the agent.",
+                placeholder_text="Some examples contain helpful rulesets you can add to the agent.",
+                multiline=True,
+                allow_output=False,
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="agent_ruleset",
+                type="Ruleset",
+                allowed_modes={ParameterMode.OUTPUT},
+                default_value=None,
+                tooltip="Connect this to the agent's Ruleset parameter to add the ruleset to the agent.",
             )
         )
 
@@ -470,6 +523,30 @@ class CreateAgentSchema(SuccessFailureNode):
 
         return self._generate_object_schema(parsed_data)
 
+    def _update_ruleset_from_example(self) -> None:
+        """Update the agent_ruleset parameter from the ruleset_example value.
+
+        Creates a Ruleset object from the ruleset_example string value and sets it
+        to the agent_ruleset parameter. If ruleset_example is empty, clears the ruleset.
+        """
+        ruleset_value = self.get_parameter_value("ruleset_example")
+        agent_ruleset_param = self.get_parameter_by_name("agent_ruleset")
+
+        if not agent_ruleset_param:
+            return
+
+        if not ruleset_value:
+            self.set_parameter_value("agent_ruleset", None)
+            return
+
+        rule_strings = [rule.strip() for rule in ruleset_value.split("\n\n") if rule.strip()]
+        if not rule_strings:
+            self.set_parameter_value("agent_ruleset", None)
+            return
+
+        ruleset = Ruleset(name="schema_ruleset", rules=[Rule(rule) for rule in rule_strings])
+        self.set_parameter_value("agent_ruleset", ruleset)
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle value changes to update example when template is selected and process schema generation.
 
@@ -479,10 +556,21 @@ class CreateAgentSchema(SuccessFailureNode):
         """
         if parameter.name == "example_template":
             template_value = EXAMPLE_TEMPLATES.get(value, "")
+            ruleset_value = EXAMPLE_RULES.get(value, "")
             if template_value:
                 example_param = self.get_parameter_by_name("example")
                 if example_param:
                     self.set_parameter_value("example", template_value)
+                ruleset_example_param = self.get_parameter_by_name("ruleset_example")
+                if ruleset_example_param:
+                    self.set_parameter_value("ruleset_example", ruleset_value)
+                else:
+                    self.set_parameter_value("ruleset_example", None)
+
+            return super().after_value_set(parameter, value)
+
+        if parameter.name == "ruleset_example":
+            self._update_ruleset_from_example()
             return super().after_value_set(parameter, value)
 
         if parameter.name == "example":
@@ -542,6 +630,8 @@ class CreateAgentSchema(SuccessFailureNode):
 
         self.parameter_output_values["schema"] = json_schema
         self.publish_update_to_parameter("schema", json_schema)
+
+        self._update_ruleset_from_example()
 
         success_details = "JSON schema generated successfully"
         self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")

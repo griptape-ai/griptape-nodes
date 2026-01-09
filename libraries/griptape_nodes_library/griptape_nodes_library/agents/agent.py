@@ -6,12 +6,14 @@ but supports connecting custom prompt_model_configurations. It handles parameter
 for tools, rulesets, prompts, and streams output back to the user interface.
 """
 
+import json
 from typing import Any
 
-from griptape.artifacts import BaseArtifact, ModelArtifact
+from griptape.artifacts import BaseArtifact, ModelArtifact, TextArtifact
 from griptape.drivers.prompt.base_prompt_driver import BasePromptDriver
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.events import ActionChunkEvent, FinishStructureRunEvent, StartStructureRunEvent, TextChunkEvent
+from griptape.memory.structure import ConversationMemory, Run
 from griptape.structures import Structure
 from griptape.tasks import PromptTask
 from jinja2 import Template
@@ -26,6 +28,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterType,
 )
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_json import ParameterJson
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
@@ -181,6 +184,16 @@ class Agent(ControlNode):
                 ui_options={"display_name": "prompt model", "data": MODEL_CHOICES_ARGS},
             )
         )
+        self.add_parameter(
+            ParameterJson(
+                name="agent_memory",
+                tooltip="The memory of the agent. Can be a simplified format with runs containing input/output, or full conversation_memory JSON.",
+                default_value={},
+                hide=True,
+                hide_property=True,
+                allowed_modes={ParameterMode.INPUT},
+            )
+        )
         # Main prompt input for the agent.
         self.add_parameter(
             ParameterString(
@@ -196,10 +209,8 @@ class Agent(ControlNode):
 
         # Optional additional context for the prompt.
         self.add_parameter(
-            Parameter(
-                "additional_context",
-                input_types=["str", "int", "float", "dict", "json"],
-                type="str",
+            ParameterString(
+                name="additional_context",
                 tooltip=(
                     "Additional context to provide to the agent.\nEither a string, or dictionary of key-value pairs."
                 ),
@@ -243,9 +254,8 @@ class Agent(ControlNode):
 
         # Parameter for the agent's final text output.
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
-                type="str",
                 default_value="",
                 tooltip="The final text response from the agent.",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -287,6 +297,221 @@ class Agent(ControlNode):
         )
 
     # --- Helper Methods ---
+
+    def _find_runs_in_data(self, data: Any) -> list[dict[str, Any]]:
+        """Recursively find 'runs' array in data structure.
+
+        Args:
+            data: Any data structure (dict, list, etc.)
+
+        Returns:
+            List of run dicts, or empty list if not found.
+        """
+        if isinstance(data, dict):
+            # Check if this dict has a 'runs' key
+            if "runs" in data and isinstance(data["runs"], list):
+                return data["runs"]
+
+            # Recursively search in all values
+            for value in data.values():
+                result = self._find_runs_in_data(value)
+                if result:
+                    return result
+
+        elif isinstance(data, list):
+            # Recursively search in list items
+            for item in data:
+                result = self._find_runs_in_data(item)
+                if result:
+                    return result
+
+        return []
+
+    def _extract_value_from_artifact(self, artifact: Any) -> str:
+        """Extract value from an artifact (dict with 'value' key, list of artifacts, or string).
+
+        Args:
+            artifact: Artifact data (dict, list, or string)
+
+        Returns:
+            Extracted string value
+        """
+        if isinstance(artifact, dict):
+            return artifact.get("value", "")
+        if isinstance(artifact, list):
+            # If it's a list of artifacts, concatenate their values
+            values = []
+            for item in artifact:
+                if isinstance(item, dict):
+                    values.append(item.get("value", ""))
+                else:
+                    values.append(str(item) if item else "")
+            return "\n".join(values)
+        return str(artifact) if artifact else ""
+
+    def _convert_memory_to_runs(self, memory_data: dict[str, Any]) -> list[Run]:
+        """Convert memory data to a list of Run objects.
+
+        Finds 'runs' anywhere in the data structure, extracts input/output values,
+        and creates Run objects.
+
+        Args:
+            memory_data: Memory data dict in any format (simplified or full conversation_memory).
+
+        Returns:
+            List of Run objects, or empty list if conversion fails.
+        """
+        runs = []
+
+        if not isinstance(memory_data, dict):
+            return runs
+
+        # Find runs anywhere in the data structure
+        runs_data = self._find_runs_in_data(memory_data)
+
+        # If no runs found, check if it's a single run format
+        if not runs_data:
+            if "input" in memory_data and "output" in memory_data:
+                runs_data = [memory_data]
+            else:
+                return runs
+
+        for run_data in runs_data:
+            if not isinstance(run_data, dict):
+                continue
+
+            if "input" not in run_data or "output" not in run_data:
+                continue
+
+            input_data = run_data["input"]
+            output_data = run_data["output"]
+
+            # Extract values from artifacts
+            input_value = self._extract_value_from_artifact(input_data)
+            output_value = self._extract_value_from_artifact(output_data)
+
+            runs.append(
+                Run(
+                    input=TextArtifact(value=input_value),
+                    output=TextArtifact(value=output_value),
+                )
+            )
+
+        return runs
+
+    def _parse_memory_data(self, memory_data: dict[str, Any] | str | None) -> dict[str, Any] | None:
+        """Parse and validate memory data.
+
+        Args:
+            memory_data: Memory data dict, JSON string, or None.
+
+        Returns:
+            Parsed dict or None if invalid/empty.
+        """
+        if memory_data is None:
+            return None
+
+        # Handle string input (JSON that needs parsing)
+        if isinstance(memory_data, str):
+            if not memory_data.strip():
+                return None
+            try:
+                memory_data = json.loads(memory_data)
+            except json.JSONDecodeError:
+                return None
+
+        if not isinstance(memory_data, dict):
+            return None
+
+        # Skip empty dicts (default value)
+        if not memory_data:
+            return None
+
+        return memory_data
+
+    def _is_simplified_format(self, memory_data: dict[str, Any]) -> bool:
+        """Check if memory data is in simplified format.
+
+        Simplified format has direct string inputs/outputs, full format has nested artifacts.
+
+        Args:
+            memory_data: Memory data dict.
+
+        Returns:
+            True if simplified format, False if full format.
+        """
+        if "runs" not in memory_data or not isinstance(memory_data["runs"], list) or not memory_data["runs"]:
+            return False
+
+        first_run = memory_data["runs"][0]
+        if not isinstance(first_run, dict):
+            return False
+
+        input_data = first_run.get("input")
+        # Simplified format has direct strings, full format has nested dicts with "type" and "value"
+        return isinstance(input_data, str) or (isinstance(input_data, dict) and "type" not in input_data)
+
+    def _apply_memory_via_from_dict(self, agent: GtAgent, memory_data: dict[str, Any]) -> bool:
+        """Apply memory using ConversationMemory.from_dict().
+
+        Args:
+            agent: The agent to apply memory to.
+            memory_data: Memory data dict in full format.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not hasattr(ConversationMemory, "from_dict"):
+            return False
+
+        if agent.conversation_memory is None:
+            return False
+
+        try:
+            # Preserve the original memory driver if it exists
+            original_driver = agent.conversation_memory.conversation_memory_driver
+            new_memory = ConversationMemory.from_dict(memory_data)
+            # Restore the original driver to maintain persistence
+            if original_driver is not None:
+                new_memory.conversation_memory_driver = original_driver
+            agent.conversation_memory = new_memory
+            return True  # noqa: TRY300
+        except (ValueError, TypeError, AttributeError):
+            # Fall back to manual conversion if from_dict() fails with expected errors
+            return False
+
+    def _apply_memory_to_agent(self, agent: GtAgent, memory_data: dict[str, Any] | str | None) -> None:
+        """Apply memory data to an agent's conversation memory.
+
+        Uses ConversationMemory.from_dict() if available, otherwise falls back to manual conversion.
+
+        Args:
+            agent: The agent to apply memory to.
+            memory_data: Memory data dict, JSON string, or None to skip.
+        """
+        # Failure cases first
+        if agent.conversation_memory is None:
+            return
+
+        parsed_data = self._parse_memory_data(memory_data)
+        if parsed_data is None:
+            return
+
+        # Try to use ConversationMemory.from_dict() only for full format
+        if not self._is_simplified_format(parsed_data) and self._apply_memory_via_from_dict(agent, parsed_data):
+            return
+
+        # Success path - manual conversion
+        if agent.conversation_memory is None:
+            return
+
+        runs = self._convert_memory_to_runs(parsed_data)
+        if not runs:
+            # If no valid runs, clear the memory
+            agent.conversation_memory.runs = []
+        else:
+            # Success path - replace memory with new runs
+            agent.conversation_memory.runs = runs
 
     def _update_output_type_and_validate_connections(self, new_output_type: str) -> None:
         """Update the output parameter type and remove incompatible connections.
@@ -568,6 +793,11 @@ class Agent(ControlNode):
                 **args,
             )
             agent = GtAgent(prompt_driver=prompt_driver, tools=tools, rulesets=rulesets, output_schema=pydantic_schema)
+
+        # Apply memory if provided
+        agent_memory = self.get_parameter_value("agent_memory")
+        if agent_memory is not None:
+            self._apply_memory_to_agent(agent, agent_memory)
 
         if prompt and not prompt.isspace():
             # Run the agent asynchronously
