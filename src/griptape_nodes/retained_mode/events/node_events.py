@@ -388,28 +388,38 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 @dataclass
 @PayloadRegistry.register
 class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
-    """Lock a node.
+    """Lock one or more nodes.
 
-    Use when: Implementing locking functionality, preventing changes to nodes.
+    Use when: Implementing locking functionality, preventing changes to nodes. Supports
+    locking a single node via node_name or multiple via node_names. If neither node_name
+    nor node_names is provided, the current context node is used (if available).
 
     Args:
-        node_name: Name of the node to lock
-        lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
+        lock: Whether to lock or unlock the node(s). If true, the node(s) will be locked,
+              otherwise they will be unlocked.
+        node_name: Name of the node to lock/unlock. Optional. If None, uses current context
+                   when node_names is not provided.
+        node_names: Names of nodes to lock/unlock. Optional. Takes precedence over node_name
+                    when provided.
 
     Results: SetLockNodeStateResultSuccess (node locked) | SetLockNodeStateResultFailure (node not found)
     """
 
-    node_name: str | None
     lock: bool
+    node_name: str | None = None
+    node_names: list[str] | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class SetLockNodeStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Node locked successfully."""
+    """Node(s) lock state updated successfully."""
 
-    node_name: str
     locked: bool
+    # Backwards compatibility: single-target responses populate node_name
+    node_name: str | None = None
+    # New: multi-target responses populate node_names
+    node_names: list[str] | None = None
 
 
 @dataclass

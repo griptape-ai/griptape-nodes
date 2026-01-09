@@ -366,25 +366,29 @@ class RetainedMode:
 
     @classmethod
     def set_lock_node_state(
-        cls, *, node_name: str | None = None, lock: bool = True
+        cls, *, node_name: str | None = None, node_names: list[str] | None = None, lock: bool = True
     ) -> SetLockNodeStateResultSuccess | SetLockNodeStateResultFailure:
-        """Sets the lock state of a node.
+        """Sets the lock state of one or more nodes.
 
         Args:
             node_name (str | None): Name of the node to lock/unlock. If None, uses the current context node.
-            lock (bool): Whether to lock (True) or unlock (False) the node.
+            node_names (list[str] | None): Names of nodes to lock/unlock. If provided, takes precedence over node_name.
+            lock (bool): Whether to lock (True) or unlock (False) the node(s).
 
         Returns:
-            ResultPayload: Contains the result of setting the node lock state.
+            ResultPayload: Contains the result of setting the node lock state(s).
 
         Example:
             # Lock a specific node
             result = cmd.set_lock_node_state("my_node", lock=True)
 
+            # Lock multiple nodes
+            result = cmd.set_lock_node_state(node_names=["node_a", "node_b"], lock=True)
+
             # Unlock the current context node
             result = cmd.set_lock_node_state(lock=False)
         """
-        request = SetLockNodeStateRequest(node_name=node_name, lock=lock)
+        request = SetLockNodeStateRequest(lock=lock, node_name=node_name, node_names=node_names)
         result = GriptapeNodes().handle_request(request)
         return result
 

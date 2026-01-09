@@ -3568,24 +3568,47 @@ class NodeManager:
         )
 
     def on_toggle_lock_node_request(self, request: SetLockNodeStateRequest) -> ResultPayload:
-        node_name = request.node_name
-        if node_name is None:
-            if not GriptapeNodes.ContextManager().has_current_node():
-                details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
-                return SetLockNodeStateResultFailure(result_details=details)
-            node = GriptapeNodes.ContextManager().get_current_node()
-            node_name = node.name
+        # Determine target node names
+        target_node_names: list[str]
+        if request.node_names and len(request.node_names) > 0:
+            target_node_names = request.node_names
         else:
+            node_name = request.node_name
+            if node_name is None:
+                if not GriptapeNodes.ContextManager().has_current_node():
+                    details = "Attempted to set lock state in the Current Context. Failed because the Current Context was empty."
+                    return SetLockNodeStateResultFailure(result_details=details)
+                node = GriptapeNodes.ContextManager().get_current_node()
+                node_name = node.name
+            target_node_names = [node_name]
+
+        failed: dict[str, str] = {}
+        for name in target_node_names:
             try:
-                node = self.get_node_by_name(node_name)
+                node = self.get_node_by_name(name)
             except ValueError as err:
-                details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
-                return SetLockNodeStateResultFailure(result_details=details)
-        node.lock = request.lock
+                failed[name] = f"Node not found. Error: {err}"
+                continue
+            node.lock = request.lock
+
+        if failed:
+            details = (
+                f"Failed to set lock state for nodes: {', '.join(failed.keys())}. "
+                f"Errors: {failed}"
+            )
+            return SetLockNodeStateResultFailure(result_details=details)
+
+        if len(target_node_names) == 1:
+            only = target_node_names[0]
+            return SetLockNodeStateResultSuccess(
+                locked=request.lock,
+                node_name=only,
+                result_details=f"Successfully set lock state to {request.lock} for node '{only}'.",
+            )
         return SetLockNodeStateResultSuccess(
-            node_name=node_name,
-            locked=node.lock,
-            result_details=f"Successfully set lock state to {node.lock} for node '{node_name}'.",
+            locked=request.lock,
+            node_names=target_node_names,
+            result_details=f"Successfully set lock state to {request.lock} for nodes: {', '.join(target_node_names)}.",
         )
 
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
