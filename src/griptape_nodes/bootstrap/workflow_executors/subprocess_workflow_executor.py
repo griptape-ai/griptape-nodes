@@ -44,11 +44,13 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
         self,
         workflow_path: str,
         on_start_flow_result: Callable[[ResultPayload], None] | None = None,
+        on_event: Callable[[dict], None] | None = None,
         session_id: str | None = None,
     ) -> None:
         PythonSubprocessExecutor.__init__(self)
         self._workflow_path = workflow_path
         self._on_start_flow_result = on_start_flow_result
+        self._on_event = on_event
         # Generate a unique session ID for this execution
         self._session_id = session_id or uuid.uuid4().hex
         self._websocket_thread: threading.Thread | None = None
@@ -238,6 +240,10 @@ class SubprocessWorkflowExecutor(LocalSessionWorkflowExecutor, PythonSubprocessE
 
     async def _process_event(self, event: dict) -> None:
         """Process events received from the subprocess via WebSocket."""
+        # Call the event callback if provided (for GUI updates)
+        if self._on_event:
+            self._on_event(event)
+
         event_type = event.get("type", "unknown")
         if event_type == "execution_event":
             await self._process_execution_event(event)

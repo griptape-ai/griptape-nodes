@@ -102,6 +102,8 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -220,6 +222,8 @@ class NodeExecutor:
                 # Just execute the node normally! This means we aren't doing any special packaging.
                 await node.aprocess()
                 return
+            # Clear execution events before subprocess execution starts
+            node.subflow_execution_component.clear_events()
             if execution_type == PRIVATE_EXECUTION:
                 # Package the flow and run it in a subprocess.
                 await self._execute_private_workflow(node)
@@ -251,7 +255,9 @@ class NodeExecutor:
             file_name: Name of workflow for logging
             package_result: The packaging result containing parameter mappings
         """
-        my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
+        # Pass node for event updates if it's a SubflowNodeGroup
+        subflow_node = node if isinstance(node, SubflowNodeGroup) else None
+        my_subprocess_result = await self._execute_subprocess(workflow_path, file_name, node=subflow_node)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
         self._apply_parameter_values_to_node(node, parameter_output_values, package_result)
 
@@ -507,6 +513,7 @@ class NodeExecutor:
         file_name: str,
         pickle_control_flow_result: bool = True,  # noqa: FBT001, FBT002
         flow_input: dict[str, Any] | None = None,
+        node: SubflowNodeGroup | None = None,
     ) -> dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Execute the published workflow in a subprocess.
 
@@ -515,15 +522,31 @@ class NodeExecutor:
             file_name: Name of the workflow for logging
             pickle_control_flow_result: Whether to pickle control flow results (defaults to True)
             flow_input: Optional dictionary of parameter values to pass to the workflow's StartFlow node
+            node: Optional SubflowNodeGroup to receive real-time event updates
 
         Returns:
             The subprocess execution output dictionary
         """
+        import json
+
         from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
             SubprocessWorkflowExecutor,
         )
 
-        subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
+        # Define event callback if node provided for GUI updates
+        on_event: Callable[[dict], None] | None = None
+        if node is not None:
+
+            def _on_event_callback(event: dict) -> None:
+                event_str = json.dumps(event, default=str)
+                node.subflow_execution_component.append_event(event_str)
+
+            on_event = _on_event_callback
+
+        subprocess_executor = SubprocessWorkflowExecutor(
+            workflow_path=str(published_workflow_filename),
+            on_event=on_event,
+        )
         try:
             async with subprocess_executor as executor:
                 await executor.arun(
