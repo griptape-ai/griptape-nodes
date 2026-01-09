@@ -3592,10 +3592,7 @@ class NodeManager:
             node.lock = request.lock
 
         if failed:
-            details = (
-                f"Failed to set lock state for nodes: {', '.join(failed.keys())}. "
-                f"Errors: {failed}"
-            )
+            details = f"Failed to set lock state for nodes: {', '.join(failed.keys())}. Errors: {failed}"
             return SetLockNodeStateResultFailure(result_details=details)
 
         if len(target_node_names) == 1:
