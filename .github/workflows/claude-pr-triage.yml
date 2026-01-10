@@ -6,113 +6,37 @@ on:
 jobs:
   triage-pr:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Create triage prompt
-        run: |
-          mkdir -p /tmp/claude-prompts
-          cat > /tmp/claude-prompts/triage-prompt.txt << 'EOF'
-          You're a pull request triage assistant for GitHub pull requests. Your task is to analyze the PR and select appropriate labels from the provided list.
-
-          IMPORTANT: Don't post any comments or messages to the PR. Your only action should be to apply labels.
-
-          Pull Request Information:
-          - REPO: ${{ github.repository }}
-          - PR_NUMBER: ${{ github.event.pull_request.number }}
-
-          TASK OVERVIEW:
-
-          1. First, fetch the list of labels available in this repository by running: `gh label list`. Run exactly this command with nothing else.
-
-          2. Next, use the GitHub tools to get context about the pull request:
-             - You have access to these tools:
-               - mcp__github__get_pull_request: Use this to retrieve the PR's details including title, description, and existing labels
-               - mcp__github__get_pull_request_comments: Use this to read any discussion or additional context in the comments
-               - mcp__github__update_issue: Use this to apply labels to the PR (do not use this for commenting)
-               - mcp__github__get_pull_request_files: Use this to see what files were changed in the PR
-               - mcp__github__search_issues: Use this to find similar PRs that might provide context for proper categorization
-               - mcp__github__list_pull_requests: Use this to understand patterns in how other PRs are labeled
-             - Start by using mcp__github__get_pull_request to get the PR details
-
-          3. Analyze the pull request content, considering:
-             - The PR title and description
-             - The files changed (use mcp__github__get_pull_request_files)
-             - The type of changes made:
-               - New features or functionality → "enhancement" label
-               - Bug fixes or corrections → "bug" label
-               - Documentation changes → "documentation" label
-               - Refactoring without functional changes → "refactor" label
-               - Performance improvements → "performance" label
-               - CI/CD changes → "ci" label
-             - Technical areas affected (nodes, engine, config, etc.)
-             - Code patterns and scope of changes
-
-          4. Select appropriate labels from the available labels list:
-             - Choose labels that accurately reflect the PR's nature
-             - Be specific but comprehensive
-             - Key labels to consider:
-               - "enhancement" for new features or functionality
-               - "bug" for fixes to existing functionality
-               - "documentation" for doc updates
-               - "refactor" for code restructuring
-               - "performance" for performance improvements
-               - "ci" for workflow/CI changes
-               - Technical area labels like "nodes", "engine", "config", etc.
-
-          5. Apply the selected labels:
-             - Use mcp__github__update_issue to apply your selected labels
-             - DO NOT post any comments explaining your decision
-             - DO NOT communicate directly with users
-             - If no labels are clearly applicable, do not apply any labels
-
-          IMPORTANT GUIDELINES:
-          - Be thorough in your analysis, especially reviewing the changed files
-          - Only select labels from the provided list above
-          - DO NOT post any comments to the PR
-          - Your ONLY action should be to apply labels using mcp__github__update_issue
-          - It's okay to not add any labels if none are clearly applicable
-          - Pay special attention to distinguishing between "enhancement" (new functionality) and "bug" (fixing existing functionality)
-          EOF
-
-      - name: Setup GitHub MCP Server
-        run: |
-          mkdir -p /tmp/mcp-config
-          cat > /tmp/mcp-config/mcp-servers.json << 'EOF'
-          {
-            "mcpServers": {
-              "github": {
-                "command": "docker",
-                "args": [
-                  "run",
-                  "-i",
-                  "--rm",
-                  "-e",
-                  "GITHUB_PERSONAL_ACCESS_TOKEN",
-                  "ghcr.io/github/github-mcp-server:sha-7aced2b"
-                ],
-                "env": {
-                  "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
-                }
-              }
-            }
-          }
-          EOF
-
-      - name: Run Claude Code for PR Triage
-        uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@v1
         with:
-          prompt_file: /tmp/claude-prompts/triage-prompt.txt
-          allowed_tools: "Bash(gh label list),mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__update_issue,mcp__github__get_pull_request_files,mcp__github__search_issues,mcp__github__list_pull_requests"
-          timeout_minutes: "5"
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          mcp_config: /tmp/mcp-config/mcp-servers.json
-          claude_env: |
-            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR_NUMBER: ${{ github.event.pull_request.number }}
 
+            Analyze this pull request and apply appropriate labels.
+
+            Steps:
+            1. Get PR details: `gh pr view [number] --json title,body,files`
+            2. Get changed files: `gh pr diff [number] --name-only`
+            3. List available labels: `gh label list`
+            4. Analyze the PR and select appropriate labels based on:
+               - Type of changes:
+                 * "enhancement" - new features or functionality
+                 * "bug" - fixes to existing functionality
+                 * "documentation" - doc updates
+                 * "refactor" - code restructuring
+                 * "performance" - performance improvements
+                 * "ci" - workflow/CI changes
+               - Technical areas affected (nodes, engine, config, etc.)
+            5. Apply labels: `gh pr edit [number] --add-label "label1,label2"`
+
+            DO NOT post any comments to the PR.
+          claude_args: |
+            --allowedTools "Bash(gh pr:*),Bash(gh label:*),Bash(gh search:*)"
