@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from subprocess import _ENV
 
 logger = logging.getLogger(__name__)
+
+
+def _create_subprocess_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Create environment for subprocess, inheriting parent env with optional overrides."""
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    return env
 
 
 class PythonSubprocessExecutorError(Exception):
@@ -22,7 +30,11 @@ class PythonSubprocessExecutor:
         self._is_running = False
 
     async def execute_python_script(
-        self, script_path: Path, args: list[str] | None = None, cwd: Path | None = None, env: _ENV | None = None
+        self,
+        script_path: Path,
+        args: list[str] | None = None,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
     ) -> None:
         """Execute a Python script in a subprocess and wait for completion.
 
@@ -30,7 +42,7 @@ class PythonSubprocessExecutor:
             script_path: Path to the Python script to execute
             args: Additional command line arguments
             cwd: Working directory for the subprocess
-            env: Environment variables for the subprocess
+            env: Extra environment variables to add or override in the subprocess
         """
         if self.is_running():
             logger.warning("Another subprocess is already running. Terminating it first.")
@@ -38,6 +50,7 @@ class PythonSubprocessExecutor:
 
         args = args or []
         command = [sys.executable, str(script_path), *args]
+        subprocess_env = _create_subprocess_env(env)
 
         try:
             logger.info("Starting subprocess: %s", " ".join(command))
@@ -46,7 +59,7 @@ class PythonSubprocessExecutor:
             self._process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=cwd,
-                env=env,
+                env=subprocess_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
