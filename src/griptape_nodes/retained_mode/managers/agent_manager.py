@@ -410,8 +410,6 @@ class AgentManager:
 
         # Collect server names to get rules for
         server_names_to_check = []
-        if self.mcp_tool is not None:
-            server_names_to_check.append("griptape-nodes-local")
         if additional_mcp_servers:
             server_names_to_check.extend(additional_mcp_servers)
 
@@ -419,9 +417,7 @@ class AgentManager:
         if not server_names_to_check:
             return mcp_rulesets
 
-        app = GriptapeNodes()
-        enabled_request = GetEnabledMCPServersRequest()
-        enabled_result = app.handle_request(enabled_request)
+        enabled_result = GriptapeNodes.handle_request(GetEnabledMCPServersRequest())
         if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
             return mcp_rulesets
 
@@ -554,10 +550,7 @@ class AgentManager:
         additional_tools = []
 
         try:
-            app = GriptapeNodes()
-
-            enabled_request = GetEnabledMCPServersRequest()
-            enabled_result = app.handle_request(enabled_request)
+            enabled_result = GriptapeNodes.handle_request(GetEnabledMCPServersRequest())
 
             if not isinstance(enabled_result, GetEnabledMCPServersResultSuccess):
                 msg = f"Failed to get enabled MCP servers for additional tools: {enabled_result}. Agent will continue with default MCP tool only."
