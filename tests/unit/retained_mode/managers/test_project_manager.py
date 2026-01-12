@@ -257,9 +257,43 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result.result_details, ResultDetails)
         assert "project_name not yet implemented" in str(result.result_details)
 
-    def test_builtin_workflow_dir_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
-        """Test that {workflow_dir} raises NotImplementedError."""
+    @patch("griptape_nodes.node_library.workflow_registry.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_builtin_workflow_dir_resolves_correctly(
+        self, mock_griptape_nodes: Mock, mock_workflow_registry: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {workflow_dir} builtin resolves to workflow file's parent directory."""
         from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "test_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow = Mock()
+        mock_workflow.file_path = "workflows/test_workflow.yml"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+        mock_workflow_registry.get_complete_file_path.return_value = "/workspace/workflows/test_workflow.yml"
+
+        parsed_macro = ParsedMacro("{workflow_dir}/staticfiles/output.png")
+
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/workflows/staticfiles/output.png")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_no_current_workflow_fails(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {workflow_dir} fails when no current workflow context."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
 
         parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
 
@@ -272,8 +306,33 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
-        assert "workflow_dir" in str(result.result_details)
-        assert "cannot be resolved" in str(result.result_details)
+        assert "No current workflow" in str(result.result_details)
+
+    @patch("griptape_nodes.node_library.workflow_registry.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_builtin_workflow_dir_workflow_not_in_registry_fails(
+        self, mock_griptape_nodes: Mock, mock_workflow_registry: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {workflow_dir} raises KeyError when workflow not found in registry.
+
+        Note: The current implementation does not catch KeyError from WorkflowRegistry.get_workflow_by_name(),
+        so it propagates to the caller. This is the actual behavior as of the implementation.
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "missing_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("Workflow not found: missing_workflow")
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
+
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        with pytest.raises(KeyError, match="Workflow not found: missing_workflow"):
+            project_manager_with_template.on_get_path_for_macro_request(request)
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""
@@ -1195,3 +1254,43 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             result_message = str(result.result_details)
             assert "failed" in result_message.lower()
             assert "workflow" in result_message.lower() or "no current workflow" in result_message.lower()
+
+
+class TestLegacyProjectTemplate:
+    """Test LEGACY_PROJECT_TEMPLATE structure and configuration."""
+
+    def test_legacy_project_template_structure(self) -> None:
+        """Test that LEGACY_PROJECT_TEMPLATE has correct structure."""
+        from griptape_nodes.common.project_templates import LEGACY_PROJECT_TEMPLATE
+
+        assert LEGACY_PROJECT_TEMPLATE.name == "Legacy Workspace Layout"
+        assert LEGACY_PROJECT_TEMPLATE.project_template_schema_version == "0.1.0"
+        assert LEGACY_PROJECT_TEMPLATE.directories == {}
+        assert "save_file" in LEGACY_PROJECT_TEMPLATE.situations
+
+    def test_legacy_project_template_save_file_situation(self) -> None:
+        """Test that save_file situation is correctly configured."""
+        from griptape_nodes.common.project_templates import LEGACY_PROJECT_TEMPLATE
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        situation = LEGACY_PROJECT_TEMPLATE.situations["save_file"]
+
+        assert situation.name == "save_file"
+        assert situation.macro == "{workflow_dir}/staticfiles/{file_name_base}{_index?:03}.{file_extension}"
+        assert situation.policy.on_collision == SituationFilePolicy.CREATE_NEW
+        assert situation.policy.create_dirs is True
+
+    def test_legacy_project_template_uses_workflow_dir_builtin(self) -> None:
+        """Test that save_file situation uses workflow_dir builtin variable."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import LEGACY_PROJECT_TEMPLATE
+
+        situation = LEGACY_PROJECT_TEMPLATE.situations["save_file"]
+        parsed_macro = ParsedMacro(situation.macro)
+
+        variables = parsed_macro.get_variables()
+        variable_names = {var.name for var in variables}
+
+        assert "workflow_dir" in variable_names
+        assert "file_name_base" in variable_names
+        assert "file_extension" in variable_names

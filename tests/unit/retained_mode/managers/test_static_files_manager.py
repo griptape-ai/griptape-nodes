@@ -7,7 +7,17 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
+from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy, SituationPolicy, SituationTemplate
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroResultFailure,
+    GetPathForMacroResultSuccess,
+    GetSituationResultFailure,
+    GetSituationResultSuccess,
+    MacroPath,
+    PathResolutionFailureReason,
+)
 from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
 
 # pyright: reportAttributeAccessIssue=false
@@ -384,3 +394,343 @@ class TestStaticFilesManagerSaveStaticFile:
 
             # 5. Correct URL returned
             assert result == mock_download_url
+
+
+class TestStaticFilesManagerExtractFileVariables:
+    """Test StaticFilesManager._extract_file_variables() method."""
+
+    @pytest.fixture
+    def manager(self, mock_config_manager: Mock, mock_secrets_manager: Mock) -> StaticFilesManager:
+        """Create StaticFilesManager for testing."""
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            return StaticFilesManager(
+                config_manager=mock_config_manager, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Mock ConfigManager for StaticFilesManager initialization."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        return mock_config
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        return Mock()
+
+    def test_extract_file_variables_simple_extension(self, manager: StaticFilesManager) -> None:
+        """Test extracting variables from filename with simple extension."""
+        result = manager._extract_file_variables("output.png")
+
+        assert result["file_name_base"] == "output"
+        assert result["file_extension"] == "png"
+
+    def test_extract_file_variables_multiple_dots(self, manager: StaticFilesManager) -> None:
+        """Test extracting variables from filename with multiple dots."""
+        result = manager._extract_file_variables("my.file.name.png")
+
+        assert result["file_name_base"] == "my.file.name"
+        assert result["file_extension"] == "png"
+
+    def test_extract_file_variables_no_extension(self, manager: StaticFilesManager) -> None:
+        """Test extracting variables from filename with no extension."""
+        result = manager._extract_file_variables("README")
+
+        assert result["file_name_base"] == "README"
+        assert result["file_extension"] == ""
+
+    def test_extract_file_variables_hidden_file(self, manager: StaticFilesManager) -> None:
+        """Test extracting variables from hidden file (Path.stem behavior).
+
+        Note: Path(".gitignore").stem returns ".gitignore" and Path(".gitignore").suffix returns "".
+        This is standard Python pathlib behavior for hidden files.
+        """
+        result = manager._extract_file_variables(".gitignore")
+
+        assert result["file_name_base"] == ".gitignore"
+        assert result["file_extension"] == ""
+
+    def test_extract_file_variables_various_extensions(self, manager: StaticFilesManager) -> None:
+        """Test extracting variables from filenames with various extensions."""
+        test_cases = [
+            ("image.jpg", {"file_name_base": "image", "file_extension": "jpg"}),
+            ("doc.pdf", {"file_name_base": "doc", "file_extension": "pdf"}),
+            ("video.mp4", {"file_name_base": "video", "file_extension": "mp4"}),
+        ]
+
+        for filename, expected in test_cases:
+            result = manager._extract_file_variables(filename)
+            assert result == expected, f"Failed for {filename}"
+
+
+class TestStaticFilesManagerMapSituationPolicyToFilePolicy:
+    """Test StaticFilesManager._map_situation_policy_to_file_policy() method."""
+
+    @pytest.fixture
+    def manager(self, mock_config_manager: Mock, mock_secrets_manager: Mock) -> StaticFilesManager:
+        """Create StaticFilesManager for testing."""
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            return StaticFilesManager(
+                config_manager=mock_config_manager, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Mock ConfigManager for StaticFilesManager initialization."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        return mock_config
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        return Mock()
+
+    def test_map_policy_create_new_success(self, manager: StaticFilesManager) -> None:
+        """Test mapping CREATE_NEW policy succeeds."""
+        result = manager._map_situation_policy_to_file_policy(SituationFilePolicy.CREATE_NEW)
+
+        assert result == ExistingFilePolicy.CREATE_NEW
+
+    def test_map_policy_overwrite_success(self, manager: StaticFilesManager) -> None:
+        """Test mapping OVERWRITE policy succeeds."""
+        result = manager._map_situation_policy_to_file_policy(SituationFilePolicy.OVERWRITE)
+
+        assert result == ExistingFilePolicy.OVERWRITE
+
+    def test_map_policy_fail_success(self, manager: StaticFilesManager) -> None:
+        """Test mapping FAIL policy succeeds."""
+        result = manager._map_situation_policy_to_file_policy(SituationFilePolicy.FAIL)
+
+        assert result == ExistingFilePolicy.FAIL
+
+    def test_map_policy_prompt_raises_value_error(self, manager: StaticFilesManager) -> None:
+        """Test mapping PROMPT policy raises ValueError."""
+        with pytest.raises(ValueError, match="Cannot map PROMPT policy"):
+            manager._map_situation_policy_to_file_policy(SituationFilePolicy.PROMPT)
+
+    def test_map_policy_unknown_raises_value_error(self, manager: StaticFilesManager) -> None:
+        """Test mapping unknown policy raises ValueError."""
+        mock_policy = Mock()
+        mock_policy.name = "UNKNOWN_POLICY"
+
+        with pytest.raises(ValueError, match="Unknown situation policy"):
+            manager._map_situation_policy_to_file_policy(mock_policy)
+
+
+class TestStaticFilesManagerResolveMacroPath:
+    """Test StaticFilesManager._resolve_macro_path() method."""
+
+    @pytest.fixture
+    def manager(self, mock_config_manager: Mock, mock_secrets_manager: Mock) -> StaticFilesManager:
+        """Create StaticFilesManager for testing."""
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            return StaticFilesManager(
+                config_manager=mock_config_manager, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Mock ConfigManager for StaticFilesManager initialization."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        return mock_config
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        return Mock()
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_macro_path_success(self, mock_griptape_nodes: Mock, manager: StaticFilesManager) -> None:
+        """Test successful macro path resolution."""
+        mock_result = GetPathForMacroResultSuccess(
+            resolved_path=Path("/workspace/output.png"),
+            absolute_path=Path("/workspace/output.png"),
+            result_details="Success",
+        )
+        mock_griptape_nodes.handle_request.return_value = mock_result
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.png")
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        result = manager._resolve_macro_path(macro_path)
+
+        assert result == Path("/workspace/output.png")
+        mock_griptape_nodes.handle_request.assert_called_once()
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_macro_path_result_failed_raises_value_error(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that failed result raises ValueError."""
+        mock_result = GetPathForMacroResultFailure(
+            failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR, result_details="Test failure"
+        )
+        mock_griptape_nodes.handle_request.return_value = mock_result
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.png")
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        with pytest.raises(ValueError, match="Failed to resolve macro path"):
+            manager._resolve_macro_path(macro_path)
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_macro_path_wrong_result_type_raises_type_error(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that wrong result type raises TypeError."""
+        mock_result = Mock()
+        mock_result.failed.return_value = False
+        mock_griptape_nodes.handle_request.return_value = mock_result
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.png")
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        with pytest.raises(TypeError, match="Unexpected result type"):
+            manager._resolve_macro_path(macro_path)
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_macro_path_empty_path_raises_value_error(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that empty path raises ValueError."""
+        mock_result = Mock(spec=GetPathForMacroResultSuccess)
+        mock_result.failed.return_value = False
+        mock_result.absolute_path = None
+        mock_griptape_nodes.handle_request.return_value = mock_result
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.png")
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        with pytest.raises(ValueError, match="Macro resolved to empty path"):
+            manager._resolve_macro_path(macro_path)
+
+
+class TestStaticFilesManagerResolvePathViaSituation:
+    """Test StaticFilesManager._resolve_path_via_situation() method."""
+
+    @pytest.fixture
+    def manager(self, mock_config_manager: Mock, mock_secrets_manager: Mock) -> StaticFilesManager:
+        """Create StaticFilesManager for testing."""
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            return StaticFilesManager(
+                config_manager=mock_config_manager, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Mock ConfigManager for StaticFilesManager initialization."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        return mock_config
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        return Mock()
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_path_via_situation_success(self, mock_griptape_nodes: Mock, manager: StaticFilesManager) -> None:
+        """Test successful situation-based path resolution."""
+        situation = SituationTemplate(
+            name="save_file",
+            description="Save file",
+            macro="{workflow_dir}/staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.CREATE_NEW, create_dirs=True),
+            fallback=None,
+        )
+        situation_result = GetSituationResultSuccess(situation=situation, result_details="Success")
+
+        path_result = GetPathForMacroResultSuccess(
+            resolved_path=Path("/workspace/workflows/staticfiles/output.png"),
+            absolute_path=Path("/workspace/workflows/staticfiles/output.png"),
+            result_details="Success",
+        )
+
+        mock_griptape_nodes.handle_request.side_effect = [situation_result, path_result]
+
+        resolved_path, effective_policy = manager._resolve_path_via_situation(
+            situation_name="save_file", file_name="output.png", variables=None
+        )
+
+        assert resolved_path == Path("/workspace/workflows/staticfiles/output.png")
+        assert effective_policy == ExistingFilePolicy.CREATE_NEW
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_path_via_situation_not_found_fails(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that situation not found raises ValueError."""
+        situation_result = GetSituationResultFailure(result_details="Situation not found")
+        mock_griptape_nodes.handle_request.return_value = situation_result
+
+        with pytest.raises(ValueError, match="Failed to get situation"):
+            manager._resolve_path_via_situation(
+                situation_name="missing_situation", file_name="output.png", variables=None
+            )
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_path_via_situation_wrong_result_type_fails(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that wrong result type raises TypeError."""
+        mock_result = Mock()
+        mock_result.failed.return_value = False
+        mock_griptape_nodes.handle_request.return_value = mock_result
+
+        with pytest.raises(TypeError, match="Unexpected result type"):
+            manager._resolve_path_via_situation(situation_name="save_file", file_name="output.png", variables=None)
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_path_via_situation_prompt_policy_fails(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that PROMPT policy raises ValueError."""
+        situation = SituationTemplate(
+            name="save_preview",
+            description="Save preview",
+            macro="{workflow_dir}/previews/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.PROMPT, create_dirs=True),
+            fallback=None,
+        )
+        situation_result = GetSituationResultSuccess(situation=situation, result_details="Success")
+
+        path_result = GetPathForMacroResultSuccess(
+            resolved_path=Path("/workspace/previews/output.png"),
+            absolute_path=Path("/workspace/previews/output.png"),
+            result_details="Success",
+        )
+
+        mock_griptape_nodes.handle_request.side_effect = [situation_result, path_result]
+
+        with pytest.raises(ValueError, match="Cannot map PROMPT policy"):
+            manager._resolve_path_via_situation(situation_name="save_preview", file_name="output.png", variables=None)
+
+    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
+    def test_resolve_path_via_situation_macro_resolution_fails(
+        self, mock_griptape_nodes: Mock, manager: StaticFilesManager
+    ) -> None:
+        """Test that macro resolution failure raises ValueError."""
+        situation = SituationTemplate(
+            name="save_file",
+            description="Save file",
+            macro="{workflow_dir}/staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.CREATE_NEW, create_dirs=True),
+            fallback=None,
+        )
+        situation_result = GetSituationResultSuccess(situation=situation, result_details="Success")
+
+        path_result = GetPathForMacroResultFailure(
+            failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR, result_details="Missing variable"
+        )
+
+        mock_griptape_nodes.handle_request.side_effect = [situation_result, path_result]
+
+        with pytest.raises(ValueError, match="Failed to resolve macro path"):
+            manager._resolve_path_via_situation(situation_name="save_file", file_name="output.png", variables=None)
