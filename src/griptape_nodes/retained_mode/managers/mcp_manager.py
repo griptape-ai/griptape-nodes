@@ -127,6 +127,7 @@ class MCPManager:
             "terminate_on_close": "terminate_on_close",
             "description": "description",
             "capabilities": "capabilities",
+            "rules": "rules",
         }
 
         # Update fields that are not None
@@ -213,6 +214,7 @@ class MCPManager:
             # Common fields
             description=request.description,
             capabilities=request.capabilities or [],
+            rules=request.rules,
         )
 
         servers.append(server_config)

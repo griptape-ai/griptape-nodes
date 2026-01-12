@@ -105,6 +105,18 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
 
     Notice we just modified the **command** and **args** settings to match what was in the docs.
 
+    **Optional: Add Custom Rules**
+
+    You can optionally add custom rules in the **Rules** text area to provide instructions for the AI agent when using this MCP server. These rules are automatically applied when the agent uses tools from this server.
+
+    For example, you might enter:
+
+    ```
+    Always validate URLs before fetching. Return errors in JSON format if a fetch fails.
+    ```
+
+    Rules help guide the agent's behavior when interacting with this specific MCP server, ensuring consistent and appropriate usage.
+
 1. Click **Create Server**
 
     ![Fetch Server Created](images/fetch_server_created.png)
@@ -114,7 +126,7 @@ To create a new MCP Server you'll need to configure the appropriate MCP Server s
 Once created, you can see your server in the list. You can:
 
 - **Enable/Disable** servers using the toggle button
-- **Edit** a server by clicking the Edit button
+- **Edit** a server by clicking the Edit button (you can add or modify rules here)
 - **Delete** servers using the delete button
 
 Close the settings when you're done.

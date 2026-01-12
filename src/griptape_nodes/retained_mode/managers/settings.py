@@ -97,6 +97,7 @@ class MCPServerConfig(BaseModel):
     # Common fields
     description: str | None = Field(default=None, description="Optional description of what this MCP server provides")
     capabilities: list[str] = Field(default_factory=list, description="List of capabilities this MCP server provides")
+    rules: str | None = Field(default=None, description="Optional rules for this MCP server as a single string.")
 
     def __str__(self) -> str:
         return f"{self.name} ({'enabled' if self.enabled else 'disabled'})"
