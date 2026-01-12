@@ -222,62 +222,6 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
         # Set initial parameter visibility based on default model
         self._update_parameter_visibility_for_model("LTX 2 Fast")
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Validate parameters before node execution."""
-        exceptions = []
-
-        # Get current parameter values
-        model_display_name = self.get_parameter_value("model") or "LTX 2 Fast"
-        model_id = MODEL_MAPPING.get(model_display_name, "ltx-2-fast")
-        resolution = self.get_parameter_value("resolution") or "1920x1080"
-        fps = self.get_parameter_value("fps") or 25
-        duration = self.get_parameter_value("duration") or 6
-        prompt = self.get_parameter_value("prompt") or ""
-
-        # Validate prompt is provided
-        if not prompt.strip():
-            exceptions.append(ValueError(f"{self.name}: Prompt is required for video generation"))
-
-        # Validate model-resolution-fps-duration combination
-        capabilities = self.MODEL_CAPABILITIES.get(model_id)
-        if not capabilities:
-            exceptions.append(ValueError(f"{self.name}: Unknown model '{model_display_name}'"))
-            return exceptions
-
-        resolution_config = capabilities.get("resolutions", {}).get(resolution)
-        if not resolution_config:
-            valid_resolutions = list(capabilities.get("resolutions", {}).keys())
-            exceptions.append(
-                ValueError(
-                    f"{self.name}: Model {model_display_name} does not support resolution '{resolution}'. "
-                    f"Valid resolutions: {', '.join(valid_resolutions)}"
-                )
-            )
-            return exceptions
-
-        fps_config = resolution_config.get("fps", {})
-        supported_durations = fps_config.get(fps)
-        if supported_durations is None:
-            valid_fps = list(fps_config.keys())
-            exceptions.append(
-                ValueError(
-                    f"{self.name}: Model {model_display_name} does not support {fps} FPS at resolution {resolution}. "
-                    f"Valid FPS values: {', '.join(map(str, valid_fps))}"
-                )
-            )
-            return exceptions
-
-        if duration not in supported_durations:
-            exceptions.append(
-                ValueError(
-                    f"{self.name}: Model {model_display_name} does not support duration {duration}s "
-                    f"at resolution {resolution} and {fps} FPS. "
-                    f"Valid durations: {', '.join(map(str, supported_durations))}"
-                )
-            )
-
-        return exceptions if exceptions else None
-
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Handle parameter value changes to show/hide dependent parameters."""
         super().after_value_set(parameter, value)
