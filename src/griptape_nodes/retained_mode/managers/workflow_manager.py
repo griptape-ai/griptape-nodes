@@ -1826,8 +1826,11 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
+        # Extract library names from workflow metadata
+        library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
+
         prereq_code = self._generate_workflow_run_prerequisite_code(
-            workflow_name=workflow_metadata.name, import_recorder=import_recorder
+            workflow_name=workflow_metadata.name, import_recorder=import_recorder, library_names=library_names
         )
         for node in prereq_code:
             ast_container.add_node(node)
@@ -2750,13 +2753,13 @@ class WorkflowManager:
         self,
         workflow_name: str,
         import_recorder: ImportRecorder,
+        library_names: list[str],
     ) -> list[ast.AST]:
         import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
 
         code_blocks: list[ast.AST] = []
 
-        # Generate load libraries request call
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
+        # Generate load libraries request call with library names from workflow metadata
         load_call = ast.Expr(
             value=ast.Call(
                 func=ast.Attribute(
@@ -2768,7 +2771,15 @@ class WorkflowManager:
                     ast.Call(
                         func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
                         args=[],
-                        keywords=[],
+                        keywords=[
+                            ast.keyword(
+                                arg="library_names",
+                                value=ast.List(
+                                    elts=[ast.Constant(value=name) for name in library_names],
+                                    ctx=ast.Load(),
+                                ),
+                            )
+                        ],
                     )
                 ],
                 keywords=[],

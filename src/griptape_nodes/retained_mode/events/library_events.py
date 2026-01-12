@@ -661,17 +661,27 @@ class EvaluateLibraryFitnessResultFailure(WorkflowNotAlteredMixin, ResultPayload
 @dataclass
 @PayloadRegistry.register
 class LoadLibrariesRequest(RequestPayload):
-    """Load all libraries from configuration if they are not already loaded.
+    """Load libraries from configuration, optionally filtered by library names.
 
     This is a non-destructive operation that checks if libraries are already loaded
     and only performs the initial loading if needed. Unlike ReloadAllLibrariesRequest,
     this does NOT clear any workflow state.
 
     Use when: Ensuring libraries are loaded at workflow startup, initializing library
-    system on demand, preparing library catalog without disrupting existing workflows.
+    system on demand, preparing library catalog without disrupting existing workflows,
+    selectively loading specific libraries by name.
+
+    Args:
+        library_names: Specific library names to load. If provided, performs discovery,
+                      loads metadata for all discovered libraries, then loads only libraries
+                      matching these names. If None, loads all discovered libraries.
+        include_sandbox: Whether to include sandbox library in discovery/loading (default: True).
 
     Results: LoadLibrariesResultSuccess | LoadLibrariesResultFailure (loading error)
     """
+
+    library_names: list[str] | None = None
+    include_sandbox: bool = True
 
 
 @dataclass

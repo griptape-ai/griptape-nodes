@@ -3109,18 +3109,21 @@ class LibraryManager:
             problems=problems,
         )
 
-    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: ARG002, C901, PLR0912
-        """Load all libraries from configuration (backward compatibility wrapper).
+    async def load_libraries_request(self, request: LoadLibrariesRequest) -> ResultPayload:  # noqa: C901, PLR0912
+        """Load libraries from configuration, optionally filtered by library names.
 
-        This is the legacy entry point that loads all configured libraries.
-        New code should use LoadLibraryRequest to load specific libraries instead.
+        This loads all configured libraries or a filtered subset if library_names is specified.
+        New code should use RegisterLibraryFromFileRequest to load specific libraries instead.
         """
         # First, discover all available libraries
-        discover_result = self.discover_libraries_request(DiscoverLibrariesRequest())
+        discover_result = self.discover_libraries_request(
+            DiscoverLibrariesRequest(include_sandbox=request.include_sandbox)
+        )
         if isinstance(discover_result, DiscoverLibrariesResultFailure):
             return LoadLibrariesResultFailure(result_details=f"Discovery failed: {discover_result.result_details}")
 
         # Build list of library paths to load, preserving is_sandbox flag
+        # If library_names filter is specified, load metadata first and filter by name
         libraries_to_load = []
         for discovered_lib in discover_result.libraries_discovered:
             lib_path = str(discovered_lib.path)
@@ -3130,8 +3133,26 @@ class LibraryManager:
             if lib_info and discovered_lib.is_sandbox:
                 lib_info.is_sandbox = True
 
-            if lib_info:
-                libraries_to_load.append(lib_path)
+            if not lib_info:
+                continue
+
+            # If library_names filter is specified, load metadata and check if name matches
+            if request.library_names is not None:
+                metadata_result = self.load_library_metadata_from_file_request(
+                    LoadLibraryMetadataFromFileRequest(file_path=lib_path)
+                )
+
+                if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                    library_name = metadata_result.library_schema.name
+                    if library_name not in request.library_names:
+                        continue
+                else:
+                    logger.warning(
+                        "Failed to load metadata for library at %s: %s", lib_path, metadata_result.result_details
+                    )
+                    continue
+
+            libraries_to_load.append(lib_path)
 
         if not libraries_to_load:
             details = "No libraries found in configuration."
