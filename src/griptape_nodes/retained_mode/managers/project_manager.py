@@ -1038,7 +1038,7 @@ class ProjectManager:
         System defaults use LEGACY_PROJECT_TEMPLATE which models workspace + staticfiles layout.
         This is always valid by construction.
         """
-        logger.debug("Loading system default template")
+        logger.debug("Loading system defaults (LEGACY_PROJECT_TEMPLATE for workspace + staticfiles layout)")
 
         # Create validation info to track that defaults were loaded
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)

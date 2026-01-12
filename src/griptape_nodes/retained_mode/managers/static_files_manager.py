@@ -42,6 +42,13 @@ logger = logging.getLogger("griptape_nodes")
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
+# Mapping from SituationFilePolicy to ExistingFilePolicy
+SITUATION_TO_FILE_POLICY_MAPPING = {
+    SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
+    SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
+    SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
+}
+
 
 class StaticFilesManager:
     """A class to manage the creation and management of static files."""
@@ -301,7 +308,6 @@ class StaticFilesManager:
         # Send request via GriptapeNodes singleton
         result = GriptapeNodes.handle_request(request)
 
-        # Validate result (failure cases first per code style guide)
         if result.failed():
             error_msg = f"Failed to resolve macro path: {result.result_details}"
             logger.error(error_msg)
@@ -332,6 +338,7 @@ class StaticFilesManager:
         Examples:
             "output.png" → {file_name_base: "output", file_extension: "png"}
             "frame.jpg" → {file_name_base: "frame", file_extension: "jpg"}
+            "my.file.name.png" → {file_name_base: "my.file.name", file_extension: "png"}
         """
         path = Path(file_name)
 
@@ -353,24 +360,17 @@ class StaticFilesManager:
             Corresponding ExistingFilePolicy
 
         Raises:
-            ValueError: If policy is PROMPT (must be resolved by UI first)
+            ValueError: If policy is PROMPT (must be resolved by UI first) or unknown policy
         """
         if situation_policy == SituationFilePolicy.PROMPT:
-            error_msg = "Cannot map PROMPT policy - must be resolved by UI layer before save"
+            error_msg = "Cannot map PROMPT policy - must be resolved by UI before save"
             raise ValueError(error_msg)
 
-        if situation_policy == SituationFilePolicy.CREATE_NEW:
-            return ExistingFilePolicy.CREATE_NEW
+        if situation_policy not in SITUATION_TO_FILE_POLICY_MAPPING:
+            error_msg = f"Unknown situation policy: {situation_policy}"
+            raise ValueError(error_msg)
 
-        if situation_policy == SituationFilePolicy.OVERWRITE:
-            return ExistingFilePolicy.OVERWRITE
-
-        if situation_policy == SituationFilePolicy.FAIL:
-            return ExistingFilePolicy.FAIL
-
-        # Unreachable due to exhaustive enum check, but satisfy type checker
-        error_msg = f"Unknown situation policy: {situation_policy}"
-        raise ValueError(error_msg)
+        return SITUATION_TO_FILE_POLICY_MAPPING[situation_policy]
 
     def _resolve_path_via_situation(
         self,
