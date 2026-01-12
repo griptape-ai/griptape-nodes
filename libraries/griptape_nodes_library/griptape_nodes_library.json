@@ -816,6 +816,17 @@
       }
     },
     {
+      "class_name": "KlingMotionControl",
+      "file_path": "griptape_nodes_library/video/kling_motion_control.py",
+      "metadata": {
+        "category": "video",
+        "description": "Transfer character actions from a reference video to a reference image using Kling Motion Control via Griptape Cloud model proxy.",
+        "display_name": "Kling Motion Control",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "class_name": "SoraVideoGeneration",
       "file_path": "griptape_nodes_library/video/sora_video_generation.py",
       "metadata": {
