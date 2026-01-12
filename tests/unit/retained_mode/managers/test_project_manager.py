@@ -309,14 +309,14 @@ class TestProjectManagerBuiltinVariables:
         assert "No current workflow" in str(result.result_details)
 
     @patch("griptape_nodes.node_library.workflow_registry.WorkflowRegistry")
-    @patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes")
-    def test_builtin_workflow_dir_workflow_not_in_registry_fails(
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_workflow_not_in_registry_raises_error(
         self, mock_griptape_nodes: Mock, mock_workflow_registry: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workflow_dir} raises KeyError when workflow not found in registry.
 
-        Note: The current implementation does not catch KeyError from WorkflowRegistry.get_workflow_by_name(),
-        so it propagates to the caller. This is the actual behavior as of the implementation.
+        Workflows should be registered before execution, so if a workflow is not found,
+        it's an error condition that should be raised.
         """
         from griptape_nodes.common.macro_parser import ParsedMacro
 
@@ -325,13 +325,15 @@ class TestProjectManagerBuiltinVariables:
         mock_context_manager.get_current_workflow_name.return_value = "missing_workflow"
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
 
-        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("Workflow not found: missing_workflow")
+        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError(
+            "Failed to get Workflow. Workflow with name 'missing_workflow' has not been registered."
+        )
 
         parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
 
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
-        with pytest.raises(KeyError, match="Workflow not found: missing_workflow"):
+        with pytest.raises(KeyError, match="Workflow with name 'missing_workflow' has not been registered"):
             project_manager_with_template.on_get_path_for_macro_request(request)
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:

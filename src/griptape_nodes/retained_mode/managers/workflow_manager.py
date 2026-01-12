@@ -637,6 +637,25 @@ class WorkflowManager:
         else:
             complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
         try:
+            # Load workflow metadata from the file
+            load_metadata_request = LoadWorkflowMetadata(file_name=str(relative_file_path))
+            load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+
+            # Register the workflow if metadata loaded successfully and workflow not already registered
+            if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                workflow_name = load_metadata_result.metadata.name
+                if not WorkflowRegistry.has_workflow_with_name(workflow_name):
+                    register_request = RegisterWorkflowRequest(
+                        metadata=load_metadata_result.metadata, file_name=str(relative_file_path)
+                    )
+                    register_result = self.on_register_workflow_request(register_request)
+                    if not isinstance(register_result, RegisterWorkflowResultSuccess):
+                        logger.warning(
+                            "Failed to register workflow '%s' before execution: %s",
+                            workflow_name,
+                            register_result.result_details,
+                        )
+
             # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
             async with aiofiles.open(Path(complete_file_path), encoding="utf-8") as file:
