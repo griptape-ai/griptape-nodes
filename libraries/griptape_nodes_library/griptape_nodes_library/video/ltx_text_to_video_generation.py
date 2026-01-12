@@ -561,6 +561,22 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
         if isinstance(status_detail, dict):
             error = status_detail.get("error", "")
             details = status_detail.get("details", "")
+
+            # If details is a JSON string, try to parse it and extract clean error message
+            if details and isinstance(details, str):
+                try:
+                    details_obj = _json.loads(details)
+                    if isinstance(details_obj, dict):
+                        # Try to extract .error.message from parsed JSON
+                        error_obj = details_obj.get("error")
+                        if isinstance(error_obj, dict):
+                            clean_message = error_obj.get("message")
+                            if clean_message:
+                                details = clean_message
+
+                except (ValueError, _json.JSONDecodeError):
+                    pass
+
             if error and details:
                 message = f"{error}: {details}"
             elif error:
@@ -611,18 +627,40 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
             )
 
     def _extract_error_from_initial_response(self, response_json: dict[str, Any]) -> str:
-        """Extract error details from initial POST response."""
+        """Extract error details from initial POST response.
+
+        Expected error shape from API:
+        {
+            "type": "error",
+            "error": {
+                "type": "invalid_request_error",
+                "message": "Prompt exceeds 5000 characters limit"
+            }
+        }
+        """
         if not response_json:
             return "No error details provided by API."
 
+        # Try to extract .error.message
         error = response_json.get("error")
         if error:
             if isinstance(error, dict):
-                message = error.get("message", str(error))
-                return message
-            return str(error)
+                # Try to get the message field
+                message = error.get("message")
+                if message:
+                    return str(message)
 
-        return "Request failed with no error details provided."
+                # If no message but there's a type, include it
+                error_type = error.get("type")
+                if error_type:
+                    return f"API error: {error_type}"
+
+            # If error is just a string
+            if isinstance(error, str):
+                return error
+
+        # Fallback: return full JSON response
+        return f"Request failed: {_json.dumps(response_json)}"
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
