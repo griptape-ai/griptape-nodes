@@ -33,6 +33,7 @@ class MCPServerConfig(TypedDict, total=False):
     terminate_on_close: bool  # Session termination behavior for streamable HTTP transport
     description: str | None
     capabilities: list[str] | None
+    rules: str | None  # Optional rules for this MCP server as a single string
 
 
 class MCPServerCapability(TypedDict):
@@ -162,6 +163,7 @@ class CreateMCPServerRequest(RequestPayload):
         description: Optional description of the server
         capabilities: List of server capabilities
         enabled: Whether the server is enabled by default
+        rules: Optional rules for this MCP server as a single string
     """
 
     name: str
@@ -186,6 +188,7 @@ class CreateMCPServerRequest(RequestPayload):
     # Common fields
     description: str | None = None
     capabilities: list[str] | None = None
+    rules: str | None = None
 
 
 @dataclass
@@ -224,6 +227,7 @@ class UpdateMCPServerRequest(RequestPayload):
         terminate_on_close: Updated session termination behavior for streamable HTTP transport
         description: Updated description of the server
         capabilities: Updated list of server capabilities
+        rules: Updated rules for this MCP server as a single string
     """
 
     name: str
@@ -249,6 +253,7 @@ class UpdateMCPServerRequest(RequestPayload):
     # Common fields
     description: str | None = None
     capabilities: list[str] | None = None
+    rules: str | None = None
 
 
 @dataclass

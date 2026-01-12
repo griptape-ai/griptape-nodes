@@ -49,6 +49,7 @@ There are two official ways your Agent can connect to other applications:
 
 1. **[Getting Started Tutorial](./getting_started.md)** - Step-by-step tutorial using the Fetch MCP server
 1. **[Using MCPTask with Agents](./mcp_task_agents.md)** - How to make your AI agents use these tools
+1. **[MCP Server Rules](./rules.md)** - Guide agents with custom rules for each MCP server
 1. **[Local Models with Agents](./advanced_local_models.md)** - Use local AI models for sensitive data processing
 1. **[Example MCP Servers](./servers/index.md)** - Setup guides for some example servers
 
