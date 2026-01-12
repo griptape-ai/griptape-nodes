@@ -57,11 +57,10 @@ class LTXImageToVideoGeneration(SuccessFailureNode):
         - fps (int): Frames per second (default: 25)
         - camera_motion (str): Camera movement type (default: static)
         - generate_audio (bool): Generate audio with the video (default: true)
-        (Always polls for result: 5s interval, 20 min timeout)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
-        - provider_response (dict): Verbatim response from API (latest polling response)
+        - provider_response (dict): Response from API (latest polling response)
         - video_url (VideoUrlArtifact): Saved static video URL
         - was_successful (bool): Whether the generation succeeded
         - result_details (str): Details about the generation result or error
@@ -138,7 +137,7 @@ class LTXImageToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "multiline": True,
-                    "placeholder_text": "Describe the video motion you want...",
+                    "placeholder_text": "Describe the video...",
                 },
             )
         )
@@ -238,8 +237,10 @@ class LTXImageToVideoGeneration(SuccessFailureNode):
         """Handle parameter value changes to show/hide dependent parameters."""
         super().after_value_set(parameter, value)
 
-        if parameter.name == "model":
-            self._update_parameter_visibility_for_model(value)
+        # Update parameter options when model, resolution, or fps changes
+        if parameter.name in ("model", "resolution", "fps"):
+            model_name = self.get_parameter_value("model") or "LTX 2 Fast"
+            self._update_parameter_visibility_for_model(model_name)
 
     def _update_parameter_visibility_for_model(self, model_name: str) -> None:
         """Update parameter visibility and options based on selected model."""
@@ -256,26 +257,27 @@ class LTXImageToVideoGeneration(SuccessFailureNode):
             if current_resolution not in available_resolutions:
                 self.set_parameter_value("resolution", available_resolutions[0])
 
-        # Update duration options based on model
-        if model_id == "ltx-2-fast":
-            duration_param = self.get_parameter_by_name("duration")
-            if duration_param:
-                # ltx-2-fast can support up to 20s at 1920x1080@25fps
-                current_resolution = self.get_parameter_value("resolution") or "1920x1080"
-                current_fps = self.get_parameter_value("fps") or 25
-                resolution_config = capabilities.get("resolutions", {}).get(current_resolution, {})
-                fps_config = resolution_config.get("fps", {})
-                available_durations = fps_config.get(current_fps, [6, 8, 10])
+        # Update duration options dynamically based on model, resolution, and fps
+        duration_param = self.get_parameter_by_name("duration")
+        if duration_param:
+            current_resolution = self.get_parameter_value("resolution") or "1920x1080"
+            current_fps = self.get_parameter_value("fps") or 25
+            resolution_config = capabilities.get("resolutions", {}).get(current_resolution, {})
+            fps_config = resolution_config.get("fps", {})
+            available_durations = fps_config.get(current_fps, [6, 8, 10])
 
-                # Update duration trait options
-                duration_trait = duration_param.find_elements_by_type(Options)
-                if duration_trait:
-                    duration_trait[0].choices = available_durations
+            # Remove existing Options trait and add new one with updated choices
+            existing_traits = duration_param.find_elements_by_type(Options)
+            if existing_traits:
+                duration_param.remove_trait(trait_type=existing_traits[0])
 
-                # Validate current duration
-                current_duration = self.get_parameter_value("duration")
-                if current_duration not in available_durations:
-                    self.set_parameter_value("duration", available_durations[0])
+            # Add new Options trait with updated choices
+            duration_param.add_trait(Options(choices=available_durations))
+
+            # Validate current duration
+            current_duration = self.get_parameter_value("duration")
+            if current_duration not in available_durations:
+                self.set_parameter_value("duration", available_durations[0])
 
     async def aprocess(self) -> None:
         await self._process()
