@@ -3069,20 +3069,21 @@ class LibraryManager:
                 metadata_result = self.load_library_metadata_from_file_request(
                     LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
                 )
-
-                metadata_loaded = isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess)
+                library_name = None
+                library_version = None
+                lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
+                if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+                    library_name = metadata_result.library_schema.name
+                    lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
+                    library_version = metadata_result.library_schema.metadata.library_version
                 # Create LibraryInfo with metadata populated
                 self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
-                    lifecycle_state=LibraryManager.LibraryLifecycleState.METADATA_LOADED
-                    if metadata_loaded
-                    else LibraryManager.LibraryLifecycleState.DISCOVERED,
+                    lifecycle_state=lifecycle_state,
                     fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
                     library_path=file_path_str,
                     is_sandbox=False,
-                    library_name=metadata_result.library_schema.name if metadata_loaded else None,  # pyright: ignore[reportAttributeAccessIssue]
-                    library_version=metadata_result.library_schema.metadata.library_version
-                    if metadata_loaded
-                    else None,  # pyright: ignore[reportAttributeAccessIssue]
+                    library_name=library_name,
+                    library_version=library_version,
                 )
 
         # Success path at the end
