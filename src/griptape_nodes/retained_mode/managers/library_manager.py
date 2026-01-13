@@ -3035,15 +3035,25 @@ class LibraryManager:
                     # Add to discovered libraries with is_sandbox=True
                     discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
-                    # Create minimal LibraryInfo entry in discovered state if not already tracked
+                    # Only create entry if not already tracked
                     if sandbox_json_path_str not in self._library_file_path_to_info:
+                        # Load metadata immediately during discovery
+                        metadata_result = self.load_library_metadata_from_file_request(
+                            LoadLibraryMetadataFromFileRequest(file_path=sandbox_json_path_str)
+                        )
+                        metadata_loaded = isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess)
+                        # Create LibraryInfo with metadata populated
                         self._library_file_path_to_info[sandbox_json_path_str] = LibraryManager.LibraryInfo(
-                            lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
+                            lifecycle_state=LibraryManager.LibraryLifecycleState.METADATA_LOADED
+                            if metadata_loaded
+                            else LibraryManager.LibraryLifecycleState.DISCOVERED,
                             fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
                             library_path=sandbox_json_path_str,
                             is_sandbox=True,
-                            library_name=None,
-                            library_version=None,
+                            library_name=metadata_result.library_schema.name if metadata_loaded else None,  # pyright: ignore[reportAttributeAccessIssue]
+                            library_version=metadata_result.library_schema.metadata.library_version
+                            if metadata_loaded
+                            else None,  # pyright: ignore[reportAttributeAccessIssue]
                         )
 
         # Add all regular libraries from config
@@ -3053,19 +3063,27 @@ class LibraryManager:
             # Add to discovered libraries with is_sandbox=False
             discovered_libraries.add(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
-            # Skip if already tracked
-            if file_path_str in self._library_file_path_to_info:
-                continue
+            # Only create entry if not already tracked
+            if file_path_str not in self._library_file_path_to_info:
+                # Load metadata immediately during discovery
+                metadata_result = self.load_library_metadata_from_file_request(
+                    LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
+                )
 
-            # Create minimal LibraryInfo entry in discovered state
-            self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
-                fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                library_path=file_path_str,
-                is_sandbox=False,
-                library_name=None,
-                library_version=None,
-            )
+                metadata_loaded = isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess)
+                # Create LibraryInfo with metadata populated
+                self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+                    lifecycle_state=LibraryManager.LibraryLifecycleState.METADATA_LOADED
+                    if metadata_loaded
+                    else LibraryManager.LibraryLifecycleState.DISCOVERED,
+                    fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+                    library_path=file_path_str,
+                    is_sandbox=False,
+                    library_name=metadata_result.library_schema.name if metadata_loaded else None,  # pyright: ignore[reportAttributeAccessIssue]
+                    library_version=metadata_result.library_schema.metadata.library_version
+                    if metadata_loaded
+                    else None,  # pyright: ignore[reportAttributeAccessIssue]
+                )
 
         # Success path at the end
         return DiscoverLibrariesResultSuccess(
