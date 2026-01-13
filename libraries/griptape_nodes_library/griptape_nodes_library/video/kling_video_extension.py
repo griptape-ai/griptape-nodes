@@ -100,6 +100,7 @@ class KlingVideoExtension(SuccessFailureNode):
                 name="generation_id",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 

@@ -774,6 +774,7 @@ class TopazImageEnhance(SuccessFailureNode):
                 tooltip="Generation ID from the API",
                 allow_input=False,
                 allow_property=False,
+                hide=True,
             )
         )
 
@@ -785,6 +786,7 @@ class TopazImageEnhance(SuccessFailureNode):
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 

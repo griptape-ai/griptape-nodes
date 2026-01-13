@@ -235,6 +235,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 name="generation_id",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -246,6 +247,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 

@@ -198,6 +198,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 allow_property=False,
                 allow_output=True,
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -209,6 +210,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 

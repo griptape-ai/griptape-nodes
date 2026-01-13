@@ -153,6 +153,7 @@ class QwenImageGeneration(SuccessFailureNode):
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -164,6 +165,7 @@ class QwenImageGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 

@@ -184,6 +184,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 output_type="str",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -195,6 +196,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 

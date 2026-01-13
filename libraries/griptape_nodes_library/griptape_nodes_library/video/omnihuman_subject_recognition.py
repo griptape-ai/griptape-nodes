@@ -96,6 +96,7 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
                 output_type="str",
                 tooltip="Griptape Cloud generation identifier",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 

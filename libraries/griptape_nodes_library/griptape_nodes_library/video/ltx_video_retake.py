@@ -146,6 +146,7 @@ class LTXVideoRetake(SuccessFailureNode):
                 name="generation_id",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -157,6 +158,7 @@ class LTXVideoRetake(SuccessFailureNode):
                 tooltip="Response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
