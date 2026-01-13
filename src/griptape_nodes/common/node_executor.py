@@ -222,8 +222,8 @@ class NodeExecutor:
                 # Just execute the node normally! This means we aren't doing any special packaging.
                 await node.aprocess()
                 return
-            # Clear execution events before subprocess execution starts
-            node.subflow_execution_component.clear_events()
+            # Clear execution state before subprocess execution starts
+            node.subflow_execution_component.clear_state()
             if execution_type == PRIVATE_EXECUTION:
                 # Package the flow and run it in a subprocess.
                 await self._execute_private_workflow(node)
@@ -349,7 +349,7 @@ class NodeExecutor:
 
         try:
             published_workflow_filename = await self._publish_library_workflow(
-                workflow_result, library_name, result.file_name
+                workflow_result, library_name, result.file_name, node=node
             )
         except Exception as e:
             logger.exception(
@@ -487,19 +487,29 @@ class NodeExecutor:
         )
 
     async def _publish_library_workflow(
-        self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
+        self,
+        workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess,
+        library_name: str,
+        file_name: str,
+        node: BaseNode | None = None,
     ) -> Path:
-        subprocess_workflow_publisher = SubprocessWorkflowPublisher()
+        # Define event callback if node is a SubflowNodeGroup for GUI updates
+        on_event: Callable[[dict], None] | None = None
+        if isinstance(node, SubflowNodeGroup):
+            on_event = node.subflow_execution_component.handle_publishing_event
+
+        subprocess_workflow_publisher = SubprocessWorkflowPublisher(on_event=on_event)
         published_filename = f"{Path(workflow_result.file_path).stem}_published"
         published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
 
-        await subprocess_workflow_publisher.arun(
-            workflow_name=file_name,
-            workflow_path=workflow_result.file_path,
-            publisher_name=library_name,
-            published_workflow_file_name=published_filename,
-            pickle_control_flow_result=True,
-        )
+        async with subprocess_workflow_publisher:
+            await subprocess_workflow_publisher.arun(
+                workflow_name=file_name,
+                workflow_path=workflow_result.file_path,
+                publisher_name=library_name,
+                published_workflow_file_name=published_filename,
+                pickle_control_flow_result=True,
+            )
 
         if not published_workflow_filename.exists():
             msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
@@ -527,8 +537,6 @@ class NodeExecutor:
         Returns:
             The subprocess execution output dictionary
         """
-        import json
-
         from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
             SubprocessWorkflowExecutor,
         )
@@ -536,12 +544,7 @@ class NodeExecutor:
         # Define event callback if node provided for GUI updates
         on_event: Callable[[dict], None] | None = None
         if node is not None:
-
-            def _on_event_callback(event: dict) -> None:
-                event_str = json.dumps(event, default=str)
-                node.subflow_execution_component.append_event(event_str)
-
-            on_event = _on_event_callback
+            on_event = node.subflow_execution_component.handle_execution_event
 
         subprocess_executor = SubprocessWorkflowExecutor(
             workflow_path=str(published_workflow_filename),

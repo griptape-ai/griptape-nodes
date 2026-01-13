@@ -86,8 +86,7 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         self._add_start_flow_parameters()
 
         # Add subprocess execution status component for real-time GUI updates
-        self._subflow_execution_component = SubflowExecutionComponent(self)
-        self._subflow_execution_component.add_output_parameters()
+        self._add_subflow_execution_parameters()
 
     def _create_subflow(self) -> None:
         """Create a dedicated subflow for this NodeGroup's nodes.
@@ -148,6 +147,11 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         # Process each registered library
         for library_name, handler in event_handlers.items():
             self._process_library_start_flow_parameters(library_name, handler)
+
+    def _add_subflow_execution_parameters(self) -> None:
+        """Add parameters for subflow execution tracking."""
+        self._subflow_execution_component = SubflowExecutionComponent(self)
+        self._subflow_execution_component.add_output_parameters()
 
     def _process_library_start_flow_parameters(self, library_name: str, handler: Any) -> None:
         """Process and add StartFlow parameters from a single library.
@@ -653,6 +657,10 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
             metadata_key = "left_parameters"
         self._cleanup_proxy_parameter(target_parameter, metadata_key)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+        self.subflow_execution_component.after_value_set(parameter, value)
 
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group and track their connections.
