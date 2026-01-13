@@ -388,44 +388,65 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 @dataclass
 @PayloadRegistry.register
 class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
-    """Lock one or more nodes.
-
-    Use when: Implementing locking functionality, preventing changes to nodes. Supports
-    locking a single node via node_name or multiple via node_names. If neither node_name
-    nor node_names is provided, the current context node is used (if available).
+    """Lock a node.
 
     Args:
-        lock: Whether to lock or unlock the node(s). If true, the node(s) will be locked,
-              otherwise they will be unlocked.
-        node_name: Name of the node to lock/unlock. Optional. If None, uses current context
-                   when node_names is not provided.
-        node_names: Names of nodes to lock/unlock. Optional. Takes precedence over node_name
-                    when provided.
+        node_name: Name of the node to lock
+        lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
 
     Results: SetLockNodeStateResultSuccess (node locked) | SetLockNodeStateResultFailure (node not found)
     """
 
+    node_name: str | None
     lock: bool
-    node_name: str | None = None
-    node_names: list[str] | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class SetLockNodeStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Node(s) lock state updated successfully."""
+    """Node locked successfully."""
 
+    node_name: str
     locked: bool
-    # Backwards compatibility: single-target responses populate node_name
-    node_name: str | None = None
-    # New: multi-target responses populate node_names
-    node_names: list[str] | None = None
 
 
 @dataclass
 @PayloadRegistry.register
 class SetLockNodeStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node failed to lock."""
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateRequest(WorkflowNotAlteredMixin, RequestPayload):
+    """Set lock state for multiple nodes in a single request.
+
+    Use when: Locking or unlocking multiple nodes at once, consistent with BatchSetNodeMetadataRequest.
+
+    Args:
+        node_names: Names of nodes to lock/unlock.
+        lock: Whether to lock (True) or unlock (False) the nodes.
+
+    Results: BatchSetNodeLockStateResultSuccess | BatchSetNodeLockStateResultFailure
+    """
+
+    node_names: list[str]
+    lock: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Batch node lock state update completed successfully."""
+
+    updated_nodes: list[str]
+    failed_nodes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateResultFailure(ResultPayloadFailure):
+    """Batch node lock state update failed. Common causes: all nodes not found."""
 
 
 # A Node's state can be serialized to a sequence of commands that the engine runs.

@@ -70,6 +70,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     AddNodesToNodeGroupRequest,
     AddNodesToNodeGroupResultFailure,
     AddNodesToNodeGroupResultSuccess,
+    BatchSetNodeLockStateRequest,
+    BatchSetNodeLockStateResultFailure,
+    BatchSetNodeLockStateResultSuccess,
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
@@ -292,6 +295,9 @@ class NodeManager:
             CanResetNodeToDefaultsRequest, self.on_can_reset_node_to_defaults_request
         )
         event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
+        event_manager.assign_manager_to_request_type(
+            BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -3568,45 +3574,42 @@ class NodeManager:
         )
 
     def on_toggle_lock_node_request(self, request: SetLockNodeStateRequest) -> ResultPayload:
-        # Determine target node names
-        target_node_names: list[str]
-        if request.node_names and len(request.node_names) > 0:
-            target_node_names = request.node_names
+        node_name = request.node_name
+        if node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                details = "Attempted to lock node in the Current Context. Failed because the Current Context was empty."
+                return SetLockNodeStateResultFailure(result_details=details)
+            node = GriptapeNodes.ContextManager().get_current_node()
+            node_name = node.name
         else:
-            node_name = request.node_name
-            if node_name is None:
-                if not GriptapeNodes.ContextManager().has_current_node():
-                    details = "Attempted to set lock state in the Current Context. Failed because the Current Context was empty."
-                    return SetLockNodeStateResultFailure(result_details=details)
-                node = GriptapeNodes.ContextManager().get_current_node()
-                node_name = node.name
-            target_node_names = [node_name]
+            try:
+                node = self.get_node_by_name(node_name)
+            except ValueError as err:
+                details = f"Attempted to lock node '{request.node_name}'. Failed because the Node could not be found. Error: {err}"
+                return SetLockNodeStateResultFailure(result_details=details)
+        node.lock = request.lock
+        return SetLockNodeStateResultSuccess(
+            node_name=node_name,
+            locked=node.lock,
+            result_details=f"Successfully set lock state to {node.lock} for node '{node_name}'.",
+        )
 
+    def on_batch_set_lock_node_state_request(self, request: BatchSetNodeLockStateRequest) -> ResultPayload:
+        updated: list[str] = []
         failed: dict[str, str] = {}
-        for name in target_node_names:
+        for name in request.node_names:
             try:
                 node = self.get_node_by_name(name)
             except ValueError as err:
                 failed[name] = f"Node not found. Error: {err}"
                 continue
             node.lock = request.lock
+            updated.append(name)
 
-        if failed:
-            details = f"Failed to set lock state for nodes: {', '.join(failed.keys())}. Errors: {failed}"
-            return SetLockNodeStateResultFailure(result_details=details)
-
-        if len(target_node_names) == 1:
-            only = target_node_names[0]
-            return SetLockNodeStateResultSuccess(
-                locked=request.lock,
-                node_name=only,
-                result_details=f"Successfully set lock state to {request.lock} for node '{only}'.",
-            )
-        return SetLockNodeStateResultSuccess(
-            locked=request.lock,
-            node_names=target_node_names,
-            result_details=f"Successfully set lock state to {request.lock} for nodes: {', '.join(target_node_names)}.",
-        )
+        if not updated:
+            details = f"Failed to update any nodes. Failed: {failed}"
+            return BatchSetNodeLockStateResultFailure(result_details=details)
+        return BatchSetNodeLockStateResultSuccess(updated_nodes=updated, failed_nodes=failed)
 
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
         """Handle a SendNodeMessageRequest by calling the node's message callback.

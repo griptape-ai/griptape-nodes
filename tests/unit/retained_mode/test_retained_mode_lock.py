@@ -1,7 +1,8 @@
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeLockStateResultFailure,
+    BatchSetNodeLockStateResultSuccess,
     CreateNodeRequest,
     GetAllNodeInfoRequest,
-    SetLockNodeStateResultFailure,
     SetLockNodeStateResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -27,7 +28,6 @@ class TestRetainedModeLock:
         assert isinstance(res1, SetLockNodeStateResultSuccess)
         assert res1.locked is True
         assert res1.node_name == n1
-        assert res1.node_names is None
 
         # Verify n1 locked, n2 not locked yet
         info1 = GriptapeNodes.handle_request(GetAllNodeInfoRequest(node_name=n1))
@@ -36,11 +36,10 @@ class TestRetainedModeLock:
         assert getattr(info2, "locked", False) is False
 
         # Lock multiple via helper
-        res2 = RetainedMode.set_lock_node_state(node_names=[n1, n2], lock=True)
-        assert isinstance(res2, SetLockNodeStateResultSuccess)
-        assert res2.locked is True
-        assert res2.node_names == [n1, n2]
-        assert res2.node_name is None
+        res2 = RetainedMode.batch_set_lock_node_state(node_names=[n1, n2], lock=True)
+        assert isinstance(res2, BatchSetNodeLockStateResultSuccess)
+        assert res2.updated_nodes == [n1, n2]
+        assert res2.failed_nodes == {}
 
         # Verify both locked
         info1b = GriptapeNodes.handle_request(GetAllNodeInfoRequest(node_name=n1))
@@ -49,10 +48,9 @@ class TestRetainedModeLock:
         assert getattr(info2b, "locked", False) is True
 
         # Unlock multiple via helper
-        res3 = RetainedMode.set_lock_node_state(node_names=[n1, n2], lock=False)
-        assert isinstance(res3, SetLockNodeStateResultSuccess)
-        assert res3.locked is False
-        assert res3.node_names == [n1, n2]
+        res3 = RetainedMode.batch_set_lock_node_state(node_names=[n1, n2], lock=False)
+        assert isinstance(res3, BatchSetNodeLockStateResultSuccess)
+        assert res3.updated_nodes == [n1, n2]
 
         info1c = GriptapeNodes.handle_request(GetAllNodeInfoRequest(node_name=n1))
         info2c = GriptapeNodes.handle_request(GetAllNodeInfoRequest(node_name=n2))
@@ -61,8 +59,7 @@ class TestRetainedModeLock:
 
     def test_lock_all_missing_nodes_failure(self) -> None:
         missing_nodes = ["nope_a_123", "nope_b_456"]
-        res = RetainedMode.set_lock_node_state(node_names=missing_nodes, lock=True)
-        assert isinstance(res, SetLockNodeStateResultFailure)
-        # Error mentions at least one missing name
+        res = RetainedMode.batch_set_lock_node_state(node_names=missing_nodes, lock=True)
+        assert isinstance(res, BatchSetNodeLockStateResultFailure)
         details = str(res.result_details)
-        assert "nope_a_123" in details or "nope_b_456" in details
+        assert "Failed to update any nodes" in details
