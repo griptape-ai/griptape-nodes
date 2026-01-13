@@ -103,7 +103,6 @@ class PythonSubprocessExecutor:
             )
             self._is_running = True
             logger.info("Subprocess started with PID: %s", self._process.pid)
-            logger.info("\033[2mSubprocess output will appear dimmed like this text\033[0m")
 
             # Stream stdout and stderr concurrently for real-time output
             stdout_lines: list[str] = []
