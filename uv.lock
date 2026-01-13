@@ -333,12 +333,13 @@ wheels = [
 
 [[package]]
 name = "griptape"
-version = "1.8.13"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "filetype" },
     { name = "jinja2" },
+    { name = "json-schema-to-pydantic" },
     { name = "marshmallow" },
     { name = "marshmallow-enum" },
     { name = "numpy" },
@@ -354,9 +355,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/81/cc20b04fdf14df3d410e2d76b29e0259eaaa46bf9373179050013a55162a/griptape-1.8.13.tar.gz", hash = "sha256:3eabe94ee7cee02a97bcf6e8c078d4d0476c3e1be33e9155f0070488db52e5d7", size = 197949, upload-time = "2025-11-24T21:40:03.541Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/f5/b74726219f3252f3c87605c331cae856712cd60656c9afca5db14c61e7be/griptape-1.9.0.tar.gz", hash = "sha256:cc1e472830adeec488603bd5ece2977086d513c979ee9cb2e8cad3aa1c2b108d", size = 192126, upload-time = "2026-01-13T21:23:26.776Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/1e/c3a127b7f4504ca2143c073fa44264d69a80e945729a0da37e1904fe4633/griptape-1.8.13-py3-none-any.whl", hash = "sha256:7340493fc0b1433f955c8402ae2cf6514ade9ab038353f7b4daf3849f768e181", size = 437135, upload-time = "2025-11-24T21:40:01.33Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/d3/95309c28f85d5361a3d503170f0bd4b0b4a9b8911807826bcbb5395dd3a9/griptape-1.9.0-py3-none-any.whl", hash = "sha256:497b460cdaa048b6c53692c375deceafb762b2c24ee6dd47bc47969bf24cc5e6", size = 427959, upload-time = "2026-01-13T21:23:28.225Z" },
 ]
 
 [[package]]
@@ -444,7 +445,7 @@ requires-dist = [
     { name = "austin-dist", marker = "extra == 'profiling'", specifier = ">=3.7.0" },
     { name = "binaryornot", specifier = ">=0.4.4" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "griptape", specifier = ">=1.8.12" },
+    { name = "griptape", specifier = ">=1.9.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "huggingface-hub", specifier = ">=1.1.0" },
     { name = "json-repair", specifier = ">=0.46.1" },
@@ -653,6 +654,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/96/74/0f39677fa7c0127129c3f1a37c94d05c30a968ba3047200e54dea375b09a/json_repair-0.55.0.tar.gz", hash = "sha256:9fafb47d92582ef4bdd3520656bdb0fcb37b46cf6aa99c1926b7895abc0a3a4b", size = 38828, upload-time = "2026-01-01T20:29:02.684Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/00/d7d6b6b3257f9b1f997a558b6f7087b8af7c0a2f525f4fbd864c267a88ab/json_repair-0.55.0-py3-none-any.whl", hash = "sha256:bcf4880f5e6ad21a0f70ab034e3d1d398c2ae9698dc5717d7015afbac77b8ed7", size = 29570, upload-time = "2026-01-01T20:29:01.042Z" },
+]
+
+[[package]]
+name = "json-schema-to-pydantic"
+version = "0.4.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/b1/fbcbda5e23ecb5ff987076d9caccb11d182a249cedd5424236aaca4e65b8/json_schema_to_pydantic-0.4.7.tar.gz", hash = "sha256:a6384825fee7609715641a1e5095ddf41aa3bdd06cd91d4a6b6d88a3dfcad920", size = 50054, upload-time = "2025-11-03T19:28:30.65Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/af/f64664df8d4d52a371195e16c6ff4419968ee3eb6f96b21e596e3623dcf3/json_schema_to_pydantic-0.4.7-py3-none-any.whl", hash = "sha256:e329506e42b63f9a0ae0a17f7082ec7fc7cb3326138ec5c24904e0af5a660e63", size = 14709, upload-time = "2025-11-03T19:28:29.168Z" },
 ]
 
 [[package]]
