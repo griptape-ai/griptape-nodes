@@ -74,6 +74,7 @@ requires = ["uv_build"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
+griptape = { git = "https://github.com/griptape-ai/griptape", rev = "main" }
 griptape-cloud-client = { git = "https://github.com/griptape-ai/griptape-cloud-python-client", rev = "main" }
 
 [tool.ruff]
