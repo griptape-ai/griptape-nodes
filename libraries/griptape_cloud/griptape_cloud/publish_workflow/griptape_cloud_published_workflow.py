@@ -118,7 +118,7 @@ class GriptapeCloudPublishedWorkflow(SuccessFailureNode, BaseGriptapeCloudNode):
             self,
             was_successful_modes={ParameterMode.PROPERTY},
             result_details_modes={ParameterMode.OUTPUT},
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
             result_details_tooltip="Details about the published workflow execution result",
             result_details_placeholder="Details on the published workflow execution will be presented here.",
         )

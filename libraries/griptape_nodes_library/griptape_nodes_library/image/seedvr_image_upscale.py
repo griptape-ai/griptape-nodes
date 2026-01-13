@@ -188,7 +188,7 @@ class SeedVRImageUpscale(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the image generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
         # No separate status message panel; we'll stream updates to the 'status' output

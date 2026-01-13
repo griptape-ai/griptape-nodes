@@ -159,7 +159,7 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the music generation result or any errors encountered",
             result_details_placeholder="Music generation status will appear here...",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:

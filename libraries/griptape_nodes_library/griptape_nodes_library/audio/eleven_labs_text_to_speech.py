@@ -279,7 +279,7 @@ class ElevenLabsTextToSpeechGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the text-to-speech generation result or any errors encountered",
             result_details_placeholder="Text-to-speech generation status will appear here...",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:

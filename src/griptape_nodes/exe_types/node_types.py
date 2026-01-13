@@ -1623,7 +1623,7 @@ class EndNode(BaseNode):
             self,
             was_successful_modes={ParameterMode.PROPERTY},
             result_details_modes={ParameterMode.INPUT},
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
             result_details_placeholder="Details about the completion or failure will be shown here.",
         )
 
