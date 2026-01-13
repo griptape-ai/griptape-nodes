@@ -3609,9 +3609,8 @@ class NodeManager:
         if not updated:
             details = f"Failed to update any nodes. Failed: {failed}"
             return BatchSetNodeLockStateResultFailure(result_details=details)
-        details = (
-            f"Successfully set lock state to {request.lock} for nodes: {', '.join(updated)}."
-            + (f" Failed: {failed}" if failed else "")
+        details = f"Successfully set lock state to {request.lock} for nodes: {', '.join(updated)}." + (
+            f" Failed: {failed}" if failed else ""
         )
         return BatchSetNodeLockStateResultSuccess(
             updated_nodes=updated,
