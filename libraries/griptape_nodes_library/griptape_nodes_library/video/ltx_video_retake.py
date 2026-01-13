@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json as _json
 import logging
 import os
+import subprocess
 from contextlib import suppress
+from pathlib import Path
 from time import monotonic
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
+# static_ffmpeg is dynamically installed by the library loader at runtime
+from static_ffmpeg import run  # type: ignore[import-untyped]
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
-    PublicArtifactUrlParameter,
-)
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -38,7 +41,7 @@ class LTXVideoRetake(SuccessFailureNode):
     """Regenerate a segment of an existing video using LTX AI via Griptape Cloud model proxy.
 
     Inputs:
-        - video (VideoUrlArtifact): Input video to edit (required, max 21s, max resolution 3840x2160)
+        - video (VideoUrlArtifact): Input video to edit (required, max 21s, max resolution 3840x2160, sent as base64)
         - retake_segment (list[float]): Time range [start, end] in seconds to regenerate
         - prompt (str): Text describing what should happen in the retake segment (max 5000 chars)
         - mode (str): What to replace - audio only, video only, or both (default: both)
@@ -78,20 +81,17 @@ class LTXVideoRetake(SuccessFailureNode):
             )
         )
 
-        # Use PublicArtifactUrlParameter for video upload handling
-        self._public_video_url_parameter = PublicArtifactUrlParameter(
-            node=self,
-            artifact_url_parameter=Parameter(
+        # Video input parameter
+        self.add_parameter(
+            Parameter(
                 name="video",
                 input_types=["VideoUrlArtifact"],
                 type="VideoUrlArtifact",
                 tooltip="Input video to edit (max 21 seconds, max resolution 3840x2160)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "input video"},
-            ),
-            disclaimer_message="The LTX service utilizes this URL to access the video for retake generation.",
+            )
         )
-        self._public_video_url_parameter.add_input_parameters()
 
         # Time range selector using ParameterRange
         self.add_parameter(
@@ -179,6 +179,125 @@ class LTXVideoRetake(SuccessFailureNode):
             parameter_group_initially_collapsed=False,
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to update dependent parameters."""
+        super().after_value_set(parameter, value)
+
+        # Update retake_segment max value when video changes
+        if parameter.name == "video":
+            self._update_segment_range_from_video(value)
+
+    def _update_segment_range_from_video(self, video_input: Any) -> None:
+        """Update the retake_segment parameter's max value based on video duration."""
+        if not video_input:
+            self._reset_segment_range_to_default()
+            return
+
+        try:
+            video_url = self._extract_video_url(video_input)
+            if not video_url:
+                return
+
+            duration = self._get_video_duration(video_url)
+            if duration is None:
+                logger.warning("%s could not determine video duration, using default max", self.name)
+                return
+
+            # Cap at MAX_VIDEO_DURATION (21s) as per API limits
+            max_duration = min(duration, float(MAX_VIDEO_DURATION))
+            self._update_segment_range_max(max_duration, duration)
+
+        except Exception as e:
+            logger.warning("%s failed to update segment range from video: %s", self.name, e)
+
+    def _reset_segment_range_to_default(self) -> None:
+        """Reset retake_segment parameter to default max value."""
+        retake_segment_param = self.get_parameter_by_name("retake_segment")
+        if retake_segment_param and isinstance(retake_segment_param, ParameterRange):
+            retake_segment_param.max_val = float(MAX_VIDEO_DURATION)
+
+    def _extract_video_url(self, video_input: Any) -> str | None:
+        """Extract video URL from video input."""
+        if isinstance(video_input, VideoUrlArtifact):
+            return video_input.value
+        return str(video_input) if video_input else None
+
+    def _update_segment_range_max(self, max_duration: float, actual_duration: float) -> None:
+        """Update retake_segment max value and adjust current segment if needed."""
+        retake_segment_param = self.get_parameter_by_name("retake_segment")
+        if not retake_segment_param or not isinstance(retake_segment_param, ParameterRange):
+            return
+
+        retake_segment_param.max_val = max_duration
+        logger.info(
+            "%s updated retake_segment max to %.1fs (video duration: %.1fs)", self.name, max_duration, actual_duration
+        )
+
+        # Adjust current segment if it exceeds new max
+        current_segment = self.get_parameter_value("retake_segment") or [0.0, MIN_RETAKE_DURATION]
+        if isinstance(current_segment, list) and len(current_segment) == RETAKE_SEGMENT_LENGTH:
+            adjusted_segment = self._adjust_segment_to_max(current_segment, max_duration)
+            if adjusted_segment != current_segment:
+                self.set_parameter_value("retake_segment", adjusted_segment)
+
+    def _adjust_segment_to_max(self, segment: list[float], max_duration: float) -> list[float]:
+        """Adjust segment end time if it exceeds max, maintaining minimum duration."""
+        start_time, end_time = segment
+        if end_time <= max_duration:
+            return segment
+
+        new_end = max_duration
+        # Ensure minimum duration
+        if new_end - start_time < MIN_RETAKE_DURATION:
+            # Try to maintain minimum by adjusting start
+            new_start = max(0.0, new_end - MIN_RETAKE_DURATION)
+            return [new_start, new_end]
+
+        return [start_time, new_end]
+
+    def _get_video_duration(self, video_url: str) -> float | None:
+        """Extract video duration in seconds using ffprobe."""
+        try:
+            _, ffprobe_path = run.get_or_fetch_platform_executables_else_raise()
+
+            cmd = [
+                ffprobe_path,
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-select_streams",
+                "v:0",  # Only first video stream
+                video_url,
+            ]
+
+            result = subprocess.run(  # noqa: S603
+                cmd, capture_output=True, text=True, check=True, timeout=30
+            )
+
+            stream_data = _json.loads(result.stdout)
+            streams = stream_data.get("streams", [])
+            if not streams:
+                return None
+
+            video_stream = streams[0]
+            duration_str = video_stream.get("duration")
+            if not duration_str:
+                return None
+
+            return float(duration_str)
+
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+            _json.JSONDecodeError,
+            ValueError,
+            KeyError,
+        ) as e:
+            logger.debug("%s ffprobe failed to extract duration: %s", self.name, e)
+            return None
+
     async def aprocess(self) -> None:
         await self._process()
 
@@ -209,36 +328,43 @@ class LTXVideoRetake(SuccessFailureNode):
             params["mode"],
         )
 
-        # Validate video is provided
-        video_uri = self._public_video_url_parameter.get_public_url_for_parameter()
-        if not video_uri:
+        # Validate video
+        video = self.get_parameter_value("video")
+        video_validation_error = self._validate_video_input(video)
+        if video_validation_error:
             self._set_safe_defaults()
-            error_msg = f"{self.name} requires an input video for retake generation."
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: no video provided", self.name)
+            self._set_status_results(was_successful=False, result_details=video_validation_error)
+            logger.error("%s video validation failed: %s", self.name, video_validation_error)
             return
 
-        # Validate retake segment
-        validation_error = self._validate_retake_segment(params["retake_segment"])
+        # Process video to base64 and validate parameters
+        video_data_uri = None
+        try:
+            video_data_uri = await self._prepare_video_data_uri_async(video)
+        except Exception as e:
+            logger.error("%s failed to process video: %s", self.name, e)
+
+        # Validate video processing, retake segment, and prompt length
+        validation_error = None
+        if not video_data_uri:
+            validation_error = f"{self.name} failed to process input video."
+        elif error := self._validate_retake_segment(params["retake_segment"]):
+            validation_error = error
+        elif len(params["prompt"]) > MAX_PROMPT_LENGTH:
+            validation_error = (
+                f"{self.name}: Prompt exceeds {MAX_PROMPT_LENGTH} characters limit "
+                f"(current: {len(params['prompt'])} characters)"
+            )
+
         if validation_error:
             self._set_safe_defaults()
             self._set_status_results(was_successful=False, result_details=validation_error)
             logger.error("%s validation failed: %s", self.name, validation_error)
             return
 
-        # Validate prompt length
-        if len(params["prompt"]) > MAX_PROMPT_LENGTH:
-            self._set_safe_defaults()
-            error_msg = (
-                f"{self.name}: Prompt exceeds {MAX_PROMPT_LENGTH} characters limit "
-                f"(current: {len(params['prompt'])} characters)"
-            )
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: prompt too long", self.name)
-            return
-
-        # Build payload with video_uri
-        payload = self._build_payload(params, video_uri)
+        # Build payload with video data URI (validated to be non-None above)
+        assert video_data_uri is not None  # noqa: S101
+        payload = self._build_payload(params, video_data_uri)
 
         # Submit request
         try:
@@ -272,6 +398,24 @@ class LTXVideoRetake(SuccessFailureNode):
             msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
             raise ValueError(msg)
         return api_key
+
+    def _validate_video_input(self, video: Any) -> str | None:
+        """Validate video is provided and doesn't exceed duration limits."""
+        if not video:
+            return f"{self.name} requires an input video for retake generation."
+
+        video_url = self._extract_video_url(video)
+        if not video_url:
+            return None
+
+        duration = self._get_video_duration(video_url)
+        if duration and duration > MAX_VIDEO_DURATION:
+            return (
+                f"{self.name}: Input video duration ({duration:.1f}s) exceeds maximum allowed "
+                f"duration of {MAX_VIDEO_DURATION}s"
+            )
+
+        return None
 
     def _validate_retake_segment(self, segment: list[float] | None) -> str | None:
         """Validate the retake segment time range."""
@@ -355,7 +499,82 @@ class LTXVideoRetake(SuccessFailureNode):
 
             return generation_id
 
-    def _build_payload(self, params: dict[str, Any], video_uri: str) -> dict[str, Any]:
+    async def _prepare_video_data_uri_async(self, video_input: Any) -> str | None:
+        """Convert video input to a base64 data URI."""
+        if not video_input:
+            return None
+
+        # Get the video URL from VideoUrlArtifact
+        video_url = video_input.value if isinstance(video_input, VideoUrlArtifact) else str(video_input)
+        if not video_url:
+            return None
+
+        # If it's already a data URL, return it
+        if video_url.startswith("data:video/"):
+            return video_url
+
+        # If it's an external URL, download and convert to data URL
+        if video_url.startswith(("http://", "https://")):
+            return await self._download_and_encode_video_async(video_url)
+
+        # If it's a local URL (e.g., from static files), read and encode
+        return await self._read_local_video_and_encode_async(video_url)
+
+    async def _download_and_encode_video_async(self, url: str) -> str | None:
+        """Download external video URL and convert to base64 data URL."""
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(url, timeout=60)
+                resp.raise_for_status()
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                logger.debug("%s failed to download video URL: %s", self.name, e)
+                return None
+            else:
+                content_type = (resp.headers.get("content-type") or "video/mp4").split(";")[0]
+                if not content_type.startswith("video/"):
+                    content_type = "video/mp4"
+                b64 = base64.b64encode(resp.content).decode("utf-8")
+                logger.debug("Video URL converted to base64 data URI for proxy")
+                return f"data:{content_type};base64,{b64}"
+
+    async def _read_local_video_and_encode_async(self, url: str) -> str | None:
+        """Read local video file and convert to base64 data URL."""
+        try:
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            static_files_dir = "staticfiles"  # Default static files directory
+            static_files_path = workspace_path / static_files_dir
+
+            # Parse the URL to get the filename
+            parsed_url = urlparse(url)
+            filename = Path(parsed_url.path).name
+
+            file_path = static_files_path / filename
+            if not file_path.exists():
+                logger.error("%s local video file not found: %s", self.name, file_path)
+                return None
+
+            with file_path.open("rb") as f:
+                video_bytes = f.read()
+
+            # Determine content type from file extension
+            file_ext = file_path.suffix.lower()
+            content_type_map = {
+                ".mp4": "video/mp4",
+                ".mov": "video/quicktime",
+                ".avi": "video/x-msvideo",
+                ".webm": "video/webm",
+            }
+            content_type = content_type_map.get(file_ext, "video/mp4")
+
+            b64 = base64.b64encode(video_bytes).decode("utf-8")
+            logger.debug("Local video file converted to base64 data URI")
+        except (OSError, PermissionError) as e:
+            logger.error("%s failed to read local video file: %s", self.name, e)
+            return None
+        else:
+            return f"data:{content_type};base64,{b64}"
+
+    def _build_payload(self, params: dict[str, Any], video_data_uri: str) -> dict[str, Any]:
         """Build the request payload for LTX Retake API."""
         # Convert [start, end] to start_time and duration
         segment = params["retake_segment"]
@@ -364,7 +583,7 @@ class LTXVideoRetake(SuccessFailureNode):
         duration = end_time - start_time
 
         payload: dict[str, Any] = {
-            "video_uri": video_uri,
+            "video_uri": video_data_uri,
             "start_time": start_time,
             "duration": duration,
             "prompt": params["prompt"].strip(),
@@ -374,10 +593,25 @@ class LTXVideoRetake(SuccessFailureNode):
 
         return payload
 
+    def _sanitize_video_uri_in_dict(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Redact base64 video data from dictionary for logging."""
+        sanitized = {**data}
+        if "video_uri" in sanitized and isinstance(sanitized["video_uri"], str):
+            video_uri = sanitized["video_uri"]
+            if video_uri.startswith("data:video/"):
+                parts = video_uri.split(",", 1)
+                header = parts[0] if parts else "data:video/"
+                b64_len = len(parts[1]) if len(parts) > 1 else 0
+                sanitized["video_uri"] = f"{header},<base64 data length={b64_len}>"
+        return sanitized
+
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
+        # Redact base64 video data from logs
+        sanitized_payload = self._sanitize_video_uri_in_dict(payload)
+
         with suppress(Exception):
-            logger.debug("POST %s\nheaders=%s\nbody=%s", url, dbg_headers, _json.dumps(payload, indent=2))
+            logger.debug("POST %s\nheaders=%s\nbody=%s", url, dbg_headers, _json.dumps(sanitized_payload, indent=2))
 
     async def _poll_for_result_async(self, generation_id: str, headers: dict[str, str]) -> None:
         status_url = urljoin(self._proxy_base, f"generations/{generation_id}")
@@ -410,7 +644,9 @@ class LTXVideoRetake(SuccessFailureNode):
                 self.parameter_output_values["provider_response"] = status_json
 
                 with suppress(Exception):
-                    logger.debug("GET status attempt #%d: %s", attempt + 1, _json.dumps(status_json, indent=2))
+                    # Sanitize video_uri in logs if present
+                    sanitized_status = self._sanitize_video_uri_in_dict(status_json)
+                    logger.debug("GET status attempt #%d: %s", attempt + 1, _json.dumps(sanitized_status, indent=2))
 
                 attempt += 1
 
