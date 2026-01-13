@@ -739,7 +739,7 @@ class Agent(ControlNode):
             )
 
         # Get the output schema
-        output_schema: str = self.get_parameter_value("output_schema")
+        output_schema = self.get_parameter_value("output_schema")
         pydantic_schema = None
         if output_schema is not None:
             try:
