@@ -3609,7 +3609,15 @@ class NodeManager:
         if not updated:
             details = f"Failed to update any nodes. Failed: {failed}"
             return BatchSetNodeLockStateResultFailure(result_details=details)
-        return BatchSetNodeLockStateResultSuccess(updated_nodes=updated, failed_nodes=failed)
+        details = (
+            f"Successfully set lock state to {request.lock} for nodes: {', '.join(updated)}."
+            + (f" Failed: {failed}" if failed else "")
+        )
+        return BatchSetNodeLockStateResultSuccess(
+            updated_nodes=updated,
+            failed_nodes=failed,
+            result_details=details,
+        )
 
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:
         """Handle a SendNodeMessageRequest by calling the node's message callback.
