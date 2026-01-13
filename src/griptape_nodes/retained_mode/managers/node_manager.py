@@ -3020,12 +3020,9 @@ class NodeManager:
             set_parameter_value_commands=parameter_commands,
             set_lock_commands_per_node=lock_commands,
         )
-        # Set everything in the clipboard if requested
-        if request.copy_to_clipboard:
-            GriptapeNodes.ContextManager()._clipboard.node_commands = final_result
-            GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values = unique_uuid_to_values
         return SerializeSelectedNodesToCommandsResultSuccess(
             final_result,
+            parameter_uuid_to_values=unique_uuid_to_values,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
 
