@@ -1,4 +1,12 @@
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL import Image
+
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 from griptape.artifacts import ImageUrlArtifact
 from pillow_nodes_library.utils import image_artifact_to_pil  # type: ignore[reportMissingImports]
@@ -8,7 +16,6 @@ from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters impo
     DiffusionPipelineRuntimeParameters,
 )
 from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -48,7 +55,7 @@ class GlmImagePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
         self._node.remove_parameter_element_by_name("image")
         self._node.remove_parameter_element_by_name("guidance_scale")
 
-    def _get_image_pil(self):
+    def _get_image_pil(self) -> Image.Image | None:
         input_image_artifact = self._node.get_parameter_value("image")
         if input_image_artifact is None:
             return None

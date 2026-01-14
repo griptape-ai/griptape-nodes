@@ -108,7 +108,7 @@ def _quantize_diffusion_pipeline(
     logger.info("Quantization complete.")
 
 
-def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
+def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0911 PLR0912 PLR0915
     pipe: DiffusionPipeline,
     device: torch.device,
     *,

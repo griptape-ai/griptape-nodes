@@ -6,7 +6,10 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
 from PIL.Image import Image
-from pillow_nodes_library.utils import image_artifact_to_pil, pil_to_image_artifact  # type: ignore[reportMissingImports]
+from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
+    image_artifact_to_pil,
+    pil_to_image_artifact,
+)
 from utils.image_utils import load_image_from_url_artifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
