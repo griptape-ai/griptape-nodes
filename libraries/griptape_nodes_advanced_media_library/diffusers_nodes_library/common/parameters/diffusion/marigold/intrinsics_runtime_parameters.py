@@ -147,35 +147,15 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
         self._node.log_params.append_to_logs("Running Marigold intrinsic image decomposition...\n")  # type: ignore[reportAttributeAccessIssue]
 
-        num_inference_steps = self.get_num_inference_steps()
-        ensemble_size = self._node.get_parameter_value("ensemble_size")
-        total_steps = num_inference_steps * ensemble_size
-        self._node.progress_bar_component.initialize(total_steps)  # type: ignore[reportAttributeAccessIssue]
-
-        step_count = 0
-
-        def callback_on_step_end(
-            _pipe: DiffusionPipeline,
-            _i: int,
-            _t: int,
-            callback_kwargs: dict,
-        ) -> dict:
-            nonlocal step_count
-            if self._node.is_cancellation_requested:
-                _pipe._interrupt = True
-                self._node.log_params.append_to_logs("Cancellation requested, stopping...\n")  # type: ignore[reportAttributeAccessIssue]
-                return callback_kwargs
-
-            step_count += 1
-            self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
-            self._node.log_params.append_to_logs(f"Step {step_count} of {total_steps}\n")  # type: ignore[reportAttributeAccessIssue]
-            return {}
+        # Marigold pipelines don't support callback_on_step_end, so we can't track individual steps
+        self._node.progress_bar_component.initialize(1)  # type: ignore[reportAttributeAccessIssue]
 
         pipe_kwargs = self.get_pipe_kwargs()
-        pipe_kwargs["callback_on_step_end"] = callback_on_step_end
 
         with torch.inference_mode():
             result = pipe(**pipe_kwargs)
+
+        self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
 
         prediction = result.prediction
         target_properties = pipe.target_properties
