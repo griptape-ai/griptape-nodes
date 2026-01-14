@@ -1,44 +1,42 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 from griptape.artifacts import ImageUrlArtifact
-from PIL.Image import Image
 from pillow_nodes_library.utils import (  # type: ignore[reportMissingImports]
     image_artifact_to_pil,
     pil_to_image_artifact,
 )
 from utils.image_utils import load_image_from_url_artifact
 
+from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
+    DiffusionPipelineRuntimeParameters,
+)
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+
+if TYPE_CHECKING:
+    from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
+    from PIL.Image import Image
+
+    from griptape_nodes.exe_types.node_types import BaseNode
 
 logger = logging.getLogger("diffusers_nodes_library")
 
 
-class MarigoldIntrinsicsPipelineRuntimeParameters:
+class MarigoldIntrinsicsPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
     def __init__(self, node: BaseNode):
-        self._node = node
-        self._seed_parameter = SeedParameter(node)
+        super().__init__(node)
 
-    def add_input_parameters(self) -> None:
+    def _add_input_parameters(self) -> None:
         self._node.add_parameter(
             Parameter(
                 name="image",
                 input_types=["ImageArtifact", "ImageUrlArtifact"],
                 type="ImageArtifact",
                 tooltip="Input image for intrinsic image decomposition.",
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
-                name="num_inference_steps",
-                default_value=4,
-                type="int",
-                tooltip="The number of denoising steps.",
             )
         )
         self._node.add_parameter(
@@ -63,6 +61,17 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
                 default_value=True,
                 type="bool",
                 tooltip="Resize output to match input dimensions.",
+            )
+        )
+
+    def add_input_parameters(self) -> None:
+        self._add_input_parameters()
+        self._node.add_parameter(
+            Parameter(
+                name="num_inference_steps",
+                default_value=4,
+                type="int",
+                tooltip="The number of denoising steps.",
             )
         )
         self._seed_parameter.add_input_parameters()
@@ -93,13 +102,16 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
             )
         )
 
-    def remove_input_parameters(self) -> None:
+    def _remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("image")
-        self._node.remove_parameter_element_by_name("num_inference_steps")
         self._node.remove_parameter_element_by_name("ensemble_size")
         self._node.remove_parameter_element_by_name("processing_resolution")
         self._node.remove_parameter_element_by_name("match_input_resolution")
+
+    def remove_input_parameters(self) -> None:
+        self._node.remove_parameter_element_by_name("num_inference_steps")
         self._seed_parameter.remove_input_parameters()
+        self._remove_input_parameters()
 
     def remove_output_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("albedo")
@@ -124,8 +136,8 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         return input_image_pil.convert("RGB")
 
-    def get_num_inference_steps(self) -> int:
-        return int(self._node.get_parameter_value("num_inference_steps"))
+    def _get_pipe_kwargs(self) -> dict:
+        return {}
 
     def get_pipe_kwargs(self) -> dict:
         return {
@@ -169,25 +181,25 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
             vis_dict = vis_list[0]
 
             if "albedo" in vis_dict:
-                self.publish_output_image("albedo", vis_dict["albedo"])
+                self._publish_output_image("albedo", vis_dict["albedo"])
 
             if "roughness" in vis_dict:
-                self.publish_output_image("component_1", vis_dict["roughness"])
+                self._publish_output_image("component_1", vis_dict["roughness"])
                 self._node.log_params.append_to_logs("Output component_1: roughness\n")  # type: ignore[reportAttributeAccessIssue]
             elif "shading" in vis_dict:
-                self.publish_output_image("component_1", vis_dict["shading"])
+                self._publish_output_image("component_1", vis_dict["shading"])
                 self._node.log_params.append_to_logs("Output component_1: shading\n")  # type: ignore[reportAttributeAccessIssue]
 
             if "metallicity" in vis_dict:
-                self.publish_output_image("component_2", vis_dict["metallicity"])
+                self._publish_output_image("component_2", vis_dict["metallicity"])
                 self._node.log_params.append_to_logs("Output component_2: metallicity\n")  # type: ignore[reportAttributeAccessIssue]
             elif "residual" in vis_dict:
-                self.publish_output_image("component_2", vis_dict["residual"])
+                self._publish_output_image("component_2", vis_dict["residual"])
                 self._node.log_params.append_to_logs("Output component_2: residual\n")  # type: ignore[reportAttributeAccessIssue]
 
         self._node.log_params.append_to_logs("Done.\n")  # type: ignore[reportAttributeAccessIssue]
 
-    def publish_output_image(self, param_name: str, output_image_pil: Image) -> None:
+    def _publish_output_image(self, param_name: str, output_image_pil: Image) -> None:
         image_artifact = pil_to_image_artifact(output_image_pil)
         self._node.publish_update_to_parameter(param_name, image_artifact)
         self._node.set_parameter_value(param_name, image_artifact)
