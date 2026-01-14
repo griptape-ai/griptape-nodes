@@ -617,7 +617,7 @@ class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, Res
 
     # They will be passed with node_name, timestamp
     # Could be a flow command if it's all nodes in a flow.
-    serialized_selected_node_commands: SerializedSelectedNodesCommands
+    serialized_selected_node_commands: SerializedSelectedNodesCommands | str
     pickled_values: dict[str,bytes]
 
 
