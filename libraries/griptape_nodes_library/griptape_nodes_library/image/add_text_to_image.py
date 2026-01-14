@@ -114,7 +114,7 @@ class AddTextToImage(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the text-to-image operation result",
             result_details_placeholder="Details on the text rendering will be presented here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def process(self) -> None:

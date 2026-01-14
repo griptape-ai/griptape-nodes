@@ -188,7 +188,7 @@ class AddTextToExistingImage(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the add-text-to-existing-image operation result",
             result_details_placeholder="Details on the text rendering will be presented here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def _expand_text_template(self, template: str, template_values: Any) -> _TextExpansionResult:

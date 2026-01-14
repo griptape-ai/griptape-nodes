@@ -162,7 +162,7 @@ class EngineNode(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the execution result",
             result_details_placeholder="Details on the request execution will be presented here.",
-            parameter_group_initially_collapsed=False,  # Show Status group expanded by default for EngineNode
+            parameter_group_initially_collapsed=True,  # Show Status group expanded by default for EngineNode
         )
 
         # Initial parameter creation will be deferred to validate_before_workflow_run

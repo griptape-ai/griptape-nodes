@@ -164,6 +164,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 output_type="str",
                 tooltip="Griptape Cloud generation identifier",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -221,7 +222,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def after_value_set(

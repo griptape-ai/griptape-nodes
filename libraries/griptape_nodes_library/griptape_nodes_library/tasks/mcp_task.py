@@ -105,7 +105,7 @@ class MCPTaskNode(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the MCP task execution result",
             result_details_placeholder="Details on the MCP task execution will be presented here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def _reload_mcp_servers(self, button: Button, button_details: ButtonDetailsMessagePayload) -> None:  # noqa: ARG002

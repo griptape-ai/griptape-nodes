@@ -100,7 +100,7 @@ class CombineAudio(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the 4-track mixing result",
             result_details_placeholder="Details on the audio mixing will be presented here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:

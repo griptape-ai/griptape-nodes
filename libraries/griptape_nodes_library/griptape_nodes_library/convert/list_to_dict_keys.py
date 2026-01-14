@@ -118,7 +118,7 @@ class ListToDictKeys(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the list-to-dict conversion result",
             result_details_placeholder="Details on the key-value pair generation will be presented here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
         # Internal state tracking for user value preservation
