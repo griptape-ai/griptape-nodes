@@ -642,7 +642,8 @@ class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, Reque
 
     Results: DeserializeSelectedNodesFromCommandsResultSuccess (with node names) | DeserializeSelectedNodesFromCommandsResultFailure (deserialization error)
     """
-
+    deserialize_commands: str
+    pickled_values: dict[str,str]
     positions: list[NewPosition] | None = None
 
 
