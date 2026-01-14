@@ -17,7 +17,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterTypeBuiltin,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
-from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
+from griptape_nodes.exe_types.node_groups import BaseNodeGroup, SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
     BaseNode,
     ErrorProxyNode,
@@ -1530,9 +1530,9 @@ class FlowManager:
             if node_name is not None:
                 node_name_to_uuid[node_name] = serialize_result.serialized_node_commands.node_uuid
 
-            # SubflowNodeGroups must be serialized LAST because they reference child node names via node_names_to_add
+            # BaseNodeGroups must be serialized LAST because they reference child node names via node_names_to_add
             # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
-            if isinstance(node, SubflowNodeGroup):
+            if isinstance(node, BaseNodeGroup):
                 serialized_node_group_commands.append(serialize_result.serialized_node_commands)
             else:
                 serialized_node_commands.append(serialize_result.serialized_node_commands)
@@ -1543,7 +1543,7 @@ class FlowManager:
                     serialize_result.set_parameter_value_commands
                 )
 
-        # Update SubflowNodeGroup commands to use UUIDs instead of names in node_names_to_add
+        # Update BaseNodeGroup commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
 
         for node_group_command in serialized_node_group_commands:
@@ -3224,9 +3224,9 @@ class FlowManager:
                     # Store the serialized node's UUID for correlation to connections and setting parameter values later.
                     node_name_to_uuid[node_name] = serialized_node.node_uuid
 
-                    # SubflowNodeGroups must be serialized LAST because CreateNodeGroupRequest references child node names
+                    # BaseNodeGroups must be serialized LAST because CreateNodeGroupRequest references child node names
                     # If we deserialize a NodeGroup before its children, the child nodes won't exist yet
-                    if isinstance(node, SubflowNodeGroup):
+                    if isinstance(node, BaseNodeGroup):
                         serialized_node_group_commands.append(serialized_node)
                     else:
                         serialized_node_commands.append(serialized_node)
@@ -3299,7 +3299,7 @@ class FlowManager:
         # This ensures child nodes exist before their parent NodeGroups are created during deserialization
         serialized_node_commands.extend(serialized_node_group_commands)
 
-        # Update SubflowNodeGroup commands to use UUIDs instead of names in node_names_to_add
+        # Update BaseNodeGroup commands to use UUIDs instead of names in node_names_to_add
         # This allows workflow generation to directly look up variable names from UUIDs
         # Build a complete node name to UUID map including nodes from all subflows
         complete_node_name_to_uuid = dict(node_name_to_uuid)  # Start with current flow's nodes

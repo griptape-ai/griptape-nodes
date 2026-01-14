@@ -2637,9 +2637,8 @@ class NodeManager:
                 library_version = library_metadata_result.metadata.library_version
                 library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
-            # Handle SubflowNodeGroup specially - serialize like normal nodes but preserve node group behavior
-            if isinstance(node, SubflowNodeGroup):
-                # For non-SubflowNodeGroup, library_details should always be set
+            # Handle BaseNodeGroup specially - serialize like normal nodes but preserve node group behavior
+            if isinstance(node, BaseNodeGroup):
                 if library_details is None:
                     details = f"Attempted to serialize Node '{node_name}' to commands. Library details missing."
                     return SerializeNodeToCommandsResultFailure(result_details=details)
@@ -2657,7 +2656,6 @@ class NodeManager:
                     metadata=metadata_copy,
                 )
             else:
-                # For non-SubflowNodeGroup, library_details should always be set
                 if library_details is None:
                     details = f"Attempted to serialize Node '{node_name}' to commands. Library details missing."
                     return SerializeNodeToCommandsResultFailure(result_details=details)
