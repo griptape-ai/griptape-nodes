@@ -33,8 +33,9 @@ class MarigoldNormalsPipelineRuntimeParameters:
         self._node.add_parameter(
             Parameter(
                 name="num_inference_steps",
+                default_value=4,
                 type="int",
-                tooltip="Number of denoising steps. Leave empty to use model default (typically 1-4 steps).",
+                tooltip="The number of denoising steps.",
             )
         )
         self._node.add_parameter(
@@ -43,14 +44,14 @@ class MarigoldNormalsPipelineRuntimeParameters:
                 default_value=1,
                 type="int",
                 tooltip="Number of ensemble predictions. Higher values improve quality but increase processing time.",
-                ui_options={"slider": {"min_val": 1, "max_val": 10}},
             )
         )
         self._node.add_parameter(
             Parameter(
                 name="processing_resolution",
+                default_value=0,
                 type="int",
-                tooltip="Resolution for processing. Leave empty for model default. Set to 0 for native resolution.",
+                tooltip="Resolution for processing. 0 uses native input resolution.",
             )
         )
         self._node.add_parameter(
@@ -102,24 +103,19 @@ class MarigoldNormalsPipelineRuntimeParameters:
         input_image_pil = image_artifact_to_pil(input_image_artifact)
         return input_image_pil.convert("RGB")
 
+    def get_num_inference_steps(self) -> int:
+        return int(self._node.get_parameter_value("num_inference_steps"))
+
     def get_pipe_kwargs(self) -> dict:
-        kwargs: dict[str, Any] = {
+        return {
             "image": self.get_image_pil(),
+            "num_inference_steps": self.get_num_inference_steps(),
             "ensemble_size": self._node.get_parameter_value("ensemble_size"),
+            "processing_resolution": self._node.get_parameter_value("processing_resolution"),
             "match_input_resolution": self._node.get_parameter_value("match_input_resolution"),
             "generator": torch.Generator().manual_seed(self._seed_parameter.get_seed()),
             "output_type": "np",
         }
-
-        num_inference_steps = self._node.get_parameter_value("num_inference_steps")
-        if num_inference_steps is not None and num_inference_steps > 0:
-            kwargs["num_inference_steps"] = num_inference_steps
-
-        processing_resolution = self._node.get_parameter_value("processing_resolution")
-        if processing_resolution is not None:
-            kwargs["processing_resolution"] = processing_resolution
-
-        return kwargs
 
     def publish_output_image_preview_placeholder(self) -> None:
         input_image = self.get_image_pil()
@@ -133,10 +129,7 @@ class MarigoldNormalsPipelineRuntimeParameters:
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
         self._node.log_params.append_to_logs("Running Marigold surface normals estimation...\n")  # type: ignore[reportAttributeAccessIssue]
 
-        num_inference_steps = self._node.get_parameter_value("num_inference_steps")
-        if num_inference_steps is None or num_inference_steps <= 0:
-            num_inference_steps = getattr(pipe, "default_denoising_steps", 4)
-
+        num_inference_steps = self.get_num_inference_steps()
         ensemble_size = self._node.get_parameter_value("ensemble_size")
         total_steps = num_inference_steps * ensemble_size
         self._node.progress_bar_component.initialize(total_steps)  # type: ignore[reportAttributeAccessIssue]
