@@ -323,6 +323,12 @@ class NodeManager:
                     connection.source_node.name = new_name
             temp = connections.outgoing_index.pop(old_name)
             connections.outgoing_index[new_name] = temp
+
+        # Update parent group membership if node belongs to a group
+        parent_group = node.parent_group
+        if parent_group is not None and isinstance(parent_group, BaseNodeGroup):
+            parent_group.handle_child_node_rename(old_name, new_name)
+
         # update the node in the flow!
         flow.remove_node(old_name)
         node.name = new_name
