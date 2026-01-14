@@ -27,6 +27,9 @@ from diffusers_nodes_library.common.parameters.diffusion.flux2.pipeline_type_par
 from diffusers_nodes_library.common.parameters.diffusion.ltx2.pipeline_type_parameters import (
     LTX2PipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.marigold.pipeline_type_parameters import (
+    MarigoldPipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.pipeline_type_parameters import (
     QwenPipelineTypeParameters,
 )
@@ -63,6 +66,7 @@ class DiffusionPipelineBuilderParameters:
         "AudioLDM": AudioldmPipelineTypeParameters,
         "DepthCrafter": DepthCrafterPipelineTypeParameters,
         "LTX-2": LTX2PipelineTypeParameters,
+        "Marigold": MarigoldPipelineTypeParameters,
         "Qwen": QwenPipelineTypeParameters,
         "Stable Diffusion": StableDiffusionPipelineTypeParameters,
         "WAN": WanPipelineTypeParameters,

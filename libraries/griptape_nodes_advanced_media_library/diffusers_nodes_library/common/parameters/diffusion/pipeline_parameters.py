@@ -49,6 +49,15 @@ from diffusers_nodes_library.common.parameters.diffusion.ltx2.img2vid_runtime_pa
 from diffusers_nodes_library.common.parameters.diffusion.ltx2.text2vid_runtime_parameters import (
     LTX2PipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.marigold.depth_runtime_parameters import (
+    MarigoldDepthPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.marigold.intrinsics_runtime_parameters import (
+    MarigoldIntrinsicsPipelineRuntimeParameters,
+)
+from diffusers_nodes_library.common.parameters.diffusion.marigold.normals_runtime_parameters import (
+    MarigoldNormalsPipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.qwen.controlnet_runtime_parameters import (
     QwenImageControlNetPipelineRuntimeParameters,
 )
@@ -145,6 +154,12 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = LTX2PipelineRuntimeParameters(self._node)
             case "LTX2ImageToVideoPipeline":
                 self._runtime_parameters = LTX2ImageToVideoPipelineRuntimeParameters(self._node)
+            case "MarigoldDepthPipeline":
+                self._runtime_parameters = MarigoldDepthPipelineRuntimeParameters(self._node)
+            case "MarigoldNormalsPipeline":
+                self._runtime_parameters = MarigoldNormalsPipelineRuntimeParameters(self._node)
+            case "MarigoldIntrinsicsPipeline":
+                self._runtime_parameters = MarigoldIntrinsicsPipelineRuntimeParameters(self._node)
             case "AllegroPipeline":
                 self._runtime_parameters = AllegroPipelineRuntimeParameters(self._node)
             case "AmusedPipeline":
