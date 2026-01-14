@@ -114,6 +114,7 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
     *,
     is_prequantized: bool = False,
     supports_layerwise_casting: bool = True,
+    requires_device_map: bool = False,
 ) -> None:
     """Optimize pipeline memory footprint with incremental VRAM checking."""
     if device.type == "cuda":
@@ -129,6 +130,12 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
         elif hasattr(pipe, "vae") and hasattr(pipe.vae, "use_slicing"):
             logger.info("Enabling vae slicing")
             pipe.vae.enable_slicing()
+
+        # Pipelines loaded with device_map already have device placement handled.
+        # Skip .to(device) and CPU offload strategies as they're incompatible.
+        if requires_device_map:
+            logger.info("Pipeline loaded with device_map, skipping device placement optimizations")
+            return
 
         if _check_cuda_memory_sufficient(pipe):
             logger.info("Sufficient memory. Moving pipeline to %s", device)
@@ -186,6 +193,11 @@ def _automatic_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0915
     elif device.type == "mps":
         _log_memory_info(pipe, device)
 
+        # Pipelines loaded with device_map already have device placement handled.
+        if requires_device_map:
+            logger.info("Pipeline loaded with device_map, skipping device placement optimizations")
+            return
+
         if _check_mps_memory_sufficient(pipe):
             logger.info("Sufficient memory on %s for Pipeline.", device)
             logger.info("Moving pipeline to %s", device)
@@ -217,6 +229,7 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
     quantization_mode: str,
     is_prequantized: bool = False,
     supports_layerwise_casting: bool = True,
+    requires_device_map: bool = False,
 ) -> None:
     if quantization_mode != "None":
         if is_prequantized:
@@ -246,6 +259,13 @@ def _manual_optimize_diffusion_pipeline(  # noqa: C901 PLR0912 PLR0913
                 storage_dtype=torch.float8_e4m3fn,
                 compute_dtype=torch.bfloat16,
             )
+
+    # Pipelines loaded with device_map already have device placement handled.
+    # Skip .to(device) and CPU offload strategies as they're incompatible.
+    if requires_device_map:
+        logger.info("Pipeline loaded with device_map, skipping device placement optimizations")
+        return
+
     if cpu_offload_strategy == "Sequential":
         if hasattr(pipe, "enable_sequential_cpu_offload"):
             logger.info("Enabling sequential cpu offload")
@@ -273,13 +293,18 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
     quantization_mode: str = "None",
     is_prequantized: bool = False,
     supports_layerwise_casting: bool = True,
+    requires_device_map: bool = False,
 ) -> None:
     """Optimize pipeline performance and memory."""
     device = get_best_device()
 
     if memory_optimization_strategy == "Automatic":
         _automatic_optimize_diffusion_pipeline(
-            pipe, device, is_prequantized=is_prequantized, supports_layerwise_casting=supports_layerwise_casting
+            pipe,
+            device,
+            is_prequantized=is_prequantized,
+            supports_layerwise_casting=supports_layerwise_casting,
+            requires_device_map=requires_device_map,
         )
     else:
         _manual_optimize_diffusion_pipeline(
@@ -292,6 +317,7 @@ def optimize_diffusion_pipeline(  # noqa: PLR0913
             quantization_mode=quantization_mode,
             is_prequantized=is_prequantized,
             supports_layerwise_casting=supports_layerwise_casting,
+            requires_device_map=requires_device_map,
         )
 
     try:

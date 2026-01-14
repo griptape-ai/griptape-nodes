@@ -51,12 +51,23 @@ class GlmImagePipelineParameters(DiffusionPipelineTypePipelineParameters):
             return errors
         return None
 
-    def build_pipeline(self) -> diffusers.GlmImagePipeline:
-        base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
+    def requires_device_map(self) -> bool:
+        """GLM-Image requires device_map to properly load vision_language_encoder."""
+        return True
 
+    def build_pipeline(self) -> diffusers.GlmImagePipeline:
+        from diffusers_nodes_library.common.utils.torch_utils import get_best_device
+
+        base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
+        device = get_best_device()
+
+        # GLM-Image requires device_map to properly load the vision_language_encoder
+        # component. Without it, meta tensors remain which cause errors during i2i.
+        # See: https://huggingface.co/docs/diffusers/main/api/pipelines/glm_image
         return diffusers.GlmImagePipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             torch_dtype=torch.bfloat16,
+            device_map=device.type,
             local_files_only=True,
         )
