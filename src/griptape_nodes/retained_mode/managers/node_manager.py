@@ -3032,7 +3032,7 @@ class NodeManager:
         )
         return SerializeSelectedNodesToCommandsResultSuccess(
             final_result,
-            parameter_uuid_to_values=unique_uuid_to_values,
+            pickled_values=unique_uuid_to_values,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
 
