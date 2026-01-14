@@ -162,6 +162,15 @@
       }
     },
     {
+      "files": {
+        "color": "border-orange-500",
+        "title": "Files",
+        "description": "Universal file loading nodes",
+        "icon": "file",
+        "group": "create"
+      }
+    },
+    {
       "image": {
         "color": "border-purple-500",
         "title": "Image",
@@ -558,6 +567,17 @@
         "category": "audio",
         "description": "Loads audio files into your workflow",
         "display_name": "Load Audio",
+        "icon": "file-up",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "LoadFile",
+      "file_path": "griptape_nodes_library/files/load_file.py",
+      "metadata": {
+        "category": "files",
+        "description": "Universal file loader with pluggable provider system for any file type",
+        "display_name": "Load File",
         "icon": "file-up",
         "group": "Input/Output"
       }
