@@ -3020,9 +3020,23 @@ class NodeManager:
             set_parameter_value_commands=parameter_commands,
             set_lock_commands_per_node=lock_commands,
         )
+
+        # Encode pickled bytes to latin-1 strings for JSON serialization
+        encoded_values = {}
+        for uuid, value in unique_uuid_to_values.items():
+            if isinstance(value, bytes):
+                # Pickled bytes - encode as latin-1 string for transport
+                encoded_values[uuid] = value.decode("latin1")
+            else:
+                # Non-pickled value - keep as-is (for backward compatibility)
+                encoded_values[uuid] = value
+
+        logger.info("TEST SERIALIZATION AND COPYING")
+        logger.info(final_result)
+        logger.info(encoded_values)
         return SerializeSelectedNodesToCommandsResultSuccess(
             final_result,
-            pickled_values=unique_uuid_to_values,
+            pickled_values=encoded_values,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
 
@@ -3030,7 +3044,33 @@ class NodeManager:
         self,
         request: DeserializeSelectedNodesFromCommandsRequest,
     ) -> ResultPayload:
-        commands = GriptapeNodes.ContextManager()._clipboard.node_commands
+        # Decode latin-1 encoded pickled strings back to Python objects
+        decoded_values = {}
+        if request.pickled_values:
+            for uuid, latin1_string in request.pickled_values.items():
+                if isinstance(latin1_string, str):
+                    try:
+                        # Decode: latin-1 string → bytes → unpickled object
+                        pickled_bytes = latin1_string.encode("latin1")
+                        decoded_values[uuid] = pickle.loads(pickled_bytes)
+                    except Exception:
+                        details = f"Failed to unpickle parameter value for UUID {uuid}"
+                        logger.warning(details)
+                        # Keep original value if unpickling fails
+                        decoded_values[uuid] = latin1_string
+                else:
+                    # Not a string, keep as-is
+                    decoded_values[uuid] = latin1_string
+
+        # Parse deserialize_commands JSON string into SerializedSelectedNodesCommands
+        if request.deserialize_commands:
+            import json
+
+            commands_dict = json.loads(request.deserialize_commands)
+            commands = SerializedSelectedNodesCommands(**commands_dict)
+        else:
+            commands = GriptapeNodes.ContextManager()._clipboard.node_commands
+
         if commands is None:
             return DeserializeSelectedNodesFromCommandsResultFailure(result_details="No Node Commands Found")
         connections = commands.serialized_connection_commands
@@ -3067,7 +3107,8 @@ class NodeManager:
                     # Set the Node name
                     param_request.node_name = result.node_name
                     # Set the new value
-                    table = GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values
+                    # Use decoded_values if available (from request), otherwise fall back to clipboard
+                    table = decoded_values if decoded_values else GriptapeNodes.ContextManager()._clipboard.parameter_uuid_to_values
                     if table and parameter_command.unique_value_uuid in table:
                         value = table[parameter_command.unique_value_uuid]
                         # Using try-except-pass instead of contextlib.suppress because it's clearer.
