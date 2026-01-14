@@ -2771,6 +2771,7 @@ class NodeManager:
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                     create_node_request=create_node_request,
+                    use_pickling=True,
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
@@ -3167,6 +3168,7 @@ class NodeManager:
         node_name: str,
         *,
         is_output: bool,
+        use_pickling: bool = False,
     ) -> SerializedNodeCommands.IndirectSetParameterValueCommand | None:
         try:
             hash(value)
@@ -3201,12 +3203,20 @@ class NodeManager:
                     return None
                 # The value should be serialized. Add it to the map of uniques.
                 unique_uuid = SerializedNodeCommands.UniqueParameterValueUUID(str(uuid4()))
-                try:
-                    unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
-                except Exception:
-                    details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
-                    logger.warning(details)
-                    unique_parameter_uuid_to_values[unique_uuid] = value
+
+                if use_pickling:
+                    # Use pickle serialization via WorkflowManager
+                    workflow_manager = GriptapeNodes.WorkflowManager()
+                    pickled_bytes = workflow_manager._patch_and_pickle_object(value)
+                    unique_parameter_uuid_to_values[unique_uuid] = pickled_bytes
+                else:
+                    # Use existing deep copy approach
+                    try:
+                        unique_parameter_uuid_to_values[unique_uuid] = copy.deepcopy(value)
+                    except Exception:
+                        details = f"Attempted to serialize parameter '{parameter_name}` on node '{node_name}'. The parameter value could not be copied. It will be serialized by value. If problems arise from this, ensure the type '{type(value)}' works with copy.deepcopy()."
+                        logger.warning(details)
+                        unique_parameter_uuid_to_values[unique_uuid] = value
                 serialized_parameter_value_tracker.add_as_serializable(value_id, unique_uuid)
 
         # Serialize it
@@ -3229,6 +3239,8 @@ class NodeManager:
         unique_parameter_uuid_to_values: dict[SerializedNodeCommands.UniqueParameterValueUUID, Any],
         serialized_parameter_value_tracker: SerializedParameterValueTracker,
         create_node_request: CreateNodeRequest,
+        *,
+        use_pickling: bool = False,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -3246,6 +3258,7 @@ class NodeManager:
             unique_parameter_uuid_to_values (dict[SerializedNodeCommands.UniqueParameterValueUUID, Any]): Dictionary mapping unique value UUIDs to values
             serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
             create_node_request (CreateNodeRequest): The node creation request that will be modified if serialization fails
+            use_pickling (bool): If True, use pickle-based serialization; if False, use deep copy
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
@@ -3282,6 +3295,7 @@ class NodeManager:
                 is_output=False,
                 parameter_name=parameter.name,
                 node_name=node.name,
+                use_pickling=use_pickling,
             )
             if internal_command is None:
                 details = f"Attempted to serialize set value for parameter '{parameter.name}' on node '{node.name}'. The set value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
@@ -3300,6 +3314,7 @@ class NodeManager:
                 is_output=True,
                 parameter_name=parameter.name,
                 node_name=node.name,
+                use_pickling=use_pickling,
             )
             if output_command is None:
                 details = f"Attempted to serialize output value for parameter '{parameter.name}' on node '{node.name}'. The output value will not be restored in anything that attempts to deserialize or save this node. The value for this parameter was not serialized because it did not match Griptape Nodes' criteria for serializability. To remedy, either update the value's type to support serializability or mark the parameter as not serializable by setting serializable=False when creating the parameter."
