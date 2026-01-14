@@ -49,9 +49,9 @@ class MarigoldIntrinsicsPipelineRuntimeParameters:
         self._node.add_parameter(
             Parameter(
                 name="processing_resolution",
-                default_value=0,
+                default_value=768,
                 type="int",
-                tooltip="Resolution for processing. 0 uses native input resolution.",
+                tooltip="Resolution (longest edge) for processing. 0 uses native input resolution.",
             )
         )
         self._node.add_parameter(
