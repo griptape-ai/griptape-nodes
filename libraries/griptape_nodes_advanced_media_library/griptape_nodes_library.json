@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.65.2",
+    "library_version": "0.66.0",
     "engine_version": "0.67.0",
     "tags": [
       "Griptape",
@@ -40,12 +40,11 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers @ https://github.com/huggingface/diffusers/archive/c10bdd9b7365efe09330ca50fd0cbb6996995131.zip",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/7feb4fc791909f4a58b153d6d07c6cb8437b2e58.zip",
         "imageio[ffmpeg]>=2.37.2",
         "ninja>=1.13.0",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
-        "peft>=0.17.0",
         "pillow>=11.2.1",
         "sentencepiece>=0.2.0",
         "cmake==3.31.6",
@@ -209,19 +208,6 @@
         "description": "Load the Flux LoRA for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
         "display_name": "Flux ICEdit LoRA: RiverZ Normal",
         "group": "diffusion"
-      }
-    },
-    {
-      "class_name": "TrainFluxLora",
-      "file_path": "diffusers_nodes_library/pipelines/flux/peft/train_flux_lora.py",
-      "metadata": {
-        "category": "image/flux/loras",
-        "description": "TrainFluxLora node.",
-        "display_name": "Train Flux LoRA",
-        "deprecation": {
-          "deprecation_message": "Use 'Train LoRA' from the Griptape Nodes LoRA Training Library instead: https://github.com/griptape-ai/griptape-nodes-lora-training-library",
-          "removal_version": "0.66.0"
-        }
       }
     },
     {
