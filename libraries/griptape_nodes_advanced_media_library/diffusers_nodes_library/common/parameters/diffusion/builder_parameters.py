@@ -21,6 +21,9 @@ from diffusers_nodes_library.common.parameters.diffusion.depthcrafter.pipeline_t
 from diffusers_nodes_library.common.parameters.diffusion.flux.pipeline_type_parameters import (
     FluxPipelineTypeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.glm_image.pipeline_type_parameters import (
+    GlmImagePipelineTypeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.flux2.pipeline_type_parameters import (
     Flux2PipelineTypeParameters,
 )
@@ -65,6 +68,7 @@ class DiffusionPipelineBuilderParameters:
         "Amused": AmusedPipelineTypeParameters,
         "AudioLDM": AudioldmPipelineTypeParameters,
         "DepthCrafter": DepthCrafterPipelineTypeParameters,
+        "GLM-Image": GlmImagePipelineTypeParameters,
         "LTX-2": LTX2PipelineTypeParameters,
         "Marigold": MarigoldPipelineTypeParameters,
         "Qwen": QwenPipelineTypeParameters,

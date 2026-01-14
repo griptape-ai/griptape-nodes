@@ -43,6 +43,9 @@ from diffusers_nodes_library.common.parameters.diffusion.flux.upscale_runtime_pa
 from diffusers_nodes_library.common.parameters.diffusion.flux2.runtime_parameters import (
     Flux2PipelineRuntimeParameters,
 )
+from diffusers_nodes_library.common.parameters.diffusion.glm_image.runtime_parameters import (
+    GlmImagePipelineRuntimeParameters,
+)
 from diffusers_nodes_library.common.parameters.diffusion.ltx2.img2vid_runtime_parameters import (
     LTX2ImageToVideoPipelineRuntimeParameters,
 )
@@ -150,6 +153,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
             case "Flux2Pipeline":
                 self._runtime_parameters = Flux2PipelineRuntimeParameters(self._node)
+            case "GlmImagePipeline":
+                self._runtime_parameters = GlmImagePipelineRuntimeParameters(self._node)
             case "LTX2Pipeline":
                 self._runtime_parameters = LTX2PipelineRuntimeParameters(self._node)
             case "LTX2ImageToVideoPipeline":

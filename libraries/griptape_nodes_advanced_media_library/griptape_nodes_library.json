@@ -52,7 +52,7 @@
         "torch>=2.7.0",
         "torchvision>=0.22.0",
         "torchaudio>=2.7.0",
-        "transformers>=4.51.3",
+        "transformers @ https://github.com/huggingface/transformers/archive/136c621c00b2536d1f608ed3c6de59b9897afbb8.zip",
         "tqdm>=4.67.1",
         "ultralytics>=8.0.0",
         "optimum-quanto>=0.2.7",
