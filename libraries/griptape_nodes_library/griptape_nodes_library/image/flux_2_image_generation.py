@@ -38,7 +38,7 @@ MAX_IMAGE_DIMENSION = 8192  # Any image wider than this will be >4MP anyways
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
 # Model options
-MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex", "flux-2-max"]
+MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex", "flux-2-max", "flux-2-klein-4b", "flux-2-klein-9b"]
 DEFAULT_MODEL = MODEL_OPTIONS[0]
 
 # Safety tolerance options
