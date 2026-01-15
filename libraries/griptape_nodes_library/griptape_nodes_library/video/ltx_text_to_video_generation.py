@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -130,7 +130,7 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             ParameterString(
                 name="resolution",
                 default_value="1920x1080",
@@ -138,9 +138,7 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["1920x1080", "2560x1440", "3840x2160"])},
             )
-        )
 
-        self.add_parameter(
             ParameterInt(
                 name="duration",
                 default_value=6,
@@ -148,9 +146,7 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[6, 8, 10, 12, 14, 16, 18, 20])},
             )
-        )
 
-        self.add_parameter(
             ParameterInt(
                 name="fps",
                 default_value=25,
@@ -158,9 +154,6 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[25, 50])},
             )
-        )
-
-        self.add_parameter(
             ParameterString(
                 name="camera_motion",
                 default_value="static",
@@ -168,16 +161,14 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=CAMERA_MOTION_OPTIONS)},
             )
-        )
-
-        self.add_parameter(
             ParameterBool(
                 name="generate_audio",
                 default_value=True,
                 tooltip="Generate audio with the video",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
+
+        self.add_node_element(gen_settings_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -209,7 +200,7 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

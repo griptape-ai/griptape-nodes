@@ -139,8 +139,28 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Image Inputs Group
-        with ParameterGroup(name="Image Inputs") as image_group:
+        # Prompts
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                default_value="",
+                tooltip="Positive text prompt (max 2500 chars)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"multiline": True, "placeholder_text": "Describe the desired video content..."},
+            )
+        )
+        self.add_parameter(
+            ParameterString(
+                name="negative_prompt",
+                default_value="",
+                tooltip="Negative text prompt (max 2500 chars)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"multiline": True},
+            )
+        )
+
+        # Image Inputs
+        self.add_parameter(
             Parameter(
                 name="image",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
@@ -149,6 +169,8 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Start Frame"},
             )
+        )
+        self.add_parameter(
             Parameter(
                 name="image_tail",
                 input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
@@ -157,25 +179,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "End Frame"},
             )
-        self.add_node_element(image_group)
-
-        # Prompts Group
-        with ParameterGroup(name="Prompts") as prompts_group:
-            ParameterString(
-                name="prompt",
-                default_value="",
-                tooltip="Positive text prompt (max 2500 chars)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Describe the desired video content..."},
-            )
-            ParameterString(
-                name="negative_prompt",
-                default_value="",
-                tooltip="Negative text prompt (max 2500 chars)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True},
-            )
-        self.add_node_element(prompts_group)
+        )
 
         # Generation Settings Group
         with ParameterGroup(name="Generation Settings") as gen_settings_group:
@@ -259,7 +263,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -268,6 +272,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 name="kling_video_id",
                 tooltip="The Kling AI video ID",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="The Kling AI video ID",
             )
         )
 

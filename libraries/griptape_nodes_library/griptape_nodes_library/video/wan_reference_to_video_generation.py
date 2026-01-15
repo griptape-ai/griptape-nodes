@@ -11,12 +11,14 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -221,44 +223,15 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         # Hide the upload message for video 3 since the parameter is hidden
         self.hide_message_by_name("artifact_url_parameter_message_reference_video_3")
 
-        # Size parameter
-        self.add_parameter(
-            Parameter(
-                name="size",
-                input_types=["str"],
-                type="str",
-                default_value="1920*1080",
-                tooltip="Output video resolution (width*height)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=ALL_SIZE_OPTIONS)},
-            )
-        )
-
-        # Duration parameter
-        self.add_parameter(
-            Parameter(
-                name="duration",
-                input_types=["int"],
-                type="int",
-                default_value=5,
-                tooltip="Video duration in seconds (5 or 10)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[5, 10])},
-            )
-        )
-
         # Audio parameter
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="audio",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Auto-generate audio for video",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
-
         # Input Audio (optional) using PublicArtifactUrlParameter
         # Hidden by default since audio auto-generation is enabled by default
         self._public_audio_url_parameter = PublicArtifactUrlParameter(
@@ -278,35 +251,46 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
         self._public_audio_url_parameter.add_input_parameters()
         # Hide the upload message since audio auto-generation is enabled by default
         self.hide_message_by_name("artifact_url_parameter_message_input_audio")
+        with ParameterGroup(name="Generation Settings") as generation_settings_group:
+            # Size parameter
+            ParameterString(
+                name="size",
+                default_value="1920*1080",
+                tooltip="Output video resolution (width*height)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=ALL_SIZE_OPTIONS)},
+            )
+            # Duration parameter
+            ParameterInt(
+                name="duration",
+                default_value=5,
+                tooltip="Video duration in seconds (5 or 10)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[5, 10])},
+            )
 
-        # Shot type parameter
-        self.add_parameter(
-            Parameter(
+            # Shot type parameter
+            ParameterString(
                 name="shot_type",
-                input_types=["str"],
-                type="str",
                 default_value="single",
                 tooltip="Shot type: 'single' for continuous shot, 'multi' for multiple changing shots",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=SHOT_TYPE_OPTIONS)},
+                traits={Options(choices=["single", "multi"])},
             )
-        )
 
-        # Watermark parameter
-        self.add_parameter(
-            Parameter(
+            # Watermark parameter
+            ParameterBool(
                 name="watermark",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add 'AI Generated' watermark in lower-right corner",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Initialize SeedParameter component
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+            # Initialize SeedParameter component
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(

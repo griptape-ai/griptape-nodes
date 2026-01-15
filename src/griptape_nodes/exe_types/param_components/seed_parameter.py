@@ -3,6 +3,8 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 
 
 class SeedParameter:
@@ -10,24 +12,20 @@ class SeedParameter:
         self._node = node
         self._max_seed = max_seed
 
-    def add_input_parameters(self) -> None:
-        self._node.add_parameter(
-            Parameter(
-                name="randomize_seed",
-                type="bool",
-                output_type="bool",
-                tooltip="randomize the seed on each run",
-                default_value=False,
-            )
+    def add_input_parameters(self, *, inside_param_group: bool = False) -> None:
+        randomize_seed_parameter = ParameterBool(
+            name="randomize_seed",
+            tooltip="randomize the seed on each run",
+            default_value=False,
         )
-        self._node.add_parameter(
-            Parameter(
-                name="seed",
-                type="int",
-                tooltip="seed",
-                default_value=42,
-            )
+        seed_parameter = ParameterInt(
+            name="seed",
+            tooltip="the seed to use for the generation",
+            default_value=42,
         )
+        if not inside_param_group:
+            self._node.add_parameter(randomize_seed_parameter)
+            self._node.add_parameter(seed_parameter)
 
     def remove_input_parameters(self) -> None:
         self._node.remove_parameter_element_by_name("randomize_seed")
