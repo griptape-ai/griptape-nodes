@@ -11,20 +11,19 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 
 logger = logging.getLogger("diffusers_nodes_library")
 
-QUANTIZED_FLUX_2_REPO_IDS = [
-    "diffusers/FLUX.2-dev-bnb-4bit",
-    "black-forest-labs/FLUX.2-dev-NVFP4",
+MARIGOLD_DEPTH_REPO_IDS = [
+    "prs-eth/marigold-depth-v1-1",
+    "prs-eth/marigold-depth-v1-0",
+    "prs-eth/marigold-depth-lcm-v1-0",
 ]
 
-FLUX_2_REPO_IDS = [*QUANTIZED_FLUX_2_REPO_IDS, "black-forest-labs/FLUX.2-dev", "fal/FLUX.2-dev-Turbo"]
 
-
-class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
+class MarigoldDepthPipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
-            repo_ids=FLUX_2_REPO_IDS,
+            repo_ids=MARIGOLD_DEPTH_REPO_IDS,
             parameter_name="model",
             list_all_models=list_all_models,
         )
@@ -42,7 +41,7 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.Flux2Pipeline
+        return diffusers.MarigoldDepthPipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -50,18 +49,17 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
         if model_errors:
             errors.extend(model_errors)
 
-        return errors or None
+        if errors:
+            return errors
+        return None
 
-    def build_pipeline(self) -> diffusers.Flux2Pipeline:
+    def build_pipeline(self) -> diffusers.MarigoldDepthPipeline:
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
 
-        return diffusers.Flux2Pipeline.from_pretrained(
+        return diffusers.MarigoldDepthPipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
-            torch_dtype=torch.bfloat16,
+            variant="fp16",
+            torch_dtype=torch.float16,
             local_files_only=True,
         )
-
-    def is_prequantized(self) -> bool:
-        repo_id, _ = self._model_repo_parameter.get_repo_revision()
-        return repo_id in QUANTIZED_FLUX_2_REPO_IDS

@@ -11,20 +11,17 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 
 logger = logging.getLogger("diffusers_nodes_library")
 
-QUANTIZED_FLUX_2_REPO_IDS = [
-    "diffusers/FLUX.2-dev-bnb-4bit",
-    "black-forest-labs/FLUX.2-dev-NVFP4",
+GLM_IMAGE_REPO_IDS = [
+    "zai-org/GLM-Image",
 ]
 
-FLUX_2_REPO_IDS = [*QUANTIZED_FLUX_2_REPO_IDS, "black-forest-labs/FLUX.2-dev", "fal/FLUX.2-dev-Turbo"]
 
-
-class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
+class GlmImagePipelineParameters(DiffusionPipelineTypePipelineParameters):
     def __init__(self, node: BaseNode, *, list_all_models: bool = False):
         super().__init__(node)
         self._model_repo_parameter = HuggingFaceRepoParameter(
             node,
-            repo_ids=FLUX_2_REPO_IDS,
+            repo_ids=GLM_IMAGE_REPO_IDS,
             parameter_name="model",
             list_all_models=list_all_models,
         )
@@ -42,7 +39,7 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
 
     @property
     def pipeline_class(self) -> type:
-        return diffusers.Flux2Pipeline
+        return diffusers.GlmImagePipeline
 
     def validate_before_node_run(self) -> list[Exception] | None:
         errors = []
@@ -50,18 +47,27 @@ class Flux2PipelineParameters(DiffusionPipelineTypePipelineParameters):
         if model_errors:
             errors.extend(model_errors)
 
-        return errors or None
+        if errors:
+            return errors
+        return None
 
-    def build_pipeline(self) -> diffusers.Flux2Pipeline:
+    def requires_device_map(self) -> bool:
+        """GLM-Image requires device_map to properly load vision_language_encoder."""
+        return True
+
+    def build_pipeline(self) -> diffusers.GlmImagePipeline:
+        from diffusers_nodes_library.common.utils.torch_utils import get_best_device
+
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
+        device = get_best_device()
 
-        return diffusers.Flux2Pipeline.from_pretrained(
+        # GLM-Image requires device_map to properly load the vision_language_encoder
+        # component. Without it, meta tensors remain which cause errors during i2i.
+        # See: https://huggingface.co/docs/diffusers/main/api/pipelines/glm_image
+        return diffusers.GlmImagePipeline.from_pretrained(
             pretrained_model_name_or_path=base_repo_id,
             revision=base_revision,
             torch_dtype=torch.bfloat16,
+            device_map=device.type,
             local_files_only=True,
         )
-
-    def is_prequantized(self) -> bool:
-        repo_id, _ = self._model_repo_parameter.get_repo_revision()
-        return repo_id in QUANTIZED_FLUX_2_REPO_IDS
