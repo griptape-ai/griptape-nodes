@@ -103,8 +103,15 @@ class ExecutionStatusComponent:
         """
         self._update_parameter_value(self._was_successful, was_successful)
         self._update_parameter_value(self._result_details, result_details)
-        # Update display label: show warning emoji on failure
-        self._update_status_group_display_label(show_warning=not was_successful)
+        # Update display label: show warning emoji only on actual failure (not placeholder/initialization messages)
+        # While string matching is not the best practice, it's currently the only way to check for placeholder messages.
+        is_placeholder = result_details in (
+            "<Results will appear when the node executes>",
+            "Beginning execution...",
+            "",
+        )
+        show_warning = not was_successful and not is_placeholder
+        self._update_status_group_display_label(show_warning=show_warning)
 
     def clear_execution_status(self, initial_message: str | None = None) -> None:
         """Clear execution status and reset parameters.
