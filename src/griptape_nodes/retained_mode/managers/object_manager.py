@@ -149,7 +149,6 @@ class ObjectManager:
                     context_mgr.pop_node()
                 context_mgr.pop_flow()
             context_mgr.pop_workflow()
-        context_mgr._clipboard.clear()
 
         # Clear all local workflow variables
         GriptapeNodes.VariablesManager().on_clear_object_state()
