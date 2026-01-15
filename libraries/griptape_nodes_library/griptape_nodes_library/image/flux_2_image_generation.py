@@ -37,8 +37,15 @@ MAX_IMAGE_DIMENSION = 8192  # Any image wider than this will be >4MP anyways
 # Output format options
 OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
-# Model options
-MODEL_OPTIONS = ["flux-2-pro", "flux-2-flex", "flux-2-max", "flux-2-klein-4b", "flux-2-klein-9b"]
+# Model mapping from user-friendly names to API model IDs
+MODEL_MAPPING = {
+    "Flux 2 [pro]": "flux-2-pro",
+    "Flux 2 [flex]": "flux-2-flex",
+    "Flux 2 [max]": "flux-2-max",
+    "Flux 2 [klein] 4b": "flux-2-klein-4b",
+    "Flux 2 [klein] 9b": "flux-2-klein-9b",
+}
+MODEL_OPTIONS = list(MODEL_MAPPING.keys())
 DEFAULT_MODEL = MODEL_OPTIONS[0]
 
 # Safety tolerance options
@@ -61,7 +68,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
     """Generate images using Flux-2 models via Griptape model proxy.
 
     Inputs:
-        - model (str): Flux model to use ("flux-2-pro", "flux-2-flex", or "flux-2-max", default: "flux-2-pro")
+        - model (str): Flux model to use (default: "Flux 2 [pro]")
         - prompt (str): Text description of the desired image
         - input_images (list): Optional input images for image-to-image generation
         - width (int): Output width in pixels. Must be a multiple of 16. (default: 1024)
@@ -268,7 +275,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
         self._seed_parameter.after_value_set(parameter, value)
 
         if parameter.name == "model":
-            if value in ["flux-2-flex"]:
+            # Map friendly name to API model ID
+            api_model_id = MODEL_MAPPING.get(value, value)
+            if api_model_id == "flux-2-flex":
                 self.show_parameter_by_name("steps")
                 self.show_parameter_by_name("guidance")
             else:
@@ -378,7 +387,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
         payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
+        # Map friendly model name to API model ID
+        api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
+        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
 
         self._log(f"Submitting request to Griptape model proxy with {params['model']}")
         self._log_request(payload)
@@ -423,8 +434,10 @@ class Flux2ImageGeneration(SuccessFailureNode):
             "height": params["height"],
         }
 
+        # Map friendly model name to API model ID
+        api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
         # add steps and guidance for flex model
-        if params["model"] == "flux-2-flex":
+        if api_model_id == "flux-2-flex":
             payload["steps"] = params["steps"]
             payload["guidance"] = params["guidance"]
 
