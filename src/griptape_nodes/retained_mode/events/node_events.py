@@ -648,8 +648,8 @@ class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, Res
 
     # They will be passed with node_name, timestamp
     # Could be a flow command if it's all nodes in a flow.
-    serialized_selected_node_commands: SerializedSelectedNodesCommands | str
-    pickled_values: dict[str,str]
+    serialized_selected_node_commands: str
+    pickled_values: dict[str, str]
 
 
 @dataclass
@@ -674,8 +674,9 @@ class DeserializeSelectedNodesFromCommandsRequest(WorkflowNotAlteredMixin, Reque
 
     Results: DeserializeSelectedNodesFromCommandsResultSuccess (with node names) | DeserializeSelectedNodesFromCommandsResultFailure (deserialization error)
     """
+
     deserialize_commands: str
-    pickled_values: dict[str,str]
+    pickled_values: dict[str, str]
     positions: list[NewPosition] | None = None
 
 
