@@ -57,11 +57,12 @@ MAX_GUIDANCE_FLEX = 10.0
 MIN_GUIDANCE_FLEX = 1.5
 DEFAULT_GUIDANCE_FLEX = 4.5
 
-# Response status constants
-STATUS_FAILED = "Failed"
-STATUS_ERROR = "Error"
-STATUS_REQUEST_MODERATED = "Request Moderated"
-STATUS_CONTENT_MODERATED = "Content Moderated"
+# Response status constants (v2 API)
+STATUS_COMPLETED = "COMPLETED"
+STATUS_FAILED = "FAILED"
+STATUS_ERRORED = "ERRORED"
+STATUS_QUEUED = "QUEUED"
+STATUS_RUNNING = "RUNNING"
 
 
 class Flux2ImageGeneration(SuccessFailureNode):
@@ -100,7 +101,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
         api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
+        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # Model selection
         self.add_parameter(
@@ -537,9 +538,9 @@ class Flux2ImageGeneration(SuccessFailureNode):
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
+        """Phase 2: Poll the generations endpoint until completed."""
         get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 120  # 10 minutes with 5s intervals
+        max_attempts = 240  # 20 minutes with 5s intervals
         poll_interval = 5
 
         async with httpx.AsyncClient() as client:
@@ -556,20 +557,12 @@ class Flux2ImageGeneration(SuccessFailureNode):
                     status = result_json.get("status", "unknown")
                     self._log(f"Status: {status}")
 
-                    if status == "Ready":
-                        # Extract the image URL from result.sample
-                        sample_url = result_json.get("result", {}).get("sample")
-                        if sample_url:
-                            await self._handle_success(result_json, sample_url)
-                        else:
-                            self._log("No sample URL found in ready result")
-                            self._set_safe_defaults()
-                            self._set_status_results(
-                                was_successful=False,
-                                result_details="Generation completed but no image URL was found in the response.",
-                            )
+                    if status == STATUS_COMPLETED:
+                        # Phase 3: Fetch final result from separate endpoint
+                        await self._fetch_result(generation_id, headers, client)
                         return
-                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
+
+                    if status in [STATUS_FAILED, STATUS_ERRORED]:
                         self._log(f"Generation failed with status: {status}")
                         self._set_safe_defaults()
                         # Extract error details from the response
@@ -577,7 +570,7 @@ class Flux2ImageGeneration(SuccessFailureNode):
                         self._set_status_results(was_successful=False, result_details=error_details)
                         return
 
-                    # Still processing, wait before next poll
+                    # Still processing (QUEUED or RUNNING), wait before next poll
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(poll_interval)
 
@@ -604,8 +597,51 @@ class Flux2ImageGeneration(SuccessFailureNode):
                 result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
             )
 
+    async def _fetch_result(self, generation_id: str, headers: dict[str, str], client: httpx.AsyncClient) -> None:
+        """Phase 3: Fetch final result from /result endpoint."""
+        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
+        self._log(f"Fetching result from {result_url}")
+
+        try:
+            response = await client.get(result_url, headers=headers, timeout=60)
+            response.raise_for_status()
+            result_json = response.json()
+        except httpx.HTTPStatusError as e:
+            self._log(f"HTTP error fetching result: {e.response.status_code}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to fetch result: HTTP {e.response.status_code}",
+            )
+            return
+        except Exception as e:
+            self._log(f"Error fetching result: {e}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to fetch result: {e}",
+            )
+            return
+
+        # Update provider_response with final result
+        self.parameter_output_values["provider_response"] = result_json
+
+        # Extract image URL from BFL response format (result.sample)
+        sample_url = result_json.get("result", {}).get("sample")
+        if not sample_url:
+            self._log("No sample URL found in result")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details="Generation completed but no image URL was found in the response.",
+            )
+            return
+
+        # Download and save to static storage
+        await self._save_image_from_url(sample_url)
+
     async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
-        """Handle successful generation result."""
+        """Handle successful generation result (deprecated - kept for compatibility)."""
         self.parameter_output_values["provider_response"] = response
         await self._save_image_from_url(image_url)
 
@@ -640,7 +676,16 @@ class Flux2ImageGeneration(SuccessFailureNode):
             )
 
     def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
+        """Extract error details from v2 API response.
+
+        v2 API format for FAILED/ERRORED status:
+        {
+          "status": "FAILED" or "ERRORED",
+          "status_detail": {
+            "error": "[string]",
+            "details": {...verbatim error object from provider...}
+          }
+        }
 
         Args:
             response_json: The JSON response from the API that may contain error information
@@ -651,46 +696,33 @@ class Flux2ImageGeneration(SuccessFailureNode):
         if not response_json:
             return "Generation failed with no error details provided by API."
 
-        top_level_error = response_json.get("error")
+        # Check v2 API status_detail (primary source for FAILED/ERRORED status)
+        status_detail = response_json.get("status_detail")
+        if status_detail and isinstance(status_detail, dict):
+            error_msg = status_detail.get("error")
+            if error_msg:
+                # Include details if available (contains verbatim provider error)
+                details = status_detail.get("details")
+                if details:
+                    # Details might be dict or string, convert to string if needed
+                    details_str = details if isinstance(details, str) else _json.dumps(details)
+                    return f"Generation failed: {error_msg}\n\n{details_str}"
+                return f"Generation failed: {error_msg}"
+
+        # Fallback to provider_response for backwards compatibility
         parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+        if parsed_provider_response:
+            provider_error_msg = self._format_provider_error(parsed_provider_response, None)
+            if provider_error_msg:
+                return provider_error_msg
 
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
+        # Fallback to top-level error field
+        top_level_error = response_json.get("error")
         if top_level_error:
             return self._format_top_level_error(top_level_error)
 
-        # Check for status-based errors
-        status = response_json.get("status")
-
-        # Handle moderation specifically
-        if status in [STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-            return self._format_moderation_error(response_json)
-
-        # Handle other failure statuses
-        if status in [STATUS_FAILED, STATUS_ERROR]:
-            return self._format_failure_status_error(response_json, status)
-
         # Final fallback
-        return f"Generation failed.\n\nFull API response:\n{response_json}"
-
-    def _format_moderation_error(self, response_json: dict[str, Any]) -> str:
-        """Format error message for moderated content."""
-        details = response_json.get("details", {})
-        moderation_reasons = details.get("Moderation Reasons", [])
-        if moderation_reasons:
-            reasons_str = ", ".join(moderation_reasons)
-            return f"Content was moderated and blocked.\nModeration Reasons: {reasons_str}"
-        return "Content was moderated and blocked by safety filters."
-
-    def _format_failure_status_error(self, response_json: dict[str, Any], status: str) -> str:
-        """Format error message for failed/error status."""
-        result = response_json.get("result", {})
-        if isinstance(result, dict) and result.get("error"):
-            return f"Generation failed: {result['error']}"
+        status = response_json.get("status", "unknown")
         return f"Generation failed with status '{status}'."
 
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
