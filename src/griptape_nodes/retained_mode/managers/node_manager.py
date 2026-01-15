@@ -323,6 +323,12 @@ class NodeManager:
                     connection.source_node.name = new_name
             temp = connections.outgoing_index.pop(old_name)
             connections.outgoing_index[new_name] = temp
+
+        # Update parent group membership if node belongs to a group
+        parent_group = node.parent_group
+        if parent_group is not None and isinstance(parent_group, BaseNodeGroup):
+            parent_group.handle_child_node_rename(old_name, new_name)
+
         # update the node in the flow!
         flow.remove_node(old_name)
         node.name = new_name
@@ -2637,9 +2643,8 @@ class NodeManager:
                 library_version = library_metadata_result.metadata.library_version
                 library_details = LibraryNameAndVersion(library_name=library_used, library_version=library_version)
 
-            # Handle SubflowNodeGroup specially - serialize like normal nodes but preserve node group behavior
-            if isinstance(node, SubflowNodeGroup):
-                # For non-SubflowNodeGroup, library_details should always be set
+            # Handle BaseNodeGroup specially - serialize like normal nodes but preserve node group behavior
+            if isinstance(node, BaseNodeGroup):
                 if library_details is None:
                     details = f"Attempted to serialize Node '{node_name}' to commands. Library details missing."
                     return SerializeNodeToCommandsResultFailure(result_details=details)
@@ -2657,7 +2662,6 @@ class NodeManager:
                     metadata=metadata_copy,
                 )
             else:
-                # For non-SubflowNodeGroup, library_details should always be set
                 if library_details is None:
                     details = f"Attempted to serialize Node '{node_name}' to commands. Library details missing."
                     return SerializeNodeToCommandsResultFailure(result_details=details)

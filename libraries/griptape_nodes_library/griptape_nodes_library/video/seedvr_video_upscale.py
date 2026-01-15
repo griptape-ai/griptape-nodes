@@ -11,12 +11,14 @@ from urllib.parse import urljoin
 import requests
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -81,105 +83,80 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         )
         self._public_video_url_parameter.add_input_parameters()
 
-        # Upscale mode selection
-        self.add_parameter(
-            Parameter(
+        with ParameterGroup(name="Generation Settings") as generation_settings_group:
+            # Upscale mode selection
+            ParameterString(
                 name="upscale_mode",
-                input_types=["str"],
-                type="str",
                 default_value="factor",
                 tooltip="Upscale mode",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["factor", "target"])},
             )
-        )
 
-        # Noise scale selection
-        self.add_parameter(
-            Parameter(
+            # Noise scale selection
+            ParameterFloat(
                 name="noise_scale",
-                input_types=["float"],
-                type="float",
                 default_value=0.1,
                 tooltip="Noise scale",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"slider": {"min_val": 0.001, "max_val": 1.0}, "step": 0.001},
             )
-        )
 
-        # Resolution selection
-        self.add_parameter(
-            Parameter(
+            # Resolution selection
+            ParameterString(
                 name="target_resolution",
-                input_types=["str"],
-                type="str",
                 default_value="1080p",
                 tooltip="Target resolution",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["720p", "1080p", "1440p", "2160p"])},
                 hide=True,
             )
-        )
 
-        # Aspect ratio selection
-        self.add_parameter(
-            Parameter(
+            # Aspect ratio selection
+            ParameterString(
                 name="output_format",
-                input_types=["str"],
-                type="str",
                 default_value="X264 (.mp4)",
                 tooltip="Output format",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["X264 (.mp4)", "VP9 (.webm)", "PRORES4444 (.mov)", "GIF (.gif)"])},
             )
-        )
 
-        # Output write mode selection
-        self.add_parameter(
-            Parameter(
+            # Output write mode selection
+            ParameterString(
                 name="output_write_mode",
-                input_types=["str"],
-                type="str",
                 default_value="balanced",
                 tooltip="Output write mode",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["balanced", "fast", "small"])},
             )
-        )
 
-        # Output quality selection
-        self.add_parameter(
-            Parameter(
+            # Output quality selection
+            ParameterString(
                 name="output_quality",
-                input_types=["str"],
-                type="str",
                 default_value="high",
                 tooltip="Output quality",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["low", "medium", "high", "maximum"])},
             )
-        )
 
-        # Upscale factor
-        self.add_parameter(
-            Parameter(
+            # Upscale factor
+            ParameterFloat(
                 name="upscale_factor",
-                input_types=["float"],
-                type="float",
                 default_value=2.0,
                 tooltip="The upscale factor",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"slider": {"min_val": 1.0, "max_val": 10.0}, "step": 0.1},
             )
-        )
 
-        # Initialize SeedParameter component
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+            # Initialize SeedParameter component
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
                 output_type="str",
                 tooltip="Griptape Cloud generation id",
@@ -208,7 +185,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

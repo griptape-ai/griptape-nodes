@@ -82,38 +82,35 @@ class KlingMotionControl(SuccessFailureNode):
         )
 
         # Image Input Group
-        with ParameterGroup(name="Reference Image") as image_group:
-            # Use PublicArtifactUrlParameter for image upload handling
-            self._public_image_url_parameter = PublicArtifactUrlParameter(
-                node=self,
-                artifact_url_parameter=Parameter(
-                    name="reference_image",
-                    input_types=["ImageArtifact", "ImageUrlArtifact"],
-                    type="ImageUrlArtifact",
-                    tooltip="Reference image with character (required). Supports .jpg/.jpeg/.png, max 10MB.",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ),
-                disclaimer_message="The Kling Motion Control service utilizes this URL to access the image for generation.",
-            )
-            self._public_image_url_parameter.add_input_parameters()
-        self.add_node_element(image_group)
+        self._public_image_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="reference_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageUrlArtifact",
+                tooltip="Reference image with character (required). Supports .jpg/.jpeg/.png, max 10MB.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            ),
+            disclaimer_message="The Kling Motion Control service utilizes this URL to access the image for generation.",
+        )
+        self._public_image_url_parameter.add_input_parameters()
 
-        # Video Reference Group
-        with ParameterGroup(name="Reference Video") as video_group:
-            # Use PublicArtifactUrlParameter for video upload handling
-            self._public_video_url_parameter = PublicArtifactUrlParameter(
-                node=self,
-                artifact_url_parameter=Parameter(
-                    name="reference_video",
-                    input_types=["VideoUrlArtifact"],
-                    type="VideoUrlArtifact",
-                    tooltip="Reference video with actions to transfer (required). Supports .mp4/.mov, max 100MB.",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ),
-                disclaimer_message="The Kling Motion Control service utilizes this URL to access the video for generation.",
-            )
-            self._public_video_url_parameter.add_input_parameters()
+        # Use PublicArtifactUrlParameter for video upload handling
+        self._public_video_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="reference_video",
+                input_types=["VideoUrlArtifact"],
+                type="VideoUrlArtifact",
+                tooltip="Reference video with actions to transfer (required). Supports .mp4/.mov, max 100MB.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            ),
+            disclaimer_message="The Kling Motion Control service utilizes this URL to access the video for generation.",
+        )
+        self._public_video_url_parameter.add_input_parameters()
 
+        # Generation Settings Group
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             Parameter(
                 name="keep_original_sound",
                 input_types=["bool"],
@@ -123,11 +120,6 @@ class KlingMotionControl(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "keep original sound"},
             )
-        video_group.ui_options = {"hide": False}
-        self.add_node_element(video_group)
-
-        # Generation Settings Group
-        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             ParameterString(
                 name="character_orientation",
                 default_value="video",
@@ -175,7 +167,7 @@ class KlingMotionControl(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -184,6 +176,7 @@ class KlingMotionControl(SuccessFailureNode):
                 name="kling_video_id",
                 tooltip="The video ID from Kling AI",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="The Kling AI video ID",
             )
         )
 

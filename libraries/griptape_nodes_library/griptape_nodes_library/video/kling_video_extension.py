@@ -60,30 +60,34 @@ class KlingVideoExtension(SuccessFailureNode):
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/v2/")
 
-        # Basic Settings Group
-        with ParameterGroup(name="Basic Settings") as basic_group:
+        self.add_parameter(
             ParameterString(
                 name="video_id",
                 tooltip="Video ID from previous Kling AI video generation (required)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"placeholder_text": "Enter video ID from previous Kling generation..."},
+                placeholder_text="Enter video ID from previous Kling generation...",
             )
+        )
+        self.add_parameter(
             ParameterString(
                 name="prompt",
                 default_value="",
                 tooltip="Text prompt for video extension (max 2500 chars)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Describe how to continue the video..."},
+                multiline=True,
+                placeholder_text="Describe how to continue the video...",
             )
+        )
+        self.add_parameter(
             ParameterString(
                 name="negative_prompt",
                 default_value="",
                 tooltip="Negative text prompt (max 2500 chars)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Describe what you don't want..."},
+                multiline=True,
+                placeholder_text="Describe what you don't want...",
             )
-        self.add_node_element(basic_group)
-
+        )
         # Extension Settings Group
         with ParameterGroup(name="Extension Settings") as extension_group:
             ParameterFloat(
@@ -123,7 +127,7 @@ class KlingVideoExtension(SuccessFailureNode):
                 tooltip="Saved extended video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -132,6 +136,7 @@ class KlingVideoExtension(SuccessFailureNode):
                 name="kling_video_id",
                 tooltip="The Kling AI video ID",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="The Kling AI video ID",
             )
         )
 

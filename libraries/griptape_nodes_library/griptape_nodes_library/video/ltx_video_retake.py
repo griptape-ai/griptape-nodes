@@ -80,6 +80,17 @@ class LTXVideoRetake(SuccessFailureNode):
                 traits={Options(choices=["LTX 2 Pro"])},
             )
         )
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                tooltip="Text describing what should happen in the retake segment (max 5000 characters)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe what should happen in this segment...",
+                },
+            )
+        )
 
         # Video input parameter
         self.add_parameter(
@@ -107,18 +118,6 @@ class LTXVideoRetake(SuccessFailureNode):
                 min_label="start (s)",
                 max_label="end (s)",
                 hide_range_labels=False,
-            )
-        )
-
-        self.add_parameter(
-            ParameterString(
-                name="prompt",
-                tooltip="Text describing what should happen in the retake segment (max 5000 characters)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe what should happen in this segment...",
-                },
             )
         )
 
@@ -170,7 +169,7 @@ class LTXVideoRetake(SuccessFailureNode):
                 tooltip="Saved video with retake applied",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

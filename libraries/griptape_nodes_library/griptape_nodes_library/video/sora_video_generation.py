@@ -14,8 +14,9 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -74,22 +75,7 @@ class SoraVideoGeneration(SuccessFailureNode):
         # INPUTS / PROPERTIES
         self.add_parameter(
             ParameterString(
-                name="prompt",
-                tooltip="Text prompt describing the video to generate",
-                multiline=True,
-                placeholder_text="Describe the video...",
-                allow_output=False,
-                ui_options={
-                    "display_name": "Prompt",
-                },
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="sora-2",
                 tooltip="Sora model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -99,30 +85,16 @@ class SoraVideoGeneration(SuccessFailureNode):
                 traits={Options(choices=["sora-2", "sora-2-pro"])},
             )
         )
-
         self.add_parameter(
-            Parameter(
-                name="seconds",
-                input_types=["int"],
-                type="int",
-                default_value=4,
-                tooltip="Clip duration in seconds",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[4, 8, 12])},
-                ui_options={"display_name": "Duration (seconds)"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="size",
-                input_types=["str"],
-                type="str",
-                default_value="720x1280",
-                tooltip="Output resolution as widthxheight (options vary by model)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=SIZE_OPTIONS["sora-2"])},
-                ui_options={"display_name": "Size"},
+            ParameterString(
+                name="prompt",
+                tooltip="Text prompt describing the video to generate",
+                multiline=True,
+                placeholder_text="Describe the video...",
+                allow_output=False,
+                ui_options={
+                    "display_name": "Prompt",
+                },
             )
         )
 
@@ -140,6 +112,28 @@ class SoraVideoGeneration(SuccessFailureNode):
                 },
             )
         )
+
+        with ParameterGroup(name="Generation Settings") as video_generation_settings_group:
+            # Duration in seconds
+            ParameterInt(
+                name="seconds",
+                default_value=4,
+                tooltip="Clip duration in seconds",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[4, 8, 12])},
+                ui_options={"display_name": "Duration (seconds)"},
+            )
+
+            ParameterString(
+                name="size",
+                default_value="720x1280",
+                tooltip="Output resolution as widthxheight (options vary by model)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=SIZE_OPTIONS["sora-2"])},
+                ui_options={"display_name": "Size"},
+            )
+
+        self.add_node_element(video_generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -172,7 +166,7 @@ class SoraVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

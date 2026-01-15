@@ -316,6 +316,16 @@
       }
     },
     {
+      "class_name": "DiffusionPipelineRuntimeNode",
+      "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_runtime_node.py",
+      "metadata": {
+        "category": "diffusion",
+        "description": "Generate media via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Media (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
       "class_name": "LoadLora",
       "file_path": "diffusers_nodes_library/common/nodes/load_lora_node.py",
       "metadata": {

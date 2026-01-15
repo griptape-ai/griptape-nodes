@@ -11,12 +11,14 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -170,106 +172,85 @@ class WanTextToVideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Size parameter
-        self.add_parameter(
-            Parameter(
+        with ParameterGroup(name="Generation Settings") as generation_settings_group:
+            # Size parameter
+            ParameterString(
                 name="size",
-                input_types=["str"],
-                type="str",
                 default_value="1080P",
                 tooltip="Output video resolution (available options depend on selected model)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_CONFIGS["wan2.6-t2v"]["sizes"])},
             )
-        )
 
-        # Duration parameter
-        self.add_parameter(
-            Parameter(
+            # Duration parameter
+            ParameterInt(
                 name="duration",
-                input_types=["int"],
-                type="int",
                 default_value=5,
                 tooltip="Video duration in seconds (model-dependent)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODEL_CONFIGS["wan2.6-t2v"]["durations"])},
             )
-        )
 
-        # Audio auto-generation parameter (for models that support it)
-        self.add_parameter(
-            Parameter(
-                name="audio",
-                input_types=["bool"],
-                type="bool",
-                default_value=True,
-                tooltip="Auto-generate audio for video (wan2.6-t2v, wan2.5-t2v-preview only)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                hide=self._should_hide_audio(),
-            )
-        )
-
-        # Input Audio (optional) using PublicArtifactUrlParameter
-        # Hidden by default since audio auto-generation is enabled by default
-        self._public_audio_url_parameter = PublicArtifactUrlParameter(
-            node=self,
-            artifact_url_parameter=Parameter(
-                name="input_audio",
-                input_types=["AudioUrlArtifact"],
-                type="AudioUrlArtifact",
-                default_value="",
-                tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound. Only supported by wan2.6 and wan2.5 models.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Audio"},
-                hide=self._should_hide_input_audio(),
-            ),
-            disclaimer_message="The WAN Text-to-Video service utilizes this URL to access the audio file.",
-        )
-        self._public_audio_url_parameter.add_input_parameters()
-        # Hide the upload message since input_audio is hidden by default
-        self.hide_message_by_name("artifact_url_parameter_message_input_audio")
-
-        # Shot type parameter (for models that support it)
-        self.add_parameter(
-            Parameter(
+            # Shot type parameter (for models that support it)
+            ParameterString(
                 name="shot_type",
-                input_types=["str"],
-                type="str",
                 default_value="single",
                 tooltip="Shot type for video: single (continuous shot) or multi (multiple switched shots). Only effective when prompt_extend is true.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["single", "multi"])},
                 ui_options={"hide_property": self._should_hide_shot_type()},
             )
-        )
 
-        # Prompt extend parameter
-        self.add_parameter(
-            Parameter(
+            # Audio auto-generation parameter (for models that support it)
+            ParameterBool(
+                name="audio",
+                default_value=True,
+                tooltip="Auto-generate audio for video (wan2.6-t2v, wan2.5-t2v-preview only)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=self._should_hide_audio(),
+            )
+
+            # Input Audio (optional) using PublicArtifactUrlParameter
+            # Hidden by default since audio auto-generation is enabled by default
+            self._public_audio_url_parameter = PublicArtifactUrlParameter(
+                node=self,
+                artifact_url_parameter=Parameter(
+                    name="input_audio",
+                    input_types=["AudioUrlArtifact"],
+                    type="AudioUrlArtifact",
+                    default_value="",
+                    tooltip="Input audio file (optional). WAV/MP3, 3-30s, max 15MB. Audio is used to generate video with matching sound. Only supported by wan2.6 and wan2.5 models.",
+                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                    ui_options={"display_name": "Input Audio"},
+                    hide=self._should_hide_input_audio(),
+                ),
+                disclaimer_message="The WAN Text-to-Video service utilizes this URL to access the audio file.",
+            )
+            self._public_audio_url_parameter.add_input_parameters()
+            # Hide the upload message since input_audio is hidden by default
+            self.hide_message_by_name("artifact_url_parameter_message_input_audio")
+
+            # Prompt extend parameter
+            ParameterBool(
                 name="prompt_extend",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Enable intelligent prompt rewriting to improve generation quality",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Watermark parameter
-        self.add_parameter(
-            Parameter(
+            # Watermark parameter
+            ParameterBool(
                 name="watermark",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add 'Generated by Wan' watermark to video",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Initialize SeedParameter component (at the bottom of input parameters)
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+            # Initialize SeedParameter component (at the bottom of input parameters)
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -303,7 +284,7 @@ class WanTextToVideoGeneration(SuccessFailureNode):
                 tooltip="Generated video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
