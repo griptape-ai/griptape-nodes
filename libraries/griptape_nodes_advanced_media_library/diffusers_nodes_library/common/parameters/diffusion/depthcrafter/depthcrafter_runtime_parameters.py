@@ -10,8 +10,8 @@ import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL import Image
-from pillow_nodes_library.utils import video_url_artifact_to_pil_images  # type: ignore[reportMissingImports]
 from utils.directory_utils import check_cleanup_intermediates_directory
+from utils.video_utils import download_video_to_temp_file, get_video_fps
 
 from diffusers_nodes_library.common.parameters.diffusion.runtime_parameters import (
     DiffusionPipelineRuntimeParameters,
@@ -143,23 +143,35 @@ class DepthCrafterPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             if temp_path.exists():
                 temp_path.unlink()
 
-    def get_input_video_frames(self) -> list[Image.Image]:
-        """Load video frames from the input video artifact."""
+    def get_input_video_frames(self, video_path: Path) -> list[Image.Image]:
+        """Load video frames from a local video file.
+
+        Args:
+            video_path: Path to the local video file
+
+        Returns:
+            List of PIL Image frames from the video
+        """
+        frames = diffusers.utils.load_video(str(video_path))
+        return frames
+
+    def process_pipeline(self, pipe: diffusers.DiffusionPipeline) -> None:  # noqa: C901, PLR0915
+        self._node.log_params.append_to_logs("Loading video frames...\n")  # type: ignore[reportAttributeAccessIssue]
+
+        # Download video and get FPS
         video_artifact = self._node.get_parameter_value("video")
         if video_artifact is None:
             msg = f"{self._node.name} requires a video input"
             logger.error(msg)
             raise ValueError(msg)
 
-        # Convert VideoUrlArtifact to PIL images
-        frames = video_url_artifact_to_pil_images(video_artifact)
-        return frames
+        input_video_path = download_video_to_temp_file(video_artifact)
+        try:
+            fps = get_video_fps(input_video_path)
+            frames = self.get_input_video_frames(input_video_path)
+        finally:
+            input_video_path.unlink(missing_ok=True)
 
-    def process_pipeline(self, pipe: diffusers.DiffusionPipeline) -> None:  # noqa: PLR0915
-        self._node.log_params.append_to_logs("Loading video frames...\n")  # type: ignore[reportAttributeAccessIssue]
-
-        # Load video frames
-        frames = self.get_input_video_frames()
         num_frames = len(frames)
 
         if num_frames == 0:
@@ -297,10 +309,6 @@ class DepthCrafterPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             temp_file_path = Path(temp_file_obj.name)
 
         try:
-            # Get FPS from input video artifact, default to 30
-            video_artifact = self._node.get_parameter_value("video")
-            fps = getattr(video_artifact, "fps", 30)
-
             diffusers.utils.export_to_video(depth_pil_frames, str(temp_file_path), fps=fps)
             self.publish_output_video(temp_file_path)
         finally:
