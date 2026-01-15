@@ -124,9 +124,6 @@ class TranslateGemmaParameters:
     def validate_before_node_run(self) -> list[Exception] | None:
         return self._huggingface_repo_parameter.validate_before_node_run()
 
-    def append_stdout_to_logs(self):
-        return self._log_parameter.append_stdout_to_logs()
-
     def append_to_logs(self, text: str) -> None:
         self._log_parameter.append_to_logs(text)
 
