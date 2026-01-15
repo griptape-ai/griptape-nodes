@@ -58,3 +58,13 @@ class DiffusionPipelineTypePipelineParameters(ABC):
         the forward pass.
         """
         return True
+
+    def requires_device_map(self) -> bool:
+        """Return True if the pipeline requires device_map during loading.
+
+        Some pipelines (e.g., GLM-Image) have components that must be loaded with
+        accelerate's device_map to properly materialize weights. When True:
+        - build_pipeline() should use device_map parameter
+        - optimize_diffusion_pipeline() should skip .to(device) and CPU offload calls
+        """
+        return False

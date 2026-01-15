@@ -193,10 +193,12 @@ class DiffusionPipelineBuilderNode(ParameterConnectionPreservationMixin, Control
             pipeline_params = self.params.pipeline_type_parameters.pipeline_type_pipeline_params
             is_prequantized = pipeline_params.is_prequantized()
             supports_layerwise_casting = pipeline_params.supports_layerwise_casting()
+            requires_device_map = pipeline_params.requires_device_map()
             optimize_diffusion_pipeline(
                 pipe=pipe,
                 is_prequantized=is_prequantized,
                 supports_layerwise_casting=supports_layerwise_casting,
+                requires_device_map=requires_device_map,
                 **optimization_kwargs,
             )
 
