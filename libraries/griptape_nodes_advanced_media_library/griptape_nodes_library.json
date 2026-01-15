@@ -45,7 +45,6 @@
         "ninja>=1.13.0",
         "numpy>=2.2.4",
         "opencv-python>=4.11.0.86",
-        "peft>=0.17.0",
         "pillow>=11.2.1",
         "sentencepiece>=0.2.0",
         "cmake==3.31.6",
@@ -53,7 +52,7 @@
         "torch>=2.7.0",
         "torchvision>=0.22.0",
         "torchaudio>=2.7.0",
-        "transformers>=4.51.3",
+        "transformers @ https://github.com/huggingface/transformers/archive/136c621c00b2536d1f608ed3c6de59b9897afbb8.zip",
         "tqdm>=4.67.1",
         "ultralytics>=8.0.0",
         "optimum-quanto>=0.2.7",
@@ -209,19 +208,6 @@
         "description": "Load the Flux LoRA for use with the ICEdit Image with Flux Node. 🤗 Model Card:https://huggingface.co/RiverZ/normal-lora",
         "display_name": "Flux ICEdit LoRA: RiverZ Normal",
         "group": "diffusion"
-      }
-    },
-    {
-      "class_name": "TrainFluxLora",
-      "file_path": "diffusers_nodes_library/pipelines/flux/peft/train_flux_lora.py",
-      "metadata": {
-        "category": "image/flux/loras",
-        "description": "TrainFluxLora node.",
-        "display_name": "Train Flux LoRA",
-        "deprecation": {
-          "deprecation_message": "Use 'Train LoRA' from the Griptape Nodes LoRA Training Library instead: https://github.com/griptape-ai/griptape-nodes-lora-training-library",
-          "removal_version": "0.66.0"
-        }
       }
     },
     {
