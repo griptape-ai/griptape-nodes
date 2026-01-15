@@ -228,7 +228,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
             # Initialize SeedParameter component (adds randomize_seed and seed parameters)
             self._seed_parameter = SeedParameter(self)
-            self._seed_parameter.add_input_parameters()
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
             # Sample count (number of videos to generate)
             ParameterInt(
