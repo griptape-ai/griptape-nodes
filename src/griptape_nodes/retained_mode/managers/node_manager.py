@@ -70,6 +70,9 @@ from griptape_nodes.retained_mode.events.node_events import (
     AddNodesToNodeGroupRequest,
     AddNodesToNodeGroupResultFailure,
     AddNodesToNodeGroupResultSuccess,
+    BatchSetNodeLockStateRequest,
+    BatchSetNodeLockStateResultFailure,
+    BatchSetNodeLockStateResultSuccess,
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
@@ -292,6 +295,9 @@ class NodeManager:
             CanResetNodeToDefaultsRequest, self.on_can_reset_node_to_defaults_request
         )
         event_manager.assign_manager_to_request_type(ResetNodeToDefaultsRequest, self.on_reset_node_to_defaults_request)
+        event_manager.assign_manager_to_request_type(
+            BatchSetNodeLockStateRequest, self.on_batch_set_lock_node_state_request
+        )
 
     def handle_node_rename(self, old_name: str, new_name: str) -> None:
         # Get the node itself
@@ -3586,6 +3592,30 @@ class NodeManager:
             node_name=node_name,
             locked=node.lock,
             result_details=f"Successfully set lock state to {node.lock} for node '{node_name}'.",
+        )
+
+    def on_batch_set_lock_node_state_request(self, request: BatchSetNodeLockStateRequest) -> ResultPayload:
+        updated: list[str] = []
+        failed: dict[str, str] = {}
+        for name in request.node_names:
+            try:
+                node = self.get_node_by_name(name)
+            except ValueError as err:
+                failed[name] = f"Node not found. Error: {err}"
+                continue
+            node.lock = request.lock
+            updated.append(name)
+
+        if not updated:
+            details = f"Failed to update any nodes. Failed: {failed}"
+            return BatchSetNodeLockStateResultFailure(result_details=details)
+        details = f"Successfully set lock state to {request.lock} for nodes: {', '.join(updated)}." + (
+            f" Failed: {failed}" if failed else ""
+        )
+        return BatchSetNodeLockStateResultSuccess(
+            updated_nodes=updated,
+            failed_nodes=failed,
+            result_details=details,
         )
 
     def on_send_node_message_request(self, request: SendNodeMessageRequest) -> ResultPayload:

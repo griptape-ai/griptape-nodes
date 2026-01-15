@@ -44,6 +44,9 @@ from griptape_nodes.retained_mode.events.library_events import (
     ListRegisteredLibrariesRequest,
 )
 from griptape_nodes.retained_mode.events.node_events import (
+    BatchSetNodeLockStateRequest,
+    BatchSetNodeLockStateResultFailure,
+    BatchSetNodeLockStateResultSuccess,
     CreateNodeRequest,
     CreateNodeResultFailure,
     DeleteNodeRequest,
@@ -385,6 +388,20 @@ class RetainedMode:
             result = cmd.set_lock_node_state(lock=False)
         """
         request = SetLockNodeStateRequest(node_name=node_name, lock=lock)
+        result = GriptapeNodes().handle_request(request)
+        return result
+
+    @classmethod
+    def batch_set_lock_node_state(
+        cls, *, node_names: list[str], lock: bool = True
+    ) -> BatchSetNodeLockStateResultSuccess | BatchSetNodeLockStateResultFailure:
+        """Sets the lock state of multiple nodes.
+
+        Args:
+            node_names (list[str]): Names of nodes to lock/unlock.
+            lock (bool): Whether to lock (True) or unlock (False) the nodes.
+        """
+        request = BatchSetNodeLockStateRequest(node_names=node_names, lock=lock)
         result = GriptapeNodes().handle_request(request)
         return result
 

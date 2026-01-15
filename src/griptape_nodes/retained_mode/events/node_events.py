@@ -390,8 +390,6 @@ class GetAllNodeInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure)
 class SetLockNodeStateRequest(WorkflowNotAlteredMixin, RequestPayload):
     """Lock a node.
 
-    Use when: Implementing locking functionality, preventing changes to nodes.
-
     Args:
         node_name: Name of the node to lock
         lock: Whether to lock or unlock the node. If true, the node will be locked, otherwise it will be unlocked.
@@ -416,6 +414,39 @@ class SetLockNodeStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucces
 @PayloadRegistry.register
 class SetLockNodeStateResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node failed to lock."""
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateRequest(WorkflowNotAlteredMixin, RequestPayload):
+    """Set lock state for multiple nodes in a single request.
+
+    Use when: Locking or unlocking multiple nodes at once, consistent with BatchSetNodeMetadataRequest.
+
+    Args:
+        node_names: Names of nodes to lock/unlock.
+        lock: Whether to lock (True) or unlock (False) the nodes.
+
+    Results: BatchSetNodeLockStateResultSuccess | BatchSetNodeLockStateResultFailure
+    """
+
+    node_names: list[str]
+    lock: bool
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Batch node lock state update completed successfully."""
+
+    updated_nodes: list[str]
+    failed_nodes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+@PayloadRegistry.register
+class BatchSetNodeLockStateResultFailure(ResultPayloadFailure):
+    """Batch node lock state update failed. Common causes: all nodes not found."""
 
 
 # A Node's state can be serialized to a sequence of commands that the engine runs.
