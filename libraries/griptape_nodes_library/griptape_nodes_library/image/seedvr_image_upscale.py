@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -150,6 +151,18 @@ class SeedVRImageUpscale(SuccessFailureNode):
         # Initialize SeedParameter component
         self._seed_parameter = SeedParameter(self)
         self._seed_parameter.add_input_parameters()
+
+        # Polling timeout (0 = no timeout)
+        self.add_parameter(
+            ParameterInt(
+                name="timeout",
+                default_value=600,
+                tooltip="Polling timeout in seconds. Set to 0 for no timeout.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                min_val=0,
+                max_val=86400,
+            )
+        )
 
         # OUTPUTS
         self.add_parameter(
@@ -338,15 +351,16 @@ class SeedVRImageUpscale(SuccessFailureNode):
         last_json = None
         attempt = 0
         poll_interval_s = 5.0
-        timeout_s = 600.0
+        timeout_s = float(self.get_parameter_value("timeout"))
 
         while True:
-            if monotonic() - start_time > timeout_s:
+            # Check timeout (skip if timeout_s is 0, meaning no timeout)
+            if timeout_s > 0 and monotonic() - start_time > timeout_s:
                 self.parameter_output_values["image_url"] = self._extract_image_url(last_json)
                 logger.info("Polling timed out waiting for result")
                 self._set_status_results(
                     was_successful=False,
-                    result_details=f"Image generation timed out after {timeout_s} seconds waiting for result.",
+                    result_details=f"Image generation timed out after {int(timeout_s)} seconds waiting for result.",
                 )
                 return
 
