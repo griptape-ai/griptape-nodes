@@ -141,6 +141,8 @@ class DiffusionPipelineParameters:
                 self._runtime_parameters = FluxUpscalePipelineRuntimeParameters(self._node)
             case "Flux2Pipeline":
                 self._runtime_parameters = Flux2PipelineRuntimeParameters(self._node)
+            case "Flux2KleinPipeline":
+                self._runtime_parameters = Flux2PipelineRuntimeParameters(self._node)
             case "LTX2Pipeline":
                 self._runtime_parameters = LTX2PipelineRuntimeParameters(self._node)
             case "LTX2ImageToVideoPipeline":
