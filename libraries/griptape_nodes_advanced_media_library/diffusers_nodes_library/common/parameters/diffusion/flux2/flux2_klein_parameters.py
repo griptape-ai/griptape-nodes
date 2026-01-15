@@ -12,10 +12,11 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_para
 logger = logging.getLogger("diffusers_nodes_library")
 
 QUANTIZED_FLUX_2_KLEIN_REPO_IDS = [
-    "black-forest-labs/FLUX.2-klein-4B-nvfp4",
-    "black-forest-labs/FLUX.2-klein-4B-fp8",
-    "black-forest-labs/FLUX.2-klein-9B-nvfp4",
-    "black-forest-labs/FLUX.2-klein-9B-fp8",
+    ### Diffusers weights have not been shared for these models yet on HuggingFace
+    # "black-forest-labs/FLUX.2-klein-4B-nvfp4",
+    # "black-forest-labs/FLUX.2-klein-4B-fp8",
+    # "black-forest-labs/FLUX.2-klein-9B-nvfp4",
+    # "black-forest-labs/FLUX.2-klein-9B-fp8",
 ]
 
 FLUX_2_KLEIN_REPO_IDS = [
