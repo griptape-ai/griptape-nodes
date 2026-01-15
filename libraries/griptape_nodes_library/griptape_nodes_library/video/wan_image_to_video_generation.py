@@ -271,7 +271,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
 
             # Initialize SeedParameter component (at the bottom of input parameters)
             self._seed_parameter = SeedParameter(self)
-            self._seed_parameter.add_input_parameters()
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
         self.add_node_element(generation_settings_group)
 
