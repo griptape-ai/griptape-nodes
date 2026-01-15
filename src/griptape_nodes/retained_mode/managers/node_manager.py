@@ -3041,11 +3041,11 @@ class NodeManager:
                 # Non-pickled value - keep as-is (for backward compatibility)
                 encoded_values[uuid] = value
 
-        logger.info("TEST SERIALIZATION AND COPYING")
-        logger.info(final_result)
-        logger.info(encoded_values)
+        # Pickle the commands object and encode as latin-1 string for transport
+        pickled_commands_bytes = pickle.dumps(final_result)
+        pickled_commands_string = pickled_commands_bytes.decode("latin1")
         return SerializeSelectedNodesToCommandsResultSuccess(
-            final_result,
+            pickled_commands_string,  # Send pickled string instead of object
             pickled_values=encoded_values,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
@@ -3072,12 +3072,11 @@ class NodeManager:
                     # Not a string, keep as-is
                     decoded_values[uuid] = latin1_string
 
-        # Parse deserialize_commands JSON string into SerializedSelectedNodesCommands
+        # Unpickle the commands string into SerializedSelectedNodesCommands
         if request.deserialize_commands:
-            import json
-
-            commands_dict = json.loads(request.deserialize_commands)
-            commands = SerializedSelectedNodesCommands(**commands_dict)
+            # Decode latin-1 string back to bytes and unpickle
+            pickled_commands_bytes = request.deserialize_commands.encode("latin1")
+            commands = pickle.loads(pickled_commands_bytes)
         else:
             commands = GriptapeNodes.ContextManager()._clipboard.node_commands
 
