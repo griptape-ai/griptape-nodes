@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.66.0",
+    "library_version": "0.66.1",
     "engine_version": "0.67.0",
     "tags": [
       "Griptape",
@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers @ https://github.com/huggingface/diffusers/archive/7feb4fc791909f4a58b153d6d07c6cb8437b2e58.zip",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/61f175660a8ac54f1470a74a810e6c38fb4795d5.zip",
         "imageio[ffmpeg]>=2.37.2",
         "ninja>=1.13.0",
         "numpy>=2.2.4",
