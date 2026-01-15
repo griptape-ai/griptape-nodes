@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -132,49 +132,6 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Duration in seconds
-        self.add_parameter(
-            ParameterInt(
-                name="duration",
-                default_value=6,
-                tooltip="Video duration in seconds (options depend on model)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[6, 10])},
-            )
-        )
-
-        # Resolution selection
-        self.add_parameter(
-            ParameterString(
-                name="resolution",
-                default_value="768p",
-                tooltip="Output resolution (options depend on model and duration)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["720p", "768p", "1080p"])},
-            )
-        )
-
-        # Prompt optimizer flag
-        self.add_parameter(
-            ParameterBool(
-                name="prompt_optimizer",
-                default_value=False,
-                tooltip="Enable prompt optimization",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        # Fast pretreatment flag (only for 2.3 and 02 models)
-        self.add_parameter(
-            ParameterBool(
-                name="fast_pretreatment",
-                default_value=False,
-                tooltip="Reduce optimization time (only for Hailuo 2.3 and Hailuo 02)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"hide": False},
-            )
-        )
-
         # Optional first frame (image) - accepts artifact or data URL string
         self.add_parameter(
             Parameter(
@@ -209,6 +166,44 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             )
         )
 
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
+            # Duration in seconds
+            ParameterInt(
+                name="duration",
+                default_value=6,
+                tooltip="Video duration in seconds (options depend on model)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[6, 10])},
+            )
+
+            # Resolution selection
+            ParameterString(
+                name="resolution",
+                default_value="768p",
+                tooltip="Output resolution (options depend on model and duration)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["720p", "768p", "1080p"])},
+            )
+
+            # Prompt optimizer flag
+            ParameterBool(
+                name="prompt_optimizer",
+                default_value=False,
+                tooltip="Enable prompt optimization",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            # Fast pretreatment flag (only for 2.3 and 02 models)
+            ParameterBool(
+                name="fast_pretreatment",
+                default_value=False,
+                tooltip="Reduce optimization time (only for Hailuo 2.3 and Hailuo 02)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"hide": False},
+            )
+
+        self.add_node_element(gen_settings_group)
+
         # OUTPUTS
         self.add_parameter(
             ParameterString(
@@ -239,7 +234,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

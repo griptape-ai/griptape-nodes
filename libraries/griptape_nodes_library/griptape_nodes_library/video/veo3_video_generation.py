@@ -13,9 +13,11 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -77,16 +79,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         # INPUTS / PROPERTIES
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value="Veo 3.1",
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
                     "display_name": "model",
-                    "hide": False,
                 },
                 traits={
                     Options(
@@ -115,16 +114,14 @@ class Veo3VideoGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="negative_prompt",
-                input_types=["str"],
-                type="str",
                 default_value="",
                 tooltip="Negative prompt to avoid certain content",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Content to avoid...",
                 ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Content to avoid...",
                     "display_name": "negative prompt",
                 },
             )
@@ -174,101 +171,76 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
         )
 
-        # Reference type for reference images
-        self.add_parameter(
-            Parameter(
+        with ParameterGroup(name="Generation Settings") as video_generation_settings_group:
+            # Reference type for reference images
+            ParameterString(
                 name="reference_type",
-                input_types=["str"],
-                type="str",
                 default_value="asset",
                 tooltip="Type of reference: 'asset' preserves objects/characters (max 3), 'style' preserves artistic style (max 1)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["asset", "style"])},
             )
-        )
 
-        # Aspect ratio selection
-        self.add_parameter(
-            Parameter(
+            # Aspect ratio selection
+            ParameterString(
                 name="aspect_ratio",
-                input_types=["str"],
-                type="str",
                 default_value="16:9",
                 tooltip="Output aspect ratio",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["16:9", "9:16"])},
             )
-        )
 
-        # Resolution selection
-        self.add_parameter(
-            Parameter(
+            # Resolution selection
+            ParameterString(
                 name="resolution",
-                input_types=["str"],
-                type="str",
                 default_value="720p",
                 tooltip="Output resolution (1080p only supports 8 second duration)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["720p", "1080p"])},
             )
-        )
 
-        # Duration in seconds
-        self.add_parameter(
-            Parameter(
+            # Duration in seconds
+            ParameterString(
                 name="duration_seconds",
-                input_types=["str"],
-                type="str",
                 default_value="6",
                 tooltip="Video duration in seconds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["4", "6", "8"])},
             )
-        )
 
-        # Person generation policy
-        self.add_parameter(
-            Parameter(
+            # Person generation policy
+            ParameterString(
                 name="person_generation",
-                input_types=["str"],
-                type="str",
                 default_value="allow_adult",
                 tooltip="Person generation policy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["allow_all", "allow_adult", "dont_allow"])},
             )
-        )
 
-        # Generate audio option
-        self.add_parameter(
-            Parameter(
+            # Generate audio option
+            ParameterBool(
                 name="generate_audio",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Generate audio for the video (supported by all veo3* models)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "generate audio"},
             )
-        )
 
-        # Initialize SeedParameter component (adds randomize_seed and seed parameters)
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+            # Initialize SeedParameter component (adds randomize_seed and seed parameters)
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
-        # Sample count (number of videos to generate)
-        self.add_parameter(
-            Parameter(
+            # Sample count (number of videos to generate)
+            ParameterInt(
                 name="sample_count",
-                input_types=["int"],
-                type="int",
                 default_value=1,
                 tooltip="Number of videos to generate (1-4)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "sample count"},
                 traits={Slider(min_val=1, max_val=4)},
             )
-        )
+
+        self.add_node_element(video_generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -304,7 +276,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
                     tooltip=f"Saved video {i} as URL artifact for downstream display",
                     allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                     settable=False,
-                    ui_options={"is_full_width": True, "pulse_on_run": True, "hide": i > 1},
+                    ui_options={"pulse_on_run": True, "hide": i > 1},
                 )
             )
 
