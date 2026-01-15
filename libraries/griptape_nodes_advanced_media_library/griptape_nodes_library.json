@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.65.3",
+    "library_version": "0.66.2",
     "engine_version": "0.67.0",
     "tags": [
       "Griptape",
@@ -123,6 +123,15 @@
         "category": "video/depth",
         "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
         "display_name": "Depth Anything V2 Video"
+      }
+    },
+    {
+      "class_name": "TranslateGemmaText",
+      "file_path": "transformers_nodes_library/translate_gemma_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Translate text between languages using Google TranslateGemma models via 🤗 Transformers. Supports 55 languages.",
+        "display_name": "Translate Text (Google TranslateGemma)"
       }
     },
     {
