@@ -39,11 +39,11 @@ OUTPUT_FORMAT_OPTIONS = ["jpeg", "png"]
 
 # Model mapping from user-friendly names to API model IDs
 MODEL_MAPPING = {
-    "Flux 2 [pro]": "flux-2-pro",
-    "Flux 2 [flex]": "flux-2-flex",
-    "Flux 2 [max]": "flux-2-max",
-    "Flux 2 [klein] 4b": "flux-2-klein-4b",
-    "Flux 2 [klein] 9b": "flux-2-klein-9b",
+    "Flux.2 [pro]": "flux-2-pro",
+    "Flux.2 [flex]": "flux-2-flex",
+    "Flux.2 [max]": "flux-2-max",
+    "Flux.2 [klein] 4B": "flux-2-klein-4b",
+    "Flux.2 [klein] 9B": "flux-2-klein-9b",
 }
 MODEL_OPTIONS = list(MODEL_MAPPING.keys())
 DEFAULT_MODEL = MODEL_OPTIONS[0]
