@@ -193,6 +193,7 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -2530,9 +2531,7 @@ class LibraryManager:
             return None
 
         # Resolve relative path to absolute path
-        advanced_library_module_path = Path(library_data.advanced_library_path)
-        if not advanced_library_module_path.is_absolute():
-            advanced_library_module_path = base_dir / advanced_library_module_path
+        advanced_library_module_path = resolve_workspace_path(Path(library_data.advanced_library_path), base_dir)
 
         # Load the module (supports hot reloading)
         try:
@@ -2624,9 +2623,7 @@ class LibraryManager:
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
-            node_file_path = Path(node_definition.file_path)
-            if not node_file_path.is_absolute():
-                node_file_path = base_dir / node_file_path
+            node_file_path = resolve_workspace_path(Path(node_definition.file_path), base_dir)
 
             try:
                 # Dynamically load the module containing the node class

@@ -108,5 +108,6 @@ class TestWorkflowRegistry:
 
         result = WorkflowRegistry.get_complete_file_path(parent_dir_path)
 
-        expected = str(workspace_path / parent_dir_path)
+        # resolve_workspace_path normalizes the path by resolving .. components
+        expected = str((workspace_path / parent_dir_path).resolve())
         assert result == expected

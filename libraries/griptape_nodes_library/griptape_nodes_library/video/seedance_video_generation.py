@@ -21,6 +21,7 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -572,7 +573,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         return self._inline_external_url(frame_url)
 
     def _inline_external_url(self, url: str) -> str | None:
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        if not isinstance(url, str) or not is_url_or_path(url):
             return url
 
         try:
@@ -845,7 +846,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         # 1) direct fields
         for key in ("url", "video_url", "output_url"):
             val = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(val, str) and val.startswith("http"):
+            if isinstance(val, str) and is_url_or_path(val) and val.startswith(("http://", "https://")):
                 return val
         # 2) nested known containers (Seedance returns content.video_url)
         for key in ("result", "data", "output", "outputs", "content", "task_result"):
@@ -871,13 +872,13 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             v = val.strip()
             if not v:
                 return None
-            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
+            return v if (v.startswith("data:image/") or is_url_or_path(v)) else f"data:image/png;base64,{v}"
 
         # Artifact-like objects
         try:
             # ImageUrlArtifact: .value holds URL string
             v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
+            if isinstance(v, str) and (v.startswith("data:image/") or is_url_or_path(v)):
                 return v
             # ImageArtifact: .base64 holds raw or data-URI
             b64 = getattr(val, "base64", None)

@@ -75,6 +75,38 @@ class BaseStorageDriver(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_asset_url(self, path: Path) -> str:
+        """Get the permanent unsigned URL for an asset.
+
+        Args:
+            path: The path of the file
+
+        Returns:
+            Permanent URL for accessing the asset
+        """
+        ...
+
+    @abstractmethod
+    def save_file(
+        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> str:
+        """Save a file to storage.
+
+        Args:
+            path: The path of the file to save.
+            file_content: The file content as bytes.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+
+        Returns:
+            The absolute file path where the file was saved.
+
+        Raises:
+            FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file save fails.
+        """
+        ...
+
     def upload_file(
         self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> str:

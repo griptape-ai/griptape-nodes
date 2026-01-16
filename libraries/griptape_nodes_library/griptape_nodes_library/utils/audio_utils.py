@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
+from griptape_nodes.utils.url_utils import is_url_or_path
+
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
 
@@ -120,14 +122,14 @@ def is_downloadable_audio_url(obj: Any) -> bool:
         True if object contains an http/https URL that needs downloading
     """
     # Direct URL string
-    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+    if isinstance(obj, str) and is_url_or_path(obj):
         return True
 
     # Any AudioUrlArtifact-like object with downloadable URL
     if is_audio_url_artifact(obj) and hasattr(obj, "value"):
         value = obj.value  # type: ignore[attr-defined]
         if isinstance(value, str):
-            return value.startswith(("http://", "https://"))
+            return is_url_or_path(value)
 
     return False
 
