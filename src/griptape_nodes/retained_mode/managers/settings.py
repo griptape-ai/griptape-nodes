@@ -225,6 +225,11 @@ class Settings(BaseModel):
         description="Maximum number of nodes executing at a time for parallel execution.",
     )
     storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
+    auto_inject_workflow_metadata: bool = Field(
+        category=STORAGE,
+        default=True,
+        description="Automatically inject workflow metadata into saved images (JPEG, PNG, TIFF, MPO)",
+    )
     minimum_disk_space_gb_libraries: float = Field(
         category=SYSTEM_REQUIREMENTS,
         default=10.0,
