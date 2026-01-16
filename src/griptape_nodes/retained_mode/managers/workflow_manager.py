@@ -1826,8 +1826,11 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
+        # Extract library names from workflow metadata
+        library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
+
         prereq_code = self._generate_workflow_run_prerequisite_code(
-            workflow_name=workflow_metadata.name, import_recorder=import_recorder
+            workflow_name=workflow_metadata.name, import_recorder=import_recorder, library_names=library_names
         )
         for node in prereq_code:
             ast_container.add_node(node)
@@ -2750,32 +2753,44 @@ class WorkflowManager:
         self,
         workflow_name: str,
         import_recorder: ImportRecorder,
+        library_names: list[str],
     ) -> list[ast.AST]:
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
+        )
 
         code_blocks: list[ast.AST] = []
 
-        # Generate load libraries request call
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
-        load_call = ast.Expr(
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Call(
-                        func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
-                        args=[],
-                        keywords=[],
-                    )
-                ],
-                keywords=[],
+        # Generate one RegisterLibraryFromFileRequest call per library
+        for library_name in library_names:
+            register_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="library_name",
+                                    value=ast.Constant(value=library_name),
+                                ),
+                                ast.keyword(
+                                    arg="perform_discovery_if_not_found",
+                                    value=ast.Constant(value=True),
+                                ),
+                            ],
+                        )
+                    ],
+                    keywords=[],
+                )
             )
-        )
-        ast.fix_missing_locations(load_call)
-        code_blocks.append(load_call)
+            ast.fix_missing_locations(register_call)
+            code_blocks.append(register_call)
 
         # Generate context manager assignment
         assign_context_manager = ast.Assign(
