@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 import threading
 from dataclasses import dataclass
 
+from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
 from griptape_nodes.retained_mode.events import app_events, execution_events
@@ -113,6 +116,35 @@ logging.basicConfig(
 console = Console()
 
 
+def _ensure_api_key() -> str:
+    """Verify that GT_CLOUD_API_KEY is set, exit with clear error message if not.
+
+    Returns:
+        The API key value
+
+    Raises:
+        SystemExit: If API key is missing or empty
+    """
+    secrets_manager = griptape_nodes.SecretsManager()
+    api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
+
+    if not api_key:
+        message = Panel(
+            Align.center(
+                "[bold red]Nodes API key is not set, please run [code]gtn init[/code] with a valid key:[/bold red]\n"
+                "[code]gtn init --api-key <your key>[/code]\n\n"
+                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+            ),
+            title="[red]X[/red] Missing Nodes API Key",
+            border_style="red",
+            padding=(1, 4),
+        )
+        console.print(message)
+        sys.exit(1)
+
+    return api_key
+
+
 def start_app() -> None:
     """Legacy sync entry point - runs async app."""
     try:
@@ -125,6 +157,9 @@ def start_app() -> None:
 
 async def astart_app() -> None:
     """New async app entry point."""
+    # Verify API key is set before starting
+    _ensure_api_key()
+
     # Initialize event queue in main thread
     griptape_nodes.EventManager().initialize_queue()
 
@@ -154,6 +189,22 @@ def _start_websocket_connection() -> None:
 
         # Run the async WebSocket tasks
         loop.run_until_complete(_run_websocket_tasks())
+    except ConnectionError:
+        # Connection failed - likely due to invalid/missing API key
+        message = Panel(
+            Align.center(
+                "[bold red]Failed to connect to Nodes API.[/bold red]\n\n"
+                "This usually indicates an invalid or missing [code]GT_CLOUD_API_KEY[/code].\n\n"
+                "[bold red]Please verify your API key:[/bold red]\n"
+                "[code]gtn init --api-key <your key>[/code]\n\n"
+                "[bold red]You can generate a new key from [/bold red][bold blue][link=https://nodes.griptape.ai]https://nodes.griptape.ai[/link][/bold blue]",
+            ),
+            title="[red]X[/red] Connection Failed",
+            border_style="red",
+            padding=(1, 4),
+        )
+        console.print(message)
+        sys.exit(1)
     except Exception as e:
         logger.error("WebSocket thread error: %s", e)
         raise
