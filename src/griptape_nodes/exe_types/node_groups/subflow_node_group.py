@@ -16,6 +16,7 @@ from griptape_nodes.exe_types.node_types import (
     LOCAL_EXECUTION,
     get_library_names_with_publish_handlers,
 )
+from griptape_nodes.exe_types.param_components.subflow_execution_component import SubflowExecutionComponent
 from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     DeleteConnectionRequest,
@@ -84,6 +85,9 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         # Add parameters from registered StartFlow nodes for each publishing library
         self._add_start_flow_parameters()
 
+        # Add subprocess execution status component for real-time GUI updates
+        self._add_subflow_execution_parameters()
+
     def _create_subflow(self) -> None:
         """Create a dedicated subflow for this NodeGroup's nodes.
 
@@ -143,6 +147,11 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         # Process each registered library
         for library_name, handler in event_handlers.items():
             self._process_library_start_flow_parameters(library_name, handler)
+
+    def _add_subflow_execution_parameters(self) -> None:
+        """Add parameters for subflow execution tracking."""
+        self._subflow_execution_component = SubflowExecutionComponent(self)
+        self._subflow_execution_component.add_output_parameters()
 
     def _process_library_start_flow_parameters(self, library_name: str, handler: Any) -> None:
         """Process and add StartFlow parameters from a single library.
@@ -649,6 +658,10 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         self._cleanup_proxy_parameter(target_parameter, metadata_key)
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+        self.subflow_execution_component.after_value_set(parameter, value)
+
     def add_nodes_to_group(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group and track their connections.
 
@@ -1004,3 +1017,8 @@ class SubflowNodeGroup(BaseNodeGroup, ABC):
         self.remove_nodes_from_group(nodes_to_remove)
         subflow_name = self.metadata.get("subflow_name")
         return subflow_name
+
+    @property
+    def subflow_execution_component(self) -> SubflowExecutionComponent:
+        """Get the subflow execution component for real-time status updates."""
+        return self._subflow_execution_component

@@ -29,6 +29,42 @@ class PythonSubprocessExecutor:
         self._process: asyncio.subprocess.Process | None = None
         self._is_running = False
 
+    async def _stream_output(
+        self,
+        stream: asyncio.StreamReader | None,
+        stream_name: str,
+        collected_lines: list[str],
+    ) -> None:
+        """Read from a stream line-by-line, printing each line in real-time.
+
+        Output is printed directly with ANSI dim formatting to preserve formatting
+        (e.g., rich tables, colors) from the subprocess while making it visually
+        distinct from main process logs.
+
+        Args:
+            stream: The async stream reader to read from
+            stream_name: Name of the stream for logging (e.g., "stdout", "stderr")
+            collected_lines: List to accumulate decoded lines into
+        """
+        if stream is None:
+            return
+
+        # ANSI escape codes for dimmed output
+        ansi_dim = "\033[2m"
+        ansi_reset = "\033[0m"
+
+        # Choose the appropriate output stream
+        output_stream = sys.stderr if stream_name == "stderr" else sys.stdout
+
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            decoded_line = line.decode(errors="replace").rstrip()
+            collected_lines.append(decoded_line)
+            # Print with dim formatting to distinguish from main process logs
+            print(f"{ansi_dim}{decoded_line}{ansi_reset}", file=output_stream, flush=True)
+
     async def execute_python_script(
         self,
         script_path: Path,
@@ -51,6 +87,8 @@ class PythonSubprocessExecutor:
         args = args or []
         command = [sys.executable, str(script_path), *args]
         subprocess_env = _create_subprocess_env(env)
+        # Disable Python output buffering so we get real-time output
+        subprocess_env["PYTHONUNBUFFERED"] = "1"
 
         try:
             logger.info("Starting subprocess: %s", " ".join(command))
@@ -66,16 +104,17 @@ class PythonSubprocessExecutor:
             self._is_running = True
             logger.info("Subprocess started with PID: %s", self._process.pid)
 
-            stdout_bytes, stderr_bytes = await self._process.communicate()
-            returncode = self._process.returncode
-            stdout = stdout_bytes.decode(errors="replace") if stdout_bytes else ""
-            stderr = stderr_bytes.decode(errors="replace") if stderr_bytes else ""
+            # Stream stdout and stderr concurrently for real-time output
+            stdout_lines: list[str] = []
+            stderr_lines: list[str] = []
+            await asyncio.gather(
+                self._stream_output(self._process.stdout, "stdout", stdout_lines),
+                self._stream_output(self._process.stderr, "stderr", stderr_lines),
+            )
 
-            # Log all output regardless of return code
-            if stdout:
-                logger.info("Subprocess stdout: %s", stdout)
-            if stderr:
-                logger.info("Subprocess stderr: %s", stderr)
+            # Wait for process to complete and get return code
+            await self._process.wait()
+            returncode = self._process.returncode
 
             if returncode == 0:
                 logger.info("Subprocess completed successfully with return code: %d", returncode)
