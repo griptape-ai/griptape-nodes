@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
@@ -78,7 +79,7 @@ class CombineFrames(SuccessFailureNode):
             ParameterString(
                 name="ordering_mode",
                 default_value=ORDERING_MODES[0],
-                tooltip='Sequential: 1 frame per image. Respect frame numbers: gaps in frame numbers indicate holds',
+                tooltip="Sequential: 1 frame per image. Respect frame numbers: gaps in frame numbers indicate holds",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=ORDERING_MODES)},
             )
@@ -101,10 +102,24 @@ class CombineFrames(SuccessFailureNode):
                 name="video",
                 output_type="VideoUrlArtifact",
                 type="VideoUrlArtifact",
-                tooltip="Combined video output",
+                tooltip="Combined video output (mp4/mov)",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
                 ui_options={"pulse_on_run": True},
+            )
+        )
+
+        # Image output (hidden by default, shown when format is gif)
+        self.add_parameter(
+            Parameter(
+                name="image",
+                output_type="ImageUrlArtifact",
+                type="ImageUrlArtifact",
+                tooltip="Combined GIF output",
+                allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
+                settable=False,
+                ui_options={"pulse_on_run": True},
+                hide=True,
             )
         )
 
@@ -114,6 +129,18 @@ class CombineFrames(SuccessFailureNode):
             result_details_placeholder="Combination status and details will appear here.",
             parameter_group_initially_collapsed=True,
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to update dependent parameters."""
+        super().after_value_set(parameter, value)
+
+        if parameter.name == "format":
+            if value == "gif":
+                self.show_parameter_by_name("image")
+                self.hide_parameter_by_name("video")
+            else:
+                self.hide_parameter_by_name("image")
+                self.show_parameter_by_name("video")
 
     def process(self) -> None:
         """Process method to combine frames into video."""
@@ -163,11 +190,21 @@ class CombineFrames(SuccessFailureNode):
             logger.error("%s validation failed: no processed frames", self.name)
             return
 
-        # Combine frames into video
+        # Combine frames into video or image (gif)
         try:
-            video_artifact = self._combine_frames_to_video(processed_frames, frame_rate, format_type)
-            self.parameter_output_values["video"] = video_artifact
-            result_details = f"Successfully combined {len(processed_frames)} frames into {format_type} video at {frame_rate} fps"
+            if format_type == "gif":
+                image_artifact = self._combine_frames_to_gif(processed_frames, frame_rate)
+                self.parameter_output_values["image"] = image_artifact
+                self.parameter_output_values["video"] = None
+                result_details = f"Successfully combined {len(processed_frames)} frames into GIF at {frame_rate} fps"
+            else:
+                video_artifact = self._combine_frames_to_video(processed_frames, frame_rate, format_type)
+                self.parameter_output_values["video"] = video_artifact
+                self.parameter_output_values["image"] = None
+                result_details = (
+                    f"Successfully combined {len(processed_frames)} frames into {format_type} video at {frame_rate} fps"
+                )
+
             self._set_status_results(was_successful=True, result_details=result_details)
             logger.info("%s combined %d frames successfully", self.name, len(processed_frames))
 
@@ -269,6 +306,66 @@ class CombineFrames(SuccessFailureNode):
 
         return None
 
+    def _combine_frames_to_gif(self, frame_paths: list[Path], frame_rate: float) -> ImageUrlArtifact:
+        """Combine frames into GIF using ffmpeg, returning ImageUrlArtifact."""
+        if not frame_paths:
+            error_msg = "No frames to combine"
+            raise ValueError(error_msg)
+
+        try:
+            ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+        except Exception as e:
+            error_msg = f"FFmpeg not found: {e}"
+            raise ValueError(error_msg) from e
+
+        # Create temporary directory for sequential frame files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Determine extension to use (use first file's extension)
+            first_extension = frame_paths[0].suffix.lower()
+            if not first_extension:
+                first_extension = ".jpg"
+
+            # Copy or link frames to sequential names for ffmpeg
+            for idx, frame_path in enumerate(frame_paths):
+                # Create sequential filename with consistent extension
+                seq_filename = f"frame_{idx + 1:04d}{first_extension}"
+                seq_path = temp_path / seq_filename
+                shutil.copy2(frame_path, seq_path)
+
+            # Build ffmpeg command with specific extension in pattern
+            input_pattern = str(temp_path / f"frame_%04d{first_extension}")
+            output_path = temp_path / "output.gif"
+
+            cmd = self._build_ffmpeg_command(ffmpeg_path, input_pattern, output_path, frame_rate, "gif")
+
+            # Run ffmpeg
+            try:
+                subprocess.run(  # noqa: S603
+                    cmd, capture_output=True, text=True, check=True, timeout=300
+                )
+            except subprocess.TimeoutExpired as e:
+                error_msg = f"FFmpeg timed out combining frames: {e}"
+                raise RuntimeError(error_msg) from e
+            except subprocess.CalledProcessError as e:
+                error_msg = f"FFmpeg failed to combine frames: {e.stderr}"
+                raise RuntimeError(error_msg) from e
+
+            # Read output GIF
+            if not output_path.exists():
+                error_msg = "FFmpeg did not create output GIF file"
+                raise RuntimeError(error_msg)
+
+            gif_bytes = output_path.read_bytes()
+
+            # Save to static storage as ImageUrlArtifact
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            filename = f"combined_frames_{len(frame_paths)}frames_{frame_rate}fps.gif"
+            saved_url = static_files_manager.save_static_file(gif_bytes, filename)
+
+            return ImageUrlArtifact(value=saved_url, name=filename)
+
     def _combine_frames_to_video(
         self, frame_paths: list[Path], frame_rate: float, format_type: str
     ) -> VideoUrlArtifact:
@@ -312,7 +409,7 @@ class CombineFrames(SuccessFailureNode):
 
             # Run ffmpeg
             try:
-                result = subprocess.run(  # noqa: S603
+                subprocess.run(  # noqa: S603
                     cmd, capture_output=True, text=True, check=True, timeout=300
                 )
             except subprocess.TimeoutExpired as e:
@@ -404,4 +501,5 @@ class CombineFrames(SuccessFailureNode):
     def _set_safe_defaults(self) -> None:
         """Set safe default output values on failure."""
         self.parameter_output_values["video"] = None
-
+        self.parameter_output_values["image"] = None
+        self.parameter_output_values["image"] = None

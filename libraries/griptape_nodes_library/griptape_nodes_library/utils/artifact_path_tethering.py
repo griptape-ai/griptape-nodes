@@ -568,10 +568,35 @@ class ArtifactPathTethering:
 
         return download_result
 
+    def _is_file_in_static_storage(self, path: Path) -> bool:
+        """Check if a file path is within the static storage directory."""
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        static_files_dir = GriptapeNodes.ConfigManager().get_config_value(
+            "static_files_directory", default="staticfiles"
+        )
+        static_files_path = workspace_path / static_files_dir
+
+        try:
+            return path.is_relative_to(static_files_path)
+        except (ValueError, AttributeError):
+            return False
+
     def _upload_file_to_static_storage(self, file_path: str) -> str:
         """Upload file to static storage and return download URL."""
         path = self._resolve_file_path(file_path)
         file_name_for_storage = self._determine_storage_filename(path)
+
+        # If file is already in static storage, try to return existing URL
+        # This prevents overwriting existing files with empty files during upload URL creation
+        if self._is_file_in_static_storage(path):
+            try:
+                download_result = self._create_download_url(file_name_for_storage)
+                return download_result.url
+            except TypeError:
+                # File doesn't exist in static storage yet, proceed with upload
+                pass
+
+        # File is not in static storage or doesn't exist - upload it
         upload_result = self._create_upload_url(file_name_for_storage)
         file_data, file_size = self._read_file_data(path, file_path)
         self._upload_file_data(upload_result, file_data, file_size, file_path)
