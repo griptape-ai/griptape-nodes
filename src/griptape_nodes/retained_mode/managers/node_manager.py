@@ -2781,7 +2781,7 @@ class NodeManager:
                     unique_parameter_uuid_to_values=request.unique_parameter_uuid_to_values,
                     serialized_parameter_value_tracker=request.serialized_parameter_value_tracker,
                     create_node_request=create_node_request,
-                    use_pickling=True,
+                    use_pickling=request.use_pickling,
                 )
                 if set_param_value_requests is not None:
                     set_value_commands.extend(set_param_value_requests)
@@ -2984,6 +2984,7 @@ class NodeManager:
                     node_name=node_name,
                     unique_parameter_uuid_to_values=unique_uuid_to_values,
                     serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                    use_pickling=True,
                 )
             )
             if not isinstance(result, SerializeNodeToCommandsResultSuccess):
