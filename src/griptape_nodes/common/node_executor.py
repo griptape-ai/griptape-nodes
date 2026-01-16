@@ -1480,6 +1480,10 @@ class NodeExecutor:
         # Get execution environment
         execution_type = node.get_parameter_value(node.execution_environment.name)
 
+        # Clear execution state before subprocess execution starts (for non-local execution)
+        if execution_type != LOCAL_EXECUTION:
+            node.subflow_execution_component.clear_state()
+
         # Check if we should run in order (default is sequential/True)
         run_in_order = node.get_parameter_value("run_in_order")
 
@@ -2576,11 +2580,14 @@ class NodeExecutor:
                             end_loop_node.name,
                         )
 
+                        # Pass node for event updates if it's a SubflowNodeGroup (includes BaseIterativeNodeGroup)
+                        subflow_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
                         subprocess_result = await self._execute_subprocess(
                             published_workflow_filename=workflow_path,
                             file_name=f"{file_name_prefix}_iteration_{iteration_index}",
                             pickle_control_flow_result=True,
                             flow_input=flow_input,
+                            node=subflow_node,
                         )
                         iteration_outputs.append((iteration_index, True, subprocess_result))
                     except Exception:
@@ -2588,6 +2595,9 @@ class NodeExecutor:
                         iteration_outputs.append((iteration_index, False, None))
             else:
                 # Execute all iterations concurrently
+                # Get subflow_node reference for event updates (scoped outside the closure)
+                subflow_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
+
                 async def run_single_iteration(iteration_index: int) -> tuple[int, bool, dict[str, Any] | None]:
                     try:
                         flow_input = {start_node_name: parameter_values_per_iteration[iteration_index]}
@@ -2603,6 +2613,7 @@ class NodeExecutor:
                             file_name=f"{file_name_prefix}_iteration_{iteration_index}",
                             pickle_control_flow_result=True,
                             flow_input=flow_input,
+                            node=subflow_node,
                         )
                     except Exception:
                         logger.exception("Iteration %d failed for loop '%s'", iteration_index, end_loop_node.name)
@@ -2820,10 +2831,13 @@ class NodeExecutor:
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
         file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_sequential_loop_flow"
 
+        # Pass node for publishing progress events if it's a SubflowNodeGroup
+        publish_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
             file_name=file_name_prefix,
+            node=publish_node,
         )
 
         try:
@@ -2863,10 +2877,13 @@ class NodeExecutor:
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
         file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_loop_flow"
 
+        # Pass node for publishing progress events if it's a SubflowNodeGroup
+        publish_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
             file_name=file_name_prefix,
+            node=publish_node,
         )
 
         try:
@@ -2892,6 +2909,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         library_name: str,
         file_name: str,
+        node: BaseNode | None = None,
     ) -> tuple[Path, Any]:
         """Save and publish workflow for loop execution via publisher.
 
@@ -2899,6 +2917,7 @@ class NodeExecutor:
             package_result: The packaged flow
             library_name: Name of the library to publish to
             file_name: Base file name for the workflow
+            node: Optional node to receive publishing progress events
 
         Returns:
             Tuple of (published_workflow_filename, workflow_result)
@@ -2916,7 +2935,9 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime failure, not a type validation error
 
         # Publish to the library
-        published_workflow_filename = await self._publish_library_workflow(workflow_result, library_name, file_name)
+        published_workflow_filename = await self._publish_library_workflow(
+            workflow_result, library_name, file_name, node=node
+        )
 
         logger.info("Successfully published workflow to '%s'", published_workflow_filename)
 

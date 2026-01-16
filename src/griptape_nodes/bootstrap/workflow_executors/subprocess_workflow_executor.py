@@ -139,8 +139,7 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
     async def _handle_subprocess_event(self, event: dict) -> None:
         """Handle executor-specific events from the subprocess.
 
-        Processes execution events (ControlFlowResolved, ControlFlowCancelled)
-        and result events (StartFlowRequest results).
+        Processes execution events and result events.
         """
         event_type = event.get("type", "unknown")
         if event_type == "execution_event":

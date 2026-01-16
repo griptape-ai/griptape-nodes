@@ -181,7 +181,7 @@ class LocalSessionWorkflowPublisher(LocalWorkflowPublisher, SubprocessWebSocketS
                 logger.debug("Processing publish event: %s", type(event).__name__)
 
                 if isinstance(event, ExecutionGriptapeNodeEvent):
-                    # Check if this is a progress event and emit it
+                    # Unwrap the event and check if it contains a PublishWorkflowProgressEvent
                     wrapped_event = event.wrapped_event
                     if isinstance(wrapped_event, ExecutionEvent) and isinstance(
                         wrapped_event.payload, PublishWorkflowProgressEvent

@@ -38,6 +38,7 @@ class SubprocessWebSocketListenerMixin:
     _websocket_event_loop: asyncio.AbstractEventLoop | None
     _websocket_event_loop_ready: threading.Event
     _shutdown_event: asyncio.Event | None
+    _listener_startup_error: Exception | None
 
     def _init_websocket_listener(
         self,
@@ -57,21 +58,37 @@ class SubprocessWebSocketListenerMixin:
         self._websocket_event_loop = None
         self._websocket_event_loop_ready = threading.Event()
         self._shutdown_event = None
+        self._listener_startup_error = None
 
     def _get_listener_session_id(self) -> str:
         """Get the session ID used for WebSocket communication."""
         return self._listener_session_id
 
     async def _start_websocket_listener(self) -> None:
-        """Start WebSocket connection to listen for events from the subprocess."""
+        """Start WebSocket connection to listen for events from the subprocess.
+
+        Raises:
+            RuntimeError: If the WebSocket listener thread fails to start or times out.
+        """
         logger.info("Starting WebSocket listener for session %s", self._listener_session_id)
+        self._listener_startup_error = None
         self._websocket_thread = threading.Thread(target=self._start_websocket_thread, daemon=True)
         self._websocket_thread.start()
 
-        if self._websocket_event_loop_ready.wait(timeout=10):
-            logger.info("WebSocket listener thread ready")
-        else:
-            logger.error("Timeout waiting for WebSocket listener thread to start")
+        if not self._websocket_event_loop_ready.wait(timeout=10):
+            # Check if there was an error during startup
+            if self._listener_startup_error is not None:
+                msg = f"WebSocket listener thread failed to start: {self._listener_startup_error}"
+                raise RuntimeError(msg) from self._listener_startup_error
+            msg = "Timeout waiting for WebSocket listener thread to start"
+            raise RuntimeError(msg)
+
+        # Check if an error occurred after the ready event was set but before we got here
+        if self._listener_startup_error is not None:
+            msg = f"WebSocket listener thread failed during startup: {self._listener_startup_error}"
+            raise RuntimeError(msg) from self._listener_startup_error
+
+        logger.info("WebSocket listener thread ready")
 
     def _stop_websocket_listener(self) -> None:
         """Stop the WebSocket listener thread."""
@@ -116,6 +133,10 @@ class SubprocessWebSocketListenerMixin:
             loop.run_until_complete(self._run_websocket_listener())
         except Exception as e:
             logger.error("WebSocket listener thread error: %s", e)
+            # Store the error so the main thread can raise it
+            self._listener_startup_error = e
+            # Signal ready event so main thread doesn't hang waiting
+            self._websocket_event_loop_ready.set()
         finally:
             self._websocket_event_loop = None
             self._websocket_event_loop_ready.clear()
@@ -132,7 +153,7 @@ class SubprocessWebSocketListenerMixin:
             try:
                 await self._listen_for_messages(client)
             except Exception:
-                logger.exception("WebSocket listener failed")
+                logger.exception("WebSocket listener failed for session %s", self._listener_session_id)
             finally:
                 logger.info("WebSocket listener connection loop ended")
 
@@ -154,7 +175,11 @@ class SubprocessWebSocketListenerMixin:
                     await self._process_listener_event(message)
 
                 except Exception:
-                    logger.exception("Error processing WebSocket message")
+                    logger.exception(
+                        "Error processing WebSocket message of type '%s' for session %s",
+                        message.get("type", "unknown"),
+                        self._listener_session_id,
+                    )
 
         except Exception as e:
             logger.error("Error in WebSocket message listener: %s", e)

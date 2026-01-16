@@ -26,6 +26,7 @@ class PublishWorkflowArgs:
 
 
 async def _main(args: PublishWorkflowArgs) -> None:
+    publisher: LocalWorkflowPublisher
     if args.session_id is not None:
         publisher = LocalSessionWorkflowPublisher(session_id=args.session_id)
     else:
