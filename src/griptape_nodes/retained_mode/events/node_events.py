@@ -564,6 +564,7 @@ class SerializeNodeToCommandsRequest(RequestPayload):
     serialized_parameter_value_tracker: SerializedParameterValueTracker = field(
         default_factory=SerializedParameterValueTracker
     )
+    use_pickling: bool = False
 
 
 @dataclass
