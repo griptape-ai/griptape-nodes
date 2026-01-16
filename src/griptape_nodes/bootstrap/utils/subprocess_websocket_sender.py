@@ -123,7 +123,7 @@ class SubprocessWebSocketSenderMixin:
             try:
                 await self._send_outgoing_messages(client)
             except Exception:
-                logger.exception("WebSocket tasks failed")
+                logger.exception("WebSocket sender tasks failed for session %s", self._sender_session_id)
             finally:
                 logger.info("WebSocket connection loop ended")
 
@@ -203,8 +203,9 @@ class SubprocessWebSocketSenderMixin:
         async def _check_queue_empty() -> bool:
             return self._ws_outgoing_queue.empty() if self._ws_outgoing_queue else True
 
-        start_time = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start_time < timeout_seconds:
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        while loop.time() - start_time < timeout_seconds:
             future = asyncio.run_coroutine_threadsafe(_check_queue_empty(), self._websocket_event_loop)
             try:
                 is_empty = future.result(timeout=0.1)

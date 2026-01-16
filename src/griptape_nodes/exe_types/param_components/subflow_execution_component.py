@@ -62,30 +62,20 @@ class SubflowExecutionComponent:
         )
         self._node.add_parameter(
             Parameter(
-                name="_publishing_target_link",
-                output_type="str",
-                allowed_modes={ParameterMode.PROPERTY},
-                tooltip="Link to the published workflow target",
-                hide=True,
-                private=True,
-            )
-        )
-        self._node.add_parameter(
-            Parameter(
                 name="publishing_target_link",
                 output_type="str",
-                tooltip="The link to the published workflow target",
+                tooltip="Click the button to open the published workflow location",
                 hide=True,
                 allowed_modes={ParameterMode.PROPERTY},
                 traits={
                     Button(
                         icon="link",
                         on_click=self._handle_get_publishing_target_link,
-                        tooltip="Get publishing target link",
+                        tooltip="Open publishing target link",
                         state="normal",
                     ),
                 },
-                ui_options={"placeholder_text": "Click button to retrieve publishing target link"},
+                ui_options={"placeholder_text": "Link will appear after publishing"},
             )
         )
         self._node.add_parameter(
@@ -108,7 +98,7 @@ class SubflowExecutionComponent:
         button: Button,  # noqa: ARG002
         button_details: ButtonDetailsMessagePayload,
     ) -> NodeMessageResult | None:
-        publishing_target_link = self._node.get_parameter_value("_publishing_target_link")
+        publishing_target_link = self._node.get_parameter_value("publishing_target_link")
         if publishing_target_link:
             return NodeMessageResult(
                 success=True,
@@ -133,7 +123,7 @@ class SubflowExecutionComponent:
 
     def clear_publishing_target_link(self) -> None:
         """Clear the publishing target link parameter."""
-        self._node.publish_update_to_parameter("_publishing_target_link", None)
+        self._node.publish_update_to_parameter("publishing_target_link", None)
 
     def append_event(self, event_str: str) -> None:
         """Append a stringified event to the parameter.
@@ -156,7 +146,7 @@ class SubflowExecutionComponent:
             else:
                 self._node.show_parameter_by_name("publishing_progress")
 
-        if parameter.name == "_publishing_target_link":
+        if parameter.name == "publishing_target_link":
             if value:
                 self._node.show_parameter_by_name("publishing_target_link")
             else:
@@ -250,7 +240,7 @@ class SubflowExecutionComponent:
                     else None
                 )
                 if target_link:
-                    self._node.set_parameter_value("_publishing_target_link", target_link)
+                    self._node.set_parameter_value("publishing_target_link", target_link)
 
         elif result_payload_type == PublishWorkflowResultFailure:
             result_details = result_data.get("result_details", "Unknown error")
