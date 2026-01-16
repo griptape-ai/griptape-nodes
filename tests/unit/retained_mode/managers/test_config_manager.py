@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 import pytest
 
+from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 
 @pytest.mark.skipif(
@@ -204,3 +206,162 @@ class TestConfigManager:
             value_with_cast = manager.get_config_value("max_count", cast_type=int)
             assert value_with_cast == int("100")
             assert isinstance(value_with_cast, int)
+
+
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="xdg_base_dirs cannot find XDG_CONFIG_HOME on Windows on GitHub Actions"
+)
+class TestConfigManagerEventEmission:
+    """Test that ConfigManager emits ConfigChanged events when config values change."""
+
+    def test_set_config_value_emits_config_changed_event(self) -> None:
+        """Test that set_config_value emits a ConfigChanged event."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Set a config value
+        config_manager.set_config_value(key="test_key", value="new_value")
+
+        # Verify event was emitted
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.key == "test_key"
+        assert event.new_value == "new_value"
+        assert event.category is None
+
+    def test_set_config_value_captures_old_value(self) -> None:
+        """Test that ConfigChanged event contains the old value before the change."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Set initial value
+        config_manager.set_config_value(key="test_key", value="initial_value")
+
+        # Update to new value
+        config_manager.set_config_value(key="test_key", value="updated_value")
+
+        # Verify the second event has the correct old_value
+        assert len(received_events) == 2  # noqa: PLR2004
+        second_event = received_events[1]
+        assert second_event.key == "test_key"
+        assert second_event.old_value == "initial_value"
+        assert second_event.new_value == "updated_value"
+
+    def test_set_config_category_emits_config_changed_event(self) -> None:
+        """Test that set_config_category emits a ConfigChanged event."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Set a config category
+        from griptape_nodes.retained_mode.events.config_events import SetConfigCategoryRequest
+
+        request = SetConfigCategoryRequest(category="test_category", contents={"key1": "value1", "key2": "value2"})
+        config_manager.on_handle_set_config_category_request(request)
+
+        # Verify event was emitted
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.key == "test_category"
+        assert event.new_value == {"key1": "value1", "key2": "value2"}
+        # Category field is None when setting a specific category (only set for full config replacement)
+        assert event.category is None
+
+    def test_set_config_value_no_event_when_event_manager_is_none(self) -> None:
+        """Test that no event is emitted when event_manager is None."""
+        config_manager = ConfigManager(event_manager=None)
+
+        # This should not raise any exceptions
+        config_manager.set_config_value(key="test_key", value="new_value")
+
+    def test_set_config_category_full_config_replacement_emits_event(self) -> None:
+        """Test that setting the entire config (category=None) emits an event."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Set entire config
+        from griptape_nodes.retained_mode.events.config_events import SetConfigCategoryRequest
+
+        full_config = {"workspace_directory": "/test/path", "log_level": "DEBUG"}
+        request = SetConfigCategoryRequest(category=None, contents=full_config)
+        config_manager.on_handle_set_config_category_request(request)
+
+        # Verify event was emitted
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.key == ""
+        assert event.new_value == full_config
+        assert event.category is None
+
+    def test_multiple_config_changes_emit_multiple_events(self) -> None:
+        """Test that multiple config changes emit separate events."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Make multiple changes
+        config_manager.set_config_value(key="key1", value="value1")
+        config_manager.set_config_value(key="key2", value="value2")
+        config_manager.set_config_value(key="key3", value="value3")
+
+        # Verify all events were emitted
+        assert len(received_events) == 3  # noqa: PLR2004
+        assert received_events[0].key == "key1"
+        assert received_events[1].key == "key2"
+        assert received_events[2].key == "key3"
+
+    def test_config_changed_event_includes_nested_key(self) -> None:
+        """Test that ConfigChanged event correctly handles nested config keys."""
+        event_manager = EventManager()
+        config_manager = ConfigManager(event_manager=event_manager)
+
+        received_events = []
+
+        def listener(event: ConfigChanged) -> None:
+            received_events.append(event)
+
+        event_manager.add_listener_to_app_event(ConfigChanged, listener)
+
+        # Set a nested config value
+        config_manager.set_config_value(
+            key="app_events.on_app_initialization_complete.libraries_to_register", value=["/path/to/lib"]
+        )
+
+        # Verify event has the full nested key
+        assert len(received_events) == 1
+        event = received_events[0]
+        assert event.key == "app_events.on_app_initialization_complete.libraries_to_register"
+        assert event.new_value == ["/path/to/lib"]
