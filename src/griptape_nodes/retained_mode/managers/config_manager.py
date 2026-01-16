@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.retained_mode.events.app_events import ConfigChanged
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
@@ -86,6 +87,9 @@ class ConfigManager:
         self.load_configs()
 
         self._set_log_level(self.merged_config.get("log_level", logging.INFO))
+
+        # Store event manager reference for broadcasting config change events
+        self._event_manager = event_manager
 
         if event_manager is not None:
             # Register all our listeners.
@@ -350,6 +354,9 @@ class ConfigManager:
             value: The value to associate with the key.
             should_set_env_var_if_detected: If True, and the value starts with a $, it will be set in the environment variables.
         """
+        # Capture old value before making changes (for event emission)
+        old_value = self.get_config_value(key, should_load_env_var_if_detected=False)
+
         delta = set_dot_value({}, key, value)
         if key == "log_level":
             self._set_log_level(value)
@@ -368,6 +375,11 @@ class ConfigManager:
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/437
         self.load_configs()
         logger.debug("Config value '%s' set to '%s'", key, value)
+
+        # Broadcast config change event so other managers can respond
+        if self._event_manager is not None:
+            event = ConfigChanged(key=key, old_value=old_value, new_value=value)
+            self._event_manager.broadcast_app_event(event)
 
     def on_handle_get_config_category_request(self, request: GetConfigCategoryRequest) -> ResultPayload:
         if request.category is None or request.category == "":
@@ -395,10 +407,26 @@ class ConfigManager:
             result_details = f"Attempted to set config details for category '{request.category}'. Failed because the contents provided were not a dictionary."
             return SetConfigCategoryResultFailure(result_details=result_details)
 
+        # Get old value before changing for event emission
+        old_value = None
+        if request.category and request.category != "":
+            old_value = self.get_config_value(request.category)
+
         if request.category is None or request.category == "":
             # Assign the whole shebang.
             self._write_user_config_delta(request.contents)
             result_details = "Successfully assigned the entire config dictionary."
+
+            # Broadcast config change event for full config replacement
+            if self._event_manager is not None:
+                event = ConfigChanged(
+                    key="",
+                    old_value=old_value,
+                    new_value=request.contents,
+                    category=request.category,
+                )
+                self._event_manager.broadcast_app_event(event)
+
             return SetConfigCategoryResultSuccess(result_details=result_details)
 
         self.set_config_value(key=request.category, value=request.contents)

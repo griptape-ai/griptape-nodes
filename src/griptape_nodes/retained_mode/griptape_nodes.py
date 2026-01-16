@@ -238,9 +238,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return result_event.result
 
     @classmethod
-    async def broadcast_app_event(cls, app_event: AppPayload) -> None:
+    def broadcast_app_event(cls, app_event: AppPayload) -> None:
         event_mgr = GriptapeNodes.get_instance()._event_manager
-        await event_mgr.broadcast_app_event(app_event)
+        event_mgr.broadcast_app_event(app_event)
+
+    @classmethod
+    async def abroadcast_app_event(cls, app_event: AppPayload) -> None:
+        event_mgr = GriptapeNodes.get_instance()._event_manager
+        await event_mgr.abroadcast_app_event(app_event)
 
     @classmethod
     def get_session_id(cls) -> str | None:

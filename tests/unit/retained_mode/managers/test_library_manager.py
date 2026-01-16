@@ -532,3 +532,170 @@ class TestLibraryManagerRegisterLibraryFromFile:
             # Verify failure result with expected error message
             assert isinstance(result, RegisterLibraryFromFileResultFailure)
             assert "Install failed" in str(result.result_details)
+
+
+class TestLibraryManagerConfigChangeHandling:
+    """Test the library manager's response to config change events."""
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_reloads_libraries_when_libraries_to_register_changes(self) -> None:
+        """Test that libraries are reloaded when libraries_to_register config changes."""
+        # Import here to avoid circular imports
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.events.library_events import (
+            ReloadAllLibrariesRequest,
+            ReloadAllLibrariesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
+
+        # Create a mock library manager
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        mock_result = ReloadAllLibrariesResultSuccess(
+            result_details=ResultDetails(message="Libraries reloaded", level=20)
+        )
+
+        with patch.object(
+            GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result
+        ) as mock_handle:
+            event = ConfigChanged(
+                key=LIBRARIES_TO_REGISTER_KEY,
+                old_value=["/old/path"],
+                new_value=["/new/path"],
+            )
+
+            await library_manager.on_config_changed(event)
+
+            mock_handle.assert_called_once()
+            request = mock_handle.call_args[0][0]
+            assert isinstance(request, ReloadAllLibrariesRequest)
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_ignores_non_library_config_changes(self) -> None:
+        """Test that non-library config changes don't trigger library reload."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        with patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock) as mock_handle:
+            event = ConfigChanged(key="workspace_directory", old_value="/old", new_value="/new")
+
+            await library_manager.on_config_changed(event)
+
+            mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_logs_success(self) -> None:
+        """Test that successful library reload is logged."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultSuccess
+        from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
+
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        mock_result = ReloadAllLibrariesResultSuccess(
+            result_details=ResultDetails(message="Libraries reloaded", level=20)
+        )
+
+        with (
+            patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result),
+            patch("griptape_nodes.retained_mode.managers.library_manager.logger") as mock_logger,
+        ):
+            event = ConfigChanged(
+                key=LIBRARIES_TO_REGISTER_KEY,
+                old_value=["/old/path"],
+                new_value=["/new/path"],
+            )
+
+            await library_manager.on_config_changed(event)
+
+            assert mock_logger.info.call_count == 2  # noqa: PLR2004
+            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
+            assert any("Config change detected" in msg for msg in info_calls)
+            assert any("Successfully reloaded libraries" in msg for msg in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_logs_failure(self) -> None:
+        """Test that failed library reload is logged."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.events.library_events import ReloadAllLibrariesResultFailure
+        from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
+
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        mock_result = ReloadAllLibrariesResultFailure(result_details="Reload failed")
+
+        with (
+            patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result),
+            patch("griptape_nodes.retained_mode.managers.library_manager.logger") as mock_logger,
+        ):
+            event = ConfigChanged(
+                key=LIBRARIES_TO_REGISTER_KEY,
+                old_value=["/old/path"],
+                new_value=["/new/path"],
+            )
+
+            await library_manager.on_config_changed(event)
+
+            mock_logger.error.assert_called_once()
+            error_msg = mock_logger.error.call_args[0][0]
+            assert "Failed to reload libraries" in error_msg
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_handles_exact_key_match(self) -> None:
+        """Test that only exact key match triggers reload."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        with patch.object(GriptapeNodes, "ahandle_request", new_callable=AsyncMock) as mock_handle:
+            similar_keys = [
+                "app_events.on_app_initialization_complete.libraries_to_download",
+                "app_events.on_app_initialization_complete",
+                "libraries_to_register_extra",
+            ]
+
+            for key in similar_keys:
+                event = ConfigChanged(key=key, old_value="old", new_value="new")
+                await library_manager.on_config_changed(event)
+
+            mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_config_changed_uses_reload_all_libraries_request(self) -> None:
+        """Test that the handler uses ReloadAllLibrariesRequest for safe reload."""
+        from griptape_nodes.retained_mode.events.app_events import ConfigChanged
+        from griptape_nodes.retained_mode.events.library_events import (
+            ReloadAllLibrariesRequest,
+            ReloadAllLibrariesResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.library_manager import LIBRARIES_TO_REGISTER_KEY, LibraryManager
+
+        library_manager = MagicMock(spec=LibraryManager)
+        library_manager.on_config_changed = LibraryManager.on_config_changed.__get__(library_manager)
+
+        mock_result = ReloadAllLibrariesResultSuccess(
+            result_details=ResultDetails(message="Libraries reloaded", level=20)
+        )
+
+        with patch.object(
+            GriptapeNodes, "ahandle_request", new_callable=AsyncMock, return_value=mock_result
+        ) as mock_handle:
+            event = ConfigChanged(
+                key=LIBRARIES_TO_REGISTER_KEY,
+                old_value=["/old/path"],
+                new_value=["/new/path"],
+            )
+
+            await library_manager.on_config_changed(event)
+
+            mock_handle.assert_called_once()
+            request = mock_handle.call_args[0][0]
+            assert isinstance(request, ReloadAllLibrariesRequest)
