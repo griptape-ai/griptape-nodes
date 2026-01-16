@@ -154,16 +154,15 @@ class ConfigChanged(AppPayload):
     set_config_category(). Allows managers to respond to specific config changes.
 
     Args:
-        key: The config key that changed (e.g., "workspace_directory")
+        key: The config key that changed (e.g., "workspace_directory").
+             Empty string ("") indicates the entire config was replaced.
         old_value: Previous value before the change
         new_value: New value after the change
-        category: Top-level category if set_config_category was used (None otherwise)
     """
 
     key: str
     old_value: Any
     new_value: Any
-    category: str | None = None
 
 
 @dataclass

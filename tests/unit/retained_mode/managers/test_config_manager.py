@@ -234,7 +234,6 @@ class TestConfigManagerEventEmission:
         event = received_events[0]
         assert event.key == "test_key"
         assert event.new_value == "new_value"
-        assert event.category is None
 
     def test_set_config_value_captures_old_value(self) -> None:
         """Test that ConfigChanged event contains the old value before the change."""
@@ -284,8 +283,6 @@ class TestConfigManagerEventEmission:
         event = received_events[0]
         assert event.key == "test_category"
         assert event.new_value == {"key1": "value1", "key2": "value2"}
-        # Category field is None when setting a specific category (only set for full config replacement)
-        assert event.category is None
 
     def test_set_config_value_no_event_when_event_manager_is_none(self) -> None:
         """Test that no event is emitted when event_manager is None."""
@@ -318,7 +315,6 @@ class TestConfigManagerEventEmission:
         event = received_events[0]
         assert event.key == ""
         assert event.new_value == full_config
-        assert event.category is None
 
     def test_multiple_config_changes_emit_multiple_events(self) -> None:
         """Test that multiple config changes emit separate events."""

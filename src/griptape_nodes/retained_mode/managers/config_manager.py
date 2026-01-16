@@ -423,7 +423,6 @@ class ConfigManager:
                     key="",
                     old_value=old_value,
                     new_value=request.contents,
-                    category=request.category,
                 )
                 self._event_manager.broadcast_app_event(event)
 

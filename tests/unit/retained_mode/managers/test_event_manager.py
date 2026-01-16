@@ -157,7 +157,6 @@ class TestEventManagerBroadcasting:
             key="workspace_directory",
             old_value="/old/path",
             new_value="/new/path",
-            category="storage",
         )
 
         await event_manager.abroadcast_app_event(original_event)
@@ -168,4 +167,3 @@ class TestEventManagerBroadcasting:
         assert received.key == "workspace_directory"
         assert received.old_value == "/old/path"
         assert received.new_value == "/new/path"
-        assert received.category == "storage"
