@@ -39,7 +39,7 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
         GriptapeNodes.EventManager().initialize_queue()
-        await GriptapeNodes.EventManager().broadcast_app_event(AppInitializationComplete())
+        await GriptapeNodes.EventManager().abroadcast_app_event(AppInitializationComplete())
         return self
 
     async def __aexit__(
