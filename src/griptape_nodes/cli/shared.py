@@ -1,12 +1,25 @@
 """Shared constants and managers for CLI commands."""
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from xdg_base_dirs import xdg_config_home, xdg_data_home
+
+
+def create_console() -> Console:
+    """Create a Rich console with Windows ANSI support.
+
+    On Windows, forces ANSI output instead of Windows Console API
+    to ensure colored output works correctly when stdout is piped
+    (e.g., when running from Electron).
+    """
+    if sys.platform == "win32":
+        return Console(force_terminal=True, color_system="truecolor")
+    return Console()
 
 
 @dataclass
@@ -27,7 +40,7 @@ class InitConfig:
 
 
 # Initialize console
-console = Console()
+console = create_console()
 
 # Directory paths
 CONFIG_DIR = xdg_config_home() / "griptape_nodes"

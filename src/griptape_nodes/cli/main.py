@@ -4,16 +4,14 @@ import sys
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 # Add current directory to path for imports to work
 sys.path.append(str(Path.cwd()))
 
 from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
 from griptape_nodes.cli.commands.engine import _auto_update_self
+from griptape_nodes.cli.shared import console
 from griptape_nodes.utils.version_utils import get_complete_version_string
-
-console = Console()
 
 app = typer.Typer(
     name="griptape-nodes",
