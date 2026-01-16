@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import torch  # type: ignore[reportMissingImports]
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
+
 if TYPE_CHECKING:
     from PIL import Image
 
@@ -76,3 +79,27 @@ class GlmImagePipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
             kwargs["image"] = [image_pil]
 
         return kwargs
+
+    def process_pipeline(self, pipe: DiffusionPipeline) -> None:
+        """Process the GLM-Image pipeline.
+
+        GLM-Image pipeline doesn't support callback_on_step_end, so we override
+        to run without step callbacks.
+        """
+        self._node.log_params.append_to_logs("Running GLM-Image generation...\n")  # type: ignore[reportAttributeAccessIssue]
+
+        # GLM-Image doesn't support callback_on_step_end, so we can't track individual steps
+        self._node.progress_bar_component.initialize(1)  # type: ignore[reportAttributeAccessIssue]
+
+        with torch.inference_mode():
+            output = pipe(
+                **self.get_pipe_kwargs(),
+                output_type="pil",
+            )
+
+        self._node.progress_bar_component.increment()  # type: ignore[reportAttributeAccessIssue]
+
+        output_image_pil = output.images[0]
+        self.publish_output_image(output_image_pil)
+
+        self._node.log_params.append_to_logs("Done.\n")  # type: ignore[reportAttributeAccessIssue]
