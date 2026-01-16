@@ -180,13 +180,8 @@ class LoadImage(SuccessFailureNode):
                 image_artifact = dict_to_image_url_artifact(image_artifact)
 
             # Verify image can be loaded (we know it's not None at this point)
-            # Skip verification for local file paths to avoid unnecessary PIL loading
-            # which can cause issues with JPG metadata/EXIF data
             if isinstance(image_artifact, ImageUrlArtifact):
-                # Only verify if it's a URL, not a local file path
-                # Local files are already validated by _load_image_from_path
-                if image_artifact.value and image_artifact.value.startswith(("http://", "https://")):
-                    self._verify_image_loadable(image_artifact)
+                self._verify_image_loadable(image_artifact)
 
             # Set output values on success
             self.parameter_output_values["image"] = image_artifact
