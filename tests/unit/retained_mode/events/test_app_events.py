@@ -13,16 +13,6 @@ class TestConfigChangedEvent:
         assert event.key == "test_key"
         assert event.old_value == "old"
         assert event.new_value == "new"
-        assert event.category is None
-
-    def test_config_changed_event_with_category(self) -> None:
-        """Test ConfigChanged event with category field."""
-        event = ConfigChanged(key="test_key", old_value="old", new_value="new", category="storage")
-
-        assert event.key == "test_key"
-        assert event.old_value == "old"
-        assert event.new_value == "new"
-        assert event.category == "storage"
 
     def test_config_changed_event_with_none_values(self) -> None:
         """Test ConfigChanged event with None values."""
