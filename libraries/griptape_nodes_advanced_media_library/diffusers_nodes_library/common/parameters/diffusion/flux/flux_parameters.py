@@ -99,6 +99,7 @@ class FluxPipelineParameters(DiffusionPipelineTypePipelineParameters):
             revision=text_encoder_2_revision,
             torch_dtype=torch.bfloat16,
             local_files_only=True,
+            use_safetensors=False,  # google/t5-v1_1-xxl only has .bin weights
         )
 
         return diffusers.FluxPipeline.from_pretrained(
