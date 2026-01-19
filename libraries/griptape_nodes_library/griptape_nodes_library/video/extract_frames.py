@@ -13,7 +13,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
@@ -217,11 +217,16 @@ class ExtractFrames(SuccessFailureNode):
                 self.hide_parameter_by_name("step")
 
         # Update frame_range max value when video changes
-        if parameter.name == "video":
+        # Only update if not currently executing (to avoid modifying user's frame range during execution)
+        if parameter.name == "video" and self.state != NodeResolutionState.RESOLVING:
             self._update_frame_range_from_video(value)
 
     def _update_frame_range_from_video(self, video_input: Any) -> None:
-        """Update the frame_range parameter's max value based on video frame count."""
+        """Update the frame_range parameter's max value based on video frame count.
+
+        This only updates the max constraint of the ParameterRange, not the actual value.
+        The user's frame range selection is always preserved.
+        """
         if not video_input:
             self._reset_frame_range_to_default()
             return
@@ -238,16 +243,9 @@ class ExtractFrames(SuccessFailureNode):
 
             max_frame = float(max(frame_count - 1, MIN_FRAME_NUMBER))
 
-            # Check if current range is valid before updating
-            current_range = self.get_parameter_value("frame_range")
-            is_invalid_range = not isinstance(current_range, list) or len(current_range) != FRAME_RANGE_LENGTH
-
-            # Update max value and adjust range if needed
+            # Only update the max constraint, never modify the actual frame_range value
+            # This preserves the user's selection even when video changes
             self._update_frame_range_max(max_frame, frame_count)
-
-            # Only reset to default if range was invalid, otherwise preserve user's selection
-            if is_invalid_range:
-                self.set_parameter_value("frame_range", [0, max_frame])
 
         except Exception as e:
             logger.warning("%s failed to update frame range from video: %s", self.name, e)
@@ -265,20 +263,17 @@ class ExtractFrames(SuccessFailureNode):
         return str(video_input) if video_input else None
 
     def _update_frame_range_max(self, max_frame: float, total_frames: int) -> None:
-        """Update frame_range max value and adjust current range if needed."""
+        """Update frame_range max constraint only.
+
+        This only updates the max_val of the ParameterRange parameter.
+        It does NOT modify the actual frame_range value to preserve user's selection.
+        """
         frame_range_param = self.get_parameter_by_name("frame_range")
         if not frame_range_param or not isinstance(frame_range_param, ParameterRange):
             return
 
         frame_range_param.max_val = max_frame
         logger.info("%s updated frame_range max to %.0f (video has %d frames)", self.name, max_frame, total_frames)
-
-        # Adjust current range if it exceeds new max
-        current_range = self.get_parameter_value("frame_range") or [0.0, 100.0]
-        if isinstance(current_range, list) and len(current_range) == FRAME_RANGE_LENGTH:
-            adjusted_range = self._adjust_range_to_max(current_range, max_frame)
-            if adjusted_range != current_range:
-                self.set_parameter_value("frame_range", adjusted_range)
 
     def _adjust_range_to_max(self, frame_range: list[float], max_frame: float) -> list[float]:
         """Adjust range end if it exceeds max."""
