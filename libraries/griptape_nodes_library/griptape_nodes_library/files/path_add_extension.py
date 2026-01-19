@@ -7,9 +7,10 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes_library.utils.frame_number_mixin import FrameNumberMixin
 
 
-class PathAddExtension(DataNode):
+class PathAddExtension(FrameNumberMixin, DataNode):
     """Add or replace a file extension on a path."""
 
     def __init__(
@@ -53,6 +54,9 @@ class PathAddExtension(DataNode):
                 tooltip="If True, remove query parameters from the path. If False, keep query parameters but change the extension.",
             )
         )
+
+        # Add frame number parameters via mixin
+        self._add_frame_number_parameters()
 
         # Add output parameter for the modified path
         self.add_parameter(
@@ -114,6 +118,9 @@ class PathAddExtension(DataNode):
             # Build output path
             output_path = str(new_path_obj)
 
+            # Apply frame number padding if enabled
+            output_path = self._apply_frame_number_if_enabled(output_path)
+
             # Add query parameters back if not stripping
             if not strip_query_params and query_params:
                 output_path = f"{output_path}{query_params}"
@@ -124,9 +131,13 @@ class PathAddExtension(DataNode):
         self.parameter_output_values["output"] = output_path
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name in ("path", "extension", "strip_query_params"):
+        # Handle frame number parameter visibility
+        self._handle_frame_number_parameter_change(parameter, value)
+
+        if parameter.name in ("path", "extension", "strip_query_params", "add_frame_number", "frame_number", "padding", "separator"):
             self._add_extension()
         return super().after_value_set(parameter, value)
+
 
     def process(self) -> None:
         # Add the extension

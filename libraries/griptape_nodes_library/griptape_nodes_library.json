@@ -1091,6 +1091,17 @@
       }
     },
     {
+      "class_name": "ExtractFrameNumber",
+      "file_path": "griptape_nodes_library/video/extract_frame_number.py",
+      "metadata": {
+        "category": "video",
+        "description": "Extract frame number from a filename, outputting both integer and padded string formats",
+        "display_name": "Extract Frame Number",
+        "icon": "hash",
+        "group": "describe"
+      }
+    },
+    {
       "class_name": "CombineFrames",
       "file_path": "griptape_nodes_library/video/combine_frames.py",
       "metadata": {

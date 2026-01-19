@@ -12,13 +12,14 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 # static_ffmpeg is dynamically installed by the library loader at runtime
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
@@ -75,8 +76,8 @@ class ExtractFrames(SuccessFailureNode):
             )
         )
 
-        # Extraction mode dropdown
-        self.add_parameter(
+        with ParameterGroup(name="Extraction Options") as extraction_options_group:
+            # Extraction mode dropdown
             ParameterString(
                 name="extraction_mode",
                 default_value=EXTRACTION_MODES[0],
@@ -84,10 +85,27 @@ class ExtractFrames(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=EXTRACTION_MODES)},
             )
-        )
 
-        # Frame range selector using ParameterRange (frame-based)
-        self.add_parameter(
+            # Frame range selector using ParameterRange (frame-based)
+            # Frame list string field (shown when mode is "List")
+            ParameterString(
+                name="frame_list",
+                default_value="",
+                tooltip='Comma or space-separated frame numbers or ranges (e.g., "1, 2, 3, 5-8, 14 27")',
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                placeholder_text="1, 2, 3, 5-8, 14 27",
+                hide=True,
+            )
+
+            # Step integer field (shown when mode is "Step")
+            ParameterInt(
+                name="step",
+                default_value=DEFAULT_STEP,
+                tooltip="Extract every Nth frame (e.g., 2 = every 2nd frame)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=True,
+            )
+
             ParameterRange(
                 name="frame_range",
                 default_value=[0.0, 100.0],
@@ -101,74 +119,8 @@ class ExtractFrames(SuccessFailureNode):
                 max_label="end frame",
                 hide_range_labels=False,
             )
-        )
 
-        # Frame list string field (shown when mode is "List")
-        self.add_parameter(
-            ParameterString(
-                name="frame_list",
-                default_value="",
-                tooltip='Comma or space-separated frame numbers or ranges (e.g., "1, 2, 3, 5-8, 14 27")',
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                placeholder_text="1, 2, 3, 5-8, 14 27",
-                hide=True,
-            )
-        )
-
-        # Step integer field (shown when mode is "Step")
-        self.add_parameter(
-            ParameterInt(
-                name="step",
-                default_value=DEFAULT_STEP,
-                tooltip="Extract every Nth frame (e.g., 2 = every 2nd frame)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                hide=True,
-            )
-        )
-
-        # Output folder parameter
-        self.add_parameter(
-            ParameterString(
-                name="output_folder",
-                default_value="frames",
-                tooltip="Folder to save extracted frames (relative to static files location)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        # Format dropdown
-        self.add_parameter(
-            ParameterString(
-                name="format",
-                default_value=FORMAT_OPTIONS[0],
-                tooltip="Output image format",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=FORMAT_OPTIONS)},
-            )
-        )
-
-        # Overwrite files option
-        self.add_parameter(
-            ParameterBool(
-                name="overwrite_files",
-                default_value=False,
-                tooltip="Whether to overwrite existing files",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        # Filename pattern
-        self.add_parameter(
-            ParameterString(
-                name="filename_pattern",
-                default_value=DEFAULT_FILENAME_PATTERN,
-                tooltip='Filename pattern with #### for frame number (e.g., "extract.####.jpg")',
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        # Frame numbering option
-        self.add_parameter(
+            # Frame numbering option
             ParameterString(
                 name="frame_numbering",
                 default_value=FRAME_NUMBERING_OPTIONS[0],
@@ -176,17 +128,56 @@ class ExtractFrames(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=FRAME_NUMBERING_OPTIONS)},
             )
-        )
 
-        # Remove previous frames option
-        self.add_parameter(
+        self.add_node_element(extraction_options_group)
+
+        with ParameterGroup(name="Output Options") as output_options_group:
+            # Output folder parameter
+            # Filename pattern
+            ParameterString(
+                name="filename_pattern",
+                default_value=DEFAULT_FILENAME_PATTERN,
+                tooltip='Filename pattern with #### for frame number (e.g., "extract.####.jpg")',
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+            ParameterString(
+                name="output_folder",
+                default_value="frames",
+                tooltip="Folder to save extracted frames (relative to static files location)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                placeholder_text="extracted_frames",
+                traits={FileSystemPicker(allow_directories=True, allow_create=True, allow_files=False)},
+            )
+
+            # Format dropdown
+            ParameterString(
+                name="format",
+                default_value=FORMAT_OPTIONS[0],
+                tooltip="Output image format",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=FORMAT_OPTIONS)},
+            )
+
+        self.add_node_element(output_options_group)
+
+        with ParameterGroup(name="File Options") as overwrite_options_group:
+            # Overwrite files option
+            ParameterBool(
+                name="overwrite_files",
+                default_value=True,
+                tooltip="Whether to overwrite existing files",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            # Remove previous frames option
             ParameterBool(
                 name="remove_previous_frames",
                 default_value=False,
                 tooltip="Remove previously generated frames in output folder before extracting",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
+
+        self.add_node_element(overwrite_options_group)
 
         # OUTPUTS
         self.add_parameter(

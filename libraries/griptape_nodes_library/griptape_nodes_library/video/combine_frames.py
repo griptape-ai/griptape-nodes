@@ -7,7 +7,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
+import httpx
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -52,13 +54,13 @@ class CombineFrames(SuccessFailureNode):
 
         # INPUTS / PROPERTIES
 
-        # Frames input - can be list of paths or directory path
+        # Frames input - can be list of paths, ImageUrlArtifacts, or directory path
         self.add_parameter(
             Parameter(
                 name="frames_input",
-                input_types=["list", "str"],
+                input_types=["list", "str", "ImageUrlArtifact"],
                 type="str",
-                tooltip="List of frame file paths OR directory path containing frames",
+                tooltip="List of frame file paths, ImageUrlArtifacts, OR directory path containing frames",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "frames or directory"},
             )
@@ -216,19 +218,15 @@ class CombineFrames(SuccessFailureNode):
             self._handle_failure_exception(RuntimeError(error_msg))
 
     def _get_frame_paths(self, frames_input: Any) -> list[Path]:
-        """Get list of frame file paths from input (list or directory)."""
+        """Get list of frame file paths from input (list of paths/ImageUrlArtifacts or directory path)."""
         frame_paths = []
 
         if isinstance(frames_input, list):
-            # Input is a list of file paths
+            # Input is a list of file paths or ImageUrlArtifacts
             for item in frames_input:
-                if isinstance(item, str):
-                    path = Path(item)
-                    if path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                        frame_paths.append(path)
-                elif isinstance(item, Path):
-                    if item.exists() and item.is_file() and item.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                        frame_paths.append(item)
+                path = self._extract_path_from_item(item)
+                if path and path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
+                    frame_paths.append(path)
 
         elif isinstance(frames_input, str):
             # Input is a directory path
@@ -246,9 +244,111 @@ class CombineFrames(SuccessFailureNode):
                     frame_paths.extend(input_path.glob(f"*{ext}"))
                     frame_paths.extend(input_path.glob(f"*{ext.upper()}"))
 
+        elif isinstance(frames_input, ImageUrlArtifact):
+            # Single ImageUrlArtifact
+            path = self._extract_path_from_item(frames_input)
+            if path and path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
+                frame_paths.append(path)
+
         # Sort by filename for consistent ordering
         frame_paths.sort(key=lambda p: p.name)
         return frame_paths
+
+    def _extract_path_from_item(self, item: Any) -> Path | None:
+        """Extract file path from various input types (str, Path, ImageUrlArtifact)."""
+        if isinstance(item, str):
+            # Resolve localhost URLs to workspace paths
+            resolved = self._resolve_localhost_url_to_path(item)
+            return Path(resolved)
+
+        if isinstance(item, Path):
+            return item
+
+        if isinstance(item, ImageUrlArtifact):
+            # Extract URL/path from ImageUrlArtifact
+            url_or_path = item.value
+            if not url_or_path:
+                return None
+
+            if not isinstance(url_or_path, str):
+                return Path(str(url_or_path))
+
+            # Check if it's a localhost URL - resolve to workspace path
+            if url_or_path.startswith(("http://localhost:", "https://localhost:")):
+                resolved_path = self._resolve_localhost_url_to_path(url_or_path)
+                workspace_path = GriptapeNodes.ConfigManager().workspace_path
+                full_path = workspace_path / resolved_path
+                if full_path.exists():
+                    return full_path
+                # If resolved path doesn't exist, try as relative path
+                return Path(resolved_path)
+
+            # If it's an external URL, download it to a temp file
+            if url_or_path.startswith(("http://", "https://")):
+                return self._download_url_to_temp_file(url_or_path)
+
+            # Otherwise treat as file path
+            return Path(url_or_path)
+
+        return None
+
+    def _resolve_localhost_url_to_path(self, url: str) -> str:
+        """Resolve localhost static file URLs to workspace file paths.
+
+        Converts URLs like http://localhost:8124/workspace/static_files/file.jpg
+        to actual workspace file paths like static_files/file.jpg
+
+        Args:
+            url: URL string that may be a localhost URL
+
+        Returns:
+            Resolved file path relative to workspace, or original string if not a localhost URL
+        """
+        if not isinstance(url, str):
+            return url
+
+        # Strip query parameters (cachebuster ?t=...)
+        if "?" in url:
+            url = url.split("?")[0]
+
+        # Check if it's a localhost URL (any port)
+        if url.startswith(("http://localhost:", "https://localhost:")):
+            parsed = urlparse(url)
+            # Extract path after /workspace/
+            if "/workspace/" in parsed.path:
+                workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
+                return workspace_relative_path
+
+        # Not a localhost workspace URL, return as-is
+        return url
+
+    def _download_url_to_temp_file(self, url: str) -> Path | None:
+        """Download image from URL to temporary file."""
+        try:
+            # Create temp file with appropriate extension
+            # Try to determine extension from URL or default to .jpg
+            ext = ".jpg"
+            for supported_ext in SUPPORTED_IMAGE_EXTENSIONS:
+                if supported_ext in url.lower():
+                    ext = supported_ext
+                    break
+
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+                temp_path = Path(temp_file.name)
+
+            # Download the image
+            with httpx.Client(timeout=60) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                temp_path.write_bytes(response.content)
+
+            logger.debug("%s downloaded image from URL to temp file: %s", self.name, temp_path)
+            return temp_path
+
+        except Exception as e:
+            logger.warning("%s failed to download image from URL %s: %s", self.name, url, e)
+            return None
 
     def _process_respect_frame_numbers(self, frame_paths: list[Path]) -> list[Path]:
         """Process frames respecting frame numbers, duplicating to fill gaps."""
@@ -281,8 +381,7 @@ class CombineFrames(SuccessFailureNode):
 
                 # If gap > 1, duplicate current frame to fill gap
                 if gap > 1:
-                    for _ in range(gap - 1):
-                        processed_frames.append(frame_path)
+                    processed_frames.extend([frame_path] * (gap - 1))
 
         return processed_frames
 
