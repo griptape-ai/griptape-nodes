@@ -239,6 +239,33 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
+def _normalize_library_entry(entry: str | dict[str, Any]) -> tuple[str, bool]:
+    """Normalize a library entry to (path, enabled) tuple.
+
+    Args:
+        entry: Either a string path or dict with library_name and enabled keys
+
+    Returns:
+        Tuple of (library_path, enabled). Strings are implicitly enabled=True.
+    """
+    if isinstance(entry, str):
+        return entry, True
+    if isinstance(entry, dict):
+        library_name = entry.get("library_name", "")
+        enabled = entry.get("enabled", True)
+        return library_name, enabled
+    return "", False
+
+
+def _is_library_in_config(library_path: str, libraries_to_register: list[str | dict[str, Any]]) -> bool:
+    """Check if a library path is already in the config (string or dict format)."""
+    for entry in libraries_to_register:
+        path, _ = _normalize_library_entry(entry)
+        if path == library_path:
+            return True
+    return False
+
+
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
@@ -2385,13 +2412,33 @@ class LibraryManager:
             target_directory_name = extract_repo_name_from_url(git_url)
             target_path = libraries_path / target_directory_name
 
-            # Skip if already exists
+            # Skip download if already exists, but ensure it's registered
             if target_path.exists():
-                logger.info("Library at '%s' already exists, skipping", target_path)
+                logger.info("Library at '%s' already exists, skipping download", target_path)
+
+                # Find and register the existing library so it gets loaded
+                library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
+                if library_json_path:
+                    # Add to libraries_to_register if not already there
+                    libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
+                    library_json_str = str(library_json_path)
+                    if not _is_library_in_config(library_json_str, libraries_to_register):
+                        # Add as dict format with enabled=True
+                        libraries_to_register.append({"library_name": library_json_str, "enabled": True})
+                        config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
+                        logger.info("Added existing library '%s' to config for registration", library_json_str)
+
+                    return git_url_with_ref, {
+                        "success": True,
+                        "library_name": target_directory_name,
+                        "error": None,
+                        "skipped": True,
+                    }
+                logger.warning("Library directory exists but no griptape_nodes_library.json found: %s", target_path)
                 return git_url_with_ref, {
                     "success": False,
                     "library_name": None,
-                    "error": None,
+                    "error": "Library directory exists but missing griptape_nodes_library.json",
                     "skipped": True,
                 }
 
@@ -3247,7 +3294,11 @@ class LibraryManager:
 
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
-        for library_path_str in config_libraries:
+        for entry in config_libraries:
+            library_path_str, enabled = _normalize_library_entry(entry)
+            # Skip disabled libraries
+            if not enabled:
+                continue
             # Filter out falsy values that will resolve to current directory
             if library_path_str:
                 library_path = Path(library_path_str)
