@@ -25,55 +25,6 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import validate_url
 
 
-def default_extract_url_from_artifact_value(
-    artifact_value: Any, artifact_classes: type | tuple[type, ...]
-) -> str | None:
-    """Default implementation to extract URL from any artifact parameter value.
-
-    This function provides the standard pattern for extracting URLs from artifact values
-    that can be in dict, artifact object, or string format. Users can override this
-    behavior by providing their own extract_url_func in ArtifactTetheringConfig.
-
-    Args:
-        artifact_value: The artifact value (dict, artifact object, or string)
-        artifact_classes: The artifact class(es) to check for (e.g., ImageUrlArtifact, VideoUrlArtifact)
-
-    Returns:
-        The extracted URL or None if no value is present
-
-    Raises:
-        ValueError: If the artifact value type is not supported
-    """
-    if not artifact_value:
-        return None
-
-    match artifact_value:
-        # Handle dictionary format (most common)
-        case dict():
-            url = artifact_value.get("value")
-        # Handle artifact objects - use isinstance for type safety
-        case _ if isinstance(artifact_value, artifact_classes):
-            url = artifact_value.value
-        # Handle raw strings
-        case str():
-            url = artifact_value
-        case _:
-            # Generate error message with expected class names
-            if isinstance(artifact_classes, tuple):
-                class_names = [cls.__name__ for cls in artifact_classes]
-            else:
-                class_names = [artifact_classes.__name__]
-
-            expected_types = f"dict, {', '.join(class_names)}, or str"
-            error_msg = f"Unsupported artifact value type: {type(artifact_value).__name__}. Expected: {expected_types}"
-            raise ValueError(error_msg)
-
-    if not url:
-        return None
-
-    return url
-
-
 @dataclass(eq=False)
 class ArtifactPathValidator(Trait):
     """Generic validator trait for artifact paths (file paths or URLs).
