@@ -842,7 +842,7 @@ wheels = [
 
 [[package]]
 name = "mdformat-mkdocs"
-version = "5.1.2"
+version = "5.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mdformat" },
@@ -850,9 +850,9 @@ dependencies = [
     { name = "mdit-py-plugins" },
     { name = "more-itertools" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/d1/0151fa9f2e6c9ac1007369e23310d98527de04296eba52336674e057b194/mdformat_mkdocs-5.1.2.tar.gz", hash = "sha256:c67057c401a66d01f4fcd42b20ee294ca926298bd2fda7a20f87c4597ddeaf0d", size = 27756, upload-time = "2026-01-06T02:58:59.795Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/06/7b18d6a9f0d014d46904eb064f0baf363ce05b07dae659d5aec7699f3227/mdformat_mkdocs-5.1.3.tar.gz", hash = "sha256:228f55eb1af4e4d616d1f1fecb8872163eb2f8ad594cca6869fad730847e5464", size = 27885, upload-time = "2026-01-12T12:13:15.744Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/b1/06816f55df30f6f22f2787c0d21989c77a07f2b215a5eec30cb07c315256/mdformat_mkdocs-5.1.2-py3-none-any.whl", hash = "sha256:08cdc80741fbb49215f322d65cd6d197a19212bd70712999f7c0516e3adf9ff2", size = 37970, upload-time = "2026-01-06T02:58:58.402Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/a8/f9bed965d060d74b00b503ecd30765277d5c00e8de9c737f5560f0bc01cd/mdformat_mkdocs-5.1.3-py3-none-any.whl", hash = "sha256:baa3a4f8a5277d6affa5a064038601a69d378acadfa5c66f67b3239fdb17201b", size = 38087, upload-time = "2026-01-12T12:13:14.514Z" },
 ]
 
 [[package]]
