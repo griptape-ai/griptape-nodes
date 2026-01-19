@@ -12,13 +12,20 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 # static_ffmpeg is dynamically installed by the library loader at runtime
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import NodeResolutionState, SuccessFailureNode
+from griptape_nodes.exe_types.core_types import (
+    NodeMessageResult,
+    Parameter,
+    ParameterGroup,
+    ParameterMode,
+)
+from griptape_nodes.exe_types.node_types import AsyncResult, NodeResolutionState, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 
@@ -75,6 +82,29 @@ class ExtractFrames(SuccessFailureNode):
                 ui_options={"display_name": "input video"},
             )
         )
+
+        # Video details display and refresh button
+        with ParameterGroup(name="Video Information") as video_info_group:
+            ParameterString(
+                name="video_details",
+                default_value="No video loaded",
+                tooltip="Video information: FPS, frame count, and frame range",
+                allowed_modes={ParameterMode.PROPERTY},
+                multiline=True,
+                allow_input=False,
+                allow_property=False,
+                placeholder_text="Video details will appear here...",
+            )
+
+            ParameterButton(
+                name="refresh_video_details",
+                label="Refresh Video Details",
+                variant="secondary",
+                icon="refresh-cw",
+                on_click=self._refresh_video_details,
+            )
+
+        self.add_node_element(video_info_group)
 
         with ParameterGroup(name="Extraction Options") as extraction_options_group:
             # Extraction mode dropdown
@@ -220,6 +250,8 @@ class ExtractFrames(SuccessFailureNode):
         # Only update if not currently executing (to avoid modifying user's frame range during execution)
         if parameter.name == "video" and self.state != NodeResolutionState.RESOLVING:
             self._update_frame_range_from_video(value)
+            # Update video details when video changes
+            self._update_video_details()
 
     def _update_frame_range_from_video(self, video_input: Any) -> None:
         """Update the frame_range parameter's max value based on video frame count.
@@ -262,6 +294,99 @@ class ExtractFrames(SuccessFailureNode):
             return video_input.value
         return str(video_input) if video_input else None
 
+    def _get_video_fps(self, video_url: str) -> float | None:
+        """Get video frame rate (FPS) using ffprobe."""
+        try:
+            _, ffprobe_path = run.get_or_fetch_platform_executables_else_raise()
+
+            cmd = [
+                ffprobe_path,
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-select_streams",
+                "v:0",
+                video_url,
+            ]
+
+            result = subprocess.run(  # noqa: S603
+                cmd, capture_output=True, text=True, check=True, timeout=30
+            )
+
+            stream_data = json.loads(result.stdout)
+            streams = stream_data.get("streams", [])
+            if not streams:
+                return None
+
+            video_stream = streams[0]
+            r_frame_rate_str = video_stream.get("r_frame_rate", "30/1")
+
+            if "/" in r_frame_rate_str:
+                num, den = map(int, r_frame_rate_str.split("/"))
+                return num / den if den != 0 else None
+            return float(r_frame_rate_str)
+
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+            json.JSONDecodeError,
+            ValueError,
+            KeyError,
+        ):
+            return None
+
+    def _update_video_details(self) -> None:
+        """Update the video_details parameter with current video information."""
+        video = self.get_parameter_value("video")
+        if not video:
+            self.set_parameter_value("video_details", "No video loaded")
+            return
+
+        video_url = self._extract_video_url(video)
+        if not video_url:
+            self.set_parameter_value("video_details", "Could not extract video URL")
+            return
+
+        # Get video information
+        frame_count = self._get_video_frame_count(video_url)
+        fps = self._get_video_fps(video_url)
+        frame_range = self.get_parameter_value("frame_range") or [0.0, 100.0]
+
+        # Build details string
+        details_lines = []
+        if fps is not None:
+            details_lines.append(f"Frame Rate (FPS): {fps:.2f}")
+        else:
+            details_lines.append("Frame Rate (FPS): Unknown")
+
+        if frame_count is not None:
+            details_lines.append(f"Total Frames: {frame_count}")
+            details_lines.append(f"Frame Range: 0 - {frame_count - 1}")
+        else:
+            details_lines.append("Total Frames: Unknown")
+            details_lines.append("Frame Range: Unknown")
+
+        if isinstance(frame_range, list) and len(frame_range) == 2:
+            start_frame = int(frame_range[0])
+            end_frame = int(frame_range[1])
+            details_lines.append(f"Selected Range: {start_frame} - {end_frame}")
+
+        details_text = "\n".join(details_lines)
+        self.set_parameter_value("video_details", details_text)
+        self.publish_update_to_parameter("video_details", details_text)
+
+    def _refresh_video_details(self, _button: Button, _details: ButtonDetailsMessagePayload) -> NodeMessageResult:
+        """Refresh video details when button is clicked."""
+        self._update_video_details()
+        return NodeMessageResult(
+            success=True,
+            details="Video details refreshed",
+            response=None,
+            altered_workflow_state=False,
+        )
+
     def _update_frame_range_max(self, max_frame: float, total_frames: int) -> None:
         """Update frame_range max constraint only.
 
@@ -290,10 +415,17 @@ class ExtractFrames(SuccessFailureNode):
         return [start_frame, new_end]
 
     def _get_video_frame_count(self, video_url: str) -> int | None:
-        """Extract video frame count using ffprobe."""
+        """Extract video frame count using ffprobe.
+
+        Tries multiple methods in order of accuracy:
+        1. nb_frames from stream (most accurate)
+        2. Count frames using -count_frames (accurate but slower)
+        3. Calculate from duration * frame_rate (least accurate, fallback)
+        """
         try:
             _, ffprobe_path = run.get_or_fetch_platform_executables_else_raise()
 
+            # First try: Get nb_frames from stream metadata
             cmd = [
                 ffprobe_path,
                 "-v",
@@ -317,15 +449,43 @@ class ExtractFrames(SuccessFailureNode):
 
             video_stream = streams[0]
 
-            # Try to get nb_frames directly
+            # Try to get nb_frames directly (most accurate)
             nb_frames_str = video_stream.get("nb_frames")
             if nb_frames_str:
                 try:
-                    return int(nb_frames_str)
+                    frame_count = int(nb_frames_str)
+                    logger.debug("%s got frame count from nb_frames: %d", self.name, frame_count)
+                    return frame_count
                 except (ValueError, TypeError):
                     pass
 
-            # Calculate from duration and frame rate if nb_frames not available
+            # Second try: Count frames explicitly (accurate but slower)
+            try:
+                count_cmd = [
+                    ffprobe_path,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-count_frames",
+                    "-show_entries",
+                    "stream=nb_read_frames",
+                    "-of",
+                    "default=nokey=1:noprint_wrapper=1",
+                    video_url,
+                ]
+                count_result = subprocess.run(  # noqa: S603
+                    count_cmd, capture_output=True, text=True, check=True, timeout=60
+                )
+                frame_count_str = count_result.stdout.strip()
+                if frame_count_str and frame_count_str.isdigit():
+                    frame_count = int(frame_count_str)
+                    logger.debug("%s got frame count from -count_frames: %d", self.name, frame_count)
+                    return frame_count
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, TypeError):
+                logger.debug("%s -count_frames method failed, trying duration calculation", self.name)
+
+            # Third try: Calculate from duration and frame rate (fallback, less accurate)
             duration_str = video_stream.get("duration")
             r_frame_rate_str = video_stream.get("r_frame_rate", "30/1")
 
@@ -339,9 +499,16 @@ class ExtractFrames(SuccessFailureNode):
                         frame_rate = float(r_frame_rate_str)
 
                     frame_count = int(duration * frame_rate)
+                    logger.warning(
+                        "%s calculated frame count from duration*FPS: %d (may be inaccurate). Duration: %.2f, FPS: %.2f",
+                        self.name,
+                        frame_count,
+                        duration,
+                        frame_rate,
+                    )
                     return frame_count
                 except (ValueError, TypeError, ZeroDivisionError):
-                    return None
+                    pass
 
             return None
 
@@ -355,7 +522,7 @@ class ExtractFrames(SuccessFailureNode):
             logger.debug("%s ffprobe failed to extract frame count: %s", self.name, e)
             return None
 
-    def process(self) -> None:
+    def process(self) -> AsyncResult[None]:
         """Process method to extract frames from video."""
         self._clear_execution_status()
         logger.info("%s starting frame extraction", self.name)
@@ -382,14 +549,9 @@ class ExtractFrames(SuccessFailureNode):
         if params is None:
             return
 
-        # Extract frames
+        # Extract frames asynchronously (subprocess calls are blocking)
         try:
-            frame_paths = self._perform_extraction(video_url, params)
-            self.parameter_output_values["frame_paths"] = frame_paths
-            result_details = f"Successfully extracted {len(frame_paths)} frames to {params['output_folder']}"
-            self._set_status_results(was_successful=True, result_details=result_details)
-            logger.info("%s extracted %d frames successfully", self.name, len(frame_paths))
-
+            yield lambda: self._perform_extraction_async(video_url, params)
         except Exception as e:
             self._set_safe_defaults()
             error_msg = f"{self.name} failed to extract frames: {e}"
@@ -397,10 +559,46 @@ class ExtractFrames(SuccessFailureNode):
             logger.error("%s extraction failed: %s", self.name, e)
             self._handle_failure_exception(RuntimeError(error_msg))
 
+    def _perform_extraction_async(self, video_url: str, params: dict[str, Any]) -> None:
+        """Perform the actual frame extraction (blocking operation)."""
+        # Get output directory
+        output_dir = self._get_output_directory(params["output_folder"])
+
+        # Remove previous frames if requested
+        if params["remove_previous_frames"]:
+            self._remove_previous_frames(output_dir, params["filename_pattern"])
+
+        # Extract frames
+        frame_paths = self._extract_frames(
+            video_url=video_url,
+            frame_numbers=params["frames_to_extract"],
+            output_dir=output_dir,
+            format_type=params["format_type"],
+            filename_pattern=params["filename_pattern"],
+            frame_numbering=params["frame_numbering"],
+            overwrite_files=params["overwrite_files"],
+        )
+
+        # Set results after extraction completes
+        self.parameter_output_values["frame_paths"] = frame_paths
+        result_details = f"Successfully extracted {len(frame_paths)} frames to {params['output_folder']}"
+        self._set_status_results(was_successful=True, result_details=result_details)
+        logger.info("%s extracted %d frames successfully", self.name, len(frame_paths))
+
     def _get_and_validate_parameters(self, video_url: str | None = None) -> dict[str, Any] | None:
         """Get and validate all parameters."""
         extraction_mode = self.get_parameter_value("extraction_mode") or EXTRACTION_MODES[0]
-        frame_range = self.get_parameter_value("frame_range") or [0.0, 100.0]
+
+        # Get frame_range - be explicit about None vs empty list
+        frame_range_raw = self.get_parameter_value("frame_range")
+        if frame_range_raw is None:
+            # Parameter not set, use default
+            frame_range = [0.0, 100.0]
+        else:
+            frame_range = frame_range_raw
+
+        logger.debug("%s read frame_range value: %s (type: %s)", self.name, frame_range, type(frame_range).__name__)
+
         frame_list_str = self.get_parameter_value("frame_list") or ""
         step = self.get_parameter_value("step") or DEFAULT_STEP
         output_folder = self.get_parameter_value("output_folder") or "frames"
@@ -493,26 +691,6 @@ class ExtractFrames(SuccessFailureNode):
             "frame_numbering": frame_numbering,
             "remove_previous_frames": remove_previous_frames,
         }
-
-    def _perform_extraction(self, video_url: str, params: dict[str, Any]) -> list[str]:
-        """Perform the actual frame extraction."""
-        # Get output directory
-        output_dir = self._get_output_directory(params["output_folder"])
-
-        # Remove previous frames if requested
-        if params["remove_previous_frames"]:
-            self._remove_previous_frames(output_dir, params["filename_pattern"])
-
-        # Extract frames
-        return self._extract_frames(
-            video_url=video_url,
-            frame_numbers=params["frames_to_extract"],
-            output_dir=output_dir,
-            format_type=params["format_type"],
-            filename_pattern=params["filename_pattern"],
-            frame_numbering=params["frame_numbering"],
-            overwrite_files=params["overwrite_files"],
-        )
 
     def _determine_frames_to_extract(
         self, extraction_mode: str, frame_list_str: str, step: int, start_frame: int, end_frame: int

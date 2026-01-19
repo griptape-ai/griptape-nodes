@@ -236,6 +236,25 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
                 self._set_status_results(was_successful=False, result_details=msg)
                 return
 
+        # Create parent directory of new_path if it doesn't exist
+        new_path_obj = Path(new_path)
+        parent_dir = new_path_obj.parent
+        if parent_dir and not parent_dir.exists():
+            try:
+                parent_dir.mkdir(parents=True, exist_ok=True)
+            except PermissionError as e:
+                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
+                self.set_parameter_value(self.old_path_output.name, "")
+                self.set_parameter_value(self.new_path_output.name, "")
+                self._set_status_results(was_successful=False, result_details=msg)
+                return
+            except OSError as e:
+                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
+                self.set_parameter_value(self.old_path_output.name, "")
+                self.set_parameter_value(self.new_path_output.name, "")
+                self._set_status_results(was_successful=False, result_details=msg)
+                return
+
         # SUCCESS PATH AT END: Execute rename
         rename_request = RenameFileRequest(old_path=old_path, new_path=new_path, workspace_only=False)
         rename_result = GriptapeNodes.handle_request(rename_request)

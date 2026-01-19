@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import httpx
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+from PIL import Image
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
 from static_ffmpeg import run  # type: ignore[import-untyped]
@@ -217,6 +218,24 @@ class CombineFrames(SuccessFailureNode):
             logger.error("%s combination failed: %s", self.name, e)
             self._handle_failure_exception(RuntimeError(error_msg))
 
+    def _validate_image_file(self, image_path: Path) -> bool:
+        """Validate that an image file is readable and not corrupted."""
+        if not image_path.exists() or not image_path.is_file():
+            return False
+
+        if image_path.stat().st_size == 0:
+            logger.warning("%s skipping empty image file: %s", self.name, image_path)
+            return False
+
+        try:
+            # Try to open and verify the image
+            with Image.open(image_path) as img:
+                img.verify()  # Verify that it's a valid image
+            return True
+        except Exception as e:
+            logger.warning("%s skipping invalid/corrupted image file %s: %s", self.name, image_path, e)
+            return False
+
     def _get_frame_paths(self, frames_input: Any) -> list[Path]:
         """Get list of frame file paths from input (list of paths/ImageUrlArtifacts or directory path)."""
         frame_paths = []
@@ -226,7 +245,8 @@ class CombineFrames(SuccessFailureNode):
             for item in frames_input:
                 path = self._extract_path_from_item(item)
                 if path and path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                    frame_paths.append(path)
+                    if self._validate_image_file(path):
+                        frame_paths.append(path)
 
         elif isinstance(frames_input, str):
             # Input is a directory path
@@ -237,18 +257,24 @@ class CombineFrames(SuccessFailureNode):
             if input_path.is_file():
                 # Single file
                 if input_path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                    frame_paths.append(input_path)
+                    if self._validate_image_file(input_path):
+                        frame_paths.append(input_path)
             elif input_path.is_dir():
                 # Directory - find all image files
                 for ext in SUPPORTED_IMAGE_EXTENSIONS:
-                    frame_paths.extend(input_path.glob(f"*{ext}"))
-                    frame_paths.extend(input_path.glob(f"*{ext.upper()}"))
+                    found_paths = list(input_path.glob(f"*{ext}"))
+                    found_paths.extend(input_path.glob(f"*{ext.upper()}"))
+                    # Validate each found image
+                    for found_path in found_paths:
+                        if self._validate_image_file(found_path):
+                            frame_paths.append(found_path)
 
         elif isinstance(frames_input, ImageUrlArtifact):
             # Single ImageUrlArtifact
             path = self._extract_path_from_item(frames_input)
             if path and path.exists() and path.is_file() and path.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS:
-                frame_paths.append(path)
+                if self._validate_image_file(path):
+                    frame_paths.append(path)
 
         # Sort by filename for consistent ordering
         frame_paths.sort(key=lambda p: p.name)
