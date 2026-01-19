@@ -237,8 +237,17 @@ class ExtractFrames(SuccessFailureNode):
                 return
 
             max_frame = float(max(frame_count - 1, MIN_FRAME_NUMBER))
+
+            # Check if current range is valid before updating
+            current_range = self.get_parameter_value("frame_range")
+            is_invalid_range = not isinstance(current_range, list) or len(current_range) != FRAME_RANGE_LENGTH
+
+            # Update max value and adjust range if needed
             self._update_frame_range_max(max_frame, frame_count)
-            self.set_parameter_value("frame_range", [0, max_frame])
+
+            # Only reset to default if range was invalid, otherwise preserve user's selection
+            if is_invalid_range:
+                self.set_parameter_value("frame_range", [0, max_frame])
 
         except Exception as e:
             logger.warning("%s failed to update frame range from video: %s", self.name, e)
@@ -374,7 +383,7 @@ class ExtractFrames(SuccessFailureNode):
             return
 
         # Get and validate parameters
-        params = self._get_and_validate_parameters()
+        params = self._get_and_validate_parameters(video_url)
         if params is None:
             return
 
@@ -393,7 +402,7 @@ class ExtractFrames(SuccessFailureNode):
             logger.error("%s extraction failed: %s", self.name, e)
             self._handle_failure_exception(RuntimeError(error_msg))
 
-    def _get_and_validate_parameters(self) -> dict[str, Any] | None:
+    def _get_and_validate_parameters(self, video_url: str | None = None) -> dict[str, Any] | None:
         """Get and validate all parameters."""
         extraction_mode = self.get_parameter_value("extraction_mode") or EXTRACTION_MODES[0]
         frame_range = self.get_parameter_value("frame_range") or [0.0, 100.0]
@@ -424,6 +433,31 @@ class ExtractFrames(SuccessFailureNode):
             logger.error("%s validation failed: invalid frame range values", self.name)
             return None
 
+        # Validate frame range against video frame count if video URL is available
+        if video_url:
+            video_frame_count = self._get_video_frame_count(video_url)
+            if video_frame_count is not None:
+                max_frame = video_frame_count - 1
+                if end_frame > max_frame:
+                    logger.warning(
+                        "%s frame range end (%d) exceeds video frame count (%d), clamping to %d",
+                        self.name,
+                        end_frame,
+                        video_frame_count,
+                        max_frame,
+                    )
+                    end_frame = max_frame
+                    if start_frame > end_frame:
+                        start_frame = 0
+
+        logger.info(
+            "%s extracting frames with range [%d, %d] in mode '%s'",
+            self.name,
+            start_frame,
+            end_frame,
+            extraction_mode,
+        )
+
         # Determine which frames to extract
         frames_to_extract = self._determine_frames_to_extract(
             extraction_mode, frame_list_str, step, start_frame, end_frame
@@ -435,6 +469,24 @@ class ExtractFrames(SuccessFailureNode):
             self._set_status_results(was_successful=False, result_details=error_msg)
             logger.error("%s validation failed: no frames to extract", self.name)
             return None
+
+        # Validate all frames are within the range
+        invalid_frames = [f for f in frames_to_extract if f < start_frame or f > end_frame]
+        if invalid_frames:
+            logger.warning(
+                "%s found frames outside range [%d, %d]: %s, filtering them out",
+                self.name,
+                start_frame,
+                end_frame,
+                invalid_frames[:10],
+            )
+            frames_to_extract = [f for f in frames_to_extract if start_frame <= f <= end_frame]
+
+        max_frames_to_show = 10
+        frames_preview = (
+            frames_to_extract[:max_frames_to_show] if len(frames_to_extract) > max_frames_to_show else frames_to_extract
+        )
+        logger.info("%s will extract %d frames: %s", self.name, len(frames_to_extract), frames_preview)
 
         return {
             "extraction_mode": extraction_mode,
@@ -581,6 +633,21 @@ class ExtractFrames(SuccessFailureNode):
 
         frame_paths = []
         renumber = frame_numbering == FRAME_NUMBERING_OPTIONS[1]
+
+        # Safety check: ensure all frame numbers are valid
+        if not frame_numbers:
+            logger.warning("%s no frame numbers provided for extraction", self.name)
+            return []
+
+        max_frame_num = max(frame_numbers)
+        min_frame_num = min(frame_numbers)
+        logger.debug(
+            "%s extracting frames: min=%d, max=%d, total=%d",
+            self.name,
+            min_frame_num,
+            max_frame_num,
+            len(frame_numbers),
+        )
 
         for idx, frame_num in enumerate(frame_numbers):
             # Determine output frame number
