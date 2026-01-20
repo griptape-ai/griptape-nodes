@@ -15,6 +15,9 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -135,10 +138,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="seedream-4.5",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -162,10 +163,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Optional single image input for seededit-3.0-i2i (backwards compatibility)
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip="Input image (required for seededit-3.0-i2i)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -194,10 +193,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Size parameter - will be updated dynamically based on model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="size",
-                input_types=["str"],
-                type="str",
                 default_value="2K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -207,10 +204,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Seed parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="seed",
-                input_types=["int"],
-                type="int",
                 default_value=-1,
                 tooltip="Random seed for reproducible results (-1 for random)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -233,10 +228,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Guidance scale for seedream-3.0-t2i
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="guidance_scale",
-                input_types=["float"],
-                type="float",
                 default_value=2.5,
                 tooltip="Guidance scale (seedream-3.0-t2i only, default: 2.5)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -246,24 +239,21 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
@@ -274,10 +264,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
         for i in range(1, 16):
             param_name = "image_url" if i == 1 else f"image_url_{i}"
             self.add_parameter(
-                Parameter(
+                ParameterImage(
                     name=param_name,
-                    output_type="ImageUrlArtifact",
-                    type="ImageUrlArtifact",
                     tooltip=f"Generated image {i}",
                     allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                     settable=False,

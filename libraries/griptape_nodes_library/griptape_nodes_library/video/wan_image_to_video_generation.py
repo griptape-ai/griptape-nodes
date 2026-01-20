@@ -282,7 +282,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
@@ -294,7 +294,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )

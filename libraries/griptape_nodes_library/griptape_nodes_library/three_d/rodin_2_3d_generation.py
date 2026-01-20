@@ -280,7 +280,7 @@ class Rodin23DGeneration(SuccessFailureNode):
                 type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )

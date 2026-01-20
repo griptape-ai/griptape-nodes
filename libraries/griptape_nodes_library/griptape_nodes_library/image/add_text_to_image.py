@@ -5,8 +5,11 @@ import httpx
 from griptape.artifacts import ImageUrlArtifact
 from PIL import Image, ImageDraw, ImageFont
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
@@ -32,77 +35,67 @@ class AddTextToImage(SuccessFailureNode):
 
         # Image dimensions parameters
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="width",
-                type="int",
                 default_value=512,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Width of the image in pixels",
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="height",
-                type="int",
                 default_value=512,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Height of the image in pixels",
             )
         )
 
         # Background color parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="background_color",
-                type="str",
                 default_value="#000080",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Background color of the image (hex format)",
+                placeholder_text="#000080",
                 traits={ColorPicker(format="hex")},
             )
         )
 
         # Text content parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                type="str",
                 default_value="Hello, world!",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Text to render on the image",
-                ui_options={"multiline": True, "placeholder_text": "Enter text to render on image"},
+                multiline=True,
+                placeholder_text="Enter text to render on image",
             )
         )
 
         # Text color parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text_color",
-                type="str",
                 default_value="#00FFFF",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Color of the text (hex format)",
                 traits={ColorPicker(format="hex")},
+                placeholder_text="#00FFFF",
             )
         )
 
         # Font size parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="font_size",
-                type="int",
                 default_value=36,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Font size in points",
             )
         )
 
         # Image output parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The generated image with text",
                 ui_options={"pulse_on_run": True},

@@ -5,6 +5,7 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -27,14 +28,13 @@ class DisplayMask(DataNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The image to create a mask from",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
-        channel_param = Parameter(
+        channel_param = ParameterString(
             name="channel",
-            type="str",
             tooltip="Channel to extract as mask (red, green, blue, or alpha).",
             default_value="alpha",
             ui_options={"expander": True, "edit_mask": True, "edit_mask_paint_mask": True},
@@ -43,10 +43,8 @@ class DisplayMask(DataNode):
         self.add_parameter(channel_param)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name=self._output_param_name,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Generated mask image.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

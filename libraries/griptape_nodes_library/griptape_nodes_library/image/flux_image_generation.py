@@ -21,6 +21,8 @@ from griptape_nodes.exe_types.param_components.api_key_provider_parameter import
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
@@ -203,32 +205,28 @@ class FluxImageGeneration(SuccessFailureNode):
                 allow_input=False,
                 allow_property=False,
                 allow_output=True,
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -622,20 +620,20 @@ class FluxImageGeneration(SuccessFailureNode):
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(saved_url)
                 self._log(f"Saved image to static storage as {filename}")
                 self._set_status_results(
                     was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
                 )
             else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(image_url)
                 self._set_status_results(
                     was_successful=True,
                     result_details="Image generated successfully. Using provider URL (could not download image bytes).",
                 )
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(image_url)
             self._set_status_results(
                 was_successful=True,
                 result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",

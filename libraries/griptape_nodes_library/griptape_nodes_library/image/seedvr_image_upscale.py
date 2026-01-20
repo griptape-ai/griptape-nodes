@@ -17,7 +17,11 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import normalize_image_input
@@ -47,10 +51,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # INPUTS / PROPERTIES
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value="seedvr2-upscale-image",
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -71,10 +73,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
         # Image URL
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="image_url",
-                input_types=["ImageUrlArtifact", "str"],
-                type="ImageUrlArtifact",
                 default_value="",
                 tooltip="Image URL",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -85,10 +85,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Upscale mode selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="upscale_mode",
-                input_types=["str"],
-                type="str",
                 default_value="factor",
                 tooltip="Upscale mode",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -98,10 +96,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Noise scale selection
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="noise_scale",
-                input_types=["float"],
-                type="float",
                 default_value=0.1,
                 tooltip="Noise scale",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -111,10 +107,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Resolution selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="target_resolution",
-                input_types=["str"],
-                type="str",
                 default_value="1080p",
                 tooltip="Target resolution",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -125,10 +119,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Output format selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output_format",
-                input_types=["str"],
-                type="str",
                 default_value="jpg",
                 tooltip="Output format",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -138,10 +130,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Upscale factor
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="upscale_factor",
-                input_types=["float"],
-                type="float",
                 default_value=2.0,
                 tooltip="The upscale factor",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -167,9 +157,8 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide=True,
@@ -177,26 +166,22 @@ class SeedVRImageUpscale(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Saved image as artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

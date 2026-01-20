@@ -24,16 +24,14 @@ class InvertImage(DataNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The image to invert",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Inverted image.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

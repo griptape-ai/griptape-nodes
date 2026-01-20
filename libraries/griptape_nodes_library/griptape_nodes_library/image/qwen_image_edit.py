@@ -16,6 +16,9 @@ from griptape.artifacts import ImageUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -98,10 +101,8 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="qwen-image-edit-plus",
                 tooltip="Select the Qwen image editing model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -139,27 +140,21 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Negative prompt parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="negative_prompt",
-                input_types=["str"],
-                type="str",
                 default_value="",
                 tooltip="Description of content to avoid (max 500 characters)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe what you don't want in the image...",
-                    "display_name": "Negative Prompt",
-                },
+                multiline=True,
+                placeholder_text="Describe what you don't want in the image...",
+                ui_options={"display_name": "Negative Prompt"},
             )
         )
 
         # Watermark parameter
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="watermark",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add 'Qwen-Image' watermark in bottom-right corner",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -172,33 +167,28 @@ class QwenImageEdit(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

@@ -250,7 +250,7 @@ class KlingImageToVideoGeneration(SuccessFailureNode):
                 type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )

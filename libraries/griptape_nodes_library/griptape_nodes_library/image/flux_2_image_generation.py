@@ -11,7 +11,9 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -223,26 +225,22 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                pulse_on_run=True,
             )
         )
 
@@ -269,7 +267,8 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
         if parameter.name == "model":
             # Map friendly name to API model ID
-            api_model_id = MODEL_MAPPING.get(value, value)
+            model_value = str(value) if value is not None else ""
+            api_model_id = MODEL_MAPPING.get(model_value, model_value)
             if api_model_id == "flux-2-flex":
                 self.show_parameter_by_name("steps")
                 self.show_parameter_by_name("guidance")
@@ -286,7 +285,8 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             str: The API model ID to use in the API request
         """
         model = self.get_parameter_value("model") or DEFAULT_MODEL
-        return MODEL_MAPPING.get(model, model)
+        model_str = str(model) if model is not None else DEFAULT_MODEL
+        return MODEL_MAPPING.get(model_str, model_str)
 
     def _parse_safety_tolerance(self, value: str | None) -> int:
         """Parse safety tolerance integer from preset string value.

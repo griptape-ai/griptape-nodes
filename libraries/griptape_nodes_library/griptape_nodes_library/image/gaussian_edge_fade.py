@@ -7,7 +7,11 @@ from PIL import Image, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.image_utils import (
@@ -32,32 +36,25 @@ class GaussianEdgeFade(DataNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The input image to apply edge fade to",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
         # Fade mode parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="fade_mode",
-                input_types=["str"],
-                type="str",
-                output_type="str",
                 tooltip="How to measure the fade distance: percentage of image size or absolute pixels",
                 default_value="percentage",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 traits={Options(choices=["percentage", "pixels"])},
             )
         )
 
         # Fade distance parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="fade_distance",
-                input_types=["int"],
-                type="int",
-                output_type="int",
                 tooltip="Distance from edge to fade (5 = 5% of image dimension in percentage mode, or 5 pixels in pixel mode)",
                 default_value=5,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -67,11 +64,8 @@ class GaussianEdgeFade(DataNode):
 
         # Blur radius parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="blur_radius",
-                input_types=["int"],
-                type="int",
-                output_type="int",
                 tooltip="Gaussian blur radius for smooth edge transition (higher = softer fade)",
                 default_value=10,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -80,100 +74,69 @@ class GaussianEdgeFade(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="fade_curve",
-                input_types=["float"],
-                type="float",
-                output_type="float",
                 tooltip="Fade curve shape: 1.0=linear, >1.0=more transparent near edges (aggressive fade), <1.0=less transparent near edges (gentle fade)",
                 default_value=2.0,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 traits={Slider(min_val=0.5, max_val=4.0)},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="edge_shape",
-                input_types=["str"],
-                type="str",
-                output_type="str",
                 tooltip="Shape of the fade: square (straight edges) or rounded (curved corners)",
                 default_value="square",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 traits={Options(choices=["square", "rounded"])},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="replace_mask",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
                 tooltip="If False, combines edge fade with existing alpha channel. If True, replaces existing alpha entirely.",
                 default_value=False,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 
         # Edge selection parameters (individual booleans for each edge)
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="apply_top",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
                 tooltip="Apply fade to top edge",
                 default_value=True,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="apply_bottom",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
                 tooltip="Apply fade to bottom edge",
                 default_value=True,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="apply_left",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
                 tooltip="Apply fade to left edge",
                 default_value=True,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="apply_right",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
                 tooltip="Apply fade to right edge",
                 default_value=True,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             )
         )
 
         # Output image parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The processed image with alpha channel edge fade",
-                ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},
             )
         )

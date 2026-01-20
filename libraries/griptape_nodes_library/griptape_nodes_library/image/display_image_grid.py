@@ -5,6 +5,10 @@ from PIL import UnidentifiedImageError
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.color_picker import ColorPicker
@@ -37,9 +41,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.images)
 
         # Layout style parameter
-        self.layout_style = Parameter(
+        self.layout_style = ParameterString(
             name="layout_style",
-            type="str",
             default_value="grid",
             tooltip="Layout style: 'grid' for uniform tiles, 'masonry' for variable heights",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -49,9 +52,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.layout_style)
 
         # Grid justification parameter
-        self.grid_justification = Parameter(
+        self.grid_justification = ParameterString(
             name="grid_justification",
-            type="str",
             default_value="left",
             tooltip="How to justify images in grid layout (grid layout only)",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -60,9 +62,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.grid_justification)
 
         # Grid dimensions
-        self.columns = Parameter(
+        self.columns = ParameterInt(
             name="columns",
-            type="int",
             default_value=4,
             tooltip="Number of columns in the grid",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -73,9 +74,8 @@ class DisplayImageGrid(ControlNode):
 
         # Spacing and styling
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="spacing",
-                type="int",
                 default_value=10,
                 tooltip="Spacing between images in pixels",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -83,9 +83,8 @@ class DisplayImageGrid(ControlNode):
             )
         )
 
-        self.border_radius = Parameter(
+        self.border_radius = ParameterInt(
             name="border_radius",
-            type="int",
             default_value=8,
             tooltip="Border radius for rounded corners (0 for square)",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -94,9 +93,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.border_radius)
 
         # Crop to fit parameter
-        self.crop_to_fit = Parameter(
+        self.crop_to_fit = ParameterBool(
             name="crop_to_fit",
-            type="bool",
             default_value=True,
             tooltip="Crop images to fit perfectly within the grid/masonry for clean borders",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -104,18 +102,16 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.crop_to_fit)
 
         # Transparent background parameter
-        self.transparent_bg = Parameter(
+        self.transparent_bg = ParameterBool(
             name="transparent_bg",
-            type="bool",
             default_value=False,
             tooltip="Use transparent background instead of solid color",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
         )
         self.add_parameter(self.transparent_bg)
 
-        self.background_color = Parameter(
+        self.background_color = ParameterString(
             name="background_color",
-            type="str",
             default_value="#000000",
             tooltip="Background color of the grid (hex color)",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -124,9 +120,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.background_color)
 
         # Output image size mode parameter
-        self.output_image_size = Parameter(
+        self.output_image_size = ParameterString(
             name="output_image_size",
-            type="str",
             default_value="custom",
             tooltip="Use custom width or preset sizes",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -135,9 +130,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.output_image_size)
 
         # Output preset parameter (hidden by default)
-        self.output_preset = Parameter(
+        self.output_preset = ParameterString(
             name="output_preset",
-            type="str",
             default_value="1080p (1920x1080)",
             tooltip="Preset output size",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -148,9 +142,8 @@ class DisplayImageGrid(ControlNode):
         )
         self.add_parameter(self.output_preset)
 
-        self.output_image_width = Parameter(
+        self.output_image_width = ParameterInt(
             name="output_image_width",
-            type="int",
             default_value=1200,
             tooltip="Maximum width of the output image in pixels",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -158,9 +151,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.output_image_width)
 
         # Output format parameter
-        self.output_format = Parameter(
+        self.output_format = ParameterString(
             name="output_format",
-            type="str",
             default_value="png",
             tooltip="Output format for the generated image grid",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -169,9 +161,8 @@ class DisplayImageGrid(ControlNode):
         self.add_parameter(self.output_format)
 
         # Output parameter
-        self.output = Parameter(
+        self.output = ParameterImage(
             name="output",
-            type="ImageUrlArtifact",
             default_value=None,
             tooltip="Generated image grid",
             allowed_modes={ParameterMode.OUTPUT},

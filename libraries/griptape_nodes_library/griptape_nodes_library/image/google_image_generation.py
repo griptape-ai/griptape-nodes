@@ -13,7 +13,9 @@ from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -67,10 +69,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Model ID
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value=next(iter(self.SUPPORTED_MODELS_TO_API_MODELS.keys())),
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -140,10 +140,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Strict image size validation
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="auto_image_resize",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip=f"If disabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If enabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -152,10 +150,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Aspect ratio
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="aspect_ratio",
-                input_types=["str"],
-                type="str",
                 default_value="16:9",
                 tooltip="Aspect ratio for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -165,10 +161,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Image size (resolution)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="image_size",
-                input_types=["str"],
-                type="str",
                 default_value="1K",
                 tooltip="Image size/resolution for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -192,10 +186,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Google Search
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="use_google_search",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Enable Google Search to ground the model's responses",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -204,10 +196,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="First generated image as artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -230,8 +220,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterString(
                 name="text",
-                output_type="str",
-                type="str",
                 tooltip="Text output from the model response",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 multiline=True,

@@ -5,7 +5,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
@@ -29,16 +31,15 @@ class AddBoundingBoxes(BaseImageProcessor):
                 input_types=["dict", "list"],
                 type="dict",
                 tooltip="Single bounding box dict or list of bounding box dicts. Each must have x, y, width, height as integers.",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
         # Box color parameter with color picker
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="box_color",
-                type="str",
                 default_value="#FF0000",
                 tooltip="Color of the bounding box (hex format)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -61,9 +62,8 @@ class AddBoundingBoxes(BaseImageProcessor):
 
         # Show labels parameter
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="show_labels",
-                type="bool",
                 default_value=True,
                 tooltip="Show labels on the bounding boxes",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -71,12 +71,12 @@ class AddBoundingBoxes(BaseImageProcessor):
         )
 
         # Label key parameter with dropdown options
-        label_param = Parameter(
+        label_param = ParameterString(
             name="label_key",
-            type="str",
             default_value="{x}, {y}, width: {width}, height: {height}",
             tooltip="Template for bounding box labels. Use {key} to insert values from the bounding box dict (e.g., {x}, {confidence}).",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            placeholder_text="{x}, {y}, width: {width}, height: {height}",
         )
         self.add_parameter(label_param)
 

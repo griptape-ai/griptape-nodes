@@ -156,7 +156,7 @@ class LTXVideoRetake(SuccessFailureNode):
                 type="dict",
                 tooltip="Response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )

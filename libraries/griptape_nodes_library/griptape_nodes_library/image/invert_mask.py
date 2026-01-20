@@ -24,16 +24,14 @@ class InvertMask(DataNode):
                 name="input_mask",
                 default_value=None,
                 tooltip="The mask to invert",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output_mask",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Inverted mask image.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

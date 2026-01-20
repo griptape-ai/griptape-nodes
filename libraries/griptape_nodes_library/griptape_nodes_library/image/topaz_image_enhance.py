@@ -15,7 +15,10 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -329,10 +332,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Input image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_input",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 tooltip="Input image to process",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
@@ -422,10 +423,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Face enhancement toggle
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="face_enhancement",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Enable face-specific enhancements",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -528,10 +527,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Auto-prompt parameter (Redefine only)
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="autoprompt",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Use auto-prompting model to generate a prompt. If enabled, ignores manual prompt input.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -598,10 +595,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Grain parameters (Dust-Scratch V2 only)
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="grain",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add film grain to the restored image",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -661,10 +656,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Lighting parameters
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="color_correction",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Enable color correction",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -785,26 +778,22 @@ class TopazImageEnhance(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_output",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Processed image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

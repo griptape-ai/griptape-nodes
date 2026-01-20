@@ -28,7 +28,7 @@ class PaintMask(DataNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The image to display",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT},
             )
         )

@@ -12,7 +12,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
@@ -91,21 +94,19 @@ class AddTextToExistingImage(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                type="str",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Text to render on the image. Use {key} placeholders to insert values from template_values.",
-                ui_options={"multiline": True, "placeholder_text": "Enter text to render on image"},
+                multiline=True,
+                placeholder_text="Enter text to render on image",
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="template_values",
-                input_types=["dict"],
-                type="dict",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=None,
                 tooltip="Dictionary of values used to replace {key} placeholders in the text parameter",
@@ -113,22 +114,18 @@ class AddTextToExistingImage(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text_color",
-                type="str",
                 default_value="#ffffffff",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Color of the text (hex format, supports alpha)",
                 traits={ColorPicker(format="hexa")},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text_background",
-                type="str",
                 default_value="#000000ff",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Background color behind the text (hex format, supports alpha)",
                 traits={ColorPicker(format="hexa")},
             )
@@ -136,40 +133,33 @@ class AddTextToExistingImage(SuccessFailureNode):
 
         vertical_alignment_param = Parameter(
             name="text_vertical_alignment",
-            type="str",
             default_value=VERTICAL_ALIGN_TOP,
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             tooltip="Vertical alignment of the text block within the image",
         )
         vertical_alignment_param.add_trait(Options(choices=VERTICAL_ALIGN_OPTIONS))
         self.add_parameter(vertical_alignment_param)
 
-        horizontal_alignment_param = Parameter(
+        horizontal_alignment_param = ParameterString(
             name="text_horizontal_alignment",
-            type="str",
             default_value=HORIZONTAL_ALIGN_LEFT,
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             tooltip="Horizontal alignment of the text block within the image",
+            placeholder_text=HORIZONTAL_ALIGN_LEFT,
         )
         horizontal_alignment_param.add_trait(Options(choices=HORIZONTAL_ALIGN_OPTIONS))
         self.add_parameter(horizontal_alignment_param)
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="margin",
-                type="int",
                 default_value=10,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Margin (in pixels) between the text block and the image edges",
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="font_size",
-                type="int",
                 default_value=36,
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 tooltip="Font size in points",
             )
         )

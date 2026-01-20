@@ -223,7 +223,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
@@ -235,7 +235,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 
@@ -259,7 +259,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 type="dict",
                 tooltip="Character alignment data with start/end times",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 
@@ -270,7 +270,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 type="dict",
                 tooltip="Normalized character alignment data",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 

@@ -6,6 +6,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.image_utils import load_pil_from_url
 
@@ -40,9 +41,8 @@ class ImagesToPdf(ControlNode):
         self.add_parameter(self.images)
 
         # Filename parameter
-        self.filename_param = Parameter(
+        self.filename_param = ParameterString(
             name="filename",
-            type="str",
             default_value="output.pdf",
             tooltip="Output filename for the PDF file",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},

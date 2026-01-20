@@ -10,6 +10,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -69,9 +70,8 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         self._setup_custom_parameters()
 
         # Add output format parameter
-        format_param = Parameter(
+        format_param = ParameterString(
             name="output_format",
-            type="str",
             default_value="auto",
             tooltip="Output image format. Choose 'auto' to preserve input format, or select a specific format.",
         )
@@ -79,9 +79,8 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         self.add_parameter(format_param)
 
         # Add quality parameter for lossy formats
-        quality_param = Parameter(
+        quality_param = ParameterString(
             name="quality",
-            type="string",
             default_value=str(self.DEFAULT_QUALITY),
             tooltip="Image quality for lossy formats (1-100, higher is better)",
         )
@@ -90,9 +89,8 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
 
         # Add output parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                output_type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The processed image",
                 ui_options={"pulse_on_run": True, "expander": True},

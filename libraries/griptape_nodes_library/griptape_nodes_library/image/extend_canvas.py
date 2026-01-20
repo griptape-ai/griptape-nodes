@@ -6,7 +6,10 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 from griptape_nodes_library.utils.image_utils import (
@@ -120,30 +123,23 @@ class ExtendCanvas(ControlNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The input image to extend canvas around",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
             )
         )
 
         # Aspect ratio preset parameter
-        self._aspect_ratio_preset = Parameter(
+        self._aspect_ratio_preset = ParameterString(
             name="aspect_ratio_preset",
-            input_types=["str"],
-            type="str",
-            output_type="str",
             tooltip="Select a preset aspect ratio or 'custom' to set manual dimensions",
             default_value="1:1 square",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
         )
         self.add_parameter(self._aspect_ratio_preset)
 
         # Custom pixel extensions (used when preset is 'custom')
-        self._custom_top_parameter = Parameter(
+        self._custom_top_parameter = ParameterInt(
             name="top",
-            input_types=["int"],
-            type="int",
-            output_type="int",
             tooltip="Pixels to extend canvas on the top side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -151,11 +147,8 @@ class ExtendCanvas(ControlNode):
         )
         self.add_parameter(self._custom_top_parameter)
 
-        self._custom_bottom_parameter = Parameter(
+        self._custom_bottom_parameter = ParameterInt(
             name="bottom",
-            input_types=["int"],
-            type="int",
-            output_type="int",
             tooltip="Pixels to extend canvas on the bottom side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -163,11 +156,8 @@ class ExtendCanvas(ControlNode):
         )
         self.add_parameter(self._custom_bottom_parameter)
 
-        self._custom_left_parameter = Parameter(
+        self._custom_left_parameter = ParameterInt(
             name="left",
-            input_types=["int"],
-            type="int",
-            output_type="int",
             tooltip="Pixels to extend canvas on the left side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -175,11 +165,8 @@ class ExtendCanvas(ControlNode):
         )
         self.add_parameter(self._custom_left_parameter)
 
-        self._custom_right_parameter = Parameter(
+        self._custom_right_parameter = ParameterInt(
             name="right",
-            input_types=["int"],
-            type="int",
-            output_type="int",
             tooltip="Pixels to extend canvas on the right side",
             default_value=0,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -189,39 +176,28 @@ class ExtendCanvas(ControlNode):
 
         # Position parameter (only applies to preset modes, not custom)
         position_choices = [pos.value for pos in ImagePosition]
-        self._position_parameter = Parameter(
+        self._position_parameter = ParameterString(
             name="position",
-            input_types=["str"],
-            type="str",
-            output_type="str",
             tooltip="Position of the original image within the extended canvas",
             default_value=ImagePosition.CENTER.value,  # Convert enum to string
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             traits={Options(choices=position_choices)},
         )
         self.add_parameter(self._position_parameter)
 
         # Background color parameter
         background_color_choices = ["black", "white", "transparent", "magenta", "green", "blue"]
-        self._background_color_parameter = Parameter(
+        self._background_color_parameter = ParameterString(
             name="background_color",
-            input_types=["str"],
-            type="str",
-            output_type="str",
             tooltip="Background color for the extended canvas areas",
             default_value="black",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             traits={Options(choices=background_color_choices)},
         )
         self.add_parameter(self._background_color_parameter)
 
         # Upscale factor parameter
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="upscale_factor",
-                input_types=["float"],
-                type="float",
-                output_type="float",
                 tooltip="Factor to upscale the calculated dimensions",
                 default_value=1.0,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -230,9 +206,8 @@ class ExtendCanvas(ControlNode):
 
         # Output extended image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="extended_image",
-                output_type="ImageUrlArtifact",
                 tooltip="The image with extended canvas",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},
@@ -241,9 +216,8 @@ class ExtendCanvas(ControlNode):
 
         # Output mask
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="canvas_mask",
-                output_type="ImageUrlArtifact",
                 tooltip="Mask where black = original image, the selected background color = extended canvas areas",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},
