@@ -2656,9 +2656,9 @@ class NodeManager:
                 continue
 
             # Store child's serialized command, parameter commands, and UUID
-            child_commands.append(child_result.serialized_node_command)
-            child_parameter_commands[child_result.serialized_node_command.node_uuid] = child_result.set_parameter_value_commands
-            child_uuids.append(child_result.serialized_node_command.node_uuid)
+            child_commands.append(child_result.serialized_node_commands)
+            child_parameter_commands[child_result.serialized_node_commands.node_uuid] = child_result.set_parameter_value_commands
+            child_uuids.append(child_result.serialized_node_commands.node_uuid)
 
         # Serialize the group node itself
         group_result = self.on_serialize_node_to_commands(
@@ -2682,7 +2682,7 @@ class NodeManager:
                 child_uuids=[],
             )
 
-        group_command = group_result.serialized_node_command
+        group_command = group_result.serialized_node_commands
 
         # Add child_node_uuids to the group's metadata for deserialization remapping
         if group_command.create_node_command.metadata is None:
