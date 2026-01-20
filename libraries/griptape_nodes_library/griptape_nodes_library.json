@@ -1080,39 +1080,6 @@
       }
     },
     {
-      "class_name": "ExtractFrames",
-      "file_path": "griptape_nodes_library/video/extract_frames.py",
-      "metadata": {
-        "category": "video",
-        "description": "Extract frames from a video to image files with options for extraction mode, frame range, numbering, and format",
-        "display_name": "Extract Frames",
-        "icon": "film",
-        "group": "describe"
-      }
-    },
-    {
-      "class_name": "ExtractFrameNumber",
-      "file_path": "griptape_nodes_library/video/extract_frame_number.py",
-      "metadata": {
-        "category": "video",
-        "description": "Extract frame number from a filename, outputting both integer and padded string formats",
-        "display_name": "Extract Frame Number",
-        "icon": "hash",
-        "group": "describe"
-      }
-    },
-    {
-      "class_name": "CombineFrames",
-      "file_path": "griptape_nodes_library/video/combine_frames.py",
-      "metadata": {
-        "category": "video",
-        "description": "Combine image frames into a video with configurable frame rate, ordering mode, and output format",
-        "display_name": "Combine Frames",
-        "icon": "film",
-        "group": "merge"
-      }
-    },
-    {
       "class_name": "ExtractAudio",
       "file_path": "griptape_nodes_library/video/extract_audio.py",
       "metadata": {
