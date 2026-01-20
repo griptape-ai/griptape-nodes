@@ -1,6 +1,7 @@
 import copy
 import logging
 import pickle
+from dataclasses import dataclass
 from typing import Any, NamedTuple, cast
 from uuid import uuid4
 
@@ -214,6 +215,29 @@ class CanResetResult(NamedTuple):
 
     can_reset: bool
     editor_tooltip_reason: str | None
+
+
+@dataclass
+class SerializedGroupResult:
+    """Result of serializing a group node with its children.
+
+    This dataclass is used when serializing group nodes for copy/paste operations.
+    It contains the serialized group node itself, along with all implicitly selected
+    child nodes and their UUIDs for deserialization remapping.
+
+    Attributes:
+        group_command: The serialized group node command
+        group_parameter_commands: Parameter value commands for the group
+        child_commands: List of serialized child node commands (excluding already-selected ones)
+        child_parameter_commands: Dict mapping child UUIDs to their parameter value commands
+        child_uuids: List of child node UUIDs for UUID-to-name remapping during deserialization
+    """
+
+    group_command: "SerializedNodeCommands"
+    group_parameter_commands: list["SerializedNodeCommands.IndirectSetParameterValueCommand"]
+    child_commands: list["SerializedNodeCommands"]
+    child_parameter_commands: dict["SerializedNodeCommands.NodeUUID", list["SerializedNodeCommands.IndirectSetParameterValueCommand"]]
+    child_uuids: list["SerializedNodeCommands.NodeUUID"]
 
 
 class NodeManager:
@@ -2582,6 +2606,98 @@ class NodeManager:
             result_details=f"Successfully validated dependencies for node '{node_name}'. Found {len(all_exceptions)} validation issues.",
         )
 
+    def _serialize_group_with_children(
+        self,
+        group_node: BaseNodeGroup,
+        explicitly_selected_names: set[str],
+        unique_uuid_to_values: dict,
+        serialized_parameter_value_tracker: "SerializedParameterValueTracker",
+    ) -> SerializedGroupResult:
+        """Serialize a group node and its children for copy/paste operations.
+
+        This method handles the special case of group nodes by serializing all child nodes
+        that aren't explicitly selected, tracking their UUIDs for deserialization remapping,
+        and storing the UUID mapping in the group's metadata.
+
+        Args:
+            group_node: The group node to serialize
+            explicitly_selected_names: Set of node names that were explicitly selected
+                                      by the user (to avoid duplicate serialization)
+            unique_uuid_to_values: Shared dictionary for tracking pickled parameter values
+            serialized_parameter_value_tracker: Tracker for parameter value hashes
+
+        Returns:
+            SerializedGroupResult containing the group command, child commands, and child UUIDs
+        """
+        group_name = group_node.name
+        child_commands = []
+        child_parameter_commands = {}
+        child_uuids = []
+
+        # Serialize each child node that isn't explicitly selected
+        for child_name, child_node in group_node.nodes.items():
+            if child_name in explicitly_selected_names:
+                # Child is already being serialized separately, skip
+                continue
+
+            # Child is implicitly selected via group membership - serialize it
+            child_result = self.on_serialize_node_to_commands(
+                SerializeNodeToCommandsRequest(
+                    node_name=child_name,
+                    unique_parameter_uuid_to_values=unique_uuid_to_values,
+                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                    use_pickling=True,
+                )
+            )
+
+            if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
+                # Failed to serialize child - log warning and skip
+                logger.warning(f"{group_name} failed to serialize child node '{child_name}'")
+                continue
+
+            # Store child's serialized command, parameter commands, and UUID
+            child_commands.append(child_result.serialized_node_command)
+            child_parameter_commands[child_result.serialized_node_command.node_uuid] = child_result.set_parameter_value_commands
+            child_uuids.append(child_result.serialized_node_command.node_uuid)
+
+        # Serialize the group node itself
+        group_result = self.on_serialize_node_to_commands(
+            SerializeNodeToCommandsRequest(
+                node_name=group_name,
+                unique_parameter_uuid_to_values=unique_uuid_to_values,
+                serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                use_pickling=True,
+            )
+        )
+
+        if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
+            # This shouldn't happen, log error
+            logger.error(f"Failed to serialize group node '{group_name}'")
+            # Return empty result - caller will need to handle this
+            return SerializedGroupResult(
+                group_command=None,
+                group_parameter_commands=[],
+                child_commands=[],
+                child_parameter_commands={},
+                child_uuids=[],
+            )
+
+        group_command = group_result.serialized_node_command
+
+        # Add child_node_uuids to the group's metadata for deserialization remapping
+        if group_command.create_node_command.metadata is None:
+            group_command.create_node_command.metadata = {}
+
+        group_command.create_node_command.metadata["child_node_uuids"] = child_uuids
+
+        return SerializedGroupResult(
+            group_command=group_command,
+            group_parameter_commands=group_result.set_parameter_value_commands,
+            child_commands=child_commands,
+            child_parameter_commands=child_parameter_commands,
+            child_uuids=child_uuids,
+        )
+
     def on_serialize_node_to_commands(self, request: SerializeNodeToCommandsRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
         node_name = request.node_name
         node = None
@@ -2653,6 +2769,9 @@ class NodeManager:
                 metadata_copy = copy.deepcopy(node.metadata)
                 metadata_copy.pop("node_names_in_group", None)
 
+                # Note: Child serialization is handled in _serialize_group_with_children()
+                # which is called from on_serialize_selected_nodes_to_commands()
+                # This method just serializes the group node itself
                 # Serialize like a normal node but add node group specific fields
                 create_node_request = CreateNodeRequest(
                     node_type=node.__class__.__name__,
@@ -2978,22 +3097,66 @@ class NodeManager:
         # And track how values map into that map.
         serialized_parameter_value_tracker = SerializedParameterValueTracker()
         selected_node_names = [values[0] for values in nodes_to_serialize]
+        # Track explicitly selected names (for group children deduplication)
+        explicitly_selected = set(selected_node_names)
+        # Track all selected nodes (explicit + implicit children) for connection filtering
+        all_selected_for_connections = set(selected_node_names)
+        # Separate lists for ordering: children must come before parents
+        child_node_commands_list = []
+
         for node_name, _ in nodes_to_serialize:
-            result = self.on_serialize_node_to_commands(
-                SerializeNodeToCommandsRequest(
-                    node_name=node_name,
-                    unique_parameter_uuid_to_values=unique_uuid_to_values,
-                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
-                    use_pickling=True,
-                )
-            )
-            if not isinstance(result, SerializeNodeToCommandsResultSuccess):
-                details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
+            # Check if this is a group node that needs special handling
+            node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
+            if node is None:
+                details = f"Attempted to serialize a selection of Nodes. Failed to get node '{node_name}'."
                 return SerializeNodeToCommandsResultFailure(result_details=details)
-            node_commands[node_name] = result.serialized_node_commands
-            node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
-            parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
-            lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
+
+            if isinstance(node, BaseNodeGroup):
+                # Use special method to handle group + children
+                group_result = self._serialize_group_with_children(
+                    group_node=node,
+                    explicitly_selected_names=explicitly_selected,
+                    unique_uuid_to_values=unique_uuid_to_values,
+                    serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                )
+
+                if group_result.group_command is None:
+                    details = f"Attempted to serialize a selection of Nodes. Failed to serialize group '{node_name}'."
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+
+                # Process the group node command
+                node_commands[node_name] = group_result.group_command
+                node_name_to_uuid[node_name] = group_result.group_command.node_uuid
+                parameter_commands[group_result.group_command.node_uuid] = group_result.group_parameter_commands
+                lock_commands[group_result.group_command.node_uuid] = group_result.group_command.lock_node_command
+
+                # Process each child node command and add to tracking structures
+                for child_command in group_result.child_commands:
+                    child_name = child_command.create_node_command.node_name
+                    child_node_commands_list.append(child_command)
+                    node_name_to_uuid[child_name] = child_command.node_uuid
+                    parameter_commands[child_command.node_uuid] = group_result.child_parameter_commands[child_command.node_uuid]
+                    lock_commands[child_command.node_uuid] = child_command.lock_node_command
+                    # Add to connection filtering set
+                    all_selected_for_connections.add(child_name)
+
+            else:
+                # Regular node - serialize normally
+                result = self.on_serialize_node_to_commands(
+                    SerializeNodeToCommandsRequest(
+                        node_name=node_name,
+                        unique_parameter_uuid_to_values=unique_uuid_to_values,
+                        serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                        use_pickling=True,
+                    )
+                )
+                if not isinstance(result, SerializeNodeToCommandsResultSuccess):
+                    details = f"Attempted to serialize a selection of Nodes. Failed to serialize {node_name}."
+                    return SerializeNodeToCommandsResultFailure(result_details=details)
+                node_commands[node_name] = result.serialized_node_commands
+                node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
+                parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
+                lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -3009,7 +3172,8 @@ class NodeManager:
                     for connection_id in category_dict
                 ]
                 for connection in node_connections:
-                    if connection.target_node.name not in selected_node_names:
+                    # Include connections to both explicitly and implicitly selected nodes
+                    if connection.target_node.name not in all_selected_for_connections:
                         continue
                     connections_to_serialize.append(connection)
         serialized_connections = []
@@ -3025,8 +3189,10 @@ class NodeManager:
                 )
             )
         # Final result for serialized node commands
+        # Children must come before parents for proper deserialization ordering
+        all_serialized_commands = child_node_commands_list + list(node_commands.values())
         final_result = SerializedSelectedNodesCommands(
-            serialized_node_commands=list(node_commands.values()),
+            serialized_node_commands=all_serialized_commands,
             serialized_connection_commands=serialized_connections,
             set_parameter_value_commands=parameter_commands,
             set_lock_commands_per_node=lock_commands,
@@ -3096,6 +3262,28 @@ class NodeManager:
                         "x": request.positions[i][0],
                         "y": request.positions[i][1],
                     }
+
+            # Check if this is a group with child_node_uuids that need remapping
+            metadata = node_command.create_node_command.metadata
+            if metadata and "child_node_uuids" in metadata:
+                child_uuids = metadata["child_node_uuids"]
+
+                # Remap each child UUID to its new name using the UUID mapping
+                remapped_child_names = []
+                for child_uuid in child_uuids:
+                    if child_uuid in node_uuid_to_name:
+                        # Child node was already created, use its new name
+                        remapped_child_names.append(node_uuid_to_name[child_uuid])
+                    else:
+                        # This shouldn't happen - child should have been created first
+                        logger.warning(f"Child node UUID {child_uuid} not found in UUID mapping")
+
+                # Update node_names_to_add with the remapped names
+                node_command.create_node_command.node_names_to_add = remapped_child_names
+
+                # Remove child_node_uuids from metadata - it was only for transport
+                del metadata["child_node_uuids"]
+
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
             )
