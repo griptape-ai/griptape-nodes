@@ -1,5 +1,6 @@
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.video_utils import (
@@ -21,8 +23,42 @@ from griptape_nodes_library.utils.video_utils import (
 )
 
 
+@dataclass(frozen=True)
+class ResizeSettings:
+    resize_mode: str
+    percentage: float
+    target_size: int
+    target_width: int
+    target_height: int
+    fit_mode: str
+    background_color: str
+    scaling_algorithm: str
+    lanczos_parameter: float
+
+
 class ResizeVideo(ControlNode):
-    """Resize a video using imageio_ffmpeg by percentage."""
+    """Resize a video with multiple scaling modes using FFmpeg."""
+
+    RESIZE_MODE_WIDTH = "width"
+    RESIZE_MODE_HEIGHT = "height"
+    RESIZE_MODE_PERCENTAGE = "percentage"
+    RESIZE_MODE_WIDTH_HEIGHT = "width and height"
+
+    MIN_TARGET_SIZE = 1
+    MAX_TARGET_SIZE = 8000
+    DEFAULT_TARGET_SIZE = 1000
+    MIN_EVEN_DIMENSION = 2
+
+    MIN_PERCENTAGE_SCALE = 1
+    MAX_PERCENTAGE_SCALE = 500
+    DEFAULT_PERCENTAGE_SCALE = 100
+
+    FIT_MODE_FIT = "fit"
+    FIT_MODE_FILL = "fill"
+    FIT_MODE_STRETCH = "stretch"
+
+    HEX_SHORT_LENGTH = 3
+    HEX_FULL_LENGTH = 6
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
@@ -38,60 +74,120 @@ class ResizeVideo(ControlNode):
             )
         )
 
-        # Add percentage parameter
-        percentage_parameter = Parameter(
-            name="percentage",
-            type="int",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            default_value=50,
-            tooltip="Resize percentage (e.g., 50 for 50%)",
-        )
-        self.add_parameter(percentage_parameter)
-        percentage_parameter.add_trait(Slider(min_val=1, max_val=400))
-
-        # Add scaling algorithm parameter
-        scaling_algorithm_parameter = Parameter(
-            name="scaling_algorithm",
-            type="str",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="The scaling algorithm to use",
-            default_value="bicubic",
-        )
-        self.add_parameter(scaling_algorithm_parameter)
-        scaling_algorithm_parameter.add_trait(
-            Options(
-                choices=[
-                    "fast_bilinear",
-                    "bilinear",
-                    "bicubic",
-                    "experimental",
-                    "neighbor",
-                    "area",
-                    "bicublin",
-                    "gauss",
-                    "sinc",
-                    "lanczos",
-                    "spline",
-                    "print_info",
-                    "accurate_rnd",
-                    "full_chroma_int",
-                    "full_chroma_inp",
-                    "bitexact",
-                ]
+        with ParameterGroup(name="resize_settings", ui_options={"collapsed": False}) as resize_group:
+            resize_mode_param = Parameter(
+                name="resize_mode",
+                type="str",
+                default_value=self.RESIZE_MODE_PERCENTAGE,
+                tooltip="How to resize the video: by width, height, percentage, or width and height",
             )
-        )
+            resize_mode_param.add_trait(
+                Options(
+                    choices=[
+                        self.RESIZE_MODE_WIDTH,
+                        self.RESIZE_MODE_HEIGHT,
+                        self.RESIZE_MODE_WIDTH_HEIGHT,
+                        self.RESIZE_MODE_PERCENTAGE,
+                    ]
+                )
+            )
 
-        # Add lanczos parameter for fine-tuning lanczos algorithm
-        lanczos_parameter = Parameter(
-            name="lanczos_parameter",
-            type="float",
-            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            default_value=3.0,
-            tooltip="Lanczos algorithm parameter (alpha value, default: 3.0). Higher values (4-5) provide sharper results but may introduce ringing artifacts. Lower values (2-3) provide smoother results.",
-            ui_options={"hide": True},
-        )
-        self.add_parameter(lanczos_parameter)
-        lanczos_parameter.add_trait(Slider(min_val=1.0, max_val=10.0))
+            target_size_param = Parameter(
+                name="target_size",
+                type="int",
+                default_value=self.DEFAULT_TARGET_SIZE,
+                tooltip=f"Target size in pixels for width/height modes ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
+            )
+            target_size_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
+
+            target_width_param = Parameter(
+                name="target_width",
+                type="int",
+                default_value=self.DEFAULT_TARGET_SIZE,
+                tooltip=f"Target width in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
+            )
+            target_width_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
+
+            target_height_param = Parameter(
+                name="target_height",
+                type="int",
+                default_value=self.DEFAULT_TARGET_SIZE,
+                tooltip=f"Target height in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
+            )
+            target_height_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
+
+            fit_mode_param = Parameter(
+                name="fit_mode",
+                type="str",
+                default_value=self.FIT_MODE_FIT,
+                tooltip="How to fit the video within the target dimensions",
+            )
+            fit_mode_param.add_trait(
+                Options(
+                    choices=[
+                        self.FIT_MODE_FIT,
+                        self.FIT_MODE_FILL,
+                        self.FIT_MODE_STRETCH,
+                    ]
+                )
+            )
+
+            background_color_param = Parameter(
+                name="background_color",
+                type="str",
+                default_value="#000000",
+                tooltip="Background color for letterboxing/matting",
+            )
+            background_color_param.add_trait(ColorPicker(format="hex"))
+
+            # Add percentage parameter
+            percentage_parameter = Parameter(
+                name="percentage",
+                type="int",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                default_value=self.DEFAULT_PERCENTAGE_SCALE,
+                tooltip="Resize percentage (e.g., 50 for 50%)",
+            )
+            percentage_parameter.add_trait(Slider(min_val=self.MIN_PERCENTAGE_SCALE, max_val=self.MAX_PERCENTAGE_SCALE))
+
+            # Add scaling algorithm parameter
+            scaling_algorithm_parameter = Parameter(
+                name="scaling_algorithm",
+                type="str",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                tooltip="The scaling algorithm to use",
+                default_value="bicubic",
+            )
+            scaling_algorithm_parameter.add_trait(
+                Options(
+                    choices=[
+                        "neighbor",
+                        "bilinear",
+                        "bicubic",
+                        "lanczos",
+                    ]
+                )
+            )
+
+            # Add lanczos parameter for fine-tuning lanczos algorithm
+            lanczos_parameter = Parameter(
+                name="lanczos_parameter",
+                type="float",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                default_value=3.0,
+                tooltip="Lanczos algorithm parameter (alpha value, default: 3.0). Higher values (4-5) provide sharper results but may introduce ringing artifacts. Lower values (2-3) provide smoother results.",
+                ui_options={"hide": True},
+            )
+            lanczos_parameter.add_trait(Slider(min_val=1.0, max_val=10.0))
+
+        self.add_node_element(resize_group)
+
+        self.hide_parameter_by_name("target_size")
+        self.hide_parameter_by_name("target_width")
+        self.hide_parameter_by_name("target_height")
+        self.hide_parameter_by_name("fit_mode")
+        self.hide_parameter_by_name("background_color")
+        self.show_parameter_by_name("percentage")
 
         # Add output video parameter
         self.add_parameter(
@@ -118,7 +214,34 @@ class ResizeVideo(ControlNode):
         self.add_node_element(logs_group)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name == "scaling_algorithm":
+        if parameter.name == "resize_mode":
+            if value == self.RESIZE_MODE_PERCENTAGE:
+                self.show_parameter_by_name("percentage")
+                self.hide_parameter_by_name("target_size")
+                self.hide_parameter_by_name("target_width")
+                self.hide_parameter_by_name("target_height")
+                self.hide_parameter_by_name("fit_mode")
+                self.hide_parameter_by_name("background_color")
+            elif value == self.RESIZE_MODE_WIDTH_HEIGHT:
+                self.hide_parameter_by_name("percentage")
+                self.hide_parameter_by_name("target_size")
+                self.show_parameter_by_name("target_width")
+                self.show_parameter_by_name("target_height")
+                self.show_parameter_by_name("fit_mode")
+                self.hide_parameter_by_name("background_color")
+            else:
+                self.hide_parameter_by_name("percentage")
+                self.show_parameter_by_name("target_size")
+                self.hide_parameter_by_name("target_width")
+                self.hide_parameter_by_name("target_height")
+                self.hide_parameter_by_name("fit_mode")
+                self.hide_parameter_by_name("background_color")
+        elif parameter.name == "fit_mode":
+            if value == self.FIT_MODE_FIT:
+                self.show_parameter_by_name("background_color")
+            else:
+                self.hide_parameter_by_name("background_color")
+        elif parameter.name == "scaling_algorithm":
             if value == "lanczos":
                 self.show_parameter_by_name("lanczos_parameter")
             else:
@@ -144,21 +267,95 @@ class ResizeVideo(ControlNode):
             msg = f"{self.name}: Video parameter must have a value"
             exceptions.append(ValueError(msg))
 
-        # Validate percentage
-        percentage = self.parameter_values.get("percentage", 50)
-        if percentage <= 0:
-            msg = f"{self.name}: Percentage must be greater than 0"
+        resize_mode = self.parameter_values.get("resize_mode", self.RESIZE_MODE_PERCENTAGE)
+        percentage = self.parameter_values.get("percentage", self.DEFAULT_PERCENTAGE_SCALE)
+        target_size = self.parameter_values.get("target_size", self.DEFAULT_TARGET_SIZE)
+        target_width = self.parameter_values.get("target_width", self.DEFAULT_TARGET_SIZE)
+        target_height = self.parameter_values.get("target_height", self.DEFAULT_TARGET_SIZE)
+
+        if resize_mode in [self.RESIZE_MODE_WIDTH, self.RESIZE_MODE_HEIGHT] and (
+            target_size < self.MIN_TARGET_SIZE or target_size > self.MAX_TARGET_SIZE
+        ):
+            msg = f"{self.name}: Target size must be between {self.MIN_TARGET_SIZE} and {self.MAX_TARGET_SIZE}, got {target_size}"
             exceptions.append(ValueError(msg))
 
+        if resize_mode == self.RESIZE_MODE_PERCENTAGE and (
+            percentage < self.MIN_PERCENTAGE_SCALE or percentage > self.MAX_PERCENTAGE_SCALE
+        ):
+            msg = f"{self.name}: Percentage must be between {self.MIN_PERCENTAGE_SCALE} and {self.MAX_PERCENTAGE_SCALE}, got {percentage}"
+            exceptions.append(ValueError(msg))
+
+        if resize_mode == self.RESIZE_MODE_WIDTH_HEIGHT:
+            if target_width < self.MIN_TARGET_SIZE or target_width > self.MAX_TARGET_SIZE:
+                msg = f"{self.name}: Target width must be between {self.MIN_TARGET_SIZE} and {self.MAX_TARGET_SIZE}, got {target_width}"
+                exceptions.append(ValueError(msg))
+            if target_height < self.MIN_TARGET_SIZE or target_height > self.MAX_TARGET_SIZE:
+                msg = f"{self.name}: Target height must be between {self.MIN_TARGET_SIZE} and {self.MAX_TARGET_SIZE}, got {target_height}"
+                exceptions.append(ValueError(msg))
+
         return exceptions if exceptions else None
+
+    def _build_scale_expression(self, settings: ResizeSettings) -> str:
+        flags = settings.scaling_algorithm
+        if settings.scaling_algorithm == "lanczos":
+            flags = f"{settings.scaling_algorithm}:param0={settings.lanczos_parameter}"
+
+        if settings.resize_mode == self.RESIZE_MODE_WIDTH:
+            even_width = self._make_even(settings.target_size)
+            return f"scale={even_width}:-2:flags={flags}"
+
+        if settings.resize_mode == self.RESIZE_MODE_HEIGHT:
+            even_height = self._make_even(settings.target_size)
+            return f"scale=-2:{even_height}:flags={flags}"
+
+        if settings.resize_mode == self.RESIZE_MODE_PERCENTAGE:
+            scale_factor = settings.percentage / 100.0
+            return f"scale=trunc(iw*{scale_factor}/2)*2:trunc(ih*{scale_factor}/2)*2:flags={flags}"
+
+        if settings.resize_mode == self.RESIZE_MODE_WIDTH_HEIGHT:
+            even_width = self._make_even(settings.target_width)
+            even_height = self._make_even(settings.target_height)
+
+            if settings.fit_mode == self.FIT_MODE_STRETCH:
+                return f"scale={even_width}:{even_height}:flags={flags}"
+
+            if settings.fit_mode == self.FIT_MODE_FILL:
+                return (
+                    f"scale={even_width}:{even_height}:force_original_aspect_ratio=increase:"
+                    f"flags={flags},crop={even_width}:{even_height}"
+                )
+
+            pad_color = self._format_ffmpeg_color(settings.background_color)
+            return (
+                f"scale={even_width}:{even_height}:force_original_aspect_ratio=decrease:"
+                f"flags={flags},pad={even_width}:{even_height}:x=(ow-iw)/2:y=(oh-ih)/2:color={pad_color}"
+            )
+
+        error_msg = f"{self.name}: Invalid resize mode: {settings.resize_mode}"
+        raise ValueError(error_msg)
+
+    def _make_even(self, value: int) -> int:
+        even_value = (max(1, value) // 2) * 2
+        if even_value < self.MIN_EVEN_DIMENSION:
+            return self.MIN_EVEN_DIMENSION
+        return even_value
+
+    def _format_ffmpeg_color(self, color_value: str) -> str:
+        if not color_value:
+            return "0xFFFFFF"
+
+        cleaned = color_value.lstrip("#")
+        if len(cleaned) == self.HEX_SHORT_LENGTH:
+            cleaned = "".join([c * 2 for c in cleaned])
+        if len(cleaned) != self.HEX_FULL_LENGTH:
+            return "0xFFFFFF"
+        return f"0x{cleaned}"
 
     def _resize_video_with_ffmpeg(
         self,
         input_url: str,
         output_path: str,
-        percentage: float,
-        scaling_algorithm: str,
-        lanczos_parameter: float = 3.0,
+        settings: ResizeSettings,
     ) -> None:
         """Resize video using imageio_ffmpeg and ffmpeg."""
 
@@ -171,23 +368,9 @@ class ResizeVideo(ControlNode):
             # Validate URL before using in subprocess
             _validate_and_raise_if_invalid(input_url)
 
-            # Create scale expression for percentage - ensure integer values and even dimensions
-            if scaling_algorithm == "lanczos":
-                # For lanczos, include the parameter value
-                scale_expr = (
-                    f"scale=trunc(trunc(iw*{percentage / 100})/2)*2:"
-                    f"trunc(trunc(ih*{percentage / 100})/2)*2:"
-                    f"flags={scaling_algorithm}:param0={lanczos_parameter}"
-                )
-            else:
-                # For other algorithms, use standard flags
-                scale_expr = (
-                    f"scale=trunc(trunc(iw*{percentage / 100})/2)*2:"
-                    f"trunc(trunc(ih*{percentage / 100})/2)*2:"
-                    f"flags={scaling_algorithm}"
-                )
+            scale_expr = self._build_scale_expression(settings)
 
-                # Get ffmpeg executable path from static-ffmpeg dependency
+            # Get ffmpeg executable path from static-ffmpeg dependency
             ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
 
             # Build ffmpeg command - ffmpeg can work directly with URLs
@@ -232,10 +415,8 @@ class ResizeVideo(ControlNode):
     def _process(
         self,
         input_url: str,
-        percentage: float,
         detected_format: str,
-        scaling_algorithm: str,
-        lanczos_parameter: float = 3.0,
+        settings: ResizeSettings,
     ) -> None:
         """Performs the synchronous video resizing operation."""
         # Create temporary output file
@@ -243,10 +424,14 @@ class ResizeVideo(ControlNode):
             output_path = output_file.name
 
         try:
-            self.append_value_to_parameter("logs", f"Resizing video to {percentage}% of original size\n")
+            self.append_value_to_parameter("logs", f"Resizing video using mode: {settings.resize_mode}\n")
 
             # Resize video directly from URL
-            self._resize_video_with_ffmpeg(input_url, output_path, percentage, scaling_algorithm, lanczos_parameter)
+            self._resize_video_with_ffmpeg(
+                input_url=input_url,
+                output_path=output_path,
+                settings=settings,
+            )
 
             # Read resized video
             with Path(output_path).open("rb") as f:
@@ -254,7 +439,7 @@ class ResizeVideo(ControlNode):
 
             # Extract original filename from URL and create new filename
             original_filename = Path(input_url).stem  # Get filename without extension
-            filename = f"{original_filename}_resized_{int(percentage)}_{scaling_algorithm}.{detected_format}"
+            filename = f"{original_filename}_resized_{settings.scaling_algorithm}.{detected_format}"
             url = GriptapeNodes.StaticFilesManager().save_static_file(resized_video_bytes, filename)
 
             self.append_value_to_parameter("logs", f"Successfully resized video: {filename}\n")
@@ -277,14 +462,22 @@ class ResizeVideo(ControlNode):
     def process(self) -> AsyncResult[None]:
         """Executes the main logic of the node asynchronously."""
         video = self.parameter_values.get("video")
-        percentage = self.parameter_values.get("percentage", 50.0)
-        scaling_algorithm = self.parameter_values.get("scaling_algorithm", "bilinear")
-        lanczos_parameter = self.parameter_values.get("lanczos_parameter", 3.0)
+        settings = ResizeSettings(
+            resize_mode=self.parameter_values.get("resize_mode", self.RESIZE_MODE_PERCENTAGE),
+            percentage=self.parameter_values.get("percentage", self.DEFAULT_PERCENTAGE_SCALE),
+            target_size=self.parameter_values.get("target_size", self.DEFAULT_TARGET_SIZE),
+            target_width=self.parameter_values.get("target_width", self.DEFAULT_TARGET_SIZE),
+            target_height=self.parameter_values.get("target_height", self.DEFAULT_TARGET_SIZE),
+            fit_mode=self.parameter_values.get("fit_mode", self.FIT_MODE_FIT),
+            background_color=self.parameter_values.get("background_color", "#000000"),
+            scaling_algorithm=self.parameter_values.get("scaling_algorithm", "bicubic"),
+            lanczos_parameter=self.parameter_values.get("lanczos_parameter", 3.0),
+        )
         # Initialize logs
         self.append_value_to_parameter("logs", "[Processing video resize..]\n")
-        self.append_value_to_parameter("logs", f"Scaling algorithm: {scaling_algorithm}\n")
-        if scaling_algorithm == "lanczos":
-            self.append_value_to_parameter("logs", f"Lanczos parameter: {lanczos_parameter}\n")
+        self.append_value_to_parameter("logs", f"Scaling algorithm: {settings.scaling_algorithm}\n")
+        if settings.scaling_algorithm == "lanczos":
+            self.append_value_to_parameter("logs", f"Lanczos parameter: {settings.lanczos_parameter}\n")
 
         try:
             # Convert to video artifact
@@ -302,7 +495,11 @@ class ResizeVideo(ControlNode):
 
             # Run the video processing asynchronously
             self.append_value_to_parameter("logs", "[Started video processing..]\n")
-            yield lambda: self._process(input_url, percentage, detected_format, scaling_algorithm, lanczos_parameter)
+            yield lambda: self._process(
+                input_url=input_url,
+                detected_format=detected_format,
+                settings=settings,
+            )
             self.append_value_to_parameter("logs", "[Finished video processing.]\n")
 
         except Exception as e:
