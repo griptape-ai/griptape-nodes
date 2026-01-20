@@ -111,7 +111,7 @@ class SubflowExecutionComponent:
             )
         return None
 
-    def clear_state(self) -> None:
+    def clear_execution_state(self) -> None:
         """Clear the component state."""
         self.reset_publishing_progress()
         self.clear_events()
@@ -123,7 +123,7 @@ class SubflowExecutionComponent:
 
     def clear_publishing_target_link(self) -> None:
         """Clear the publishing target link parameter."""
-        self._node.publish_update_to_parameter("publishing_target_link", None)
+        self._node.set_parameter_value("publishing_target_link", None)
 
     def append_event(self, event_str: str) -> None:
         """Append a stringified event to the parameter.

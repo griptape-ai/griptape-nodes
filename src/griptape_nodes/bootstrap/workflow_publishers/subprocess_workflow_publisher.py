@@ -31,14 +31,8 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
         PythonSubprocessExecutor.__init__(self)
         self._init_websocket_listener(session_id=session_id, on_event=on_event)
 
-    @property
-    def _session_id(self) -> str:
-        """Alias for listener session_id."""
-        return self._listener_session_id
-
     async def __aenter__(self) -> Self:
         """Async context manager entry: start WebSocket listener."""
-        logger.info("Starting WebSocket listener for publishing session %s", self._session_id)
         await self._start_websocket_listener()
         return self
 
@@ -49,8 +43,7 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit: stop WebSocket listener."""
-        logger.info("Stopping WebSocket listener for publishing session %s", self._session_id)
-        self._stop_websocket_listener()
+        await self._stop_websocket_listener()
 
     async def arun(
         self,

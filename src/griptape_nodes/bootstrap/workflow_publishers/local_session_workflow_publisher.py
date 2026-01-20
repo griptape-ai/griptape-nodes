@@ -47,11 +47,6 @@ class LocalSessionWorkflowPublisher(LocalWorkflowPublisher, SubprocessWebSocketS
         super().__init__()
         self._init_websocket_sender(session_id)
 
-    @property
-    def _session_id(self) -> str:
-        """Alias for listener session_id."""
-        return self._sender_session_id
-
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and start WebSocket connection."""
         GriptapeNodes.EventManager().initialize_queue()
@@ -71,7 +66,7 @@ class LocalSessionWorkflowPublisher(LocalWorkflowPublisher, SubprocessWebSocketS
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit."""
-        self._stop_websocket_thread()
+        await self._stop_websocket_connection()
         GriptapeNodes.SessionManager().remove_session(self._session_id)
 
     async def arun(
@@ -101,7 +96,7 @@ class LocalSessionWorkflowPublisher(LocalWorkflowPublisher, SubprocessWebSocketS
             logger.exception(msg)
             raise LocalPublisherError(msg) from e
         finally:
-            self._stop_websocket_thread()
+            await self._stop_websocket_connection()
 
     async def _arun(  # noqa: C901, PLR0915
         self,

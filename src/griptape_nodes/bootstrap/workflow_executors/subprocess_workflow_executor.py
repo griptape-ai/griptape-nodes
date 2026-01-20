@@ -51,14 +51,8 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
         self._on_start_flow_result = on_start_flow_result
         self._stored_exception: SubprocessWorkflowExecutorError | None = None
 
-    @property
-    def _session_id(self) -> str:
-        """Alias for listener session_id."""
-        return self._listener_session_id
-
     async def __aenter__(self) -> Self:
-        """Async context manager entry: start WebSocket connection."""
-        logger.info("Starting WebSocket listener for session %s", self._session_id)
+        """Async context manager entry: start WebSocket listener."""
         await self._start_websocket_listener()
         return self
 
@@ -68,9 +62,8 @@ class SubprocessWorkflowExecutor(WorkflowExecutor, PythonSubprocessExecutor, Sub
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Async context manager exit: stop WebSocket connection."""
-        logger.info("Stopping WebSocket listener for session %s", self._session_id)
-        self._stop_websocket_listener()
+        """Async context manager exit: stop WebSocket listener."""
+        await self._stop_websocket_listener()
 
     async def arun(
         self,

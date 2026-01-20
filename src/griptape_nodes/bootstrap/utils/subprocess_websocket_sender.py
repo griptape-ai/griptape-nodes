@@ -1,7 +1,7 @@
 """WebSocket sender mixin for subprocess communication.
 
 This module provides a reusable mixin for sending WebSocket events
-from subprocess executions back to the parent process.
+from subprocess executions back to the parent process using native asyncio.
 """
 
 from __future__ import annotations
@@ -9,29 +9,24 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import threading
 
-from griptape_nodes.api_client import Client
 from griptape_nodes.app.app import WebSocketMessage
+from griptape_nodes.bootstrap.utils.subprocess_websocket_base import SubprocessWebSocketBaseMixin
 
 logger = logging.getLogger(__name__)
 
 
-class SubprocessWebSocketSenderMixin:
+class SubprocessWebSocketSenderMixin(SubprocessWebSocketBaseMixin):
     """Mixin providing WebSocket sender functionality for subprocess communication.
 
     This mixin handles:
-    - Starting/stopping a WebSocket sender thread
+    - Starting/stopping a WebSocket connection as a background task
     - Queuing and sending events to the parent process
-    - Thread-safe event emission
+    - Non-blocking event emission from the main event loop
     """
 
-    _sender_session_id: str
-    _websocket_thread: threading.Thread | None
-    _websocket_event_loop: asyncio.AbstractEventLoop | None
-    _websocket_event_loop_ready: threading.Event
-    _ws_outgoing_queue: asyncio.Queue | None
-    _shutdown_event: asyncio.Event | None
+    _ws_send_queue: asyncio.Queue[WebSocketMessage]
+    _ws_shutdown_event: asyncio.Event
 
     def _init_websocket_sender(self, session_id: str) -> None:
         """Initialize WebSocket sender state.
@@ -39,180 +34,88 @@ class SubprocessWebSocketSenderMixin:
         Args:
             session_id: Unique session ID for WebSocket topic.
         """
-        self._sender_session_id = session_id
-        self._websocket_thread = None
-        self._websocket_event_loop = None
-        self._websocket_event_loop_ready = threading.Event()
-        self._ws_outgoing_queue = None
-        self._shutdown_event = None
-
-    def _get_sender_session_id(self) -> str:
-        """Get the session ID used for WebSocket communication."""
-        return self._sender_session_id
+        self._init_websocket_base(session_id)
+        self._ws_send_queue = asyncio.Queue()
+        self._ws_shutdown_event = asyncio.Event()
 
     async def _start_websocket_connection(self) -> None:
-        """Start websocket connection in a background thread for event emission."""
-        logger.info("Starting websocket connection for session %s", self._sender_session_id)
-        self._websocket_thread = threading.Thread(target=self._start_websocket_thread, daemon=True)
-        self._websocket_thread.start()
+        """Start WebSocket client and sender background task."""
+        logger.info("Starting WebSocket sender for session %s", self._session_id)
 
-        if self._websocket_event_loop_ready.wait(timeout=10):
-            logger.info("Websocket thread ready")
-            await asyncio.sleep(1)  # Brief wait for connection to establish
-        else:
-            logger.error("Timeout waiting for websocket thread to start")
+        self._ws_shutdown_event.clear()
+        await self._start_websocket_client()
+        self._create_websocket_task(self._ws_send_loop())
 
-    def _stop_websocket_thread(self) -> None:
-        """Stop the websocket thread."""
-        if self._websocket_thread is None or not self._websocket_thread.is_alive():
-            logger.debug("No websocket thread to stop")
-            return
+        logger.info("WebSocket sender started for session %s", self._session_id)
 
-        logger.debug("Stopping websocket thread")
-        self._websocket_event_loop_ready.clear()
+    async def _ws_send_loop(self) -> None:
+        """Background task to send queued messages."""
+        logger.debug("Starting WebSocket send loop for session %s", self._session_id)
 
-        # Signal shutdown to the websocket tasks
-        if self._websocket_event_loop and self._websocket_event_loop.is_running() and self._shutdown_event:
-
-            def signal_shutdown() -> None:
-                if self._shutdown_event:
-                    self._shutdown_event.set()
-
-            self._websocket_event_loop.call_soon_threadsafe(signal_shutdown)
-
-        # Wait for thread to finish
-        self._websocket_thread.join(timeout=5.0)
-        if self._websocket_thread.is_alive():
-            logger.warning("Websocket thread did not stop gracefully")
-        else:
-            logger.info("Websocket thread stopped successfully")
-
-    def _start_websocket_thread(self) -> None:
-        """Run WebSocket tasks in a separate thread with its own async loop."""
-        try:
-            # Create a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            self._websocket_event_loop = loop
-            asyncio.set_event_loop(loop)
-
-            # Create the outgoing queue and shutdown event
-            self._ws_outgoing_queue = asyncio.Queue()
-            self._shutdown_event = asyncio.Event()
-
-            # Signal that websocket_event_loop is ready
-            self._websocket_event_loop_ready.set()
-            logger.info("Websocket thread started and ready")
-
-            # Run the async WebSocket tasks
-            loop.run_until_complete(self._run_websocket_tasks())
-        except Exception as e:
-            logger.error("WebSocket thread error: %s", e)
-        finally:
-            self._websocket_event_loop = None
-            self._websocket_event_loop_ready.clear()
-            self._shutdown_event = None
-            logger.info("Websocket thread ended")
-
-    async def _run_websocket_tasks(self) -> None:
-        """Run websocket tasks - establish connection and handle outgoing messages."""
-        logger.info("Creating Client for session %s", self._sender_session_id)
-
-        async with Client() as client:
-            logger.info("WebSocket connection established for session %s", self._sender_session_id)
-
+        while not self._ws_shutdown_event.is_set():
             try:
-                await self._send_outgoing_messages(client)
-            except Exception:
-                logger.exception("WebSocket sender tasks failed for session %s", self._sender_session_id)
-            finally:
-                logger.info("WebSocket connection loop ended")
-
-    async def _send_outgoing_messages(self, client: Client) -> None:
-        """Send outgoing WebSocket messages from queue."""
-        if self._ws_outgoing_queue is None:
-            logger.error("No outgoing queue available")
-            return
-
-        logger.debug("Starting outgoing WebSocket request sender")
-
-        while True:
-            # Check if shutdown was requested
-            if self._shutdown_event and self._shutdown_event.is_set():
-                logger.info("Shutdown requested, ending message sender")
+                message = await asyncio.wait_for(self._ws_send_queue.get(), timeout=1.0)
+            except TimeoutError:
+                continue
+            except asyncio.CancelledError:
                 break
 
             try:
-                # Get message from outgoing queue with timeout to allow shutdown checks
-                message = await asyncio.wait_for(self._ws_outgoing_queue.get(), timeout=1.0)
-            except TimeoutError:
-                # No message in queue, continue to check for shutdown
-                continue
+                if self._ws_client is None:
+                    logger.warning("WebSocket client not available, message dropped")
+                    continue
 
-            try:
-                if isinstance(message, WebSocketMessage):
-                    topic = message.topic if message.topic else f"sessions/{self._sender_session_id}/response"
-                    payload_dict = json.loads(message.payload)
-                    await client.publish(message.event_type, payload_dict, topic)
-                    logger.debug("DELIVERED: %s event", message.event_type)
-                else:
-                    logger.warning("Unknown outgoing message type: %s", type(message))
+                topic = message.topic if message.topic else f"sessions/{self._session_id}/response"
+                payload_dict = json.loads(message.payload)
+                await self._ws_client.publish(message.event_type, payload_dict, topic)
+                logger.debug("DELIVERED: %s event", message.event_type)
             except Exception as e:
-                logger.error("Error sending outgoing WebSocket request: %s", e)
+                logger.error("Error sending WebSocket message: %s", e)
             finally:
-                self._ws_outgoing_queue.task_done()
+                self._ws_send_queue.task_done()
+
+        logger.debug("WebSocket send loop ended for session %s", self._session_id)
 
     def send_event(self, event_type: str, payload: str) -> None:
-        """Send an event via websocket if connected - thread-safe version.
+        """Queue an event for sending via WebSocket (non-blocking).
 
         Args:
             event_type: Type of event (e.g., "execution_event", "success_result")
             payload: JSON string payload to send
         """
-        # Wait for websocket event loop to be ready
-        if not self._websocket_event_loop_ready.wait(timeout=1.0):
-            logger.debug("Websocket not ready, event not sent: %s", event_type)
+        if self._ws_task is None or self._ws_task.done():
+            logger.debug("WebSocket sender not active, event not sent: %s", event_type)
             return
 
-        # Use run_coroutine_threadsafe to put message into WebSocket background thread queue
-        if self._websocket_event_loop is None:
-            logger.debug("WebSocket event loop not available for message: %s", event_type)
-            return
-
-        topic = f"sessions/{self._sender_session_id}/response"
+        topic = f"sessions/{self._session_id}/response"
         message = WebSocketMessage(event_type, payload, topic)
 
-        if self._ws_outgoing_queue is None:
-            logger.debug("No websocket queue available for event: %s", event_type)
+        try:
+            self._ws_send_queue.put_nowait(message)
+            logger.debug("QUEUED: %s event via websocket", event_type)
+        except asyncio.QueueFull:
+            logger.error("WebSocket queue full, event dropped: %s", event_type)
+
+    async def _stop_websocket_connection(self) -> None:
+        """Stop the sender task and close client."""
+        logger.info("Stopping WebSocket sender for session %s", self._session_id)
+
+        self._ws_shutdown_event.set()
+        await self._stop_websocket_task()
+        await self._stop_websocket_client()
+
+        logger.info("WebSocket sender stopped for session %s", self._session_id)
+
+    async def _wait_for_websocket_queue_flush(self, timeout_seconds: float = 5.0) -> None:
+        """Wait for all queued messages to be sent.
+
+        Args:
+            timeout_seconds: Maximum time to wait for queue to flush.
+        """
+        if self._ws_task is None or self._ws_task.done():
             return
 
         try:
-            asyncio.run_coroutine_threadsafe(self._ws_outgoing_queue.put(message), self._websocket_event_loop)
-            logger.debug("SENT: %s event via websocket", event_type)
-        except Exception as e:
-            logger.error("Failed to queue event %s: %s", event_type, e)
-
-    async def _wait_for_websocket_queue_flush(self, timeout_seconds: float = 5.0) -> None:
-        """Wait for all websocket messages to be sent.
-
-        Args:
-            timeout_seconds: Maximum time to wait for queue to flush
-        """
-        if self._ws_outgoing_queue is None or self._websocket_event_loop is None:
-            return
-
-        async def _check_queue_empty() -> bool:
-            return self._ws_outgoing_queue.empty() if self._ws_outgoing_queue else True
-
-        loop = asyncio.get_running_loop()
-        start_time = loop.time()
-        while loop.time() - start_time < timeout_seconds:
-            future = asyncio.run_coroutine_threadsafe(_check_queue_empty(), self._websocket_event_loop)
-            try:
-                is_empty = future.result(timeout=0.1)
-                if is_empty:
-                    return
-            except Exception as e:
-                logger.debug("Error checking queue status: %s", e)
-            await asyncio.sleep(0.1)
-
-        logger.warning("Timeout waiting for websocket queue to flush")
+            await asyncio.wait_for(self._ws_send_queue.join(), timeout=timeout_seconds)
+        except TimeoutError:
+            logger.warning("Timeout waiting for websocket queue to flush")

@@ -223,7 +223,7 @@ class NodeExecutor:
                 await node.aprocess()
                 return
             # Clear execution state before subprocess execution starts
-            node.subflow_execution_component.clear_state()
+            node.subflow_execution_component.clear_execution_state()
             if execution_type == PRIVATE_EXECUTION:
                 # Package the flow and run it in a subprocess.
                 await self._execute_private_workflow(node)
@@ -1482,7 +1482,7 @@ class NodeExecutor:
 
         # Clear execution state before subprocess execution starts (for non-local execution)
         if execution_type != LOCAL_EXECUTION:
-            node.subflow_execution_component.clear_state()
+            node.subflow_execution_component.clear_execution_state()
 
         # Check if we should run in order (default is sequential/True)
         run_in_order = node.get_parameter_value("run_in_order")
