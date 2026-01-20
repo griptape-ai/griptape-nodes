@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
@@ -13,12 +14,10 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes_library.files.file_operation_base import FileOperationBaseNode
-from griptape_nodes_library.utils.frame_number_mixin import FrameNumberMixin
 
 
-class RenameFile(FrameNumberMixin, FileOperationBaseNode):
+class RenameFile(FileOperationBaseNode):
     """Rename a file or directory.
 
     Can rename to a new name in the same directory or to a full path.
@@ -64,9 +63,6 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
             tooltip="Whether to overwrite if new_path exists (default: False). If False and new_path exists, operation fails.",
         )
         self.add_parameter(self.overwrite)
-
-        # Add frame number parameters via mixin
-        self._add_frame_number_parameters()
 
         # Output parameters
         self.old_path_output = Parameter(
@@ -127,19 +123,11 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
 
         return exceptions if exceptions else None
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle parameter value changes to show/hide dependent parameters."""
-        super().after_value_set(parameter, value)
-
-        # Handle frame number parameter visibility
-        self._handle_frame_number_parameter_change(parameter, value)
-
     def _resolve_new_path(self, old_path: str, new_path: str) -> str:
         """Resolve the full new path.
 
         If new_path is just a filename (no directory), use same directory as old_path.
         Otherwise, use new_path as-is.
-        If add_frame_number is enabled, insert padded frame number into filename.
 
         Args:
             old_path: Current path of file/directory
@@ -151,9 +139,6 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
         # Clean paths to remove newlines/carriage returns that cause Windows errors
         old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
         new_path = GriptapeNodes.OSManager().sanitize_path_string(new_path)
-
-        # Apply frame number padding if enabled
-        new_path = self._apply_frame_number_if_enabled(new_path)
 
         new_path_obj = Path(new_path)
         old_path_obj = Path(old_path)
@@ -178,7 +163,6 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
         # Otherwise, it's a relative path with directory parts - return normalized
         # Path normalizes separators automatically (handles / and \ cross-platform)
         return str(new_path_obj)
-
 
     def process(self) -> None:
         """Execute the file rename operation."""
@@ -231,25 +215,6 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
                     # ResultDetails.__str__() returns concatenated messages from all ResultDetail objects
                     error_details = f" - {delete_result.result_details}"
                 msg = f"{self.name} attempted to rename but failed to delete existing destination: {failure_reason}{error_details}"
-                self.set_parameter_value(self.old_path_output.name, "")
-                self.set_parameter_value(self.new_path_output.name, "")
-                self._set_status_results(was_successful=False, result_details=msg)
-                return
-
-        # Create parent directory of new_path if it doesn't exist
-        new_path_obj = Path(new_path)
-        parent_dir = new_path_obj.parent
-        if parent_dir and not parent_dir.exists():
-            try:
-                parent_dir.mkdir(parents=True, exist_ok=True)
-            except PermissionError as e:
-                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
-                self.set_parameter_value(self.old_path_output.name, "")
-                self.set_parameter_value(self.new_path_output.name, "")
-                self._set_status_results(was_successful=False, result_details=msg)
-                return
-            except OSError as e:
-                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
                 self.set_parameter_value(self.old_path_output.name, "")
                 self.set_parameter_value(self.new_path_output.name, "")
                 self._set_status_results(was_successful=False, result_details=msg)

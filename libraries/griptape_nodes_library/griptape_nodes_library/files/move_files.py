@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
@@ -18,7 +18,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.files.copy_files import CopyFiles
 from griptape_nodes_library.files.file_operation_base import BaseFileOperationInfo
-from griptape_nodes_library.utils.frame_number_mixin import FrameNumberMixin
 
 
 class MoveStatus(Enum):
@@ -38,7 +37,7 @@ class MoveFileInfo(BaseFileOperationInfo):
     moved_paths: list[str] = field(default_factory=list)  # Paths actually moved (from OS result)
 
 
-class MoveFiles(FrameNumberMixin, CopyFiles):
+class MoveFiles(CopyFiles):
     """Move files and/or directories from source to destination.
 
     Directories are moved recursively with all their contents.
@@ -67,36 +66,6 @@ class MoveFiles(FrameNumberMixin, CopyFiles):
         )
         self.destination_path.tooltip = "Destination directory where files will be moved."
 
-        # Add frame number parameters via mixin
-        self._add_frame_number_parameters()
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle parameter value changes to show/hide dependent parameters."""
-        super().after_value_set(parameter, value)
-
-        # Handle frame number parameter visibility
-        self._handle_frame_number_parameter_change(parameter, value)
-
-    def _resolve_destination_path(self, source_path: str, destination_dir: str) -> str:
-        """Resolve the full destination path for a source file/directory with optional frame number.
-
-        Overrides parent method to add frame number support.
-
-        Args:
-            source_path: Source file/directory path
-            destination_dir: Destination directory path or full destination file path
-
-        Returns:
-            Full destination path with frame number inserted if enabled
-        """
-        # Call parent method to resolve base destination path
-        destination_path = super()._resolve_destination_path(source_path, destination_dir)
-
-        # Apply frame number padding if enabled
-        destination_path = self._apply_frame_number_if_enabled(destination_path)
-
-        return destination_path
-
     def _execute_move(self, target: MoveFileInfo, destination_dir: str, *, overwrite: bool) -> None:
         """Execute move operation for a single target using RenameFileRequest.
 
@@ -105,7 +74,7 @@ class MoveFiles(FrameNumberMixin, CopyFiles):
             destination_dir: Destination directory
             overwrite: Whether to overwrite existing files
         """
-        # Resolve destination path (now includes frame number support)
+        # Resolve destination path
         destination_path = self._resolve_destination_path(target.source_path, destination_dir)
         target.destination_path = destination_path
 
