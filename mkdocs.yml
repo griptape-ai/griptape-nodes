@@ -228,6 +228,7 @@ nav:
           - Display Video: nodes/video/display_video.md
           - Save Video: nodes/video/save_video.md
           - Resize Video: nodes/video/resize_video.md
+          - Rescale Video: nodes/video/rescale_video.md
           - Change Speed: nodes/video/change_speed.md
           - Flip Video: nodes/video/flip_video.md
           - Reverse Video: nodes/video/reverse_video.md

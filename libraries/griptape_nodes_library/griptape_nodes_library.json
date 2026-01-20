@@ -684,6 +684,17 @@
       }
     },
     {
+      "class_name": "RescaleVideo",
+      "file_path": "griptape_nodes_library/video/rescale_video.py",
+      "metadata": {
+        "category": "video",
+        "description": "Rescale video with target size or percentage options using FFmpeg",
+        "display_name": "Rescale Video",
+        "icon": "picture-in-picture",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "CropVideo",
       "file_path": "griptape_nodes_library/video/crop_video.py",
       "metadata": {
