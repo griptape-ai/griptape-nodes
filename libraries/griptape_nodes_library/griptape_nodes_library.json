@@ -1818,8 +1818,8 @@
       "file_path": "griptape_nodes_library/image/rescale_image.py",
       "metadata": {
         "category": "image",
-        "description": "Rescale images with separate parameters for target size (pixels) and percentage scale, plus resample filter options",
-        "display_name": "Rescale Image",
+        "description": "Resize images with separate parameters for target size (pixels) and percentage scale, plus resample filter options",
+        "display_name": "Resize Image",
         "icon": "image-upscale",
         "group": "edit"
       }
