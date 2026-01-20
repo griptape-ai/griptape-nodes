@@ -241,6 +241,114 @@ def save_pil_image_with_named_filename(
     return ImageUrlArtifact(url)
 
 
+def resolve_localhost_url_to_path(url: str) -> str:
+    """Resolve localhost static file URLs to workspace file paths.
+
+    Converts URLs like http://localhost:8124/workspace/static_files/file.jpg
+    to actual workspace file paths like static_files/file.jpg
+
+    Args:
+        url: URL string that may be a localhost URL
+
+    Returns:
+        Resolved file path relative to workspace, or original string if not a localhost URL
+    """
+    if not isinstance(url, str):
+        return url
+
+    # Strip query parameters (cachebuster ?t=...)
+    if "?" in url:
+        url = url.split("?")[0]
+
+    # Check if it's a localhost URL (any port)
+    if url.startswith(("http://localhost:", "https://localhost:")):
+        parsed = urlparse(url)
+        # Extract path after /workspace/
+        if "/workspace/" in parsed.path:
+            workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
+            return workspace_relative_path
+
+    # Not a localhost workspace URL, return as-is
+    return url
+
+
+def read_image_from_file_path(path_str: str, context_name: str = "image") -> str | None:
+    """Read image file from disk and convert to base64 data URI.
+
+    Args:
+        path_str: File path (relative to workspace or absolute)
+        context_name: Name for logging context (e.g., node name)
+
+    Returns:
+        Base64 data URI string or None if file cannot be read
+    """
+    try:
+        # Try as workspace-relative path first
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        file_path = workspace_path / path_str
+
+        # If not found, try as absolute path
+        if not file_path.exists() or not file_path.is_file():
+            file_path = Path(path_str)
+            if not file_path.exists() or not file_path.is_file():
+                return None
+
+        # Read file bytes
+        image_bytes = file_path.read_bytes()
+        if not image_bytes:
+            return None
+
+        # Determine mime type from extension
+        ext = file_path.suffix.lower()
+        mime_type = "image/png"  # default
+        if ext in [".jpg", ".jpeg"]:
+            mime_type = "image/jpeg"
+        elif ext == ".png":
+            mime_type = "image/png"
+        elif ext == ".webp":
+            mime_type = "image/webp"
+        elif ext == ".gif":
+            mime_type = "image/gif"
+
+        # Encode to base64
+        b64_string = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:{mime_type};base64,{b64_string}"
+
+    except Exception as e:
+        logger.debug("%s failed to read image from file path %s: %s", context_name, path_str, e)
+        return None
+
+
+def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:
+    """Convert image value to base64 data URI, handling URLs, file paths, and raw base64.
+
+    This is a synchronous helper that tries file paths first, then falls back to raw base64.
+    For async URL downloads, use the async version or handle URLs separately.
+
+    Args:
+        image_value: Image value (URL, file path, or base64 string)
+        context_name: Name for logging context (e.g., node name)
+
+    Returns:
+        Base64 data URI string or None if conversion fails
+    """
+    # If it's already a data URI, return it
+    if image_value.startswith("data:image/"):
+        return image_value
+
+    # If it's a URL, return None (caller should handle async download)
+    if image_value.startswith(("http://", "https://")):
+        return None
+
+    # Try to read as file path first (works cross-platform)
+    file_path = read_image_from_file_path(image_value, context_name)
+    if file_path:
+        return file_path
+
+    # Assume it's raw base64 without data URI prefix
+    return f"data:image/png;base64,{image_value}"
+
+
 def load_pil_from_url(url: str) -> Image.Image:
     """Load image from URL or local file path using httpx or PIL."""
     # Check if it's a local file path
