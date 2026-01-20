@@ -2,6 +2,7 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.compare_images import CompareImagesTrait
 
 
@@ -10,9 +11,8 @@ class CompareImages(ControlNode):
         super().__init__(**kwargs)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="Image_1",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 tooltip="Image 1",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
@@ -21,9 +21,8 @@ class CompareImages(ControlNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="Image_2",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
                 tooltip="Image 2",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},

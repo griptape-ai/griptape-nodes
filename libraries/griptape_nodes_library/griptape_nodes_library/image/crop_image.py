@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.color_picker import ColorPicker
@@ -73,10 +74,8 @@ class CropImage(ControlNode):
         self._processing = False  # Lock to prevent live cropping during process()
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 default_value=None,
                 tooltip="Input image to crop",
                 ui_options={"crop_image": True},

@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
+    normalize_image_input,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -302,10 +303,16 @@ class FluxImageGeneration(SuccessFailureNode):
         await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
+        input_image = self.get_parameter_value("input_image")
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_image = normalize_image_input(input_image)
+
         return {
             "model": self.get_parameter_value("model") or "flux-kontext-pro",
             "prompt": self.get_parameter_value("prompt") or "",
-            "input_image": self.get_parameter_value("input_image"),
+            "input_image": input_image,
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
             "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
@@ -351,6 +358,12 @@ class FluxImageGeneration(SuccessFailureNode):
         super().after_value_set(parameter, value)
         self._api_key_provider.after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_image" and isinstance(value, str) and value:
+            artifact = normalize_image_input(value)
+            if artifact != value:
+                self.set_parameter_value("input_image", artifact)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()

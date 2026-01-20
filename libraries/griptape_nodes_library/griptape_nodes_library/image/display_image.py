@@ -10,6 +10,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -24,20 +26,15 @@ class DisplayImage(DataNode):
 
         # Add parameter for the image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
                 default_value=value,
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="The image to display",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="width",
-                type="int",
                 default_value=0,
                 tooltip="The width of the image",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -45,9 +42,8 @@ class DisplayImage(DataNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="height",
-                type="int",
                 default_value=0,
                 tooltip="The height of the image",
                 allowed_modes={ParameterMode.OUTPUT},

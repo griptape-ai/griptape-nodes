@@ -1,7 +1,7 @@
 import io
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
@@ -10,6 +10,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
+    normalize_image_list,
     save_pil_image_with_named_filename,
 )
 
@@ -35,7 +36,7 @@ class MergeImages(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="Images",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
                 default_value=None,
                 tooltip="Images to merge (add up to 4)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -72,6 +73,8 @@ class MergeImages(ControlNode):
         if images:
             if not isinstance(images, list):
                 images = [images]
+            # Normalize string paths to ImageUrlArtifact
+            images = normalize_image_list(images)
             return images[:4]  # Enforce max 4
         return []
 
@@ -79,7 +82,10 @@ class MergeImages(ControlNode):
         """Convert various image types to PIL Image."""
         if isinstance(img, dict):
             img = dict_to_image_url_artifact(img)
-        if isinstance(img, ImageUrlArtifact):
+        if isinstance(img, ImageArtifact):
+            # ImageArtifact has base64 data
+            img = Image.open(io.BytesIO(img.to_bytes()))
+        elif isinstance(img, ImageUrlArtifact):
             img = Image.open(io.BytesIO(img.to_bytes()))
         return img
 

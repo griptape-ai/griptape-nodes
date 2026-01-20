@@ -4,6 +4,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -22,12 +23,9 @@ class DisplayMask(DataNode):
         self._output_param_name = "output_mask"
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 default_value=None,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
                 tooltip="The image to create a mask from",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},

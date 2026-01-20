@@ -7,6 +7,7 @@ from PIL import Image, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.image_utils import (
@@ -27,12 +28,9 @@ class GaussianEdgeFade(DataNode):
 
         # Input image parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 default_value=None,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="The input image to apply edge fade to",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},

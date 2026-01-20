@@ -8,6 +8,7 @@ from PIL import Image
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -24,12 +25,9 @@ class ApplyMask(DataNode):
         super().__init__(**kwargs)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 default_value=None,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
                 tooltip="The image to display",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT},
@@ -37,10 +35,8 @@ class ApplyMask(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_mask",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Input mask image.",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT},
@@ -65,10 +61,8 @@ class ApplyMask(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Final image with mask applied.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

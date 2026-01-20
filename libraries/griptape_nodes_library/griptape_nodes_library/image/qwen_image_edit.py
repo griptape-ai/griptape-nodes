@@ -21,6 +21,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
+    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -212,6 +213,16 @@ class QwenImageEdit(SuccessFailureNode):
             parameter_group_initially_collapsed=True,
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+        self._seed_parameter.after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "images" and isinstance(value, list):
+            updated_list = normalize_image_list(value)
+            if updated_list != value:
+                self.set_parameter_value("images", updated_list)
+
     async def aprocess(self) -> None:
         await self._process()
 
@@ -265,6 +276,11 @@ class QwenImageEdit(SuccessFailureNode):
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
         images = self.get_parameter_value("images")
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        if isinstance(images, list):
+            images = normalize_image_list(images)
 
         # Validate images
         if not images or len(images) == 0:

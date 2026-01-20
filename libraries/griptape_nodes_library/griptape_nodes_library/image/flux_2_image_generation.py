@@ -19,6 +19,7 @@ from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
+    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -260,6 +261,12 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         super().after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
 
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_images" and isinstance(value, list):
+            updated_list = normalize_image_list(value)
+            if updated_list != value:
+                self.set_parameter_value("input_images", updated_list)
+
         if parameter.name == "model":
             # Map friendly name to API model ID
             api_model_id = MODEL_MAPPING.get(value, value)
@@ -346,6 +353,10 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         input_images_list = self.get_parameter_list_value("input_images") or []
         if not isinstance(input_images_list, list):
             input_images_list = [input_images_list] if input_images_list else []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_images_list = normalize_image_list(input_images_list)
 
         image_index = 0
         for image_input in input_images_list:

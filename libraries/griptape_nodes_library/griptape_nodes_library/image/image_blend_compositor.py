@@ -3,6 +3,7 @@ from typing import Any, ClassVar
 from PIL import Image, ImageChops
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -48,10 +49,8 @@ class ImageBlendCompositor(BaseImageProcessor):
         """Setup blend compositor parameters."""
         # Input parameters
         with ParameterGroup(name="inputs", ui_options={"collapsed": False}) as inputs_group:
-            blend_image_param = Parameter(
+            blend_image_param = ParameterImage(
                 name="blend_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The image to blend/composite onto the base image",
             )
             self.add_parameter(blend_image_param)

@@ -6,6 +6,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 from griptape_nodes_library.utils.image_utils import (
@@ -115,12 +116,9 @@ class ExtendCanvas(ControlNode):
 
         # Input image parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 default_value=None,
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                output_type="ImageUrlArtifact",
-                type="ImageArtifact",
                 tooltip="The input image to extend canvas around",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},

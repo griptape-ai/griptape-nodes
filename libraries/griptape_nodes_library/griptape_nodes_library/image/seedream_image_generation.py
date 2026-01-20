@@ -21,6 +21,8 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
+    normalize_image_input,
+    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -335,6 +337,17 @@ class SeedreamImageGeneration(SuccessFailureNode):
         """Update size options and parameter visibility based on parameter changes."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "image" and isinstance(value, str) and value:
+            artifact = normalize_image_input(value)
+            if artifact != value:
+                self.set_parameter_value("image", artifact)
+        elif parameter.name == "images" and isinstance(value, list):
+            updated_list = normalize_image_list(value)
+            if updated_list != value:
+                self.set_parameter_value("images", updated_list)
+
         return super().after_value_set(parameter, value)
 
     def _update_model_parameters(self, model: str) -> None:
@@ -457,10 +470,18 @@ class SeedreamImageGeneration(SuccessFailureNode):
         await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
+        image = self.get_parameter_value("image")
+        images = self.get_parameter_list_value("images") or []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        image = normalize_image_input(image)
+        images = normalize_image_list(images)
+
         params = {
             "model": self.get_parameter_value("model") or "seedream-4.5",
             "prompt": self.get_parameter_value("prompt") or "",
-            "image": self.get_parameter_value("image"),
+            "image": image,
             "size": self.get_parameter_value("size") or "2K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
@@ -469,7 +490,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Get image list for seedream-4.5 and seedream-4.0
         if params["model"] in ("seedream-4.5", "seedream-4.0"):
-            params["images"] = self.get_parameter_list_value("images") or []
+            params["images"] = images
             params["sequential_image_generation"] = "auto"
             params["sequential_image_generation_options"] = {
                 "max_images": self.get_parameter_value("max_images"),

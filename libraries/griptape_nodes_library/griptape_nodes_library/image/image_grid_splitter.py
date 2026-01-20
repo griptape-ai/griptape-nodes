@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultSuccess,
@@ -110,11 +111,9 @@ class ImageGridSplitter(DataNode):
         self._last_gap_strip_colors: list[np.ndarray] = []
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 tooltip="Grid input image to split.",
-                type="ImageUrlArtifact",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "dict", "str"],
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image", "hide_property": True, "expander": True},

@@ -20,6 +20,7 @@ from griptape_nodes.exe_types.param_components.seed_parameter import SeedParamet
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import normalize_image_input
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -72,7 +73,7 @@ class SeedVRImageUpscale(SuccessFailureNode):
             node=self,
             artifact_url_parameter=Parameter(
                 name="image_url",
-                input_types=["ImageUrlArtifact"],
+                input_types=["ImageUrlArtifact", "str"],
                 type="ImageUrlArtifact",
                 default_value="",
                 tooltip="Image URL",
@@ -220,6 +221,12 @@ class SeedVRImageUpscale(SuccessFailureNode):
         super().after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
 
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "image_url" and isinstance(value, str) and value:
+            artifact = normalize_image_input(value)
+            if artifact != value:
+                self.set_parameter_value("image_url", artifact)
+
         if parameter.name == "upscale_mode":
             upscale_mode = str(value)
             if upscale_mode == "factor":
@@ -278,6 +285,14 @@ class SeedVRImageUpscale(SuccessFailureNode):
         self._public_image_url_parameter.delete_uploaded_artifact()
 
     def _get_parameters(self) -> dict[str, Any]:
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        image_url = self.get_parameter_value("image_url")
+        normalized_image_url = normalize_image_input(image_url)
+        # Set normalized value back if it changed (needed for get_public_url_for_parameter)
+        if normalized_image_url != image_url:
+            self.parameter_values["image_url"] = normalized_image_url
+
         parameters = {
             "model_id": self.get_parameter_value("model_id"),
             "image_url": self._public_image_url_parameter.get_public_url_for_parameter(),

@@ -9,6 +9,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -55,10 +56,8 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
 
         # Add image input parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The image to process",
                 ui_options={
                     "clickable_file_browser": True,

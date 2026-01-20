@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import extract_image_url
@@ -72,10 +73,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="image_url",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="URL of the image to analyze for subject detection.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={

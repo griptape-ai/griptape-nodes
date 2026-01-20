@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -23,12 +24,9 @@ class PaintMask(DataNode):
         super().__init__(**kwargs)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 default_value=None,
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageArtifact",
-                type="ImageArtifact",
                 tooltip="The image to display",
                 ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT},
@@ -36,10 +34,8 @@ class PaintMask(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output_mask",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Generated mask image.",
                 ui_options={"expander": True, "edit_mask": True, "edit_mask_paint_mask": True},
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -50,10 +46,8 @@ class PaintMask(DataNode):
         self.add_parameter(ParameterFloat(name="blur_mask", default_value=0, slider=True, min_val=-0, max_val=100))
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Final image with mask applied.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

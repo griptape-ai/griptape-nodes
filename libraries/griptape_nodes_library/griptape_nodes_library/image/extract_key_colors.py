@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -53,15 +54,13 @@ class ExtractKeyColors(DataNode):
         self.number_of_color_params = 0  # Internal counter for dynamic parameters
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 tooltip="The image to extract key colors from",
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                clickable_file_browser=True,
                 ui_options={
                     "display_name": "Input Image",
-                    "clickable_file_browser": True,
                     "file_browser_options": {
                         "extensions": ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "ico", "webp"],
                         "allow_multiple": False,

@@ -20,6 +20,12 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    normalize_image_input,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -828,6 +834,12 @@ class TopazImageEnhance(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "image_input" and isinstance(value, str) and value:
+            artifact = normalize_image_input(value)
+            if artifact != value:
+                self.set_parameter_value("image_input", artifact)
+
         if parameter.name == "operation":
             models_dict = OPERATION_MODELS.get(value, {})
             model_choices = list(models_dict.keys())
@@ -887,10 +899,14 @@ class TopazImageEnhance(SuccessFailureNode):
     def _get_parameters(self) -> dict[str, Any]:
         operation = self.get_parameter_value("operation") or "enhance"
         model = self.get_parameter_value("model") or "Standard V2"
+        image_input = self.get_parameter_value("image_input")
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        image_input = normalize_image_input(image_input)
         params = {
             "operation": operation,
             "model": model,
-            "image_input": self.get_parameter_value("image_input"),
+            "image_input": image_input,
             "output_format": self.get_parameter_value("output_format"),
         }
 
@@ -994,14 +1010,18 @@ class TopazImageEnhance(SuccessFailureNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
+            # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
+            # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
                 b64 = getattr(image_input, "base64", None)
                 if isinstance(b64, str) and b64:
@@ -1013,13 +1033,21 @@ class TopazImageEnhance(SuccessFailureNode):
 
     async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
+        # If it's already a data URI, return it
         if image_value.startswith("data:image/"):
             return image_value
 
+        # If it's a URL, download and convert to base64
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""

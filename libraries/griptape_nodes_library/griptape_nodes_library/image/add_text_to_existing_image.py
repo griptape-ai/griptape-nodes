@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
@@ -80,10 +81,8 @@ class AddTextToExistingImage(SuccessFailureNode):
         self._cached_render_png_bytes: bytes | None = None
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
-                input_types=["ImageUrlArtifact", "ImageArtifact", "dict"],
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=None,
                 tooltip="The image to add text to",
@@ -176,9 +175,8 @@ class AddTextToExistingImage(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                output_type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The image with rendered text",
                 ui_options={"pulse_on_run": True, "expander": True},

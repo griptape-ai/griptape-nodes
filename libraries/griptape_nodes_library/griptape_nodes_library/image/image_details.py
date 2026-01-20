@@ -6,6 +6,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes_library.utils.image_utils import (
     calculate_aspect_ratio,
     get_image_color_info,
@@ -28,11 +29,9 @@ class ImageDetails(DataNode):
 
         # Add input parameter for the image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
                 default_value=value,
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The image to analyze",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )

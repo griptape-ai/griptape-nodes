@@ -19,6 +19,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
+    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
     shrink_image_to_size,
@@ -247,6 +248,15 @@ class GoogleImageGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=True,
         )
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_images" and isinstance(value, list):
+            updated_list = normalize_image_list(value)
+            if updated_list != value:
+                self.set_parameter_value("input_images", updated_list)
+
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = super().validate_before_node_run() or []
         prompt = self.get_parameter_value("prompt")
@@ -306,6 +316,13 @@ class GoogleImageGeneration(SuccessFailureNode):
         input_images = self.get_parameter_list_value("input_images") or []
         object_images = self.get_parameter_list_value("object_images") or []
         human_images = self.get_parameter_list_value("human_images") or []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_images = normalize_image_list(input_images)
+        object_images = normalize_image_list(object_images)
+        human_images = normalize_image_list(human_images)
+
         all_images = input_images + object_images + human_images
 
         # Build contents array with prompt and optional images

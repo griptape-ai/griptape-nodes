@@ -5,6 +5,13 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 
+# Optional import from library package - gracefully handle if library is not available
+try:
+    from griptape_nodes_library.utils.image_utils import normalize_image_input  # type: ignore[import-untyped]
+except ImportError:
+    # Library package not available - converter will be skipped
+    normalize_image_input = None  # type: ignore[assignment]
+
 
 class ParameterImage(Parameter):
     """A specialized Parameter class for image inputs with enhanced UI options.
@@ -122,6 +129,13 @@ class ParameterImage(Parameter):
         else:
             final_input_types = ["ImageUrlArtifact"]
 
+        # Add automatic converter to normalize string inputs to ImageUrlArtifact
+        # This allows ParameterImage to automatically handle file paths and localhost URLs
+        image_converters = list(converters) if converters else []
+        if accept_any and normalize_image_input is not None:
+            # Only add converter if accept_any is True and library is available
+            image_converters.insert(0, normalize_image_input)
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
@@ -135,7 +149,7 @@ class ParameterImage(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=traits,
-            converters=converters,
+            converters=image_converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,
