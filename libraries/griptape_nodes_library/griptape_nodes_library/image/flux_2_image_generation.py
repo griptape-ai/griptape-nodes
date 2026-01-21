@@ -11,6 +11,7 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -71,6 +72,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         - input_images (list): Optional input images for image-to-image generation
         - width (int): Output width in pixels. Must be a multiple of 16. (default: 1024)
         - height (int): Output height in pixels. Must be a multiple of 16. (default: 1024)
+        - force_output_dimension (bool): When enabled, automatically adjusts width and height to the nearest multiple of 16 (default: False)
         - randomize_seed (bool): If true, randomize the seed on each run (default: False)
         - seed (int): Random seed for reproducible results (default: 42)
         - output_format (str): Desired format of the output image ("jpeg" or "png")
@@ -157,6 +159,16 @@ class Flux2ImageGeneration(GriptapeProxyNode):
                 min_val=IMAGE_DIMENSION_STEP,
                 max_val=MAX_IMAGE_DIMENSION,
                 step=IMAGE_DIMENSION_STEP,
+            )
+        )
+
+        # Force output dimension parameter
+        self.add_parameter(
+            ParameterBool(
+                name="force_output_dimension",
+                default_value=False,
+                tooltip="When enabled, automatically adjusts width and height to the nearest multiple of 16.\n(Required for Flux.2 [flex] model to work correctly.)",
+                allow_output=False,
             )
         )
 
@@ -314,6 +326,17 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
+    def _round_to_nearest_multiple_of_16(self, value: int) -> int:
+        """Round a value to the nearest multiple of 16.
+
+        Args:
+            value: The value to round
+
+        Returns:
+            The nearest multiple of 16
+        """
+        return round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP
+
     async def _build_payload(self) -> dict[str, Any]:
         """Build the request payload for Flux image generation.
 
@@ -332,6 +355,19 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         seed = self._seed_parameter.get_seed()
         width = self.get_parameter_value("width") or DEFAULT_IMAGE_SIZE
         height = self.get_parameter_value("height") or DEFAULT_IMAGE_SIZE
+
+        # Adjust dimensions to be divisible by 16 if force_output_dimension is enabled
+        force_output_dimension = self.get_parameter_value("force_output_dimension") or False
+        if force_output_dimension:
+            original_width = width
+            original_height = height
+            width = self._round_to_nearest_multiple_of_16(width)
+            height = self._round_to_nearest_multiple_of_16(height)
+            # Log the adjustment if dimensions changed
+            if original_width != width or original_height != height:
+                self._log(
+                    f"Adjusted dimensions to be divisible by 16: {original_width}x{original_height} -> {width}x{height}"
+                )
 
         # Build base payload
         payload = {
