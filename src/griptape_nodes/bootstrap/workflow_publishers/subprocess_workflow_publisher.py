@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING, Any, Self
 import anyio
 
 from griptape_nodes.bootstrap.utils.python_subprocess_executor import PythonSubprocessExecutor
+from griptape_nodes.bootstrap.utils.subprocess_websocket_listener import SubprocessWebSocketListenerMixin
 from griptape_nodes.bootstrap.workflow_publishers.local_workflow_publisher import LocalWorkflowPublisher
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -20,11 +22,18 @@ class SubprocessWorkflowPublisherError(Exception):
     """Exception raised during subprocess workflow publishing."""
 
 
-class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecutor):
-    def __init__(self) -> None:
+class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecutor, SubprocessWebSocketListenerMixin):
+    def __init__(
+        self,
+        on_event: Callable[[dict], None] | None = None,
+        session_id: str | None = None,
+    ) -> None:
         PythonSubprocessExecutor.__init__(self)
+        self._init_websocket_listener(session_id=session_id, on_event=on_event)
 
     async def __aenter__(self) -> Self:
+        """Async context manager entry: start WebSocket listener."""
+        await self._start_websocket_listener()
         return self
 
     async def __aexit__(
@@ -33,7 +42,8 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        return
+        """Async context manager exit: stop WebSocket listener."""
+        await self._stop_websocket_listener()
 
     async def arun(
         self,
@@ -76,6 +86,8 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
                 publisher_name,
                 "--published-workflow-file-name",
                 published_workflow_file_name,
+                "--session-id",
+                self._session_id,
             ]
             if kwargs.get("pickle_control_flow_result"):
                 args.append("--pickle-control-flow-result")
@@ -87,3 +99,10 @@ class SubprocessWorkflowPublisher(LocalWorkflowPublisher, PythonSubprocessExecut
                     "GTN_CONFIG_ENABLE_WORKSPACE_FILE_WATCHING": "false",
                 },
             )
+
+    async def _handle_subprocess_event(self, event: dict) -> None:
+        """Handle publisher-specific events from the subprocess.
+
+        Currently, this is a no-op as we just forward all events via the on_event callback.
+        Subclasses can override to add specific event handling logic.
+        """
