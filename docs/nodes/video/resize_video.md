@@ -2,17 +2,16 @@
 
 ## What is it?
 
-The ResizeVideo node allows you to resize video content by a specified percentage using FFmpeg. It can scale videos up or down while maintaining the original aspect ratio and ensuring compatibility with video codecs.
+The ResizeVideo node resizes video content using multiple scaling modes (width, height, percentage, or width and height) with FFmpeg. It can preserve aspect ratio, pad with a background color, or crop to fill depending on your fit mode.
 
 ## When would I use it?
 
 Use the ResizeVideo node when:
 
-- You need to reduce video file size for storage or transmission
-- You want to scale up videos for better quality on larger displays
-- You need to standardize video dimensions across multiple files
-- You want to optimize videos for specific platforms or devices
-- You need to process videos to meet size or resolution requirements
+- You need to scale videos by a precise percentage
+- You want to target a specific width or height while preserving aspect ratio
+- You need to fit videos into exact dimensions with padding or cropping
+- You want consistent resizing controls across video workflows
 
 ## How to use it
 
@@ -20,57 +19,42 @@ Use the ResizeVideo node when:
 
 1. Add a ResizeVideo node to your workflow
 1. Connect a video source to the "video" input
-1. Set the "percentage" parameter to your desired resize amount (1-400)
-1. Choose a "scaling_algorithm" based on your quality and speed requirements
+1. Choose a "resize_mode"
+1. Configure the size parameters for that mode
 1. Run the workflow to resize the video
 
 ### Parameters
 
 - **video**: The video content to resize (supports VideoArtifact and VideoUrlArtifact)
 
-- **percentage**: The resize percentage as an integer (1-100, default: 50)
+- **resize_mode**: How the video should be resized
 
-    - 50 = 50% of original size
-    - 25 = 25% of original size (scaled down)
-    - 200 = 200% of the original size (scaled up)
+    - `width`: Resize to a target width while preserving aspect ratio
+    - `height`: Resize to a target height while preserving aspect ratio
+    - `percentage`: Resize by a percentage of the original size
+    - `width and height`: Resize to exact dimensions with fit options
 
-- **scaling_algorithm**: The algorithm used for video scaling (default: "bicubic")
+- **target_size**: Target size in pixels for width/height modes (1-8000)
 
-    **Fast Algorithms (Lower Quality, Faster Processing):**
+- **percentage**: Resize percentage (1-500, default: 100)
 
-    - `fast_bilinear`: Very fast, basic quality - good for previews or quick processing
-    - `bilinear`: Fast, decent quality - suitable for most general use cases
-    - `neighbor`: Fastest, pixelated quality - useful for pixel art or retro effects
+- **target_width**: Target width in pixels for width and height mode
 
-    **Balanced Algorithms (Good Quality, Moderate Speed):**
+- **target_height**: Target height in pixels for width and height mode
 
-    - `bicubic`: High quality, good speed - recommended default choice
-    - `area`: Good for downscaling, preserves details well
-    - `bicublin`: Enhanced bicubic, slightly better quality than standard bicubic
+- **fit_mode**: How to fit the video within the target dimensions
 
-    **High Quality Algorithms (Best Quality, Slower Processing):**
+    - `fit`: Preserve aspect ratio and add padding (letterboxing)
+    - `fill`: Preserve aspect ratio and crop to fill the target
+    - `stretch`: Ignore aspect ratio and stretch to the target
 
-    - `lanczos`: Excellent quality, slower - best for professional work
-    - `sinc`: Very high quality, very slow - for critical applications
-    - `spline`: High quality, good for smooth scaling
-    - `gauss`: High quality with Gaussian filtering
+- **background_color**: Background color for letterboxing in fit mode (hex)
 
-    **Specialized Algorithms:**
+- **scaling_algorithm**: The scaling algorithm used for resizing (default: "bicubic")
 
-    - `experimental`: New algorithms, may vary in quality
-    - `accurate_rnd`: Accurate rounding for precise dimensions
-    - `full_chroma_int`: Full chroma interpolation
-    - `full_chroma_inp`: Full chroma input
-    - `bitexact`: Bit-exact processing for compatibility
+    - `neighbor`, `bilinear`, `bicubic`, `lanczos`
 
 - **lanczos_parameter**: Fine-tune the Lanczos scaling algorithm (1.0-10.0, default: 3.0)
-
-    This parameter controls the alpha value for the Lanczos algorithm, affecting the sharpness and quality of the resized video:
-
-    - **Lower values (2.0-3.0)**: Smoother results, less ringing artifacts
-    - **Default (3.0)**: Balanced quality, good for most use cases
-    - **Higher values (4.0-5.0)**: Sharper results, but may introduce ringing artifacts
-    - **Very high values (6.0+)**: Maximum sharpness, but likely to have artifacts
 
     Only affects the output when `scaling_algorithm` is set to "lanczos".
 
@@ -80,40 +64,18 @@ Use the ResizeVideo node when:
 
 ## Example
 
-Imagine you want to resize a large video file to 50% of its original size with high quality:
+To resize a video to 1280x720 while preserving aspect ratio with padding:
 
-1. Add a ResizeVideo node to your workflow
-1. Connect the video output from a LoadVideo node to the ResizeVideo's "video" input
-1. Set the "percentage" parameter to 50
-1. Choose "lanczos" as the scaling algorithm for best quality
-1. Set the "lanczos_parameter" to 4.0 for sharper results (optional)
-1. Run the workflow - the video will be resized to 50% of its original dimensions
-1. The output filename will be `{original_filename}_resized_50_lanczos.{format}`
+1. Set **resize_mode** to `width and height`
+1. Set **target_width** to `1280`
+1. Set **target_height** to `720`
+1. Set **fit_mode** to `fit`
+1. Set **background_color** to `#000000`
 
 ## Important Notes
 
-- The ResizeVideo node uses FFmpeg for high-quality video processing
+- The ResizeVideo node uses FFmpeg for video processing
 - Dimensions are automatically adjusted to be divisible by 2 for codec compatibility
-- The original aspect ratio is preserved during resizing
 - The node supports common video formats (mp4, avi, mov, etc.)
-- Processing time depends on video size, complexity, and chosen scaling algorithm
 - The resized video maintains the original audio track
 - Logs are available for debugging processing issues
-
-## Scaling Algorithm Recommendations
-
-- **For general use**: Use `bicubic` (default) - good balance of quality and speed
-- **For high-quality output**: Use `lanczos` or `sinc` - best quality but slower
-    - With `lanczos`, try `lanczos_parameter` values of 3.0-4.0 for optimal results
-- **For fast processing**: Use `bilinear` or `fast_bilinear` - faster but lower quality
-- **For downscaling**: Use `area` - preserves details well when reducing size
-- **For pixel art/retro**: Use `neighbor` - maintains sharp pixel boundaries
-
-## Common Issues
-
-- **Processing Timeout**: Large videos may take longer to process; the node has a 5-minute timeout
-- **Invalid Percentage**: Make sure the percentage is between 1 and 100
-- **Unsupported Format**: Check that your input video is in a supported format
-- **No Video Input**: Make sure a video source is connected to the "video" input
-- **FFmpeg Errors**: Check the logs parameter for detailed error information if processing fails
-- **Slow Processing**: Consider using a faster scaling algorithm if processing is too slow
