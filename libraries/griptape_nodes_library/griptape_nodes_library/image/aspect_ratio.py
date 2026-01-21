@@ -140,7 +140,7 @@ class AspectRatio(SuccessFailureNode):
             self._preset_parameter = ParameterString(
                 name="preset",
                 tooltip="Select a preset aspect ratio or 'Custom' for manual configuration",
-                default_value="Custom",
+                default_value="1024x1024 (1:1)",
                 allowed_modes={ParameterMode.PROPERTY},
                 traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
             )
