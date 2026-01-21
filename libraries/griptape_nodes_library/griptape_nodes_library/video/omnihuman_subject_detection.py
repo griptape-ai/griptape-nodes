@@ -14,7 +14,9 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import extract_image_url
@@ -60,10 +62,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
 
         # INPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value=self.MODEL_IDS[0],
                 tooltip="Model identifier to use for detection",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -98,10 +98,8 @@ class OmnihumanSubjectDetection(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="contains_subject",
-                output_type="bool",
-                type="bool",
                 tooltip="Whether the image contains a human subject",
                 allowed_modes={ParameterMode.OUTPUT},
             )

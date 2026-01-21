@@ -4,8 +4,10 @@ from typing import Any, ClassVar
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -36,9 +38,8 @@ class ExtractAudio(BaseVideoProcessor):
 
         # Add audio output parameter
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="extracted_audio",
-                output_type="AudioUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The audio extracted from the video",
                 ui_options={"pulse_on_run": True, "expander": True},
@@ -49,9 +50,8 @@ class ExtractAudio(BaseVideoProcessor):
         """Setup custom parameters for audio extraction."""
         with ParameterGroup(name="audio_settings", ui_options={"collapsed": False}) as audio_group:
             # Audio format parameter
-            format_param = Parameter(
+            format_param = ParameterString(
                 name="audio_format",
-                type="str",
                 default_value=self.DEFAULT_AUDIO_FORMAT,
                 tooltip="Output audio format",
             )
@@ -59,9 +59,8 @@ class ExtractAudio(BaseVideoProcessor):
             self.add_parameter(format_param)
 
             # Audio quality parameter
-            quality_param = Parameter(
+            quality_param = ParameterString(
                 name="audio_quality",
-                type="str",
                 default_value=self.DEFAULT_AUDIO_QUALITY,
                 tooltip="Audio quality/bitrate. Use 'copy' to avoid re-encoding (fastest, preserves original quality)",
             )

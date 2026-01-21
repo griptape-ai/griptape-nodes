@@ -10,8 +10,10 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.video_utils import to_video_artifact
+from griptape_nodes_library.utils.video_utils import normalize_video_list, to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
 
@@ -29,11 +31,13 @@ class ConcatenateVideos(BaseVideoProcessor):
                 input_types=[
                     "VideoArtifact",
                     "VideoUrlArtifact",
+                    "str",
                     "list[VideoArtifact]",
                     "list[VideoUrlArtifact]",
+                    "list[str]",
                 ],
                 default_value=[],
-                tooltip="Connect individual videos or a list of videos to concatenate (supports both VideoArtifact and VideoUrlArtifact)",
+                tooltip="Connect individual videos or a list of videos to concatenate (supports VideoArtifact, VideoUrlArtifact, or file paths)",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"expander": True, "display_name": "Videos to Concatenate"},
             )
@@ -43,9 +47,8 @@ class ConcatenateVideos(BaseVideoProcessor):
         self._setup_custom_parameters()
 
         # Add frame rate parameter
-        frame_rate_param = Parameter(
+        frame_rate_param = ParameterString(
             name="output_frame_rate",
-            type="str",
             default_value="auto",
             tooltip="Output frame rate. Choose 'auto' to preserve input frame rate, or select a specific rate for your target platform.",
         )
@@ -53,9 +56,8 @@ class ConcatenateVideos(BaseVideoProcessor):
         self.add_parameter(frame_rate_param)
 
         # Add processing speed parameter
-        speed_param = Parameter(
+        speed_param = ParameterString(
             name="processing_speed",
-            type="str",
             default_value="balanced",
             tooltip="Processing speed vs quality trade-off",
         )
@@ -64,9 +66,8 @@ class ConcatenateVideos(BaseVideoProcessor):
 
         # Add output parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="output",
-                output_type="VideoUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The processed video",
                 ui_options={"pulse_on_run": True, "expander": True},
@@ -85,9 +86,8 @@ class ConcatenateVideos(BaseVideoProcessor):
     def _setup_logging_group(self) -> None:
         """Setup the common logging parameter group."""
         with ParameterGroup(name="Logs") as logs_group:
-            Parameter(
+            ParameterString(
                 name="logs",
-                type="str",
                 tooltip="Displays processing logs and detailed events if enabled.",
                 ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
@@ -99,9 +99,8 @@ class ConcatenateVideos(BaseVideoProcessor):
         """Setup custom parameters specific to video concatenation."""
         with ParameterGroup(name="concatenation_settings", ui_options={"collapsed": False}) as concat_group:
             # Output format parameter
-            format_parameter = Parameter(
+            format_parameter = ParameterString(
                 name="output_format",
-                type="str",
                 default_value="mp4",
                 tooltip="Output video format (mp4, avi, mov, mkv, webm)",
             )
@@ -109,9 +108,8 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.add_parameter(format_parameter)
 
             # Video codec parameter
-            codec_parameter = Parameter(
+            codec_parameter = ParameterString(
                 name="video_codec",
-                type="str",
                 default_value="libx264",
                 tooltip="Video codec for output (libx264 for H.264, libx265 for H.265, copy to avoid re-encoding)",
             )
@@ -119,9 +117,8 @@ class ConcatenateVideos(BaseVideoProcessor):
             self.add_parameter(codec_parameter)
 
             # Audio codec parameter
-            audio_codec_parameter = Parameter(
+            audio_codec_parameter = ParameterString(
                 name="audio_codec",
-                type="str",
                 default_value="aac",
                 tooltip="Audio codec for output (aac, mp3, copy to avoid re-encoding)",
             )
@@ -228,10 +225,23 @@ class ConcatenateVideos(BaseVideoProcessor):
 
         return exceptions if exceptions else None
 
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to normalize video inputs."""
+        super().after_value_set(parameter, value)
+
+        # Convert string paths to VideoUrlArtifact by uploading to static storage
+        if parameter.name == "video_inputs" and isinstance(value, list):
+            updated_list = normalize_video_list(value)
+            if updated_list != value:
+                self.set_parameter_value("video_inputs", updated_list)
+
     def _get_custom_parameters(self) -> dict[str, Any]:
         """Get custom parameters for processing."""
+        # Normalize video inputs (handles cases where values come from connections)
+        video_inputs = self.get_parameter_list_value("video_inputs")
+        normalized_video_inputs = normalize_video_list(video_inputs) if video_inputs else []
         return {
-            "video_inputs": self.get_parameter_list_value("video_inputs"),
+            "video_inputs": normalized_video_inputs,
             "output_format": self.get_parameter_value("output_format"),
             "video_codec": self.get_parameter_value("video_codec"),
             "audio_codec": self.get_parameter_value("audio_codec"),

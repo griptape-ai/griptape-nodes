@@ -4,13 +4,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
-
-# static_ffmpeg is dynamically installed by the library loader at runtime
-# into the library's own virtual environment, but not available during type checking
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 
 
 @dataclass
@@ -101,12 +105,9 @@ class GetVideoMetadata(DataNode):
 
         # Input parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
                 default_value=value,
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
-                output_type="VideoArtifact",
-                type="VideoArtifact",
                 tooltip="The video to analyze for metadata",
                 allowed_modes={ParameterMode.INPUT},
             )
@@ -114,84 +115,75 @@ class GetVideoMetadata(DataNode):
 
         # File Details Parameter Group
         with ParameterGroup(name="File Details") as file_group:
-            Parameter(
+            ParameterString(
                 name="codec_name",
                 default_value=None,
-                output_type="str",
                 tooltip="Video codec name (e.g., h264, vp8)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterString(
                 name="codec_type",
                 default_value=None,
-                output_type="str",
                 tooltip="Stream type (always 'video' for video streams)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterFloat(
                 name="optional_duration",
                 default_value=None,
-                output_type="float",
                 tooltip="Video duration in seconds (may not be available)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterInt(
                 name="optional_bit_rate",
                 default_value=None,
-                output_type="int",
                 tooltip="Video bitrate (may not be available)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterString(
                 name="optional_codec_long_name",
                 default_value=None,
-                output_type="str",
                 tooltip="Full codec name (may not be available)",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="Will be filled if available",
             )
         self.add_node_element(file_group)
 
         # Dimensions Parameter Group
         with ParameterGroup(name="Dimensions") as dimensions_group:
-            Parameter(
+            ParameterInt(
                 name="width",
                 default_value=None,
-                output_type="int",
                 tooltip="Video width in pixels",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterInt(
                 name="height",
                 default_value=None,
-                output_type="int",
                 tooltip="Video height in pixels",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterFloat(
                 name="aspect_ratio_decimal",
                 default_value=None,
-                output_type="float",
                 tooltip="Aspect ratio as decimal (width/height)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterString(
                 name="aspect_ratio_string",
                 default_value=None,
-                output_type="str",
                 tooltip="Aspect ratio as string (e.g., '16:9')",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="Will be filled if available",
             )
-            Parameter(
+            ParameterInt(
                 name="optional_coded_width",
                 default_value=None,
-                output_type="int",
                 tooltip="Coded width (may differ from display width)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterInt(
                 name="optional_coded_height",
                 default_value=None,
-                output_type="int",
                 tooltip="Coded height (may differ from display height)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
@@ -199,63 +191,65 @@ class GetVideoMetadata(DataNode):
 
         # Color Details Parameter Group
         with ParameterGroup(name="Color Details", ui_options={"collapsed": True}) as color_group:
-            Parameter(
+            ParameterString(
                 name="optional_color_space",
                 default_value=None,
-                output_type="str",
                 tooltip="Color space (e.g., bt709, bt2020)",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="Will be filled if available",
             )
-            Parameter(
+            ParameterString(
                 name="optional_color_transfer",
                 default_value=None,
-                output_type="str",
                 tooltip="Color transfer characteristic",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="Will be filled if available",
             )
-            Parameter(
+            ParameterString(
                 name="optional_color_primaries",
                 default_value=None,
-                output_type="str",
                 tooltip="Color primaries",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="Will be filled if available",
             )
         self.add_node_element(color_group)
 
         # Frame Details Parameter Group
         with ParameterGroup(name="Frame Details", ui_options={"collapsed": True}) as frame_group:
-            Parameter(
+            ParameterFloat(
                 name="frame_rate",
                 default_value=None,
-                output_type="float",
                 tooltip="Frame rate as decimal (e.g., 29.97)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterInt(
                 name="optional_nb_frames",
                 default_value=None,
-                output_type="int",
                 tooltip="Total number of frames (may not be available)",
                 allowed_modes={ParameterMode.OUTPUT},
             )
-            Parameter(
+            ParameterFloat(
                 name="optional_start_time",
                 default_value=None,
-                output_type="float",
                 tooltip="Start time offset in seconds",
                 allowed_modes={ParameterMode.OUTPUT},
             )
         self.add_node_element(frame_group)
 
     def _get_video_url(self, video_input: Any) -> str:
-        """Extract video URL from VideoArtifact or VideoUrlArtifact."""
+        """Extract video URL from VideoUrlArtifact.
+
+        The ParameterVideo converter should have already normalized string inputs
+        to VideoUrlArtifact before this method is called.
+        """
         if isinstance(video_input, VideoUrlArtifact):
             return video_input.value
-        if hasattr(video_input, "value"):
-            # Handle other artifact types that have a value attribute
+
+        # Handle other artifact types that have a value attribute
+        if hasattr(video_input, "value") and not isinstance(video_input, str):
             return video_input.value
 
-        msg = f"Unsupported video input type: {type(video_input)}"
+        msg = f"Unsupported video input type: {type(video_input)}. Expected VideoUrlArtifact (ParameterVideo should convert strings automatically)."
         raise ValueError(msg)
 
     def _get_ffprobe_exe(self) -> str:

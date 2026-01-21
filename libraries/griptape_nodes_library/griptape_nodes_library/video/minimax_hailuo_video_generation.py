@@ -17,8 +17,11 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -134,10 +137,8 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
         # Optional first frame (image) - accepts artifact or data URL string
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="first_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip=(
                     "Optional first frame image as data URL (data:image/jpeg;base64,...). "
@@ -151,10 +152,8 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
 
         # Optional last frame (image) - only for 02 model
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="last_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip=(
                     "Optional last frame image for Hailuo 02 model as data URL (data:image/jpeg;base64,...). "
@@ -215,10 +214,8 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -227,10 +224,8 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

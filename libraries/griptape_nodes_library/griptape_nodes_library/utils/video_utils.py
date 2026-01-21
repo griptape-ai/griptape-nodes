@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import re
 import subprocess
 import tempfile
@@ -10,6 +11,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
+logger = logging.getLogger("griptape_nodes")
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
 import static_ffmpeg.run  # type: ignore[import-untyped]
@@ -350,3 +353,147 @@ async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
             temp_path.unlink()
         error_details = f"Failed to download video from {url}: {e}"
         raise ValueError(error_details) from e
+
+
+def upload_file_to_static_storage_and_create_video_artifact(file_path: str) -> VideoUrlArtifact | None:
+    """Upload a file to static storage and return a VideoUrlArtifact.
+
+    This function reuses ArtifactPathTethering's logic to ensure files
+    are properly uploaded to static storage and accessible via localhost URLs.
+
+    Args:
+        file_path: File path (workspace-relative, absolute, or URL)
+
+    Returns:
+        VideoUrlArtifact with localhost URL, or None if upload fails
+    """
+    if not file_path or not isinstance(file_path, str):
+        return None
+
+    # If it's already a URL, return it as-is (no need to upload)
+    if file_path.startswith(("http://", "https://")):
+        return VideoUrlArtifact(file_path)
+
+    try:
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes_library.utils.artifact_path_tethering import (
+            ArtifactPathTethering,
+            ArtifactTetheringConfig,
+            default_extract_url_from_artifact_value,
+        )
+
+        # Create a minimal config for video artifacts
+        config = ArtifactTetheringConfig(
+            dict_to_artifact_func=dict_to_video_url_artifact,
+            extract_url_func=lambda artifact_value, artifact_classes: default_extract_url_from_artifact_value(
+                artifact_value, VideoUrlArtifact
+            ),
+            supported_extensions=SUPPORTED_VIDEO_EXTENSIONS,
+            default_extension="mp4",
+            url_content_type_prefix="video/",
+        )
+
+        # Create dummy parameters needed by ArtifactPathTethering
+        # (they're required but not actually used for path processing)
+        class DummyNode(BaseNode):
+            def __init__(self) -> None:
+                super().__init__(name="dummy")
+
+        dummy_node = DummyNode()
+        dummy_artifact_param = Parameter(
+            name="dummy_artifact",
+            output_type="VideoUrlArtifact",
+            type="VideoUrlArtifact",
+        )
+        dummy_path_param = Parameter(
+            name="dummy_path",
+            type="str",
+        )
+
+        # Create a tethering instance to use its _process_path_string method
+        tethering = ArtifactPathTethering(
+            node=dummy_node,
+            artifact_parameter=dummy_artifact_param,
+            path_parameter=dummy_path_param,
+            config=config,
+        )
+
+        # Use the tethering's path processing logic
+        artifact = tethering._process_path_string(file_path)
+        if artifact and isinstance(artifact, VideoUrlArtifact):
+            return artifact
+
+        return None
+
+    except Exception:
+        return None
+
+
+def normalize_video_input(video_input: Any) -> Any:
+    """Normalize a single video input, converting string paths to VideoUrlArtifact.
+
+    This ensures consistency whether values come from user input or node connections.
+    String paths are uploaded to static storage using ArtifactPathTethering's logic.
+    VideoUrlArtifact objects are returned unchanged.
+
+    Args:
+        video_input: Video input (may be string, VideoUrlArtifact, etc.)
+
+    Returns:
+        VideoUrlArtifact if input was a string path, otherwise returns input unchanged
+    """
+    # Return unchanged if already a VideoUrlArtifact
+    if isinstance(video_input, VideoUrlArtifact):
+        return video_input
+
+    # Process string paths
+    if isinstance(video_input, str) and video_input:
+        # Skip if it's already a URL (http/https)
+        if video_input.startswith(("http://", "https://")):
+            return VideoUrlArtifact(video_input)
+
+        artifact = upload_file_to_static_storage_and_create_video_artifact(video_input)
+        if artifact:
+            return artifact
+        # If conversion failed, return the original input so the parameter can still be set
+        # (this allows the node to handle the error or try again)
+        return video_input
+
+    return video_input
+
+
+def normalize_video_list(video_list: list[Any]) -> list[Any]:
+    """Normalize a list of video inputs, converting string paths to VideoUrlArtifact.
+
+    This ensures consistency whether values come from user input or node connections.
+    String paths are uploaded to static storage using ArtifactPathTethering's logic.
+    VideoUrlArtifact objects are passed through unchanged.
+
+    Args:
+        video_list: List of video inputs (may contain strings, VideoUrlArtifact, etc.)
+
+    Returns:
+        List with string paths converted to VideoUrlArtifact
+    """
+    if not video_list:
+        return video_list
+
+    normalized = []
+    for item in video_list:
+        # Skip if already a VideoUrlArtifact
+        if isinstance(item, VideoUrlArtifact):
+            normalized.append(item)
+            continue
+
+        # Process string paths
+        if isinstance(item, str) and item:
+            artifact = upload_file_to_static_storage_and_create_video_artifact(item)
+            if artifact:
+                normalized.append(artifact)
+            else:
+                normalized.append(item)
+        else:
+            normalized.append(item)
+
+    return normalized

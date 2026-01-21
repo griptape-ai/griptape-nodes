@@ -12,12 +12,16 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -84,10 +88,8 @@ class KlingMotionControl(SuccessFailureNode):
         # Image Input Group
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="reference_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Reference image with character (required). Supports .jpg/.jpeg/.png, max 10MB.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ),
@@ -98,10 +100,8 @@ class KlingMotionControl(SuccessFailureNode):
         # Use PublicArtifactUrlParameter for video upload handling
         self._public_video_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterVideo(
                 name="reference_video",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 tooltip="Reference video with actions to transfer (required). Supports .mp4/.mov, max 100MB.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ),
@@ -111,10 +111,8 @@ class KlingMotionControl(SuccessFailureNode):
 
         # Generation Settings Group
         with ParameterGroup(name="Generation Settings") as gen_settings_group:
-            Parameter(
+            ParameterBool(
                 name="keep_original_sound",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Keep original video sound",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -148,10 +146,8 @@ class KlingMotionControl(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -160,10 +156,8 @@ class KlingMotionControl(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

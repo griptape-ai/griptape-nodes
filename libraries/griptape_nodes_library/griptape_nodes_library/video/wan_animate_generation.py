@@ -12,12 +12,15 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import get_video_duration
@@ -100,10 +103,8 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         # Model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value=MODEL_OPTIONS[0],
                 tooltip="Select the WAN Animate model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -123,10 +124,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         # Input image URL using PublicArtifactUrlParameter
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="image_url",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 default_value="",
                 tooltip="Source image to animate",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -139,10 +138,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         # Reference video URL using PublicArtifactUrlParameter
         self._public_video_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterVideo(
                 name="video_url",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 default_value="",
                 tooltip="Reference video for motion transfer",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -154,9 +151,8 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -165,10 +161,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -177,10 +171,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Generated video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

@@ -23,9 +23,12 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
@@ -103,10 +106,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="image_url",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 default_value="",
                 tooltip="Source image URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -118,10 +119,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         self._public_audio_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterAudio(
                 name="audio_url",
-                input_types=["AudioUrlArtifact"],
-                type="AudioUrlArtifact",
                 default_value="",
                 tooltip="Audio file URL.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -185,10 +184,8 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Generated video URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
