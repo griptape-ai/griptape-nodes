@@ -96,10 +96,8 @@ class LTXVideoRetake(SuccessFailureNode):
 
         # Video input parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 tooltip="Input video to edit (max 21 seconds, max resolution 3840x2160)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "input video"},
