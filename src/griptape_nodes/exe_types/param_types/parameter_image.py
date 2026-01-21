@@ -4,13 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-
-# Optional import from library package - gracefully handle if library is not available
-try:
-    from griptape_nodes_library.utils.image_utils import normalize_image_input  # type: ignore[import-untyped]
-except ImportError:
-    # Library package not available - converter will be skipped
-    normalize_image_input = None  # type: ignore[assignment]
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class ParameterImage(Parameter):
@@ -132,9 +126,16 @@ class ParameterImage(Parameter):
         # Add automatic converter to normalize string inputs to ImageUrlArtifact
         # This allows ParameterImage to automatically handle file paths and localhost URLs
         image_converters = list(converters) if converters else []
-        if accept_any and normalize_image_input is not None:
-            # Only add converter if accept_any is True and library is available
-            image_converters.insert(0, normalize_image_input)
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with ImageUrlArtifact
+            def _normalize_image(value: Any) -> Any:
+                try:
+                    from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+                except ImportError:
+                    return value
+                return normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
+            image_converters.insert(0, _normalize_image)
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(

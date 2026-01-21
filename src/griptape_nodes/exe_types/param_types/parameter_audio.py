@@ -4,13 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-
-# Optional import from library package - gracefully handle if library is not available
-try:
-    from griptape_nodes_library.utils.audio_utils import normalize_audio_input  # type: ignore[import-untyped]
-except ImportError:
-    # Library package not available - converter will be skipped
-    normalize_audio_input = None  # type: ignore[assignment]
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class ParameterAudio(Parameter):
@@ -132,9 +126,16 @@ class ParameterAudio(Parameter):
         # Add automatic converter to normalize string inputs to AudioUrlArtifact
         # This allows ParameterAudio to automatically handle file paths and localhost URLs
         audio_converters = list(converters) if converters else []
-        if accept_any and normalize_audio_input is not None:
-            # Only add converter if accept_any is True and library is available
-            audio_converters.insert(0, normalize_audio_input)
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with AudioUrlArtifact
+            def _normalize_audio(value: Any) -> Any:
+                try:
+                    from griptape.artifacts import AudioUrlArtifact
+                except ImportError:
+                    return value
+                return normalize_artifact_input(value, AudioUrlArtifact)
+
+            audio_converters.insert(0, _normalize_audio)
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(

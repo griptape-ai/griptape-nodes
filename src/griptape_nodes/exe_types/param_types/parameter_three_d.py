@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class Parameter3D(Parameter):
@@ -117,6 +118,22 @@ class Parameter3D(Parameter):
         else:
             final_input_types = ["ThreeDUrlArtifact"]
 
+        # Add automatic converter to normalize string inputs to ThreeDUrlArtifact
+        # This allows Parameter3D to automatically handle file paths and localhost URLs
+        three_d_converters = list(converters) if converters else []
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with ThreeDUrlArtifact
+            def _normalize_three_d(value: Any) -> Any:
+                try:
+                    from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
+                except ImportError:
+                    return value
+                return normalize_artifact_input(value, ThreeDUrlArtifact)
+
+            three_d_converters.insert(0, _normalize_three_d)
+        else:
+            three_d_converters = converters
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
@@ -130,7 +147,7 @@ class Parameter3D(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=traits,
-            converters=converters,
+            converters=three_d_converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,

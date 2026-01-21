@@ -4,13 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
-
-# Optional import from library package - gracefully handle if library is not available
-try:
-    from griptape_nodes_library.utils.video_utils import normalize_video_input  # type: ignore[import-untyped]
-except ImportError:
-    # Library package not available - converter will be skipped
-    normalize_video_input = None  # type: ignore[assignment]
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class ParameterVideo(Parameter):
@@ -132,9 +126,16 @@ class ParameterVideo(Parameter):
         # Add automatic converter to normalize string inputs to VideoUrlArtifact
         # This allows ParameterVideo to automatically handle file paths and localhost URLs
         video_converters = list(converters) if converters else []
-        if accept_any and normalize_video_input is not None:
-            # Only add converter if accept_any is True and library is available
-            video_converters.insert(0, normalize_video_input)
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with VideoUrlArtifact
+            def _normalize_video(value: Any) -> Any:
+                try:
+                    from griptape.artifacts import VideoUrlArtifact
+                except ImportError:
+                    return value
+                return normalize_artifact_input(value, VideoUrlArtifact)
+
+            video_converters.insert(0, _normalize_video)
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(

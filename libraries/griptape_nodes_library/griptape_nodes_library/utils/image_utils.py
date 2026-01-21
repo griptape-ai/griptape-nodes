@@ -16,14 +16,8 @@ from griptape.loaders import ImageLoader
 from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
-from griptape_nodes.exe_types.core_types import Parameter
-from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.utils.artifact_path_tethering import (
-    ArtifactPathTethering,
-    ArtifactTetheringConfig,
-    default_extract_url_from_artifact_value,
-)
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -330,7 +324,7 @@ def normalize_image_list(image_list: list[Any]) -> list[Any]:
     """Normalize a list of image inputs, converting string paths to ImageUrlArtifact.
 
     This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage using ArtifactPathTethering's logic.
+    String paths are uploaded to static storage and converted to ImageUrlArtifact objects.
     ImageUrlArtifact and ImageArtifact objects are passed through unchanged.
 
     Args:
@@ -342,31 +336,14 @@ def normalize_image_list(image_list: list[Any]) -> list[Any]:
     if not image_list:
         return image_list
 
-    normalized = []
-    for item in image_list:
-        # Skip if already an ImageUrlArtifact or ImageArtifact (has base64 data)
-        if isinstance(item, (ImageUrlArtifact, ImageArtifact)):
-            normalized.append(item)
-            continue
-
-        # Process string paths
-        if isinstance(item, str) and item:
-            artifact = upload_file_to_static_storage_and_create_artifact(item)
-            if artifact:
-                normalized.append(artifact)
-            else:
-                normalized.append(item)
-        else:
-            normalized.append(item)
-
-    return normalized
+    return [normalize_artifact_input(item, ImageUrlArtifact, accepted_types=(ImageArtifact,)) for item in image_list]
 
 
 def normalize_image_input(image_input: Any) -> Any:
     """Normalize a single image input, converting string paths to ImageUrlArtifact.
 
     This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage using ArtifactPathTethering's logic.
+    String paths are uploaded to static storage and converted to ImageUrlArtifact objects.
     ImageUrlArtifact and ImageArtifact objects are returned unchanged.
 
     Args:
@@ -375,85 +352,7 @@ def normalize_image_input(image_input: Any) -> Any:
     Returns:
         ImageUrlArtifact if input was a string path, otherwise returns input unchanged
     """
-    # Return unchanged if already an ImageUrlArtifact or ImageArtifact (has base64 data)
-    if isinstance(image_input, (ImageUrlArtifact, ImageArtifact)):
-        return image_input
-
-    # Process string paths
-    if isinstance(image_input, str) and image_input:
-        artifact = upload_file_to_static_storage_and_create_artifact(image_input)
-        if artifact:
-            return artifact
-
-    return image_input
-
-
-def upload_file_to_static_storage_and_create_artifact(file_path: str) -> ImageUrlArtifact | None:
-    """Upload a file to static storage and return an ImageUrlArtifact.
-
-    This function reuses ArtifactPathTethering's logic to ensure files
-    are properly uploaded to static storage and accessible via localhost URLs.
-
-    Args:
-        file_path: File path (workspace-relative, absolute, or URL)
-
-    Returns:
-        ImageUrlArtifact with localhost URL, or None if upload fails
-    """
-    if not file_path or not isinstance(file_path, str):
-        return None
-
-    # If it's already a URL, return it as-is (no need to upload)
-    if file_path.startswith(("http://", "https://")):
-        return ImageUrlArtifact(value=file_path)
-
-    try:
-        # Create a minimal config for image artifacts
-        config = ArtifactTetheringConfig(
-            dict_to_artifact_func=dict_to_image_url_artifact,
-            extract_url_func=lambda artifact_value, artifact_classes: default_extract_url_from_artifact_value(
-                artifact_value, ImageUrlArtifact
-            ),
-            supported_extensions=SUPPORTED_IMAGE_EXTENSIONS,
-            default_extension="png",
-            url_content_type_prefix="image/",
-        )
-
-        # Create dummy parameters needed by ArtifactPathTethering
-        # (they're required but not actually used for path processing)
-        class DummyNode(BaseNode):
-            def __init__(self) -> None:
-                super().__init__(name="dummy")
-
-        dummy_node = DummyNode()
-        dummy_artifact_param = Parameter(
-            name="dummy_artifact",
-            output_type="ImageUrlArtifact",
-            type="ImageUrlArtifact",
-        )
-        dummy_path_param = Parameter(
-            name="dummy_path",
-            type="str",
-        )
-
-        # Create a tethering instance to use its _process_path_string method
-        tethering = ArtifactPathTethering(
-            node=dummy_node,
-            artifact_parameter=dummy_artifact_param,
-            path_parameter=dummy_path_param,
-            config=config,
-        )
-
-        # Use the tethering's path processing logic
-        artifact = tethering._process_path_string(file_path)
-        if artifact and isinstance(artifact, ImageUrlArtifact):
-            return artifact
-
-        return None
-
-    except Exception as e:
-        logger.warning(f"Error uploading file '{file_path}' to static storage: {e}")
-        return None
+    return normalize_artifact_input(image_input, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
 
 def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:
