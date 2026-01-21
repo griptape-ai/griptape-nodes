@@ -457,9 +457,8 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
         if post_resp.status_code >= 400:  # noqa: PLR2004
             self._set_safe_defaults()
-            self._log(
-                f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
-            )
+            headers_dict = dict(post_resp.headers)
+            self._log(f"Proxy POST error status={post_resp.status_code} headers={headers_dict} body={post_resp.text}")
             # Try to parse error response body
             try:
                 error_json = post_resp.json()
