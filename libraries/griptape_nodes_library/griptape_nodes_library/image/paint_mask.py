@@ -28,14 +28,18 @@ class PaintMask(DataNode):
                 name="input_image",
                 default_value=None,
                 tooltip="The image to display",
-                hide_property=True,
+                ui_options={"hide_property": True},
                 allowed_modes={ParameterMode.INPUT},
             )
         )
 
+        # Switching to ParameterImage caused issues with mask generation
+        # TODO: Switch to ParameterImage and ensure mask generation works as expected. https://github.com/griptape-ai/griptape-nodes/issues/3705
         self.add_parameter(
-            ParameterImage(
+            Parameter(
                 name="output_mask",
+                input_types=["ImageArtifact", "ImageUrlArtifact"],
+                type="ImageUrlArtifact",
                 tooltip="Generated mask image.",
                 ui_options={"expander": True, "edit_mask": True, "edit_mask_paint_mask": True},
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
