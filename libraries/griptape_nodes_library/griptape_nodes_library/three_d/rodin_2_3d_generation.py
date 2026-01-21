@@ -10,16 +10,20 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 
 logger = logging.getLogger("griptape_nodes")
@@ -274,10 +278,8 @@ class Rodin23DGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -286,14 +288,12 @@ class Rodin23DGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            Parameter3D(
                 name="model_url",
-                output_type="ThreeDUrlArtifact",
-                type="ThreeDUrlArtifact",
                 tooltip="Generated 3D model as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True, "display_name": "3D Model"},
+                ui_options={"pulse_on_run": True, "display_name": "3D Model"},
             )
         )
 
@@ -322,6 +322,27 @@ class Rodin23DGeneration(SuccessFailureNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        # Handle both the list parameter itself and individual child parameters
+        is_input_images = parameter.name == "input_images"
+        is_child_of_input_images = (
+            hasattr(parameter, "parent_container_name") and parameter.parent_container_name == "input_images"
+        )
+
+        if is_input_images and isinstance(value, list):
+            # Normalize the entire list when it's set as a whole
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("input_images", updated_list)
+        elif is_child_of_input_images and value is not None:
+            # Normalize individual items when they're added to the list
+            normalized_value = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if normalized_value != value:
+                # Update the child parameter value
+                if parameter.name in self.parameter_values:
+                    self.parameter_values[parameter.name] = normalized_value
+                self.publish_update_to_parameter(parameter.name, normalized_value)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
@@ -385,9 +406,14 @@ class Rodin23DGeneration(SuccessFailureNode):
         await self._poll_for_result(generation_id, headers, params)
 
     def _get_parameters(self) -> dict[str, Any]:
+        # Get input_images and normalize string paths to ImageUrlArtifact
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_images = self.get_parameter_list_value("input_images") or []
+        input_images = normalize_artifact_list(input_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
         return {
             "prompt": self.get_parameter_value("prompt") or "",
-            "input_images": self.get_parameter_list_value("input_images") or [],
+            "input_images": input_images,
             "condition_mode": self.get_parameter_value("condition_mode") or DEFAULT_CONDITION_MODE,
             "geometry_file_format": self.get_parameter_value("geometry_file_format") or DEFAULT_GEOMETRY_FORMAT,
             "material": self.get_parameter_value("material") or DEFAULT_MATERIAL,
@@ -545,21 +571,34 @@ class Rodin23DGeneration(SuccessFailureNode):
         if not image_input:
             return None
 
-        # Handle string inputs (URL or base64)
-        if isinstance(image_input, str):
-            return await self._string_to_bytes(image_input)
+        # Handle ImageArtifact with to_bytes() method
+        if hasattr(image_input, "to_bytes"):
+            try:
+                return image_input.to_bytes()
+            except Exception as e:
+                self._log(f"Failed to get bytes from ImageArtifact: {e}")
+                return None
 
+        # Extract string value from various input types
+        image_value: str | None = None
+
+        # Handle string inputs (URL or base64) - should be rare after normalization
+        if isinstance(image_input, str):
+            image_value = image_input
         # Handle ImageUrlArtifact
-        if hasattr(image_input, "value"):
+        elif hasattr(image_input, "value"):
             value = getattr(image_input, "value", None)
             if isinstance(value, str):
-                return await self._string_to_bytes(value)
-
+                image_value = value
         # Handle ImageArtifact with base64 property
-        if hasattr(image_input, "base64"):
+        elif hasattr(image_input, "base64"):
             b64 = getattr(image_input, "base64", None)
             if isinstance(b64, str) and b64:
-                return await self._string_to_bytes(b64)
+                image_value = b64
+
+        # Convert string value to bytes if we found one
+        if image_value:
+            return await self._string_to_bytes(image_value)
 
         return None
 

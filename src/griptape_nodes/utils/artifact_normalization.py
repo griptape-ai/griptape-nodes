@@ -183,4 +183,31 @@ def normalize_artifact_input(
     return artifact_input
 
 
-__all__ = ["normalize_artifact_input"]
+def normalize_artifact_list(
+    artifact_list: list[Any],
+    artifact_type: type[Any],
+    *,
+    accepted_types: tuple[type[Any], ...] | None = None,
+) -> list[Any]:
+    """Normalize a list of artifact inputs, converting string paths to the specified artifact type.
+
+    This ensures consistency whether values come from user input or node connections.
+    String paths are uploaded to static storage and converted to artifact objects.
+    Objects that are already the correct artifact type are passed through unchanged.
+
+    Args:
+        artifact_list: List of artifact inputs (may contain strings, artifact objects, etc.)
+        artifact_type: The artifact class to create (ImageUrlArtifact, VideoUrlArtifact, AudioUrlArtifact)
+        accepted_types: Optional tuple of artifact types that should be passed through unchanged.
+            For example, for images, both ImageUrlArtifact and ImageArtifact are valid.
+
+    Returns:
+        List with string paths converted to artifacts of the specified type
+    """
+    if not artifact_list:
+        return artifact_list
+
+    return [normalize_artifact_input(item, artifact_type, accepted_types=accepted_types) for item in artifact_list]
+
+
+__all__ = ["normalize_artifact_input", "normalize_artifact_list"]

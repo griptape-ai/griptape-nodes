@@ -4,6 +4,8 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
 
 
 class LoadGLTF(DataNode):
@@ -13,11 +15,8 @@ class LoadGLTF(DataNode):
         # Need to define the category
         self.category = "3D"
         self.description = "Load a GLTF file"
-        gltf_parameter = Parameter(
+        gltf_parameter = Parameter3D(
             name="gltf",
-            input_types=["GLTFArtifact", "GLTFUrlArtifact"],
-            type="GLTFArtifact",
-            output_type="GLTFUrlArtifact",
             default_value=None,
             ui_options={"clickable_file_browser": True, "expander": True},
             tooltip="The GLTF file that has been loaded.",
@@ -32,9 +31,8 @@ class LoadGLTF(DataNode):
                 ui_options={"text_align": "text-center"},
             )
         )
-        image_parameter = Parameter(
+        image_parameter = ParameterImage(
             name="image",
-            type="ImageUrlArtifact",
             default_value=None,
             tooltip="The image of the GLTF file.",
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
