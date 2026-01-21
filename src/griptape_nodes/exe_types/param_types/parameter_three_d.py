@@ -131,8 +131,6 @@ class Parameter3D(Parameter):
                 return normalize_artifact_input(value, ThreeDUrlArtifact)
 
             three_d_converters.insert(0, _normalize_three_d)
-        else:
-            three_d_converters = converters
 
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
