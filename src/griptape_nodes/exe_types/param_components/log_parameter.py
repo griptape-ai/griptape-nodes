@@ -20,7 +20,7 @@ class LogParameter:
                 output_type="str",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="logs",
-                ui_options={"multiline": True},
+                ui_options={"multiline": True, "placeholder_text": ""},
             )
         )
 
@@ -67,6 +67,10 @@ class StdoutCapture:
 
     def flush(self) -> None:
         self._original_stdout.flush()
+
+    def isatty(self) -> bool:
+        # Return False to prevent libraries from outputting ANSI color codes
+        return False
 
     def __enter__(self) -> "StdoutCapture":
         sys.stdout = self

@@ -1,22 +1,18 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
-import os
-import time
 from contextlib import suppress
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +23,7 @@ MIN_MUSIC_LENGTH_SEC = 10.0
 MAX_MUSIC_LENGTH_SEC = 300.0
 
 
-class ElevenLabsMusicGeneration(SuccessFailureNode):
+class ElevenLabsMusicGeneration(GriptapeProxyNode):
     """Generate music from text prompts using Eleven Labs API via Griptape model proxy.
 
     Uses the Eleven Music v1 model to create custom music from text descriptions.
@@ -43,30 +39,23 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
         - audio_url (AudioUrlArtifact): Generated music audio as URL artifact
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate music from text prompts using Eleven Labs"
 
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/models/")
-
         # INPUTS / PROPERTIES
         # Text input
         self.add_parameter(
-            ParameterString(
+            Parameter(
                 name="text",
+                input_types=["str"],
+                type="str",
                 tooltip="Text prompt describing the music to generate",
-                multiline=True,
-                placeholder_text="Describe the music you want to generate...",
-                allow_output=False,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the music you want to generate...",
                     "display_name": "Text",
                 },
             )
@@ -140,6 +129,7 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -159,57 +149,19 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the music generation result or any errors encountered",
             result_details_placeholder="Music generation status will appear here...",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
-    def validate_before_node_run(self) -> list[Exception] | None:
-        """Validate that required configuration is available before running the node."""
-        errors = []
-
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            errors.append(
-                ValueError(f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config.")
-            )
-
-        return errors or None
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation."""
+        return "eleven-music-1-0"
 
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
 
-    def process(self) -> None:
-        pass
-
-    async def aprocess(self) -> None:
-        await self._process_async()
-
-    async def _process_async(self) -> None:
-        """Async implementation of the processing logic."""
-        self._clear_execution_status()
-
-        params = self._get_parameters()
-        api_key = self._get_api_key()
-        headers = self._build_headers(api_key)
-
-        self._log("Generating music with Eleven Music v1 via Griptape proxy")
-
-        try:
-            response_bytes = await self._submit_request(params, headers)
-            if response_bytes:
-                self._save_audio_from_bytes(response_bytes)
-                self.parameter_output_values["generation_id"] = str(int(time.time()))
-                self._set_status_results(was_successful=True, result_details="Music generated successfully")
-            else:
-                self._set_safe_defaults()
-                self._set_status_results(was_successful=False, result_details="No audio data received from API")
-        except Exception as e:
-            self._set_safe_defaults()
-            error_message = str(e)
-            self._set_status_results(was_successful=False, result_details=error_message)
-            self._handle_failure_exception(e)
-
-    def _get_parameters(self) -> dict[str, Any]:
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for Eleven Labs music generation."""
         text = self.get_parameter_value("text") or ""
         duration_seconds = self.get_parameter_value("music_duration_seconds")
         output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
@@ -230,71 +182,10 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
         if force_instrumental is not None:
             params["force_instrumental"] = force_instrumental
 
-        return params
-
-    def _get_api_key(self) -> str:
-        """Get the API key - validation is done in validate_before_node_run()."""
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. This should have been caught during validation."
-            raise RuntimeError(msg)
-        return api_key
-
-    def _build_headers(self, api_key: str) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> bytes | None:
-        url = urljoin(self._proxy_base, "eleven-music-1-0")
-
-        self._log("Submitting request to Griptape model proxy")
+        # Log request
         self._log_request(params)
 
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(url, json=params, headers=headers)
-                response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            error_message = self._parse_error_response(e.response.text, e.response.status_code)
-            raise RuntimeError(error_message) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"Request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        self._log("Request submitted successfully")
-        return response.content
-
-    def _parse_error_response(self, response_text: str, status_code: int) -> str:
-        """Parse error response and extract meaningful error information for the user."""
-        try:
-            error_data = _json.loads(response_text)
-
-            if "provider_response" in error_data:
-                provider_response_str = error_data["provider_response"]
-                provider_data = _json.loads(provider_response_str)
-
-                if "detail" in provider_data:
-                    detail = provider_data["detail"]
-                    status = detail.get("status", "")
-                    message = detail.get("message", "")
-
-                    if status and message:
-                        return f"{status}: {message}"
-                    if message:
-                        return f"Error: {message}"
-
-            if "error" in error_data:
-                return f"Error: {error_data['error']}"
-
-            return f"API Error ({status_code}): {response_text[:200]}"
-
-        except (_json.JSONDecodeError, KeyError, TypeError):
-            return f"API Error ({status_code}): Unable to parse error response"
+        return params
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -307,9 +198,39 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    def _save_audio_from_bytes(self, audio_bytes: bytes) -> None:
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse the Eleven Labs music result and set output parameters."""
+        # Check if we received raw audio bytes (v2 API returns raw bytes for music generation)
+        audio_bytes_raw = result_json.get("audio_bytes")
+        if audio_bytes_raw:
+            audio_bytes = audio_bytes_raw
+            self._log("Received raw audio bytes from API")
+        else:
+            # Fall back to base64-encoded audio if that's what we get
+            audio_base64 = result_json.get("audio_base64")
+            if not audio_base64:
+                self._log("No audio data in response")
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details="Generation completed but no audio data was found in the response.",
+                )
+                return
+
+            try:
+                audio_bytes = base64.b64decode(audio_base64)
+                self._log("Decoded base64 audio")
+            except Exception as e:
+                self._log(f"Failed to decode base64 audio: {e}")
+                self._set_safe_defaults()
+                self._set_status_results(
+                    was_successful=False,
+                    result_details=f"Failed to decode audio data: {e}",
+                )
+                return
+
+        # Save audio with appropriate file extension
         try:
-            self._log("Processing audio bytes from proxy response")
             # Determine file extension based on output format
             output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
             if output_format.startswith("mp3_"):
@@ -321,16 +242,34 @@ class ElevenLabsMusicGeneration(SuccessFailureNode):
             else:
                 ext = "mp3"
 
-            filename = f"eleven_music_{int(time.time())}.{ext}"
-
+            filename = f"eleven_music_{generation_id}.{ext}"
             static_files_manager = GriptapeNodes.StaticFilesManager()
             saved_url = static_files_manager.save_static_file(audio_bytes, filename)
             self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
             self._log(f"Saved audio to static storage as {filename}")
         except Exception as e:
-            self._log(f"Failed to save audio from bytes: {e}")
-            self.parameter_output_values["audio_url"] = None
+            self._log(f"Failed to save audio: {e}")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"Failed to save audio file: {e}",
+            )
+            return
+
+        # Set success status
+        self._set_status_results(was_successful=True, result_details="Music generated successfully")
+
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from Eleven Labs music generation failed response."""
+        # Try top-level details field (ElevenLabs-specific)
+        details = response_json.get("details")
+        if details:
+            return f"{self.name} {details}"
+
+        # Fall back to standard error extraction
+        return super()._extract_error_message(response_json)
 
     def _set_safe_defaults(self) -> None:
+        """Set safe default values for outputs."""
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["audio_url"] = None

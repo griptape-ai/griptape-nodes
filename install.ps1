@@ -20,13 +20,12 @@ if ($existingUv) {
     ColorWrite "Installing uv..." 'Cyan'
     $env:UV_UNMANAGED_INSTALL = Join-Path $env:USERPROFILE '.local\share\griptape_nodes\bin'
     $uvInstallPath = Join-Path $env:USERPROFILE '.local\share\griptape_nodes\bin\uv.exe'
-}
-
-try {
-    powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex" > $null
-} catch {
-    ColorWrite "Failed to install uv with the default method. You may need to install it manually." 'Red'
-    exit 1
+    try {
+        powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex" > $null
+    } catch {
+        ColorWrite "Failed to install uv with the default method. You may need to install it manually." 'Red'
+        exit 1
+    }
 }
 ColorWrite "uv installed successfully." 'Green'
 

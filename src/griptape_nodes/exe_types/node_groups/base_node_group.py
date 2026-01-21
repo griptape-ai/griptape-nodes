@@ -65,8 +65,7 @@ class BaseNodeGroup(BaseNode):
         Args:
             nodes: A list of nodes to add to this group
         """
-        for node in nodes:
-            self.nodes[node.name] = node
+        self._add_nodes_to_group_dict(nodes)
 
         node_names_in_group = set(self.nodes.keys())
         self.metadata["node_names_in_group"] = list(node_names_in_group)
@@ -93,3 +92,24 @@ class BaseNodeGroup(BaseNode):
             if node.name not in self.nodes:
                 msg = f"Node {node.name} is not in node group {self.name}"
                 raise ValueError(msg)
+
+    def handle_child_node_rename(self, old_name: str, new_name: str) -> None:
+        """Update group membership when a child node is renamed.
+
+        Args:
+            old_name: The old name of the child node
+            new_name: The new name of the child node
+        """
+        if old_name not in self.nodes:
+            return
+
+        # Update the nodes dictionary
+        node = self.nodes.pop(old_name)
+        self.nodes[new_name] = node
+
+        # Update the metadata
+        node_names_in_group = self.metadata.get("node_names_in_group", [])
+        if old_name in node_names_in_group:
+            node_names_in_group.remove(old_name)
+            node_names_in_group.append(new_name)
+            self.metadata["node_names_in_group"] = node_names_in_group

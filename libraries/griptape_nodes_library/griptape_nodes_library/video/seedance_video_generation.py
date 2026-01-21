@@ -14,8 +14,10 @@ from urllib.parse import urljoin
 import requests
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -118,70 +120,6 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 },
             )
         )
-
-        # Resolution selection
-        self.add_parameter(
-            Parameter(
-                name="resolution",
-                input_types=["str"],
-                type="str",
-                default_value="720p",
-                tooltip="Output resolution",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["480p", "720p", "1080p"])},
-            )
-        )
-
-        # Aspect ratio selection
-        self.add_parameter(
-            Parameter(
-                name="ratio",
-                input_types=["str"],
-                type="str",
-                default_value="adaptive",
-                tooltip="Output aspect ratio",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"])},
-            )
-        )
-
-        # Duration in seconds
-        self.add_parameter(
-            Parameter(
-                name="duration",
-                input_types=["int"],
-                type="int",
-                default_value=5,
-                tooltip="Video duration in seconds",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=[4, 5, 6, 7, 8, 9, 10, 11, 12])},
-            )
-        )
-
-        # Camera fixed flag
-        self.add_parameter(
-            Parameter(
-                name="camerafixed",
-                input_types=["bool"],
-                type="bool",
-                default_value=False,
-                tooltip="Camera fixed",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
-        # Audio generation flag
-        self.add_parameter(
-            Parameter(
-                name="generate_audio",
-                input_types=["bool"],
-                type="bool",
-                default_value=False,
-                tooltip="Generate audio with video",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
         # Optional first frame (image) - accepts artifact or URL/base64 string
         self.add_parameter(
             Parameter(
@@ -221,6 +159,52 @@ class SeedanceVideoGeneration(SuccessFailureNode):
             )
         )
 
+        with ParameterGroup(name="Generation Settings") as video_generation_settings_group:
+            # Resolution selection
+            ParameterString(
+                name="resolution",
+                default_value="720p",
+                tooltip="Output resolution",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["480p", "720p", "1080p"])},
+            )
+
+            # Aspect ratio selection
+            ParameterString(
+                name="ratio",
+                default_value="adaptive",
+                tooltip="Output aspect ratio",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"])},
+            )
+
+            # Duration in seconds
+            ParameterInt(
+                name="duration",
+                default_value=5,
+                tooltip="Video duration in seconds",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[4, 5, 6, 7, 8, 9, 10, 11, 12])},
+            )
+
+            # Camera fixed flag
+            ParameterBool(
+                name="camerafixed",
+                default_value=False,
+                tooltip="Camera fixed",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            # Audio generation flag
+            ParameterBool(
+                name="generate_audio",
+                default_value=False,
+                tooltip="Generate audio with video",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+        self.add_node_element(video_generation_settings_group)
+
         # OUTPUTS
         self.add_parameter(
             Parameter(
@@ -228,6 +212,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 output_type="str",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -239,6 +224,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -250,7 +236,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -258,7 +244,7 @@ class SeedanceVideoGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
         # Set initial parameter visibility based on default model

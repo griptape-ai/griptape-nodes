@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.video_utils import get_video_duration
@@ -109,20 +110,16 @@ class WanAnimateGeneration(SuccessFailureNode):
                 traits={Options(choices=MODEL_OPTIONS)},
             )
         )
-
         # Mode selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="mode",
-                input_types=["str"],
-                type="str",
                 default_value=MODE_OPTIONS[0],
                 tooltip="Service mode: wan-std or wan-pro",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=MODE_OPTIONS)},
             )
         )
-
         # Input image URL using PublicArtifactUrlParameter
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
@@ -163,6 +160,7 @@ class WanAnimateGeneration(SuccessFailureNode):
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -174,6 +172,7 @@ class WanAnimateGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -185,7 +184,7 @@ class WanAnimateGeneration(SuccessFailureNode):
                 tooltip="Generated video as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -193,7 +192,7 @@ class WanAnimateGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:

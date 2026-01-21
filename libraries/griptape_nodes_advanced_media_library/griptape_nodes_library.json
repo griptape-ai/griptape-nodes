@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.64.0",
+    "library_version": "0.66.5",
     "engine_version": "0.67.0",
     "tags": [
       "Griptape",
@@ -40,7 +40,7 @@
         "beautifulsoup4>=4.13.4",
         "controlnet-aux>=0.0.9",
         "static-ffmpeg>=2.8",
-        "diffusers @ https://github.com/huggingface/diffusers/archive/f9c1e612fb85dd971beeba77c3ddc0826e2146a4.zip",
+        "diffusers @ https://github.com/huggingface/diffusers/archive/61f175660a8ac54f1470a74a810e6c38fb4795d5.zip",
         "imageio[ffmpeg]>=2.37.2",
         "ninja>=1.13.0",
         "numpy>=2.2.4",
@@ -53,7 +53,7 @@
         "torch>=2.7.0",
         "torchvision>=0.22.0",
         "torchaudio>=2.7.0",
-        "transformers>=4.51.3",
+        "transformers @ https://github.com/huggingface/transformers/archive/136c621c00b2536d1f608ed3c6de59b9897afbb8.zip",
         "tqdm>=4.67.1",
         "ultralytics>=8.0.0",
         "optimum-quanto>=0.2.7",
@@ -123,6 +123,15 @@
         "category": "video/depth",
         "description": "Generate Depth Maps for video with Depth Anything V2 and 🤗 Transformers. Processes each frame for depth estimation.",
         "display_name": "Depth Anything V2 Video"
+      }
+    },
+    {
+      "class_name": "TranslateGemmaText",
+      "file_path": "transformers_nodes_library/translate_gemma_text.py",
+      "metadata": {
+        "category": "text",
+        "description": "Translate text between languages using Google TranslateGemma models via 🤗 Transformers. Supports 55 languages.",
+        "display_name": "Translate Text (Google TranslateGemma)"
       }
     },
     {
@@ -212,19 +221,6 @@
       }
     },
     {
-      "class_name": "TrainFluxLora",
-      "file_path": "diffusers_nodes_library/pipelines/flux/peft/train_flux_lora.py",
-      "metadata": {
-        "category": "image/flux/loras",
-        "description": "TrainFluxLora node.",
-        "display_name": "Train Flux LoRA",
-        "deprecation": {
-          "deprecation_message": "Use 'Train LoRA' from the Griptape Nodes LoRA Training Library instead: https://github.com/griptape-ai/griptape-nodes-lora-training-library",
-          "removal_version": "0.66.0"
-        }
-      }
-    },
-    {
       "class_name": "FirstFrameToVideoWanVaceAux",
       "file_path": "diffusers_nodes_library/pipelines/wan/auxiliary/first_frame_to_video_wan_vace_aux.py",
       "metadata": {
@@ -293,9 +289,39 @@
       "class_name": "DiffusionPipelineBuilderNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_builder_node.py",
       "metadata": {
-        "category": "image",
+        "category": "diffusion",
         "description": "Build and cache 🤗 Diffusers Pipelines for reuse across multiple execution nodes.",
         "display_name": "Diffusion Pipeline Builder",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "GenerateVideoNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Video (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "GenerateAudioNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
+      "metadata": {
+        "category": "audio",
+        "description": "Generate audio via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Audio (Diffusion Pipeline)",
+        "group": "diffusion"
+      }
+    },
+    {
+      "class_name": "GenerateImageNode",
+      "file_path": "diffusers_nodes_library/common/nodes/generate_media_nodes.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Image (Diffusion Pipeline)",
         "group": "diffusion"
       }
     },
@@ -303,9 +329,9 @@
       "class_name": "DiffusionPipelineRuntimeNode",
       "file_path": "diffusers_nodes_library/common/nodes/diffusion_pipeline_runtime_node.py",
       "metadata": {
-        "category": "image",
-        "description": "Generate images via 🤗 Diffusers Pipelines.",
-        "display_name": "Generate Image (Diffusion Pipeline)",
+        "category": "diffusion",
+        "description": "Generate media via 🤗 Diffusers Pipelines.",
+        "display_name": "Generate Media (Diffusion Pipeline)",
         "group": "diffusion"
       }
     },

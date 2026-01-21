@@ -12,7 +12,7 @@ from urllib.parse import urljoin
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -98,20 +98,6 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/v2/")
 
-        # INPUTS / PROPERTIES
-        self.add_parameter(
-            ParameterString(
-                name="prompt",
-                tooltip="Text prompt for video generation (max 2500 chars)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the video you want...",
-                    "display_name": "prompt",
-                },
-            )
-        )
-
         self.add_parameter(
             ParameterString(
                 name="model_name",
@@ -132,6 +118,20 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
             )
         )
 
+        # INPUTS / PROPERTIES
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                tooltip="Text prompt for video generation (max 2500 chars)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={
+                    "multiline": True,
+                    "placeholder_text": "Describe the video you want...",
+                    "display_name": "prompt",
+                },
+            )
+        )
+
         self.add_parameter(
             ParameterString(
                 name="negative_prompt",
@@ -142,16 +142,14 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             ParameterFloat(
                 name="cfg_scale",
                 default_value=0.5,
                 tooltip="Flexibility in video generation (0-1). Higher value = lower flexibility, stronger prompt relevance.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        self.add_parameter(
             ParameterString(
                 name="mode",
                 default_value="std",
@@ -159,9 +157,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["std", "pro"])},
             )
-        )
 
-        self.add_parameter(
             ParameterString(
                 name="aspect_ratio",
                 default_value="16:9",
@@ -169,9 +165,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["16:9", "9:16", "1:1"])},
             )
-        )
 
-        self.add_parameter(
             ParameterInt(
                 name="duration",
                 default_value=5,
@@ -179,9 +173,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=[5, 10])},
             )
-        )
 
-        self.add_parameter(
             ParameterString(
                 name="sound",
                 default_value="off",
@@ -190,7 +182,8 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 traits={Options(choices=["on", "off"])},
                 ui_options={"hide": True},
             )
-        )
+
+        self.add_node_element(gen_settings_group)
 
         # OUTPUTS
         self.add_parameter(
@@ -198,6 +191,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 name="generation_id",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -209,6 +203,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -220,7 +215,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -229,6 +224,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
                 name="kling_video_id",
                 tooltip="The Kling AI video ID",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="The Kling AI video ID",
             )
         )
 
@@ -236,7 +232,7 @@ class KlingTextToVideoGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
         # Set initial parameter visibility based on default model

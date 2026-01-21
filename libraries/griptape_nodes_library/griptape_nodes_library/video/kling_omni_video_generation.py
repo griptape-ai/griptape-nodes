@@ -82,16 +82,33 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 name="prompt",
                 tooltip="Text prompt with optional templates like <<<image_1>>>, <<<element_1>>> (max 2500 chars)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the video... Use <<<image_1>>> to reference images.",
-                    "display_name": "prompt",
-                },
+                multiline=True,
+                placeholder_text="Describe the video... Use <<<image_1>>> to reference images.",
             )
         )
 
         # Image Inputs Group
-        with ParameterGroup(name="Image Inputs") as image_group:
+        self.add_parameter(
+            Parameter(
+                name="first_frame_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                tooltip="First frame image (optional). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "first frame"},
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="end_frame_image",
+                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
+                type="ImageArtifact",
+                tooltip="End frame image (optional). Requires first frame to be set.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"display_name": "end frame"},
+            )
+        )
+        self.add_parameter(
             ParameterList(
                 name="reference_images",
                 input_types=[
@@ -107,23 +124,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"expander": True, "display_name": "reference images"},
             )
-            Parameter(
-                name="first_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                tooltip="First frame image (optional). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "first frame"},
-            )
-            Parameter(
-                name="end_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
-                tooltip="End frame image (optional). Requires first frame to be set.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "end frame"},
-            )
-        self.add_node_element(image_group)
+        )
 
         # Advanced References Group
         with ParameterGroup(name="Advanced References") as advanced_group:
@@ -137,23 +138,23 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
         advanced_group.ui_options = {"hide": False}
         self.add_node_element(advanced_group)
 
-        # Video Reference Group
-        with ParameterGroup(name="Video Reference") as video_group:
-            # Use PublicArtifactUrlParameter for video upload handling
-            self._public_video_url_parameter = PublicArtifactUrlParameter(
-                node=self,
-                artifact_url_parameter=Parameter(
-                    name="reference_video",
-                    input_types=["VideoUrlArtifact"],
-                    type="VideoUrlArtifact",
-                    tooltip="Reference video for editing or style reference (optional, max 1)",
-                    allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                    ui_options={"placeholder_text": "https://example.com/video.mp4"},
-                ),
-                disclaimer_message="The Kling Omni service utilizes this URL to access the video for generation.",
-            )
-            self._public_video_url_parameter.add_input_parameters()
+        # Use PublicArtifactUrlParameter for video upload handling
+        self._public_video_url_parameter = PublicArtifactUrlParameter(
+            node=self,
+            artifact_url_parameter=Parameter(
+                name="reference_video",
+                input_types=["VideoUrlArtifact"],
+                type="VideoUrlArtifact",
+                tooltip="Reference video for editing or style reference (optional, max 1)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"placeholder_text": "https://example.com/video.mp4"},
+            ),
+            disclaimer_message="The Kling Omni service utilizes this URL to access the video for generation.",
+        )
+        self._public_video_url_parameter.add_input_parameters()
 
+        # Generation Settings Group
+        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             ParameterString(
                 name="video_refer_type",
                 default_value="base",
@@ -170,11 +171,6 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "keep video sound"},
             )
-        video_group.ui_options = {"hide": False}
-        self.add_node_element(video_group)
-
-        # Generation Settings Group
-        with ParameterGroup(name="Generation Settings") as gen_settings_group:
             ParameterString(
                 name="mode",
                 default_value="pro",
@@ -204,6 +200,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 name="generation_id",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -215,6 +212,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
+                hide=True,
             )
         )
 
@@ -226,7 +224,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -235,6 +233,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
                 name="kling_video_id",
                 tooltip="The video ID from Kling AI",
                 allowed_modes={ParameterMode.OUTPUT},
+                placeholder_text="The Kling AI video ID",
             )
         )
 
@@ -242,7 +241,7 @@ class KlingOmniVideoGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     async def aprocess(self) -> None:

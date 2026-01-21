@@ -18,11 +18,14 @@ from griptape.artifacts import ImageUrlArtifact, VideoUrlArtifact
 from griptape.artifacts.url_artifact import UrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
@@ -80,14 +83,21 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         # INPUTS
         # add model_id parameter with fixed value
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value="omnihuman-1-5",
                 tooltip="Model identifier to use for generation",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=self.MODEL_IDS)},
+            )
+        )
+        self.add_parameter(
+            ParameterString(
+                name="prompt",
+                tooltip="Text prompt to guide generation",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                multiline=True,
+                placeholder_text="Text prompt to guide generation",
             )
         )
 
@@ -106,18 +116,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         )
         self._public_image_url_parameter.add_input_parameters()
 
-        # Image size validation
-        self.add_parameter(
-            Parameter(
-                name="auto_image_resize",
-                input_types=["bool"],
-                type="bool",
-                default_value=True,
-                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB size limit or {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} resolution limit. If enabled, oversized images are automatically resized to fit within these limits.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
         self._public_audio_url_parameter = PublicArtifactUrlParameter(
             node=self,
             artifact_url_parameter=Parameter(
@@ -131,7 +129,6 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             ),
         )
         self._public_audio_url_parameter.add_input_parameters()
-
         self.add_parameter(
             Parameter(
                 name="mask_image_urls",
@@ -145,25 +142,45 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
             )
         )
 
-        self.add_parameter(
-            Parameter(
-                name="auto_detect_masks",
-                input_types=["bool"],
-                type="bool",
+        with ParameterGroup(name="Generation Settings") as video_generation_settings_group:
+            # Image size validation
+            ParameterBool(
+                name="auto_image_resize",
+                tooltip=f"If disabled, raises an error when input image exceeds the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024):.0f}MB size limit or {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION} resolution limit. If enabled, oversized images are automatically resized to fit within these limits.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=True,
+            )
+
+            ParameterBool(
+                name="auto_detect_masks",
                 tooltip="Automatically detect subject masks if none provided (calls subject detection API)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"hide": True},
+                default_value=True,
+                hide=True,
             )
-        )
+
+            ParameterInt(
+                name="seed",
+                default_value=-1,
+                tooltip="Random seed for generation (-1 for random)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
+            ParameterBool(
+                name="fast_mode",
+                default_value=False,
+                tooltip="Enable fast mode (sacrifices some effects for speed)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        self.add_node_element(video_generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Griptape Cloud generation identifier",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
             )
         )
 
@@ -175,45 +192,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 tooltip="Generated video URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="seed",
-                input_types=["int"],
-                type="int",
-                output_type="int",
-                default_value=-1,
-                tooltip="Random seed for generation (-1 for random)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"placeholder_text": "-1 for random"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="prompt",
-                input_types=["str"],
-                type="str",
-                output_type="str",
-                default_value="",
-                tooltip="Text prompt to guide generation",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Text prompt to guide generation"},
-            )
-        )
-
-        self.add_parameter(
-            Parameter(
-                name="fast_mode",
-                input_types=["bool"],
-                type="bool",
-                output_type="bool",
-                default_value=False,
-                tooltip="Enable fast mode (sacrifices some effects for speed)",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -221,7 +200,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the video generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def after_value_set(

@@ -14,17 +14,11 @@
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing Griptape Cloud APIs and services.",
-    "library_version": "0.61.3",
-    "engine_version": "0.60.2",
-    "tags": [
-      "Griptape",
-      "AI",
-      "Cloud"
-    ],
+    "library_version": "0.67.0",
+    "engine_version": "0.67.0",
+    "tags": ["Griptape", "AI", "Cloud"],
     "dependencies": {
-      "pip_dependencies": [
-        "griptape-cloud-client==0.1.1"
-      ]
+      "pip_dependencies": ["griptape-cloud-client==0.1.1"]
     }
   },
   "categories": [

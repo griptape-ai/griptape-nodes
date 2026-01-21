@@ -205,7 +205,7 @@ class GoogleImageGeneration(SuccessFailureNode):
                 tooltip="First generated image as artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -222,14 +222,16 @@ class GoogleImageGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
                 output_type="str",
                 type="str",
                 tooltip="Text output from the model response",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Text output will appear here."},
+                multiline=True,
+                placeholder_text="Text output will appear here.",
                 settable=False,
+                hide=True,
             )
         )
 
@@ -237,7 +239,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self._create_status_parameters(
             result_details_tooltip="Details about the image generation result or any errors",
             result_details_placeholder="Generation status and details will appear here.",
-            parameter_group_initially_collapsed=False,
+            parameter_group_initially_collapsed=True,
         )
 
     def validate_before_node_run(self) -> list[Exception] | None:

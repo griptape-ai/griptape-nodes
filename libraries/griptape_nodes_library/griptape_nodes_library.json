@@ -27,8 +27,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.56.0",
-    "engine_version": "0.67.0",
+    "library_version": "0.57.2",
+    "engine_version": "0.69.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
@@ -794,6 +794,39 @@
       }
     },
     {
+      "class_name": "LTXTextToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/ltx_text_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video from text using LTX AI models via Griptape Cloud model proxy.",
+        "display_name": "LTX Text to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "LTXImageToVideoGeneration",
+      "file_path": "griptape_nodes_library/video/ltx_image_to_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate a video from an image using LTX AI models via Griptape Cloud model proxy.",
+        "display_name": "LTX Image to Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "LTXVideoRetake",
+      "file_path": "griptape_nodes_library/video/ltx_video_retake.py",
+      "metadata": {
+        "category": "video",
+        "description": "Regenerate a segment of an existing video using LTX AI models via Griptape Cloud model proxy.",
+        "display_name": "LTX Video Retake",
+        "icon": "Sparkles",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "KlingVideoExtension",
       "file_path": "griptape_nodes_library/video/kling_video_extension.py",
       "metadata": {
@@ -811,6 +844,17 @@
         "category": "video",
         "description": "Generate videos using Kling Omni AI with advanced templating and multi-modal references via Griptape Cloud model proxy.",
         "display_name": "Kling Omni Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "KlingMotionControl",
+      "file_path": "griptape_nodes_library/video/kling_motion_control.py",
+      "metadata": {
+        "category": "video",
+        "description": "Transfer character actions from a reference video to a reference image using Kling Motion Control via Griptape Cloud model proxy.",
+        "display_name": "Kling Motion Control",
         "icon": "Sparkles",
         "group": "create"
       }

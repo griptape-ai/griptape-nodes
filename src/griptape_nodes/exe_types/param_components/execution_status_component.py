@@ -83,6 +83,17 @@ class ExecutionStatusComponent:
         """
         return self._status_group
 
+    def _update_status_group_display_label(self, *, show_warning: bool) -> None:
+        """Update the Status ParameterGroup display label with optional warning emoji."""
+        if show_warning:
+            self._status_group.update_ui_options_key("display_name", "⚠️ Status")
+            return
+
+        # Remove display_name to use default "Status" from name
+        ui_options = self._status_group.ui_options.copy()
+        ui_options.pop("display_name", None)
+        self._status_group.ui_options = ui_options
+
     def set_execution_result(self, *, was_successful: bool, result_details: str) -> None:
         """Set the execution result values.
 
@@ -92,6 +103,16 @@ class ExecutionStatusComponent:
         """
         self._update_parameter_value(self._was_successful, was_successful)
         self._update_parameter_value(self._result_details, result_details)
+        # Update display label: show warning emoji only on actual failure (not placeholder/initialization messages)
+        # While string matching is not the best practice, it's currently the only way to check for placeholder messages.
+        # TODO: use a better approach to check for placeholder messages. https://github.com/griptape-ai/griptape-nodes/issues/3686
+        is_placeholder = result_details in (
+            "<Results will appear when the node executes>",
+            "Beginning execution...",
+            "",
+        )
+        show_warning = not was_successful and not is_placeholder
+        self._update_status_group_display_label(show_warning=show_warning)
 
     def clear_execution_status(self, initial_message: str | None = None) -> None:
         """Clear execution status and reset parameters.
@@ -102,6 +123,8 @@ class ExecutionStatusComponent:
         if initial_message is None:
             initial_message = ""
         self.set_execution_result(was_successful=False, result_details=initial_message)
+        # Reset to "Status" during execution (not a failure yet)
+        self._update_status_group_display_label(show_warning=False)
 
     def append_to_result_details(self, additional_text: str, separator: str = "\n") -> None:
         """Append text to the existing result_details.

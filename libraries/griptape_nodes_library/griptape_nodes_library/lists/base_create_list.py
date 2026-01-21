@@ -86,7 +86,17 @@ class BaseCreateListNode(ControlNode):
         remove_blank = self.get_parameter_value(self.remove_blank.name)
 
         if flatten_list:
-            list_values = [item for sublist in list_values for item in sublist]
+            # Check if list is already flat (no nested lists)
+            has_nested_lists = any(isinstance(item, list) for item in list_values)
+            if has_nested_lists:
+                # Flatten only if there are nested lists
+                flattened = []
+                for item in list_values:
+                    if isinstance(item, list):
+                        flattened.extend(item)
+                    else:
+                        flattened.append(item)
+                list_values = flattened
 
         if remove_duplicates:
             list_values = list(set(list_values))
