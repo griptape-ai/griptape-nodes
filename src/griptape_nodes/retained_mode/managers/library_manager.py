@@ -2987,6 +2987,37 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
+    def _create_library_info_entry(self, file_path_str: str, *, is_sandbox: bool) -> None:
+        """Create a LibraryInfo entry for a discovered library.
+
+        Loads metadata if possible and creates the entry in the appropriate lifecycle state.
+        Only creates the entry if it doesn't already exist in tracking.
+        """
+        if file_path_str in self._library_file_path_to_info:
+            return
+
+        metadata_result = self.load_library_metadata_from_file_request(
+            LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
+        )
+
+        library_name = None
+        library_version = None
+        lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
+
+        if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            library_name = metadata_result.library_schema.name
+            library_version = metadata_result.library_schema.metadata.library_version
+            lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
+
+        self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+            lifecycle_state=lifecycle_state,
+            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+            library_path=file_path_str,
+            is_sandbox=is_sandbox,
+            library_name=library_name,
+            library_version=library_version,
+        )
+
     def discover_libraries_request(
         self,
         request: DiscoverLibrariesRequest,
@@ -3035,26 +3066,8 @@ class LibraryManager:
                     # Add to discovered libraries with is_sandbox=True
                     discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
-                    # Only create entry if not already tracked
-                    if sandbox_json_path_str not in self._library_file_path_to_info:
-                        # Load metadata immediately during discovery
-                        metadata_result = self.load_library_metadata_from_file_request(
-                            LoadLibraryMetadataFromFileRequest(file_path=sandbox_json_path_str)
-                        )
-                        metadata_loaded = isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess)
-                        # Create LibraryInfo with metadata populated
-                        self._library_file_path_to_info[sandbox_json_path_str] = LibraryManager.LibraryInfo(
-                            lifecycle_state=LibraryManager.LibraryLifecycleState.METADATA_LOADED
-                            if metadata_loaded
-                            else LibraryManager.LibraryLifecycleState.DISCOVERED,
-                            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                            library_path=sandbox_json_path_str,
-                            is_sandbox=True,
-                            library_name=metadata_result.library_schema.name if metadata_loaded else None,  # pyright: ignore[reportAttributeAccessIssue]
-                            library_version=metadata_result.library_schema.metadata.library_version
-                            if metadata_loaded
-                            else None,  # pyright: ignore[reportAttributeAccessIssue]
-                        )
+                    # Create LibraryInfo entry for the sandbox library
+                    self._create_library_info_entry(sandbox_json_path_str, is_sandbox=True)
 
         # Add all regular libraries from config
         for file_path in config_library_paths:
@@ -3063,28 +3076,8 @@ class LibraryManager:
             # Add to discovered libraries with is_sandbox=False
             discovered_libraries.add(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
-            # Only create entry if not already tracked
-            if file_path_str not in self._library_file_path_to_info:
-                # Load metadata immediately during discovery
-                metadata_result = self.load_library_metadata_from_file_request(
-                    LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
-                )
-                library_name = None
-                library_version = None
-                lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
-                if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
-                    library_name = metadata_result.library_schema.name
-                    lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
-                    library_version = metadata_result.library_schema.metadata.library_version
-                # Create LibraryInfo with metadata populated
-                self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
-                    lifecycle_state=lifecycle_state,
-                    fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                    library_path=file_path_str,
-                    is_sandbox=False,
-                    library_name=library_name,
-                    library_version=library_version,
-                )
+            # Create LibraryInfo entry for the library
+            self._create_library_info_entry(file_path_str, is_sandbox=False)
 
         # Success path at the end
         return DiscoverLibrariesResultSuccess(
