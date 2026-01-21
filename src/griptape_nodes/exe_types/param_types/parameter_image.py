@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
@@ -129,10 +131,6 @@ class ParameterImage(Parameter):
         if accept_any:
             # Create a converter function that uses normalize_artifact_input with ImageUrlArtifact
             def _normalize_image(value: Any) -> Any:
-                try:
-                    from griptape.artifacts import ImageArtifact, ImageUrlArtifact
-                except ImportError:
-                    return value
                 return normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
             image_converters.insert(0, _normalize_image)

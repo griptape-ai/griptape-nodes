@@ -3,15 +3,10 @@
 from collections.abc import Callable
 from typing import Any
 
+from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact  # pyright: ignore[reportMissingImports]
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
-
-try:
-    from griptape_nodes_library.three_d.three_d_artifact import (  # pyright: ignore[reportMissingImports]
-        ThreeDUrlArtifact,
-    )
-except ImportError:
-    ThreeDUrlArtifact = None  # type: ignore[assignment, misc]
 
 
 class Parameter3D(Parameter):
@@ -131,8 +126,6 @@ class Parameter3D(Parameter):
         if accept_any:
             # Create a converter function that uses normalize_artifact_input with ThreeDUrlArtifact
             def _normalize_three_d(value: Any) -> Any:
-                if ThreeDUrlArtifact is None:
-                    return value
                 return normalize_artifact_input(value, ThreeDUrlArtifact)
 
             three_d_converters.insert(0, _normalize_three_d)
