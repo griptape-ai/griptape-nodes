@@ -8,7 +8,11 @@ from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -40,25 +44,19 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         # INPUTS / PROPERTIES
         # Text input
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                input_types=["str"],
-                type="str",
                 tooltip="Text description of the sound effect to generate",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the sound effect you want to generate...",
-                    "display_name": "Text",
-                },
+                multiline=True,
+                placeholder_text="Describe the sound effect you want to generate...",
+                ui_options={"display_name": "Text"},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="loop",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Whether to create a smoothly looping sound",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -67,10 +65,8 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="sound_duration_seconds",
-                input_types=["float"],
-                type="float",
                 default_value=6.0,
                 tooltip="Duration of the sound in seconds (0.5-30.0s, optional)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -80,10 +76,8 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="prompt_influence",
-                input_types=["float"],
-                type="float",
                 default_value=0.3,
                 tooltip="Prompt influence (0.0-1.0). Higher values follow prompt more closely. Defaults to 0.3",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -94,9 +88,8 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -105,14 +98,12 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="audio_url",
-                output_type="AudioUrlArtifact",
-                type="AudioUrlArtifact",
                 tooltip="Generated sound effect audio as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

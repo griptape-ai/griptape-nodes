@@ -8,7 +8,11 @@ from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -47,25 +51,19 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
         # INPUTS / PROPERTIES
         # Text input
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="text",
-                input_types=["str"],
-                type="str",
                 tooltip="Text prompt describing the music to generate",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe the music you want to generate...",
-                    "display_name": "Text",
-                },
+                multiline=True,
+                placeholder_text="Describe the music you want to generate...",
+                ui_options={"display_name": "Text"},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="music_duration_seconds",
-                input_types=["float"],
-                type="float",
                 default_value=30.0,
                 tooltip="Duration of the music in seconds (10.0-300.0s)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -75,10 +73,8 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output_format",
-                input_types=["str"],
-                type="str",
                 default_value="mp3_44100_128",
                 tooltip="Audio output format",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -110,10 +106,8 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="force_instrumental",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Ensure the output music is instrumental without lyrics",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -123,9 +117,8 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
@@ -134,14 +127,12 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="audio_url",
-                output_type="AudioUrlArtifact",
-                type="AudioUrlArtifact",
                 tooltip="Generated music audio as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 

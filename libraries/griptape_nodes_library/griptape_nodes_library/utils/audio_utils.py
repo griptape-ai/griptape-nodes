@@ -1,4 +1,5 @@
 import base64
+import logging
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+
+logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
@@ -210,3 +213,113 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
             temp_path.unlink()
         error_details = f"Failed to download audio from {url}: {e}"
         raise ValueError(error_details) from e
+
+
+def upload_file_to_static_storage_and_create_audio_artifact(file_path: str) -> AudioUrlArtifact | None:
+    """Upload a file to static storage and return an AudioUrlArtifact.
+
+    This function reuses ArtifactPathTethering's logic to ensure files
+    are properly uploaded to static storage and accessible via localhost URLs.
+
+    Args:
+        file_path: File path (workspace-relative, absolute, or URL)
+
+    Returns:
+        AudioUrlArtifact with localhost URL, or None if upload fails
+    """
+    if not file_path or not isinstance(file_path, str):
+        return None
+
+    # If it's already a URL, return it as-is (no need to upload)
+    if file_path.startswith(("http://", "https://")):
+        return AudioUrlArtifact(file_path)
+
+    try:
+        from griptape_nodes.exe_types.core_types import Parameter
+        from griptape_nodes.exe_types.node_types import BaseNode
+        from griptape_nodes_library.utils.artifact_path_tethering import (
+            ArtifactPathTethering,
+            ArtifactTetheringConfig,
+            default_extract_url_from_artifact_value,
+        )
+
+        # Create a minimal config for audio artifacts
+        config = ArtifactTetheringConfig(
+            dict_to_artifact_func=dict_to_audio_url_artifact,
+            extract_url_func=lambda artifact_value, artifact_classes: default_extract_url_from_artifact_value(
+                artifact_value, AudioUrlArtifact
+            ),
+            supported_extensions=SUPPORTED_AUDIO_EXTENSIONS,
+            default_extension="mp3",
+            url_content_type_prefix="audio/",
+        )
+
+        # Create dummy parameters needed by ArtifactPathTethering
+        # (they're required but not actually used for path processing)
+        class DummyNode(BaseNode):
+            def __init__(self) -> None:
+                super().__init__(name="dummy")
+
+        dummy_node = DummyNode()
+        dummy_artifact_param = Parameter(
+            name="dummy_artifact",
+            output_type="AudioUrlArtifact",
+            type="AudioUrlArtifact",
+        )
+        dummy_path_param = Parameter(
+            name="dummy_path",
+            type="str",
+        )
+
+        # Create a tethering instance to use its _process_path_string method
+        tethering = ArtifactPathTethering(
+            node=dummy_node,
+            artifact_parameter=dummy_artifact_param,
+            path_parameter=dummy_path_param,
+            config=config,
+        )
+
+        # Use the tethering's path processing logic
+        artifact = tethering._process_path_string(file_path)
+        if artifact and isinstance(artifact, AudioUrlArtifact):
+            return artifact
+
+        return None
+
+    except Exception as e:
+        # Log the error for debugging - this helps identify why conversion fails
+        logger.warning(f"Error uploading audio file '{file_path}' to static storage: {e}")
+        return None
+
+
+def normalize_audio_input(audio_input: Any) -> Any:
+    """Normalize a single audio input, converting string paths to AudioUrlArtifact.
+
+    This ensures consistency whether values come from user input or node connections.
+    String paths are uploaded to static storage using ArtifactPathTethering's logic.
+    AudioUrlArtifact objects are returned unchanged.
+
+    Args:
+        audio_input: Audio input (may be string, AudioUrlArtifact, etc.)
+
+    Returns:
+        AudioUrlArtifact if input was a string path, otherwise returns input unchanged
+    """
+    # Return unchanged if already an AudioUrlArtifact
+    if isinstance(audio_input, AudioUrlArtifact):
+        return audio_input
+
+    # Process string paths
+    if isinstance(audio_input, str) and audio_input:
+        # Skip if it's already a URL (http/https)
+        if audio_input.startswith(("http://", "https://")):
+            return AudioUrlArtifact(audio_input)
+
+        artifact = upload_file_to_static_storage_and_create_audio_artifact(audio_input)
+        if artifact:
+            return artifact
+        # If conversion failed, return the original input so the parameter can still be set
+        # (this allows the node to handle the error or try again)
+        return audio_input
+
+    return audio_input
