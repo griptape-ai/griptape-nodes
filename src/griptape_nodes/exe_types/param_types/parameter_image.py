@@ -25,7 +25,7 @@ class ParameterImage(Parameter):
         param.pulse_on_run = True  # Change UI options at runtime
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: C901, PLR0913
         self,
         name: str,
         tooltip: str | None = None,
