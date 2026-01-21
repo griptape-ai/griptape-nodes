@@ -52,12 +52,12 @@ class SubprocessWebSocketBaseMixin:
     async def _start_websocket_client(self) -> None:
         """Start the WebSocket client connection.
 
-        Creates and enters the async context for the WebSocket client.
+        Creates and connects the WebSocket client.
         Subclasses should call this, then perform additional setup (subscribe, etc.).
         """
         logger.info("Starting WebSocket client for session %s", self._session_id)
         self._ws_client = Client()
-        await self._ws_client.__aenter__()
+        await self._ws_client.connect()
         logger.info("WebSocket client connected for session %s", self._session_id)
 
     def _create_websocket_task(self, coro: Coroutine[Any, Any, None]) -> None:
@@ -83,6 +83,6 @@ class SubprocessWebSocketBaseMixin:
         if self._ws_client is None:
             return
 
-        await self._ws_client.__aexit__(None, None, None)
+        await self._ws_client.disconnect()
         self._ws_client = None
         logger.info("WebSocket client disconnected for session %s", self._session_id)

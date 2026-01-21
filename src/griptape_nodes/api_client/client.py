@@ -73,7 +73,7 @@ class Client:
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: connect to WebSocket server."""
-        await self._connect()
+        await self.connect()
         return self
 
     async def __aexit__(
@@ -83,7 +83,7 @@ class Client:
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit: disconnect from WebSocket server."""
-        await self._disconnect()
+        await self.disconnect()
 
     def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
         """Return self as async iterator."""
@@ -150,7 +150,7 @@ class Client:
         message = {"type": event_type, "payload": payload, "topic": topic}
         await self._send_message(message)
 
-    async def _connect(self) -> None:
+    async def connect(self) -> None:
         """Connect to the WebSocket server and start receiving messages.
 
         This method starts the connection manager task.
@@ -175,7 +175,7 @@ class Client:
             )
             raise ConnectionError(msg) from e
 
-    async def _disconnect(self) -> None:
+    async def disconnect(self) -> None:
         """Disconnect from the WebSocket server and clean up tasks."""
         # Cancel tasks
         if self._receiving_task:
