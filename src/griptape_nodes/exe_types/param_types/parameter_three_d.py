@@ -6,6 +6,13 @@ from typing import Any
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
+try:
+    from griptape_nodes_library.three_d.three_d_artifact import (
+        ThreeDUrlArtifact,  # pyright: ignore[reportMissingImports]
+    )
+except ImportError:
+    ThreeDUrlArtifact = None  # type: ignore[assignment, misc]
+
 
 class Parameter3D(Parameter):
     """A specialized Parameter class for 3D model inputs with enhanced UI options.
@@ -124,9 +131,7 @@ class Parameter3D(Parameter):
         if accept_any:
             # Create a converter function that uses normalize_artifact_input with ThreeDUrlArtifact
             def _normalize_three_d(value: Any) -> Any:
-                try:
-                    from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
-                except ImportError:
+                if ThreeDUrlArtifact is None:
                     return value
                 return normalize_artifact_input(value, ThreeDUrlArtifact)
 
