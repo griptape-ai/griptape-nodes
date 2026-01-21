@@ -5,16 +5,22 @@ import logging
 from typing import Any
 
 import httpx
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -73,20 +79,16 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
 
         # Image Inputs Group
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="first_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 tooltip="First frame image (optional). Accepts ImageArtifact, ImageUrlArtifact, URL, or Base64.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "first frame"},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="end_frame_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 tooltip="End frame image (optional). Requires first frame to be set.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "end frame"},
@@ -125,10 +127,8 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         # Use PublicArtifactUrlParameter for video upload handling
         self._public_video_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterVideo(
                 name="reference_video",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 tooltip="Reference video for editing or style reference (optional, max 1)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"placeholder_text": "https://example.com/video.mp4"},
@@ -146,10 +146,8 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["base", "feature"])},
             )
-            Parameter(
+            ParameterBool(
                 name="video_keep_sound",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Keep original video sound (only applies when video_refer_type is 'base')",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -189,10 +187,8 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"hide_property": True},
@@ -201,10 +197,8 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -227,6 +221,16 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
             result_details_placeholder="Generation status and details will appear here.",
             parameter_group_initially_collapsed=True,
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to normalize image inputs."""
+        super().after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "reference_images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("reference_images", updated_list)
 
     async def aprocess(self) -> None:
         try:
