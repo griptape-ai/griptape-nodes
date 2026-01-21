@@ -309,14 +309,16 @@ def read_image_from_file_path(path_str: str, context_name: str = "image") -> str
             mime_type = "image/webp"
         elif ext == ".gif":
             mime_type = "image/gif"
+        else:
+            mime_type = "image/png"
 
         # Encode to base64
         b64_string = base64.b64encode(image_bytes).decode("utf-8")
-        return f"data:{mime_type};base64,{b64_string}"
-
     except Exception as e:
         logger.debug("%s failed to read image from file path %s: %s", context_name, path_str, e)
         return None
+    else:
+        return f"data:{mime_type};base64,{b64_string}"
 
 
 def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:

@@ -11,14 +11,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-
-logger = logging.getLogger("griptape_nodes")
-
-# static_ffmpeg is dynamically installed by the library loader at runtime
-import static_ffmpeg.run  # type: ignore[import-untyped]
+import static_ffmpeg.run  # type: ignore[import-untyped]  # static_ffmpeg is dynamically installed by the library loader at runtime
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.utils.async_utils import subprocess_run
+
+logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192
