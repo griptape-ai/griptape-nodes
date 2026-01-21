@@ -7,8 +7,8 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 try:
-    from griptape_nodes_library.three_d.three_d_artifact import (
-        ThreeDUrlArtifact,  # pyright: ignore[reportMissingImports]
+    from griptape_nodes_library.three_d.three_d_artifact import (  # pyright: ignore[reportMissingImports]
+        ThreeDUrlArtifact,
     )
 except ImportError:
     ThreeDUrlArtifact = None  # type: ignore[assignment, misc]
