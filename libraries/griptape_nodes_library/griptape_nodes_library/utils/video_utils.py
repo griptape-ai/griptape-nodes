@@ -18,7 +18,6 @@ logger = logging.getLogger("griptape_nodes")
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
-from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes.utils.async_utils import subprocess_run
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -354,38 +353,3 @@ async def download_video_to_temp_file(url: str) -> VideoDownloadResult:
             temp_path.unlink()
         error_details = f"Failed to download video from {url}: {e}"
         raise ValueError(error_details) from e
-
-
-def normalize_video_input(video_input: Any) -> Any:
-    """Normalize a single video input, converting string paths to VideoUrlArtifact.
-
-    This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage and converted to VideoUrlArtifact objects.
-    VideoUrlArtifact objects are returned unchanged.
-
-    Args:
-        video_input: Video input (may be string, VideoUrlArtifact, etc.)
-
-    Returns:
-        VideoUrlArtifact if input was a string path, otherwise returns input unchanged
-    """
-    return normalize_artifact_input(video_input, VideoUrlArtifact)
-
-
-def normalize_video_list(video_list: list[Any]) -> list[Any]:
-    """Normalize a list of video inputs, converting string paths to VideoUrlArtifact.
-
-    This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage and converted to VideoUrlArtifact objects.
-    VideoUrlArtifact objects are passed through unchanged.
-
-    Args:
-        video_list: List of video inputs (may contain strings, VideoUrlArtifact, etc.)
-
-    Returns:
-        List with string paths converted to VideoUrlArtifact
-    """
-    if not video_list:
-        return video_list
-
-    return [normalize_artifact_input(item, VideoUrlArtifact) for item in video_list]

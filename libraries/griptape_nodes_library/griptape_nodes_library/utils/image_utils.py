@@ -17,7 +17,6 @@ from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -318,41 +317,6 @@ def read_image_from_file_path(path_str: str, context_name: str = "image") -> str
     except Exception as e:
         logger.debug("%s failed to read image from file path %s: %s", context_name, path_str, e)
         return None
-
-
-def normalize_image_list(image_list: list[Any]) -> list[Any]:
-    """Normalize a list of image inputs, converting string paths to ImageUrlArtifact.
-
-    This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage and converted to ImageUrlArtifact objects.
-    ImageUrlArtifact and ImageArtifact objects are passed through unchanged.
-
-    Args:
-        image_list: List of image inputs (may contain strings, ImageUrlArtifact, ImageArtifact, etc.)
-
-    Returns:
-        List with string paths converted to ImageUrlArtifact
-    """
-    if not image_list:
-        return image_list
-
-    return [normalize_artifact_input(item, ImageUrlArtifact, accepted_types=(ImageArtifact,)) for item in image_list]
-
-
-def normalize_image_input(image_input: Any) -> Any:
-    """Normalize a single image input, converting string paths to ImageUrlArtifact.
-
-    This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage and converted to ImageUrlArtifact objects.
-    ImageUrlArtifact and ImageArtifact objects are returned unchanged.
-
-    Args:
-        image_input: Image input (may be string, ImageUrlArtifact, ImageArtifact, etc.)
-
-    Returns:
-        ImageUrlArtifact if input was a string path, otherwise returns input unchanged
-    """
-    return normalize_artifact_input(image_input, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
 
 def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:

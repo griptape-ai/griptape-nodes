@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -25,9 +25,9 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
-    normalize_image_input,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -305,7 +305,7 @@ class FluxImageGeneration(SuccessFailureNode):
 
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
-        input_image = normalize_image_input(input_image)
+        input_image = normalize_artifact_input(input_image, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         return {
             "model": self.get_parameter_value("model") or "flux-kontext-pro",
@@ -359,7 +359,7 @@ class FluxImageGeneration(SuccessFailureNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "input_image" and isinstance(value, str) and value:
-            artifact = normalize_image_input(value)
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if artifact != value:
                 self.set_parameter_value("input_image", artifact)
 

@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 import httpx
+from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
@@ -19,9 +20,9 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
-    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
     shrink_image_to_size,
@@ -241,7 +242,7 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "input_images" and isinstance(value, list):
-            updated_list = normalize_image_list(value)
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if updated_list != value:
                 self.set_parameter_value("input_images", updated_list)
 
@@ -307,9 +308,9 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
-        input_images = normalize_image_list(input_images)
-        object_images = normalize_image_list(object_images)
-        human_images = normalize_image_list(human_images)
+        input_images = normalize_artifact_list(input_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        object_images = normalize_artifact_list(object_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        human_images = normalize_artifact_list(human_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         all_images = input_images + object_images + human_images
 

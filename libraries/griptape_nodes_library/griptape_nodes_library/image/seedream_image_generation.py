@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -22,10 +22,9 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
-    normalize_image_input,
-    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -328,11 +327,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "image" and isinstance(value, str) and value:
-            artifact = normalize_image_input(value)
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if artifact != value:
                 self.set_parameter_value("image", artifact)
         elif parameter.name == "images" and isinstance(value, list):
-            updated_list = normalize_image_list(value)
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if updated_list != value:
                 self.set_parameter_value("images", updated_list)
 
@@ -463,8 +462,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
-        image = normalize_image_input(image)
-        images = normalize_image_list(images)
+        image = normalize_artifact_input(image, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         params = {
             "model": self.get_parameter_value("model") or "seedream-4.5",

@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -24,7 +25,7 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import normalize_image_input
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -208,7 +209,7 @@ class SeedVRImageUpscale(SuccessFailureNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "image_url" and isinstance(value, str) and value:
-            artifact = normalize_image_input(value)
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if artifact != value:
                 self.set_parameter_value("image_url", artifact)
 
@@ -273,7 +274,7 @@ class SeedVRImageUpscale(SuccessFailureNode):
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
         image_url = self.get_parameter_value("image_url")
-        normalized_image_url = normalize_image_input(image_url)
+        normalized_image_url = normalize_artifact_input(image_url, ImageUrlArtifact, accepted_types=(ImageArtifact,))
         # Set normalized value back if it changed (needed for get_public_url_for_parameter)
         if normalized_image_url != image_url:
             self.parameter_values["image_url"] = normalized_image_url

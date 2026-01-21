@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
@@ -25,7 +26,7 @@ from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from griptape_nodes_library.utils.image_utils import normalize_image_list
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -306,7 +307,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         elif parameter.name == "reference_images":
             # Normalize reference images (converts string paths to ImageUrlArtifact)
             if isinstance(value, list):
-                updated_list = normalize_image_list(value)
+                updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
                 if updated_list != value:
                     self.set_parameter_value("reference_images", updated_list)
                     value = updated_list
@@ -435,7 +436,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
         # Normalize reference images (handles cases where values come from connections)
         reference_images = self.get_parameter_value("reference_images") or []
-        normalized_reference_images = normalize_image_list(reference_images) if reference_images else []
+        normalized_reference_images = (
+            normalize_artifact_list(reference_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if reference_images
+            else []
+        )
 
         return {
             "prompt": self.get_parameter_value("prompt") or "",

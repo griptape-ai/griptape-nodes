@@ -9,10 +9,10 @@ from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
-    normalize_image_list,
     save_pil_image_with_named_filename,
 )
 
@@ -74,7 +74,7 @@ class MergeImages(ControlNode):
             if not isinstance(images, list):
                 images = [images]
             # Normalize string paths to ImageUrlArtifact
-            images = normalize_image_list(images)
+            images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             return images[:4]  # Enforce max 4
         return []
 

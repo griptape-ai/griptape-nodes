@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -22,9 +22,9 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
-    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -209,7 +209,7 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "images" and isinstance(value, list):
-            updated_list = normalize_image_list(value)
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if updated_list != value:
                 self.set_parameter_value("images", updated_list)
 
@@ -270,7 +270,7 @@ class QwenImageEdit(SuccessFailureNode):
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
         if isinstance(images, list):
-            images = normalize_image_list(images)
+            images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         # Validate images
         if not images or len(images) == 0:

@@ -7,7 +7,7 @@ from contextlib import suppress
 from copy import deepcopy
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
@@ -19,10 +19,10 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
-    normalize_image_list,
     read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
@@ -273,7 +273,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "input_images" and isinstance(value, list):
-            updated_list = normalize_image_list(value)
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             if updated_list != value:
                 self.set_parameter_value("input_images", updated_list)
 
@@ -392,7 +392,9 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
         # Normalize string paths to ImageUrlArtifact during processing
         # (handles cases where values come from connections and bypass after_value_set)
-        input_images_list = normalize_image_list(input_images_list)
+        input_images_list = normalize_artifact_list(
+            input_images_list, ImageUrlArtifact, accepted_types=(ImageArtifact,)
+        )
 
         image_index = 0
         for image_input in input_images_list:

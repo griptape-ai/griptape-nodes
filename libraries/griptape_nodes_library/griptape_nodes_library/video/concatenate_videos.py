@@ -13,7 +13,8 @@ from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.video_utils import normalize_video_list, to_video_artifact
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.utils.video_utils import to_video_artifact
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
 
@@ -231,7 +232,7 @@ class ConcatenateVideos(BaseVideoProcessor):
 
         # Convert string paths to VideoUrlArtifact by uploading to static storage
         if parameter.name == "video_inputs" and isinstance(value, list):
-            updated_list = normalize_video_list(value)
+            updated_list = normalize_artifact_list(value, VideoUrlArtifact)
             if updated_list != value:
                 self.set_parameter_value("video_inputs", updated_list)
 
@@ -239,7 +240,7 @@ class ConcatenateVideos(BaseVideoProcessor):
         """Get custom parameters for processing."""
         # Normalize video inputs (handles cases where values come from connections)
         video_inputs = self.get_parameter_list_value("video_inputs")
-        normalized_video_inputs = normalize_video_list(video_inputs) if video_inputs else []
+        normalized_video_inputs = normalize_artifact_list(video_inputs, VideoUrlArtifact) if video_inputs else []
         return {
             "video_inputs": normalized_video_inputs,
             "output_format": self.get_parameter_value("output_format"),

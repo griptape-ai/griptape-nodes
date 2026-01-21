@@ -10,8 +10,6 @@ from urllib.parse import urlparse
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
-from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
-
 logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -215,19 +213,3 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
             temp_path.unlink()
         error_details = f"Failed to download audio from {url}: {e}"
         raise ValueError(error_details) from e
-
-
-def normalize_audio_input(audio_input: Any) -> Any:
-    """Normalize a single audio input, converting string paths to AudioUrlArtifact.
-
-    This ensures consistency whether values come from user input or node connections.
-    String paths are uploaded to static storage and converted to AudioUrlArtifact objects.
-    AudioUrlArtifact objects are returned unchanged.
-
-    Args:
-        audio_input: Audio input (may be string, AudioUrlArtifact, etc.)
-
-    Returns:
-        AudioUrlArtifact if input was a string path, otherwise returns input unchanged
-    """
-    return normalize_artifact_input(audio_input, AudioUrlArtifact)
