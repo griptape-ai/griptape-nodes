@@ -226,17 +226,19 @@ class SerializedGroupResult:
     child nodes and their UUIDs for deserialization remapping.
 
     Attributes:
-        group_command: The serialized group node command
+        group_command: The serialized group node command (None if serialization failed)
         group_parameter_commands: Parameter value commands for the group
         child_commands: List of serialized child node commands (excluding already-selected ones)
         child_parameter_commands: Dict mapping child UUIDs to their parameter value commands
         child_uuids: List of child node UUIDs for UUID-to-name remapping during deserialization
     """
 
-    group_command: "SerializedNodeCommands"
+    group_command: "SerializedNodeCommands | None"
     group_parameter_commands: list["SerializedNodeCommands.IndirectSetParameterValueCommand"]
     child_commands: list["SerializedNodeCommands"]
-    child_parameter_commands: dict["SerializedNodeCommands.NodeUUID", list["SerializedNodeCommands.IndirectSetParameterValueCommand"]]
+    child_parameter_commands: dict[
+        "SerializedNodeCommands.NodeUUID", list["SerializedNodeCommands.IndirectSetParameterValueCommand"]
+    ]
     child_uuids: list["SerializedNodeCommands.NodeUUID"]
 
 
@@ -2635,7 +2637,7 @@ class NodeManager:
         child_uuids = []
 
         # Serialize each child node that isn't explicitly selected
-        for child_name, child_node in group_node.nodes.items():
+        for child_name in group_node.nodes:
             if child_name in explicitly_selected_names:
                 # Child is already being serialized separately, skip
                 continue
@@ -2652,12 +2654,14 @@ class NodeManager:
 
             if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
                 # Failed to serialize child - log warning and skip
-                logger.warning(f"{group_name} failed to serialize child node '{child_name}'")
+                logger.warning("%s failed to serialize child node '%s'", group_name, child_name)
                 continue
 
             # Store child's serialized command, parameter commands, and UUID
             child_commands.append(child_result.serialized_node_commands)
-            child_parameter_commands[child_result.serialized_node_commands.node_uuid] = child_result.set_parameter_value_commands
+            child_parameter_commands[child_result.serialized_node_commands.node_uuid] = (
+                child_result.set_parameter_value_commands
+            )
             child_uuids.append(child_result.serialized_node_commands.node_uuid)
 
         # Serialize the group node itself
@@ -2672,7 +2676,7 @@ class NodeManager:
 
         if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
             # This shouldn't happen, log error
-            logger.error(f"Failed to serialize group node '{group_name}'")
+            logger.error("Failed to serialize group node '%s'", group_name)
             # Return empty result - caller will need to handle this
             return SerializedGroupResult(
                 group_command=None,
@@ -2689,6 +2693,12 @@ class NodeManager:
             group_command.create_node_command.metadata = {}
 
         group_command.create_node_command.metadata["child_node_uuids"] = child_uuids
+
+        # Store original group position for calculating child position offsets during paste
+        if "position" in group_command.create_node_command.metadata:
+            group_command.create_node_command.metadata["original_group_position"] = (
+                group_command.create_node_command.metadata["position"].copy()
+            )
 
         return SerializedGroupResult(
             group_command=group_command,
@@ -3077,7 +3087,7 @@ class NodeManager:
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name, result_details=details)
 
-    def on_serialize_selected_nodes_to_commands(
+    def on_serialize_selected_nodes_to_commands(  # noqa: C901, PLR0912, PLR0915
         self, request: SerializeSelectedNodesToCommandsRequest
     ) -> ResultPayload:
         """This will take the selected nodes in the Object manager and serialize them into commands."""
@@ -3133,9 +3143,13 @@ class NodeManager:
                 # Process each child node command and add to tracking structures
                 for child_command in group_result.child_commands:
                     child_name = child_command.create_node_command.node_name
+                    if not child_name:
+                        continue
                     child_node_commands_list.append(child_command)
                     node_name_to_uuid[child_name] = child_command.node_uuid
-                    parameter_commands[child_command.node_uuid] = group_result.child_parameter_commands[child_command.node_uuid]
+                    parameter_commands[child_command.node_uuid] = group_result.child_parameter_commands[
+                        child_command.node_uuid
+                    ]
                     lock_commands[child_command.node_uuid] = child_command.lock_node_command
                     # Add to connection filtering set
                     all_selected_for_connections.add(child_name)
@@ -3156,7 +3170,9 @@ class NodeManager:
                 node_commands[node_name] = result.serialized_node_commands
                 node_name_to_uuid[node_name] = result.serialized_node_commands.node_uuid
                 parameter_commands[result.serialized_node_commands.node_uuid] = result.set_parameter_value_commands
-                lock_commands[result.serialized_node_commands.node_uuid] = result.serialized_node_commands.lock_node_command
+                lock_commands[result.serialized_node_commands.node_uuid] = (
+                    result.serialized_node_commands.lock_node_command
+                )
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -3248,20 +3264,40 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
-        # Enumerate because positions is in the same order as the node commands.
-        for i, node_command in enumerate(commands.serialized_node_commands):
+
+        # Build a set of child node UUIDs to identify implicitly selected nodes
+        child_node_uuids = set()
+        for node_command in commands.serialized_node_commands:
+            metadata = node_command.create_node_command.metadata
+            if metadata and "child_node_uuids" in metadata:
+                child_node_uuids.update(metadata["child_node_uuids"])
+
+        # Separate position index - only increments for explicitly selected nodes (not children)
+        position_index = 0
+
+        # Deserialize nodes
+        for node_command in commands.serialized_node_commands:
             # Create a deepcopy of the metadata so the nodes don't all share the same position.
             node_command.create_node_command.metadata = copy.deepcopy(node_command.create_node_command.metadata)
-            if request.positions is not None and len(request.positions) > i:
+
+            # Check if this node is an implicitly selected child
+            is_child_node = node_command.node_uuid in child_node_uuids
+
+            # Apply position only to explicitly selected nodes (not children)
+            if not is_child_node and request.positions is not None and position_index < len(request.positions):
                 if node_command.create_node_command.metadata is None:
                     node_command.create_node_command.metadata = {
-                        "position": {"x": request.positions[i][0], "y": request.positions[i][1]}
+                        "position": {
+                            "x": request.positions[position_index][0],
+                            "y": request.positions[position_index][1],
+                        }
                     }
                 else:
                     node_command.create_node_command.metadata["position"] = {
-                        "x": request.positions[i][0],
-                        "y": request.positions[i][1],
+                        "x": request.positions[position_index][0],
+                        "y": request.positions[position_index][1],
                     }
+                position_index += 1
 
             # Check if this is a group with child_node_uuids that need remapping
             metadata = node_command.create_node_command.metadata
@@ -3276,13 +3312,15 @@ class NodeManager:
                         remapped_child_names.append(node_uuid_to_name[child_uuid])
                     else:
                         # This shouldn't happen - child should have been created first
-                        logger.warning(f"Child node UUID {child_uuid} not found in UUID mapping")
+                        logger.warning("Child node UUID %s not found in UUID mapping", child_uuid)
 
                 # Update node_names_to_add with the remapped names
                 node_command.create_node_command.node_names_to_add = remapped_child_names
 
-                # Remove child_node_uuids from metadata - it was only for transport
+                # Remove temporary serialization metadata
                 del metadata["child_node_uuids"]
+                if "original_group_position" in metadata:
+                    del metadata["original_group_position"]
 
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
@@ -3323,6 +3361,63 @@ class NodeManager:
                     if not lock_node_result.succeeded():
                         details = f"Failed to lock node {lock_command.node_name}"
                         logger.warning(details)
+
+        # Update child node positions to maintain relative offsets from their parent groups
+        # Collect all position updates to apply in a batch
+        child_position_updates = {}
+
+        for node_command in commands.serialized_node_commands:
+            metadata = node_command.create_node_command.metadata
+
+            # Check if this is a group with children and original position info
+            if metadata and "child_node_uuids" in metadata and "original_group_position" in metadata:
+                original_group_pos = metadata["original_group_position"]
+
+                # Get the newly created group node
+                group_name = node_uuid_to_name.get(node_command.node_uuid)
+                if not group_name:
+                    continue
+
+                group_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(group_name, BaseNode)
+
+                if group_node and group_node.metadata and "position" in group_node.metadata:
+                    new_group_pos = group_node.metadata["position"]
+
+                    # Calculate offset between old and new group positions
+                    offset_x = new_group_pos["x"] - original_group_pos["x"]
+                    offset_y = new_group_pos["y"] - original_group_pos["y"]
+
+                    # Collect position updates for all children
+                    for child_uuid in metadata["child_node_uuids"]:
+                        child_name = node_uuid_to_name.get(child_uuid)
+                        if not child_name:
+                            continue
+
+                        child_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(
+                            child_name, BaseNode
+                        )
+
+                        if child_node and child_node.metadata and "position" in child_node.metadata:
+                            original_child_pos = child_node.metadata["position"]
+
+                            # Calculate new position: original position + offset
+                            new_child_pos = {
+                                "x": original_child_pos["x"] + offset_x,
+                                "y": original_child_pos["y"] + offset_y,
+                            }
+
+                            # Store for batch update (will notify UI via WebSocket)
+                            child_position_updates[child_name] = {"position": new_child_pos}
+
+        # Apply all child position updates in a single batch request
+        # This ensures the UI receives position change notifications via WebSocket
+        if child_position_updates:
+            batch_request = BatchSetNodeMetadataRequest(node_metadata_updates=child_position_updates)
+            batch_result = GriptapeNodes.handle_request(batch_request)
+
+            if batch_result.failed():
+                logger.warning("Failed to update child node positions after paste")
+
         # create Connections
         for connection_command in connections:
             connection_request = CreateConnectionRequest(
