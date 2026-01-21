@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.57.2",
+    "library_version": "0.57.3",
     "engine_version": "0.69.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
@@ -1818,7 +1818,7 @@
       "file_path": "griptape_nodes_library/image/rescale_image.py",
       "metadata": {
         "category": "image",
-        "description": "Resize images with separate parameters for target size (pixels) and percentage scale, plus resample filter options",
+        "description": "Resize images with separate parameters for target size (pixels) and percentage scale, plus resample filter options. Previously named \"Rescale Image\".",
         "display_name": "Resize Image",
         "icon": "image-upscale",
         "group": "edit"

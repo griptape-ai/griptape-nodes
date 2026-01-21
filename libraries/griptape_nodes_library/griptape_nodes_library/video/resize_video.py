@@ -12,6 +12,10 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
@@ -65,19 +69,16 @@ class ResizeVideo(ControlNode):
 
         # Add video input parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The video to resize",
             )
         )
 
         with ParameterGroup(name="resize_settings", ui_options={"collapsed": False}) as resize_group:
-            resize_mode_param = Parameter(
+            resize_mode_param = ParameterString(
                 name="resize_mode",
-                type="str",
                 default_value=self.RESIZE_MODE_PERCENTAGE,
                 tooltip="How to resize the video: by width, height, percentage, or width and height",
             )
@@ -92,33 +93,29 @@ class ResizeVideo(ControlNode):
                 )
             )
 
-            target_size_param = Parameter(
+            target_size_param = ParameterInt(
                 name="target_size",
-                type="int",
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target size in pixels for width/height modes ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_size_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
-            target_width_param = Parameter(
+            target_width_param = ParameterInt(
                 name="target_width",
-                type="int",
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target width in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_width_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
-            target_height_param = Parameter(
+            target_height_param = ParameterInt(
                 name="target_height",
-                type="int",
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target height in pixels ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_height_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
-            fit_mode_param = Parameter(
+            fit_mode_param = ParameterString(
                 name="fit_mode",
-                type="str",
                 default_value=self.FIT_MODE_FIT,
                 tooltip="How to fit the video within the target dimensions",
             )
@@ -132,18 +129,16 @@ class ResizeVideo(ControlNode):
                 )
             )
 
-            background_color_param = Parameter(
+            background_color_param = ParameterString(
                 name="background_color",
-                type="str",
                 default_value="#000000",
                 tooltip="Background color for letterboxing/matting",
             )
             background_color_param.add_trait(ColorPicker(format="hex"))
 
             # Add percentage parameter
-            percentage_parameter = Parameter(
+            percentage_parameter = ParameterInt(
                 name="percentage",
-                type="int",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=self.DEFAULT_PERCENTAGE_SCALE,
                 tooltip="Resize percentage (e.g., 50 for 50%)",
@@ -151,9 +146,8 @@ class ResizeVideo(ControlNode):
             percentage_parameter.add_trait(Slider(min_val=self.MIN_PERCENTAGE_SCALE, max_val=self.MAX_PERCENTAGE_SCALE))
 
             # Add scaling algorithm parameter
-            scaling_algorithm_parameter = Parameter(
+            scaling_algorithm_parameter = ParameterString(
                 name="scaling_algorithm",
-                type="str",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="The scaling algorithm to use",
                 default_value="bicubic",
@@ -170,13 +164,12 @@ class ResizeVideo(ControlNode):
             )
 
             # Add lanczos parameter for fine-tuning lanczos algorithm
-            lanczos_parameter = Parameter(
+            lanczos_parameter = ParameterFloat(
                 name="lanczos_parameter",
-                type="float",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 default_value=3.0,
                 tooltip="Lanczos algorithm parameter (alpha value, default: 3.0). Higher values (4-5) provide sharper results but may introduce ringing artifacts. Lower values (2-3) provide smoother results.",
-                ui_options={"hide": True},
+                hide=True,
             )
             lanczos_parameter.add_trait(Slider(min_val=1.0, max_val=10.0))
 
@@ -191,23 +184,21 @@ class ResizeVideo(ControlNode):
 
         # Add output video parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="resized_video",
-                input_types=["VideoArtifact", "VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The resized video",
-                ui_options={"pulse_on_run": True},
+                pulse_on_run=True,
             )
         )
         # Group for logging information.
         with ParameterGroup(name="Logs") as logs_group:
-            Parameter(
+            ParameterString(
                 name="logs",
-                type="str",
                 tooltip="Displays processing logs and detailed events if enabled.",
-                ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},
+                multiline=True,
+                placeholder_text="Logs",
             )
         logs_group.ui_options = {"hide": True}  # Hide the logs group by default.
 
