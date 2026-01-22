@@ -12,8 +12,9 @@ from typing import Any
 import requests
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver as GtGriptapeCloudPromptDriver
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.traits.button import Button
 from griptape_nodes_library.config.prompt.base_prompt import BasePrompt
 
 # --- Constants ---
@@ -39,12 +40,7 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
     },
     {
-        "name": "gemini-2.5-flash-preview-05-20",
-        "icon": "logos/google.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
-    },
-    {
-        "name": "gemini-2.0-flash",
+        "name": "gemini-2.5-flash",
         "icon": "logos/google.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
@@ -68,9 +64,15 @@ MODEL_CHOICES_ARGS = [
 ]
 
 MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
-DEFAULT_MODEL = MODEL_CHOICES[8]
+DEFAULT_MODEL = MODEL_CHOICES[7]
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
+
+# Deprecated models and their replacements
+DEPRECATED_MODELS = {
+    "gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
+    "gemini-2.0-flash": "gemini-2.5-flash",
+}
 
 # Current models available in the API as of 8/9/2025
 # but not all of them work.
@@ -78,7 +80,7 @@ API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 #     "claude-3-5-haiku",
 #     "claude-3-7-sonnet",
 #     "deepseek.r1-v1",
-#     "gemini-2.0-flash",
+#     "gemini-2.0-flash", (deprecated)
 #     "gpt-4.1-mini",
 #     "gpt-4.1-nano",
 #     "gpt-4o",
@@ -140,6 +142,41 @@ class GriptapeCloudPrompt(BasePrompt):
 
         # Replace `min_p` with `top_p` for Griptape Cloud.
         self._replace_param_by_name(param_name="min_p", new_param_name="top_p", default_value=0.9)
+
+        # Add deprecation notice message element
+        self.add_node_element(
+            ParameterMessage(
+                name="model_deprecation_notice",
+                title="Model Deprecation Notice",
+                variant="info",
+                value="",
+                traits={
+                    Button(
+                        full_width=True,
+                        on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
+                    )
+                },
+                button_text="Dismiss",
+                hide=True,
+            )
+        )
+
+    def before_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> Any:
+        if parameter.name == "model":
+            if value in DEPRECATED_MODELS:
+                replacement = DEPRECATED_MODELS[value]
+                message = self.get_message_by_name_or_element_id("model_deprecation_notice")
+                message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
+                self.show_message_by_name("model_deprecation_notice")
+                value = replacement
+            else:
+                self.hide_message_by_name("model_deprecation_notice")
+
+        return super().before_value_set(parameter, value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "model":
