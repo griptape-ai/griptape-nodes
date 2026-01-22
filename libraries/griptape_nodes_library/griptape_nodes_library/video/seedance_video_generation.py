@@ -233,7 +233,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         )
 
         # Set initial parameter visibility based on default model
-        default_model = "Seedance 1.0 Pro"
+        default_model = "Seedance 1.5 Pro"
         default_provider_model_id = self._get_provider_model_id(default_model)
         if default_provider_model_id == "seedance-1-0-lite-t2v-250428":
             # T2V only - hide all image inputs
@@ -314,7 +314,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
 
         Converts user-facing model name to provider model ID.
         """
-        raw_model_id = self.get_parameter_value("model_id") or "Seedance 1.0 Pro"
+        raw_model_id = self.get_parameter_value("model_id") or "Seedance 1.5 Pro"
         return self._get_provider_model_id(raw_model_id)
 
     def _log(self, message: str) -> None:
@@ -336,7 +336,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         return exceptions if exceptions else None
 
     def _get_parameters(self) -> dict[str, Any]:
-        raw_model_id = self.get_parameter_value("model_id") or "Seedance 1.0 Pro"
+        raw_model_id = self.get_parameter_value("model_id") or "Seedance 1.5 Pro"
         # Convert friendly name to provider model ID
         model_id = self._get_provider_model_id(raw_model_id)
 
