@@ -197,8 +197,9 @@ class BaseIterativeStartNode(BaseNode):
         """Get the base node type name (e.g., 'ForLoop' from 'ForLoopStartNode')."""
         return self.__class__.__name__.replace("StartNode", "")
 
+    @classmethod
     @abstractmethod
-    def _get_compatible_end_classes(self) -> set[type]:
+    def _get_compatible_end_classes(cls) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
 
     @abstractmethod
@@ -352,6 +353,39 @@ class BaseIterativeStartNode(BaseNode):
                 )
                 return False
         return super().allow_outgoing_connection(source_parameter, target_node, target_parameter)
+
+    @classmethod
+    def allow_outgoing_connection_by_class(
+        cls,
+        target_node_class: type[BaseNode],
+        source_parameter_name: str,
+        target_parameter_name: str,  # noqa: ARG003
+    ) -> bool:
+        if source_parameter_name == "loop" and cls is BaseIterativeStartNode:
+            compatible_end_classes = cls._get_compatible_end_classes()
+            compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
+            target_class_name = target_node_class.__name__
+            if target_class_name not in compatible_class_names:
+                return False
+        return True
+
+    @classmethod
+    def allow_incoming_connection_by_class(
+        cls,
+        source_node_class: type[BaseNode],
+        source_parameter_name: str,  # noqa: ARG003
+        target_parameter_name: str,
+    ) -> bool:
+        if (
+            target_parameter_name in ("trigger_next_iteration_signal", "break_loop_signal")
+            and cls is BaseIterativeStartNode
+        ):
+            compatible_end_classes = cls._get_compatible_end_classes()
+            compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
+            source_class_name = source_node_class.__name__
+            if source_class_name not in compatible_class_names:
+                return False
+        return True
 
     def allow_incoming_connection(
         self,
@@ -638,8 +672,9 @@ class BaseIterativeEndNode(BaseNode):
         """Get the base node type name (e.g., 'ForLoop' from 'ForLoopEndNode')."""
         return self.__class__.__name__.replace("EndNode", "")
 
+    @classmethod
     @abstractmethod
-    def _get_compatible_start_classes(self) -> set[type]:
+    def _get_compatible_start_classes(cls) -> set[type]:
         """Return the set of Start node classes that this End node can connect to."""
 
     def _output_results_list(self) -> None:
@@ -756,6 +791,38 @@ class BaseIterativeEndNode(BaseNode):
                 )
                 return False
         return super().allow_incoming_connection(source_node, source_parameter, target_parameter)
+
+    @classmethod
+    def allow_outgoing_connection_by_class(
+        cls,
+        target_node_class: type[BaseNode],
+        source_parameter_name: str,
+        target_parameter_name: str,  # noqa: ARG003
+    ) -> bool:
+        """Class-level validation for outgoing connections from iterative end nodes."""
+        if source_parameter_name in ("trigger_next_iteration_signal_output", "break_loop_signal_output"):
+            compatible_start_classes = cls._get_compatible_start_classes()
+            compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
+            target_class_name = target_node_class.__name__
+            if target_class_name not in compatible_class_names:
+                return False
+        return True
+
+    @classmethod
+    def allow_incoming_connection_by_class(
+        cls,
+        source_node_class: type[BaseNode],
+        source_parameter_name: str,  # noqa: ARG003
+        target_parameter_name: str,
+    ) -> bool:
+        """Class-level validation for incoming connections to iterative end nodes."""
+        if target_parameter_name == "from_start":
+            compatible_start_classes = cls._get_compatible_start_classes()
+            compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
+            source_class_name = source_node_class.__name__
+            if source_class_name not in compatible_class_names:
+                return False
+        return True
 
     def _validate_iterative_connections(self) -> list[Exception]:
         """Validate that all required iterative connections are properly established."""

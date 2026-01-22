@@ -98,7 +98,8 @@ class ForLoopStartNode(BaseIterativeStartNode):
                 if break_param:
                     break_param.allowed_modes = set()
 
-    def _get_compatible_end_classes(self) -> set[type]:
+    @classmethod
+    def _get_compatible_end_classes(cls) -> set[type]:
         """Return the set of End node classes that this Start node can connect to."""
         from griptape_nodes_library.execution.for_loop_end import ForLoopEndNode
 

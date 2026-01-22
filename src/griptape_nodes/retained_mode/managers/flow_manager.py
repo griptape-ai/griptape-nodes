@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
+from multiprocessing import connection
 from queue import Queue
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
@@ -1947,20 +1948,23 @@ class FlowManager:
                 if package_param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
                     continue
 
+                # Check if we are allowed to make a connection here
+                valid_connection =package_node.allow_outgoing_connection_by_class(request.end_node_type, package_param.name, end_node)
                 # Use comprehensive helper to process this data parameter
-                self._process_parameter_for_end_node(
-                    request=request,
-                    parameter=package_param,
-                    node_name=package_node.name,
-                    node_uuid=package_node_uuid,
-                    end_node_name=end_node_name,
-                    end_node_uuid=end_node_uuid,
-                    tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
-                    end_node_parameter_commands=end_node_parameter_commands,
-                    package_to_end_connections=package_to_end_connections,
-                    parameter_name_mappings=parameter_name_mappings,
-                    output_shape_data=output_shape_data,
-                )
+                if valid_connection:
+                    self._process_parameter_for_end_node(
+                        request=request,
+                        parameter=package_param,
+                        node_name=package_node.name,
+                        node_uuid=package_node_uuid,
+                        end_node_name=end_node_name,
+                        end_node_uuid=end_node_uuid,
+                        tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
+                        end_node_parameter_commands=end_node_parameter_commands,
+                        package_to_end_connections=package_to_end_connections,
+                        parameter_name_mappings=parameter_name_mappings,
+                        output_shape_data=output_shape_data,
+                    )
 
     def _process_parameter_for_end_node(  # noqa: PLR0913
         self,
@@ -2428,13 +2432,21 @@ class FlowManager:
         # StartNode always has a control output parameter with name "exec_out"
         source_control_parameter_name = "exec_out"
 
-        # Create the connection
-        control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-            source_node_uuid=start_node_uuid,
-            source_parameter_name=source_control_parameter_name,
-            target_node_uuid=package_node_uuid,
-            target_parameter_name=package_control_input_name,
-        )
+        # Validate that the control input connection is allowed
+        #TODO: How do I get start flow type here? 
+        connection_allowed =package_node.allow_incoming_connection_by_class(StartFlowNode,package_control_input_name, source_control_parameter_name)
+
+        if connection_allowed:
+            # Create the connection
+            control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+                source_node_uuid=start_node_uuid,
+                source_parameter_name=source_control_parameter_name,
+                target_node_uuid=package_node_uuid,
+                target_parameter_name=package_control_input_name,
+            )
+        else:
+            details = f"Attempted to package node '{package_node.name}'. Failed because we were not allowed to create a control connection from the start node to the first node in the package."
+            return PackageNodesAsSerializedFlowResultFailure(result_details=details)
         return control_connection
 
     def _collect_all_connections_for_multi_node_package(
