@@ -288,6 +288,8 @@ class Agent(ControlNode):
             if value in DEPRECATED_MODELS:
                 replacement = DEPRECATED_MODELS[value]
                 message = self.get_message_by_name_or_element_id("model_deprecation_notice")
+                if message is None:
+                    raise RuntimeError("model_deprecation_notice message element not found")
                 message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
                 self.show_message_by_name("model_deprecation_notice")
                 value = replacement
