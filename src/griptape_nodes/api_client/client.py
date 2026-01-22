@@ -203,7 +203,10 @@ class Client:
             async for websocket in connect(self.url, additional_headers=self.headers):
                 self._websocket = websocket
                 self._connection_ready.set()
-                logger.debug("WebSocket connection established: %s", self.url)
+                if self._subscribed_topics:
+                    logger.info("WebSocket reconnected successfully")
+                else:
+                    logger.debug("WebSocket connection established: %s", self.url)
 
                 # Resubscribe to all topics after reconnection
                 if self._subscribed_topics:
