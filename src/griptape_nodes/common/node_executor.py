@@ -102,6 +102,8 @@ from griptape_nodes.retained_mode.managers.event_manager import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -220,6 +222,8 @@ class NodeExecutor:
                 # Just execute the node normally! This means we aren't doing any special packaging.
                 await node.aprocess()
                 return
+            # Clear execution state before subprocess execution starts
+            node.subflow_execution_component.clear_execution_state()
             if execution_type == PRIVATE_EXECUTION:
                 # Package the flow and run it in a subprocess.
                 await self._execute_private_workflow(node)
@@ -251,7 +255,9 @@ class NodeExecutor:
             file_name: Name of workflow for logging
             package_result: The packaging result containing parameter mappings
         """
-        my_subprocess_result = await self._execute_subprocess(workflow_path, file_name)
+        # Pass node for event updates if it's a SubflowNodeGroup
+        subflow_node = node if isinstance(node, SubflowNodeGroup) else None
+        my_subprocess_result = await self._execute_subprocess(workflow_path, file_name, node=subflow_node)
         parameter_output_values = self._extract_parameter_output_values(my_subprocess_result)
         self._apply_parameter_values_to_node(node, parameter_output_values, package_result)
 
@@ -343,7 +349,7 @@ class NodeExecutor:
 
         try:
             published_workflow_filename = await self._publish_library_workflow(
-                workflow_result, library_name, result.file_name
+                workflow_result, library_name, result.file_name, node=node
             )
         except Exception as e:
             logger.exception(
@@ -481,19 +487,29 @@ class NodeExecutor:
         )
 
     async def _publish_library_workflow(
-        self, workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess, library_name: str, file_name: str
+        self,
+        workflow_result: SaveWorkflowFileFromSerializedFlowResultSuccess,
+        library_name: str,
+        file_name: str,
+        node: BaseNode | None = None,
     ) -> Path:
-        subprocess_workflow_publisher = SubprocessWorkflowPublisher()
+        # Define event callback if node is a SubflowNodeGroup for GUI updates
+        on_event: Callable[[dict], None] | None = None
+        if isinstance(node, SubflowNodeGroup):
+            on_event = node.subflow_execution_component.handle_publishing_event
+
+        subprocess_workflow_publisher = SubprocessWorkflowPublisher(on_event=on_event)
         published_filename = f"{Path(workflow_result.file_path).stem}_published"
         published_workflow_filename = GriptapeNodes.ConfigManager().workspace_path / (published_filename + ".py")
 
-        await subprocess_workflow_publisher.arun(
-            workflow_name=file_name,
-            workflow_path=workflow_result.file_path,
-            publisher_name=library_name,
-            published_workflow_file_name=published_filename,
-            pickle_control_flow_result=True,
-        )
+        async with subprocess_workflow_publisher:
+            await subprocess_workflow_publisher.arun(
+                workflow_name=file_name,
+                workflow_path=workflow_result.file_path,
+                publisher_name=library_name,
+                published_workflow_file_name=published_filename,
+                pickle_control_flow_result=True,
+            )
 
         if not published_workflow_filename.exists():
             msg = f"Published workflow file does not exist at path: {published_workflow_filename}"
@@ -507,6 +523,7 @@ class NodeExecutor:
         file_name: str,
         pickle_control_flow_result: bool = True,  # noqa: FBT001, FBT002
         flow_input: dict[str, Any] | None = None,
+        node: SubflowNodeGroup | None = None,
     ) -> dict[str, dict[str | SerializedNodeCommands.UniqueParameterValueUUID, Any] | None]:
         """Execute the published workflow in a subprocess.
 
@@ -515,6 +532,7 @@ class NodeExecutor:
             file_name: Name of the workflow for logging
             pickle_control_flow_result: Whether to pickle control flow results (defaults to True)
             flow_input: Optional dictionary of parameter values to pass to the workflow's StartFlow node
+            node: Optional SubflowNodeGroup to receive real-time event updates
 
         Returns:
             The subprocess execution output dictionary
@@ -523,7 +541,15 @@ class NodeExecutor:
             SubprocessWorkflowExecutor,
         )
 
-        subprocess_executor = SubprocessWorkflowExecutor(workflow_path=str(published_workflow_filename))
+        # Define event callback if node provided for GUI updates
+        on_event: Callable[[dict], None] | None = None
+        if node is not None:
+            on_event = node.subflow_execution_component.handle_execution_event
+
+        subprocess_executor = SubprocessWorkflowExecutor(
+            workflow_path=str(published_workflow_filename),
+            on_event=on_event,
+        )
         try:
             async with subprocess_executor as executor:
                 await executor.arun(
@@ -1453,6 +1479,10 @@ class NodeExecutor:
 
         # Get execution environment
         execution_type = node.get_parameter_value(node.execution_environment.name)
+
+        # Clear execution state before subprocess execution starts (for non-local execution)
+        if execution_type != LOCAL_EXECUTION:
+            node.subflow_execution_component.clear_execution_state()
 
         # Check if we should run in order (default is sequential/True)
         run_in_order = node.get_parameter_value("run_in_order")
@@ -2550,11 +2580,14 @@ class NodeExecutor:
                             end_loop_node.name,
                         )
 
+                        # Pass node for event updates if it's a SubflowNodeGroup (includes BaseIterativeNodeGroup)
+                        subflow_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
                         subprocess_result = await self._execute_subprocess(
                             published_workflow_filename=workflow_path,
                             file_name=f"{file_name_prefix}_iteration_{iteration_index}",
                             pickle_control_flow_result=True,
                             flow_input=flow_input,
+                            node=subflow_node,
                         )
                         iteration_outputs.append((iteration_index, True, subprocess_result))
                     except Exception:
@@ -2562,6 +2595,9 @@ class NodeExecutor:
                         iteration_outputs.append((iteration_index, False, None))
             else:
                 # Execute all iterations concurrently
+                # Get subflow_node reference for event updates (scoped outside the closure)
+                subflow_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
+
                 async def run_single_iteration(iteration_index: int) -> tuple[int, bool, dict[str, Any] | None]:
                     try:
                         flow_input = {start_node_name: parameter_values_per_iteration[iteration_index]}
@@ -2577,6 +2613,7 @@ class NodeExecutor:
                             file_name=f"{file_name_prefix}_iteration_{iteration_index}",
                             pickle_control_flow_result=True,
                             flow_input=flow_input,
+                            node=subflow_node,
                         )
                     except Exception:
                         logger.exception("Iteration %d failed for loop '%s'", iteration_index, end_loop_node.name)
@@ -2794,10 +2831,13 @@ class NodeExecutor:
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
         file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_sequential_loop_flow"
 
+        # Pass node for publishing progress events if it's a SubflowNodeGroup
+        publish_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
             file_name=file_name_prefix,
+            node=publish_node,
         )
 
         try:
@@ -2837,10 +2877,13 @@ class NodeExecutor:
         sanitized_loop_name = end_loop_node.name.replace(" ", "_")
         file_name_prefix = f"{sanitized_loop_name}_{library_name.replace(' ', '_')}_loop_flow"
 
+        # Pass node for publishing progress events if it's a SubflowNodeGroup
+        publish_node = end_loop_node if isinstance(end_loop_node, SubflowNodeGroup) else None
         published_workflow_filename, workflow_result = await self._publish_workflow_for_loop_execution(
             package_result=package_result,
             library_name=library_name,
             file_name=file_name_prefix,
+            node=publish_node,
         )
 
         try:
@@ -2866,6 +2909,7 @@ class NodeExecutor:
         package_result: PackageNodesAsSerializedFlowResultSuccess,
         library_name: str,
         file_name: str,
+        node: BaseNode | None = None,
     ) -> tuple[Path, Any]:
         """Save and publish workflow for loop execution via publisher.
 
@@ -2873,6 +2917,7 @@ class NodeExecutor:
             package_result: The packaged flow
             library_name: Name of the library to publish to
             file_name: Base file name for the workflow
+            node: Optional node to receive publishing progress events
 
         Returns:
             Tuple of (published_workflow_filename, workflow_result)
@@ -2890,7 +2935,9 @@ class NodeExecutor:
             raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime failure, not a type validation error
 
         # Publish to the library
-        published_workflow_filename = await self._publish_library_workflow(workflow_result, library_name, file_name)
+        published_workflow_filename = await self._publish_library_workflow(
+            workflow_result, library_name, file_name, node=node
+        )
 
         logger.info("Successfully published workflow to '%s'", published_workflow_filename)
 
