@@ -87,7 +87,7 @@ def create_image_preview_from_bytes(
     """
     try:
         # Check if content might be SVG by looking at first few bytes
-        # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+        # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files: https://github.com/griptape-ai/griptape-nodes/issues/3721
         # before creating previews
         content_start = image_bytes[:100].decode("utf-8", errors="ignore").lower()
         if "<svg" in content_start:
