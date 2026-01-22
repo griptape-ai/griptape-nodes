@@ -71,11 +71,38 @@ class DisplayImage(DataNode):
         if isinstance(image, ImageArtifact):
             return image.width, image.height
         if isinstance(image, ImageUrlArtifact):
-            response = requests.get(image.value, timeout=30)
-            response.raise_for_status()
-            image_data = response.content
-            pil_image = Image.open(BytesIO(image_data))
-            return pil_image.width, pil_image.height
+            # Check if it's an SVG file - PIL cannot open SVG files
+            # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+            # and determine dimensions properly
+            url_lower = image.value.lower()
+            if url_lower.endswith(".svg") or "image/svg+xml" in url_lower:
+                # SVG files are vector graphics - return default dimensions
+                # since we can't determine dimensions without rasterizing
+                logger.debug(f"{self.name}: SVG file detected, cannot determine dimensions without rasterization")
+                return 0, 0
+
+            try:
+                response = requests.get(image.value, timeout=30)
+                response.raise_for_status()
+
+                # Check content type for SVG
+                content_type = response.headers.get("content-type", "").lower()
+                if "image/svg+xml" in content_type:
+                    logger.debug(
+                        f"{self.name}: SVG content type detected, cannot determine dimensions without rasterization"
+                    )
+                    return 0, 0
+
+                image_data = response.content
+                pil_image = Image.open(BytesIO(image_data))
+                return pil_image.width, pil_image.height
+            except Exception as e:
+                # If PIL cannot identify the image (e.g., SVG), log and return 0,0
+                if "cannot identify image file" in str(e).lower():
+                    logger.debug(f"{self.name}: Cannot identify image file (may be SVG or unsupported format): {e}")
+                    return 0, 0
+                # Re-raise other exceptions
+                raise
         if image:
             logger.warning(f"{self.name}: Could not determine image dimensions, as it is not a valid image")
         return 0, 0

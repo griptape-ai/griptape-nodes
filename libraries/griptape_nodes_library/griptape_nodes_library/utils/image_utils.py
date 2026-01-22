@@ -352,13 +352,31 @@ def convert_image_value_to_base64_data_uri(image_value: str, context_name: str =
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL or local file path using httpx or PIL."""
+    """Load image from URL or local file path using httpx or PIL.
+
+    Note: SVG files are not supported as PIL cannot open vector graphics.
+    TODO: Add SVG support using cairosvg or similar library to convert SVG to PNG/bytes
+    before loading with PIL.
+    """
+    # Check if it's an SVG file - PIL cannot open SVG files
+    # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files: https://github.com/griptape-ai/griptape-nodes/issues/3721
+    url_lower = url.lower()
+    if url_lower.endswith(".svg"):
+        msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
+        logger.error(msg)
+        raise ValueError(msg)
+
     # Check if it's a local file path
     if is_local(url):
         # Local file path - load directly with PIL
         try:
             return Image.open(url)
         except Exception as e:
+            # Check if error is due to SVG format
+            if "cannot identify image file" in str(e).lower() and url_lower.endswith(".svg"):
+                msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
+                logger.error(msg)
+                raise ValueError(msg) from e
             msg = f"Failed to load image from local file: {url}\nError: {e}"
             logger.error(msg)
             raise ValueError(msg) from e
@@ -366,9 +384,25 @@ def load_pil_from_url(url: str) -> Image.Image:
     # HTTP/HTTPS URL - use httpx
     response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
     response.raise_for_status()
+
+    # Check content type for SVG
+    content_type = response.headers.get("content-type", "").lower()
+    if "image/svg+xml" in content_type:
+        msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
+        logger.error(msg)
+        raise ValueError(msg)
+
     try:
         return Image.open(BytesIO(response.content))
     except Exception as e:
+        # Check if error is due to SVG format
+        if "cannot identify image file" in str(e).lower():
+            # Check if content might be SVG by looking at first few bytes
+            content_start = response.content[:100].decode("utf-8", errors="ignore").lower()
+            if "<svg" in content_start or "image/svg+xml" in content_type:
+                msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
+                logger.error(msg)
+                raise ValueError(msg) from e
         msg = f"Failed to load image from URL: {url}\nError: {e}"
         logger.error(msg)
         raise ValueError(msg) from e

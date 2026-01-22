@@ -24,6 +24,13 @@ def create_image_preview(
     Returns:
         Base64 encoded data URL of the preview, or None if failed
     """
+    # Check if it's an SVG file - PIL cannot open SVG files
+    # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+    # before creating previews
+    if image_path.suffix.lower() == ".svg":
+        logger.debug(f"SVG file detected, cannot create preview with PIL (vector graphics not supported): {image_path}")
+        return None
+
     try:
         # Open and resize the image
         with Image.open(image_path) as img:
@@ -53,6 +60,12 @@ def create_image_preview(
             return data_url
 
     except Exception as e:
+        # Check if error is due to SVG format
+        if "cannot identify image file" in str(e).lower() and image_path.suffix.lower() == ".svg":
+            logger.debug(
+                f"SVG file detected, cannot create preview with PIL (vector graphics not supported): {image_path}"
+            )
+            return None
         logger.warning(f"Failed to create preview for {image_path}: {e}")
         return None
 
@@ -73,6 +86,14 @@ def create_image_preview_from_bytes(
         Base64 encoded data URL of the preview, or None if failed
     """
     try:
+        # Check if content might be SVG by looking at first few bytes
+        # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+        # before creating previews
+        content_start = image_bytes[:100].decode("utf-8", errors="ignore").lower()
+        if "<svg" in content_start:
+            logger.debug("SVG file detected, cannot create preview with PIL (vector graphics not supported)")
+            return None
+
         # Open image from bytes
         with Image.open(io.BytesIO(image_bytes)) as img:
             # Convert to RGB if necessary (for WebP/JPEG output)
@@ -101,6 +122,12 @@ def create_image_preview_from_bytes(
             return data_url
 
     except Exception as e:
+        # Check if error is due to SVG format
+        if "cannot identify image file" in str(e).lower():
+            content_start = image_bytes[:100].decode("utf-8", errors="ignore").lower()
+            if "<svg" in content_start:
+                logger.debug("SVG file detected, cannot create preview with PIL (vector graphics not supported)")
+                return None
         logger.warning(f"Failed to create preview from bytes: {e}")
         return None
 
