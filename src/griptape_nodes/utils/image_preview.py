@@ -25,7 +25,7 @@ def create_image_preview(
         Base64 encoded data URL of the preview, or None if failed
     """
     # Check if it's an SVG file - PIL cannot open SVG files
-    # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+    # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files: https://github.com/griptape-ai/griptape-nodes/issues/3721
     # before creating previews
     if image_path.suffix.lower() == ".svg":
         logger.debug(f"SVG file detected, cannot create preview with PIL (vector graphics not supported): {image_path}")

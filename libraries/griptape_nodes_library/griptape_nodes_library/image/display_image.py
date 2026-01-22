@@ -72,7 +72,7 @@ class DisplayImage(DataNode):
             return image.width, image.height
         if isinstance(image, ImageUrlArtifact):
             # Check if it's an SVG file - PIL cannot open SVG files
-            # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files
+            # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files: https://github.com/griptape-ai/griptape-nodes/issues/3721
             # and determine dimensions properly
             url_lower = image.value.lower()
             if url_lower.endswith(".svg") or "image/svg+xml" in url_lower:
@@ -95,7 +95,6 @@ class DisplayImage(DataNode):
 
                 image_data = response.content
                 pil_image = Image.open(BytesIO(image_data))
-                return pil_image.width, pil_image.height
             except Exception as e:
                 # If PIL cannot identify the image (e.g., SVG), log and return 0,0
                 if "cannot identify image file" in str(e).lower():
@@ -103,6 +102,8 @@ class DisplayImage(DataNode):
                     return 0, 0
                 # Re-raise other exceptions
                 raise
+            else:
+                return pil_image.width, pil_image.height
         if image:
             logger.warning(f"{self.name}: Could not determine image dimensions, as it is not a valid image")
         return 0, 0
