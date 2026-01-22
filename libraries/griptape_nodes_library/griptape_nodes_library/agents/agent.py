@@ -57,11 +57,6 @@ MODEL_CHOICES_ARGS = [
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
     },
     {
-        "name": "gemini-2.0-flash",
-        "icon": "logos/google.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool"},
-    },
-    {
         "name": "gemini-2.5-flash",
         "icon": "logos/google.svg",
         "args": {"stream": True},
@@ -103,6 +98,12 @@ MODEL_CHOICES_ARGS = [
 
 MODEL_CHOICES = [model["name"] for model in MODEL_CHOICES_ARGS]
 DEFAULT_MODEL = "gpt-4o"
+
+# Deprecated models and their replacements
+DEPRECATED_MODELS = {
+    "gemini-2.5-flash-preview-05-20": "gemini-2.5-flash",
+    "gemini-2.0-flash": "gemini-2.5-flash",
+}
 
 
 class Agent(ControlNode):
@@ -160,7 +161,7 @@ class Agent(ControlNode):
                 name="model_deprecation_notice",
                 title="Model Deprecation Notice",
                 variant="info",
-                value="The 'gemini-2.5-flash-preview-05-20' model has been deprecated. The model has been updated to 'gemini-2.5-flash'. Please save your workflow to apply this change.",
+                value="",
                 traits={
                     Button(
                         full_width=True,
@@ -284,9 +285,13 @@ class Agent(ControlNode):
         value: Any,
     ) -> Any:
         if parameter.name == "model":
-            if value == "gemini-2.5-flash-preview-05-20":
-                value = "gemini-2.5-flash"
+            if value in DEPRECATED_MODELS:
+                replacement = DEPRECATED_MODELS[value]
+                message = self.get_message_by_name_or_element_id("model_deprecation_notice")
+                if message is not None:
+                    message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
                 self.show_message_by_name("model_deprecation_notice")
+                value = replacement
             else:
                 self.hide_message_by_name("model_deprecation_notice")
 
