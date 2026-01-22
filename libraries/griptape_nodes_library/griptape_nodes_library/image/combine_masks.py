@@ -154,10 +154,7 @@ class CombineMasks(DataNode):
                 alpha_min, alpha_max = alpha_extrema
                 if isinstance(alpha_min, (int, float)) and isinstance(alpha_max, (int, float)):
                     alpha_range = alpha_max - alpha_min
-                    if (
-                        alpha_min >= self._ALPHA_NEAR_OPAQUE_MIN
-                        and alpha_range <= self._ALPHA_NEAR_OPAQUE_RANGE
-                    ):
+                    if alpha_min >= self._ALPHA_NEAR_OPAQUE_MIN and alpha_range <= self._ALPHA_NEAR_OPAQUE_RANGE:
                         use_alpha = False
             if use_alpha:
                 result = alpha
