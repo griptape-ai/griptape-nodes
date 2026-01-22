@@ -74,27 +74,6 @@ DEPRECATED_MODELS = {
     "gemini-2.0-flash": "gemini-2.5-flash",
 }
 
-# Current models available in the API as of 8/9/2025
-# but not all of them work.
-#     "gpt-4.1",
-#     "claude-3-5-haiku",
-#     "claude-3-7-sonnet",
-#     "deepseek.r1-v1",
-#     "gemini-2.0-flash", (deprecated)
-#     "gpt-4.1-mini",
-#     "gpt-4.1-nano",
-#     "gpt-4o",
-#     "gpt-4o-mini-transcribe",
-#     "gpt-4o-transcribe",
-#     "gpt-5",
-#     "llama3-1-70b-instruct-v1",
-#     "llama3-3-70b-instruct-v1",
-#     "o1",
-#     "o1-mini",
-#     "o3",
-#     "o3-mini",
-#     "o4-mini",
-
 
 class GriptapeCloudPrompt(BasePrompt):
     """Node for configuring and providing a Griptape Cloud Prompt Driver.
@@ -171,7 +150,7 @@ class GriptapeCloudPrompt(BasePrompt):
                 replacement = DEPRECATED_MODELS[value]
                 message = self.get_message_by_name_or_element_id("model_deprecation_notice")
                 if message is None:
-                    raise RuntimeError("model_deprecation_notice message element not found")
+                    raise RuntimeError("model_deprecation_notice message element not found")  # noqa: TRY003, EM101
                 message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
                 self.show_message_by_name("model_deprecation_notice")
                 value = replacement
