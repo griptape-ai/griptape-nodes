@@ -47,7 +47,7 @@ def _resolve_localhost_url_to_path(url: str) -> str:
     return url
 
 
-def _resolve_file_path(file_path: str) -> Path | None:
+def _resolve_file_path(file_path: str) -> Path | None:  # noqa: PLR0911
     """Resolve file path to absolute path relative to workspace.
 
     Args:
@@ -59,31 +59,53 @@ def _resolve_file_path(file_path: str) -> Path | None:
     # First resolve localhost URLs
     file_path = _resolve_localhost_url_to_path(file_path)
 
+    # Get workspace path (can raise exceptions from ConfigManager)
     try:
-        path = Path(file_path)
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
-
-        if path.is_absolute():
-            # Check if absolute path is relative to workspace
-            try:
-                if path.is_relative_to(workspace_path):
-                    return path
-            except (ValueError, AttributeError):
-                # Path.is_relative_to() not available in older Python versions
-                try:
-                    path.relative_to(workspace_path)
-                except ValueError:
-                    # Absolute path outside workspace - return as-is (might be a system path)
-                    return path if path.exists() else None
-                else:
-                    return path
-            # Absolute path outside workspace - return as-is (might be a system path)
-            return path if path.exists() else None
-        # Relative path - resolve relative to workspace
-        return workspace_path / path
-    except Exception as e:
-        logger.debug("Failed to resolve file path '%s': %s", file_path, e)
+    except (AttributeError, RuntimeError, KeyError) as e:
+        logger.debug("Failed to get workspace path: %s", e)
         return None
+
+    # Create Path object (Path() constructor doesn't raise exceptions, but we validate)
+    path = Path(file_path)
+
+    # Check if path is absolute (is_absolute() doesn't raise exceptions)
+    if not path.is_absolute():
+        # Relative path - resolve relative to workspace (path operations don't raise exceptions)
+        return workspace_path / path
+
+    # Absolute path - check if relative to workspace
+    is_relative_to_workspace = False
+    try:
+        is_relative_to_workspace = path.is_relative_to(workspace_path)
+    except (ValueError, AttributeError):
+        # Path.is_relative_to() not available in older Python versions, use relative_to() instead
+        try:
+            path.relative_to(workspace_path)
+            is_relative_to_workspace = True
+        except ValueError:
+            # Absolute path outside workspace
+            is_relative_to_workspace = False
+        except (OSError, RuntimeError) as e:
+            # Unexpected errors from relative_to()
+            logger.debug("Unexpected error calling relative_to() for '%s': %s", file_path, e)
+            return None
+
+    if is_relative_to_workspace:
+        return path
+
+    # Absolute path outside workspace - return as-is (might be a system path)
+    # exists() can raise OSError or PermissionError
+    try:
+        path_exists = path.exists()
+    except (OSError, PermissionError) as e:
+        logger.debug("Failed to check if path exists for '%s': %s", file_path, e)
+        return None
+
+    if path_exists:
+        return path
+
+    return None
 
 
 def _upload_file_to_static_storage(file_path: Path, artifact_type: type[Any]) -> Any | None:
@@ -110,7 +132,7 @@ def _upload_file_to_static_storage(file_path: Path, artifact_type: type[Any]) ->
         return None
 
 
-def _normalize_string_input(artifact_input: str, artifact_type: type[Any]) -> Any:
+def _normalize_string_input(artifact_input: str, artifact_type: type[Any]) -> Any:  # noqa: PLR0911
     """Normalize a string input to an artifact.
 
     Args:
@@ -125,15 +147,21 @@ def _normalize_string_input(artifact_input: str, artifact_type: type[Any]) -> An
         # Check if it's a localhost URL that needs resolving
         if artifact_input.startswith(("http://localhost:", "https://localhost:")):
             resolved_path = _resolve_localhost_url_to_path(artifact_input)
-            if resolved_path != artifact_input:
-                # It was a localhost URL, try to resolve and upload
-                file_path = _resolve_file_path(resolved_path)
-                if file_path:
-                    artifact = _upload_file_to_static_storage(file_path, artifact_type)
-                    if artifact:
-                        return artifact
-            # If resolution failed, return as URL artifact
-            return artifact_type(artifact_input)
+            # If path wasn't resolved, return as URL artifact
+            if resolved_path == artifact_input:
+                return artifact_type(artifact_input)
+
+            # Try to resolve and upload the resolved path
+            file_path = _resolve_file_path(resolved_path)
+            if not file_path:
+                return artifact_type(artifact_input)
+
+            artifact = _upload_file_to_static_storage(file_path, artifact_type)
+            if not artifact:
+                return artifact_type(artifact_input)
+
+            # Success path: return the uploaded artifact
+            return artifact
         # Regular URL, return as-is
         return artifact_type(artifact_input)
 
@@ -207,7 +235,11 @@ def normalize_artifact_list(
     if not artifact_list:
         return artifact_list
 
-    return [normalize_artifact_input(item, artifact_type, accepted_types=accepted_types) for item in artifact_list]
+    normalized_list = []
+    for item in artifact_list:
+        normalized_item = normalize_artifact_input(item, artifact_type, accepted_types=accepted_types)
+        normalized_list.append(normalized_item)
+    return normalized_list
 
 
 __all__ = ["normalize_artifact_input", "normalize_artifact_list"]
