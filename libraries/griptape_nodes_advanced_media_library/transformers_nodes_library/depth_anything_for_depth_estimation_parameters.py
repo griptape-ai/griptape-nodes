@@ -1,16 +1,13 @@
-import contextlib
 import logging
-from collections.abc import Iterator
 
 import PIL.Image
 import torch  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
-from diffusers_nodes_library.common.utils.logging_utils import StdoutCapture  # type: ignore[reportMissingImports]
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation  # type: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
+from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -32,20 +29,13 @@ class DepthAnythingForDepthEstimationParameters:
                 "depth-anything/Depth-Anything-V2-Metric-Indoor-Large-hf",
             ],
         )
+        self.log_params = LogParameter(node)
 
     def add_input_parameters(self) -> None:
         self._huggingface_repo_parameter.add_input_parameters()
 
     def add_logs_output_parameter(self) -> None:
-        self._node.add_parameter(
-            Parameter(
-                name="logs",
-                output_type="str",
-                allowed_modes={ParameterMode.OUTPUT},
-                tooltip="logs",
-                ui_options={"multiline": True},
-            )
-        )
+        self.log_params.add_output_parameters()
 
     def get_repo_revision(self) -> tuple[str, str]:
         return self._huggingface_repo_parameter.get_repo_revision()
@@ -91,11 +81,3 @@ class DepthAnythingForDepthEstimationParameters:
 
     def create_preview_placeholder(self, size: tuple[int, int]) -> PIL.Image.Image:
         return PIL.Image.new("RGB", size, color="black")
-
-    @contextlib.contextmanager
-    def append_stdout_to_logs(self) -> Iterator[None]:
-        def callback(data: str) -> None:
-            self._node.append_value_to_parameter("logs", data)
-
-        with StdoutCapture(callback):
-            yield
