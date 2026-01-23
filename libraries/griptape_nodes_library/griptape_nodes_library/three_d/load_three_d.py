@@ -4,6 +4,8 @@ from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
@@ -33,11 +35,8 @@ class LoadThreeD(ControlNode):
             url_content_type_prefix="model/",
         )
 
-        self.three_d_parameter = Parameter(
+        self.three_d_parameter = Parameter3D(
             name="3d",
-            input_types=["ThreeDArtifact", "ThreeDUrlArtifact", "str"],
-            type="ThreeDUrlArtifact",
-            output_type="ThreeDUrlArtifact",
             default_value=None,
             ui_options={
                 "clickable_file_browser": True,
@@ -73,9 +72,8 @@ class LoadThreeD(ControlNode):
                 ui_options={"text_align": "text-center"},
             )
         )
-        image_parameter = Parameter(
+        image_parameter = ParameterImage(
             name="image",
-            type="ImageUrlArtifact",
             default_value=None,
             tooltip="The image of the 3D file.",
             allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},

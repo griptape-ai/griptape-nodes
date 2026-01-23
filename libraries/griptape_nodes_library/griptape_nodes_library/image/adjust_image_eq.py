@@ -3,6 +3,7 @@ from typing import Any
 from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
@@ -40,9 +41,8 @@ class AdjustImageEQ(BaseImageProcessor):
         """Setup brightness/contrast-specific parameters."""
         with ParameterGroup(name="adjustment_settings", ui_options={"collapsed": False}) as adjustment_group:
             # Brightness parameter
-            brightness_param = Parameter(
+            brightness_param = ParameterFloat(
                 name="brightness",
-                type="float",
                 default_value=self.DEFAULT_BRIGHTNESS,
                 tooltip=f"Brightness adjustment ({self.MIN_BRIGHTNESS}-{self.MAX_BRIGHTNESS}, 1.0 = normal)",
             )
@@ -50,9 +50,8 @@ class AdjustImageEQ(BaseImageProcessor):
             self.add_parameter(brightness_param)
 
             # Contrast parameter
-            contrast_param = Parameter(
+            contrast_param = ParameterFloat(
                 name="contrast",
-                type="float",
                 default_value=self.DEFAULT_CONTRAST,
                 tooltip=f"Contrast adjustment ({self.MIN_CONTRAST}-{self.MAX_CONTRAST}, 1.0 = normal)",
             )
@@ -60,9 +59,8 @@ class AdjustImageEQ(BaseImageProcessor):
             self.add_parameter(contrast_param)
 
             # Saturation parameter
-            saturation_param = Parameter(
+            saturation_param = ParameterFloat(
                 name="saturation",
-                type="float",
                 default_value=self.DEFAULT_SATURATION,
                 tooltip=f"Saturation adjustment ({self.MIN_SATURATION}-{self.MAX_SATURATION}, 1.0 = normal)",
             )
@@ -70,9 +68,8 @@ class AdjustImageEQ(BaseImageProcessor):
             self.add_parameter(saturation_param)
 
             # Gamma parameter
-            gamma_param = Parameter(
+            gamma_param = ParameterFloat(
                 name="gamma",
-                type="float",
                 default_value=self.DEFAULT_GAMMA,
                 tooltip=f"Gamma adjustment ({self.MIN_GAMMA}-{self.MAX_GAMMA}, 1.0 = normal)",
             )

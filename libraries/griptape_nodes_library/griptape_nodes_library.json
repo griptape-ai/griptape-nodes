@@ -27,8 +27,8 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.57.2",
-    "engine_version": "0.69.0",
+    "library_version": "0.58.0",
+    "engine_version": "0.71.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
@@ -677,7 +677,7 @@
       "file_path": "griptape_nodes_library/video/resize_video.py",
       "metadata": {
         "category": "video",
-        "description": "Resize a video using imageio_ffmpeg",
+        "description": "Resize a video using multiple scaling modes with FFmpeg",
         "display_name": "Resize Video",
         "icon": "picture-in-picture",
         "group": "edit"
@@ -1851,8 +1851,8 @@
       "file_path": "griptape_nodes_library/image/rescale_image.py",
       "metadata": {
         "category": "image",
-        "description": "Rescale images with separate parameters for target size (pixels) and percentage scale, plus resample filter options",
-        "display_name": "Rescale Image",
+        "description": "Resize images with separate parameters for target size (pixels) and percentage scale, plus resample filter options. Previously named \"Rescale Image\".",
+        "display_name": "Resize Image",
         "icon": "image-upscale",
         "group": "edit"
       }

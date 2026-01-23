@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class ParameterAudio(Parameter):
@@ -24,7 +25,7 @@ class ParameterAudio(Parameter):
         param.pulse_on_run = True  # Change UI options at runtime
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: C901, PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -122,6 +123,20 @@ class ParameterAudio(Parameter):
         else:
             final_input_types = ["AudioUrlArtifact"]
 
+        # Add automatic converter to normalize string inputs to AudioUrlArtifact
+        # This allows ParameterAudio to automatically handle file paths and localhost URLs
+        audio_converters = list(converters) if converters else []
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with AudioUrlArtifact
+            def _normalize_audio(value: Any) -> Any:
+                try:
+                    from griptape.artifacts import AudioUrlArtifact
+                except ImportError:
+                    return value
+                return normalize_artifact_input(value, AudioUrlArtifact)
+
+            audio_converters.insert(0, _normalize_audio)
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
@@ -135,7 +150,7 @@ class ParameterAudio(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=traits,
-            converters=converters,
+            converters=audio_converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,

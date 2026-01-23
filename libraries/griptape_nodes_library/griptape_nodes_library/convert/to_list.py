@@ -32,7 +32,7 @@ class ToList(DataNode):
                 output_type="list",
                 type="list",
                 tooltip="The converted data as a list",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )

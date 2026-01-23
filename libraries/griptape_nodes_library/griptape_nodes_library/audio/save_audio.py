@@ -3,11 +3,13 @@ from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import (
-    Parameter,
     ParameterGroup,
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.audio_utils import (
@@ -51,20 +53,16 @@ class SaveAudio(SuccessFailureNode):
 
         # Add audio input parameter
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="audio",
-                input_types=["AudioArtifact", "AudioUrlArtifact"],
-                type="AudioUrlArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The audio to save to file",
             )
         )
 
         # Add output path parameter
-        self.output_path = Parameter(
+        self.output_path = ParameterString(
             name="output_path",
-            input_types=["str"],
-            type="str",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY, ParameterMode.OUTPUT},
             default_value=DEFAULT_FILENAME,
             tooltip="The output filename. The file extension will be auto-determined from audio format.",
@@ -84,18 +82,16 @@ class SaveAudio(SuccessFailureNode):
         with ParameterGroup(name="Save Options") as save_options_group:
             save_options_group.ui_options = {"collapsed": True}
 
-            self.allow_creating_folders = Parameter(
+            self.allow_creating_folders = ParameterBool(
                 name="allow_creating_folders",
                 tooltip="Allow creating parent directories if they don't exist",
-                type="bool",
                 default_value=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
 
-            self.overwrite_existing = Parameter(
+            self.overwrite_existing = ParameterBool(
                 name="overwrite_existing",
                 tooltip="Allow overwriting existing files",
-                type="bool",
                 default_value=True,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )

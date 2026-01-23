@@ -1,4 +1,5 @@
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -10,9 +11,8 @@ class FlipVideo(BaseVideoProcessor):
         """Setup flip-specific parameters."""
         with ParameterGroup(name="flip_settings", ui_options={"collapsed": False}) as flip_group:
             # Flip direction parameter
-            direction_parameter = Parameter(
+            direction_parameter = ParameterString(
                 name="direction",
-                type="str",
                 default_value="horizontal",
                 tooltip="Flip direction: horizontal or vertical",
             )

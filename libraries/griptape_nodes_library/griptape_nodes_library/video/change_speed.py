@@ -1,6 +1,8 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -21,17 +23,15 @@ class ChangeSpeed(BaseVideoProcessor):
         """Setup speed change parameters."""
         with ParameterGroup(name="speed_settings", ui_options={"collapsed": False}) as speed_group:
             # Speed multiplier parameter
-            Parameter(
+            ParameterFloat(
                 name="speed",
-                type="float",
                 default_value=self.DEFAULT_SPEED,
                 tooltip=f"Playback speed multiplier ({self.MIN_SPEED}-{self.MAX_SPEED}x, 1.0 = normal speed)",
             ).add_trait(Slider(min_val=self.MIN_SPEED, max_val=self.MAX_SPEED))
 
             # Include audio parameter
-            Parameter(
+            ParameterBool(
                 name="include_audio",
-                type="bool",
                 default_value=True,
                 tooltip="When enabled, includes audio in the output file. When disabled, creates a silent video.",
             )

@@ -1,7 +1,9 @@
 import math
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
@@ -29,9 +31,8 @@ class AddVignette(BaseVideoProcessor):
         """Setup vignette-specific parameters."""
         with ParameterGroup(name="vignette_settings", ui_options={"collapsed": False}) as vignette_group:
             # Vignette angle parameter (lens angle) - controls intensity
-            angle_parameter = Parameter(
+            angle_parameter = ParameterFloat(
                 name="angle",
-                type="float",
                 default_value=self.DEFAULT_ANGLE,
                 tooltip=f"Lens angle for vignette effect - smaller values = stronger effect ({self.MIN_ANGLE}-{self.MAX_ANGLE})",
             )
@@ -39,9 +40,8 @@ class AddVignette(BaseVideoProcessor):
             angle_parameter.add_trait(Slider(min_val=self.MIN_ANGLE, max_val=self.MAX_ANGLE))
 
             # Vignette center X offset parameter
-            center_x_parameter = Parameter(
+            center_x_parameter = ParameterFloat(
                 name="center_x",
-                type="float",
                 default_value=self.DEFAULT_CENTER_OFFSET,
                 tooltip="Center X offset (-1.0 to 1.0, 0 = center)",
             )
@@ -49,9 +49,8 @@ class AddVignette(BaseVideoProcessor):
             center_x_parameter.add_trait(Slider(min_val=self.MIN_CENTER_OFFSET, max_val=self.MAX_CENTER_OFFSET))
 
             # Vignette center Y offset parameter
-            center_y_parameter = Parameter(
+            center_y_parameter = ParameterFloat(
                 name="center_y",
-                type="float",
                 default_value=self.DEFAULT_CENTER_OFFSET,
                 tooltip="Center Y offset (-1.0 to 1.0, 0 = center)",
             )
@@ -59,9 +58,8 @@ class AddVignette(BaseVideoProcessor):
             center_y_parameter.add_trait(Slider(min_val=self.MIN_CENTER_OFFSET, max_val=self.MAX_CENTER_OFFSET))
 
             # Vignette aspect ratio parameter
-            aspect_parameter = Parameter(
+            aspect_parameter = ParameterFloat(
                 name="aspect",
-                type="float",
                 default_value=self.DEFAULT_ASPECT,
                 tooltip=f"Aspect ratio of vignette ({self.MIN_ASPECT}-{self.MAX_ASPECT})",
             )
@@ -69,9 +67,8 @@ class AddVignette(BaseVideoProcessor):
             aspect_parameter.add_trait(Slider(min_val=self.MIN_ASPECT, max_val=self.MAX_ASPECT))
 
             # Vignette mode parameter
-            mode_parameter = Parameter(
+            mode_parameter = ParameterString(
                 name="mode",
-                type="str",
                 default_value="forward",
                 tooltip="Vignette mode: forward (darken edges) or backward (lighten edges)",
             )

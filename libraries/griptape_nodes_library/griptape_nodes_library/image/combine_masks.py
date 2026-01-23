@@ -6,8 +6,9 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image, ImageChops
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -18,6 +19,10 @@ from griptape_nodes_library.utils.image_utils import (
 
 class CombineMasks(DataNode):
     """Combine a list of masks into a single consolidated mask (pixel-wise max)."""
+
+    _ALPHA_NEAR_OPAQUE_MIN = 200
+    _ALPHA_NEAR_OPAQUE_RANGE = 32
+    _EXTREMA_TUPLE_LEN = 2
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -40,9 +45,8 @@ class CombineMasks(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output_mask",
-                type="ImageUrlArtifact",
                 default_value=None,
                 tooltip="Combined mask image.",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -141,10 +145,25 @@ class CombineMasks(DataNode):
 
     def _mask_to_l(self, mask_pil: Image.Image) -> Image.Image:
         """Convert mask image to single-channel (L) grayscale."""
+        result = mask_pil.convert("L")
         if mask_pil.mode in {"RGBA", "LA"}:
-            return mask_pil.getchannel("A")
-        if mask_pil.mode == "L":
-            return mask_pil
-        if mask_pil.mode == "RGB":
-            return mask_pil.convert("L")
-        return mask_pil.convert("L")
+            alpha = mask_pil.getchannel("A")
+            alpha_extrema = alpha.getextrema()
+            use_alpha = True
+            if isinstance(alpha_extrema, tuple) and len(alpha_extrema) == self._EXTREMA_TUPLE_LEN:
+                alpha_min, alpha_max = alpha_extrema
+                if isinstance(alpha_min, (int, float)) and isinstance(alpha_max, (int, float)):
+                    alpha_range = alpha_max - alpha_min
+                    if alpha_min >= self._ALPHA_NEAR_OPAQUE_MIN and alpha_range <= self._ALPHA_NEAR_OPAQUE_RANGE:
+                        use_alpha = False
+            if use_alpha:
+                result = alpha
+            elif mask_pil.mode == "RGBA":
+                result = mask_pil.getchannel("R")
+            else:
+                result = mask_pil.getchannel("L")
+        elif mask_pil.mode == "L":
+            result = mask_pil
+        elif mask_pil.mode == "RGB":
+            result = mask_pil.convert("L")
+        return result

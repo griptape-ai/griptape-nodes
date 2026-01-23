@@ -55,12 +55,13 @@ class DepthAnythingForDepthEstimationImage(ControlNode):
         preview_placeholder_image = self.params.create_preview_placeholder(input_image_pil.size)
         self.publish_update_to_parameter("output_image", pil_to_image_artifact(preview_placeholder_image))
 
-        self.append_value_to_parameter("logs", "Preparing models...\n")
-        with self.params.append_stdout_to_logs():
+        self.params.log_params.append_to_logs("Preparing models...\n")
+        with self.params.log_params.append_profile_to_logs("Loading models"):
             image_processor, model = self.params.load_models()
 
         # Process the image using shared parameters
-        output_image_pil = self.params.process_depth_estimation(image_processor, model, input_image_pil)
+        with self.params.log_params.append_profile_to_logs("Processing depth estimation"):
+            output_image_pil = self.params.process_depth_estimation(image_processor, model, input_image_pil)
 
         output_image_artifact = pil_to_image_artifact(output_image_pil)
         self.set_parameter_value("output_image", output_image_artifact)

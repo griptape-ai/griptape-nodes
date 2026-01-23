@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
@@ -21,8 +21,16 @@ from griptape_nodes.exe_types.param_components.api_key_provider_parameter import
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -197,32 +205,28 @@ class FluxImageGeneration(SuccessFailureNode):
                 allow_input=False,
                 allow_property=False,
                 allow_output=True,
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -297,10 +301,16 @@ class FluxImageGeneration(SuccessFailureNode):
         await self._poll_for_result(generation_id, headers)
 
     def _get_parameters(self) -> dict[str, Any]:
+        input_image = self.get_parameter_value("input_image")
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_image = normalize_artifact_input(input_image, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
         return {
             "model": self.get_parameter_value("model") or "flux-kontext-pro",
             "prompt": self.get_parameter_value("prompt") or "",
-            "input_image": self.get_parameter_value("input_image"),
+            "input_image": input_image,
             "aspect_ratio": self.get_parameter_value("aspect_ratio") or "1:1",
             "seed": self._seed_parameter.get_seed(),
             "prompt_upsampling": self.get_parameter_value("prompt_upsampling") or False,
@@ -346,6 +356,12 @@ class FluxImageGeneration(SuccessFailureNode):
         super().after_value_set(parameter, value)
         self._api_key_provider.after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_image" and isinstance(value, str) and value:
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if artifact != value:
+                self.set_parameter_value("input_image", artifact)
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
@@ -443,14 +459,16 @@ class FluxImageGeneration(SuccessFailureNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -472,8 +490,13 @@ class FluxImageGeneration(SuccessFailureNode):
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
@@ -597,20 +620,20 @@ class FluxImageGeneration(SuccessFailureNode):
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(saved_url)
                 self._log(f"Saved image to static storage as {filename}")
                 self._set_status_results(
                     was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
                 )
             else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(image_url)
                 self._set_status_results(
                     was_successful=True,
                     result_details="Image generated successfully. Using provider URL (could not download image bytes).",
                 )
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=image_url)
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(image_url)
             self._set_status_results(
                 was_successful=True,
                 result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
