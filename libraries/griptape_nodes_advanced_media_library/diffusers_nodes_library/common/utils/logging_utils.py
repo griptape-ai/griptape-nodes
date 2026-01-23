@@ -17,6 +17,9 @@ class StdoutCapture:
     def flush(self) -> None:
         self._original_stdout.flush()
 
+    def isatty(self) -> bool:
+        return self._original_stdout.isatty()
+
     def __enter__(self) -> "StdoutCapture":
         sys.stdout = self
         return self
