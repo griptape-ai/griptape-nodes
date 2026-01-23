@@ -3,6 +3,8 @@ from typing import Any
 from PIL import Image, ImageEnhance, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
@@ -30,9 +32,8 @@ class BloomEffect(BaseImageProcessor):
         """Setup bloom-specific parameters."""
         with ParameterGroup(name="bloom_settings", ui_options={"collapsed": False}) as bloom_group:
             # Bloom amount parameter
-            bloom_amount_param = Parameter(
+            bloom_amount_param = ParameterFloat(
                 name="bloom_amount",
-                type="float",
                 default_value=self.DEFAULT_BLOOM_AMOUNT,
                 tooltip=f"Bloom intensity ({self.MIN_BLOOM_AMOUNT}-{self.MAX_BLOOM_AMOUNT}, 0.0 = no effect, 2.0 = maximum glow)",
             )
@@ -40,9 +41,8 @@ class BloomEffect(BaseImageProcessor):
             self.add_parameter(bloom_amount_param)
 
             # Bloom radius parameter
-            bloom_radius_param = Parameter(
+            bloom_radius_param = ParameterInt(
                 name="bloom_radius",
-                type="int",
                 default_value=self.DEFAULT_BLOOM_RADIUS,
                 tooltip=f"Bloom radius in pixels ({self.MIN_BLOOM_RADIUS}-{self.MAX_BLOOM_RADIUS}, higher = softer glow)",
             )

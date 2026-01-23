@@ -1,6 +1,8 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -27,9 +29,8 @@ class AddFilmGrain(BaseVideoProcessor):
     def _setup_custom_parameters(self) -> None:
         """Setup custom parameters for film grain."""
         # Add grain intensity parameter
-        grain_intensity_parameter = Parameter(
+        grain_intensity_parameter = ParameterFloat(
             name="grain_intensity",
-            type="float",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=self.DEFAULT_GRAIN_INTENSITY,
             tooltip=f"Film grain intensity ({self.MIN_GRAIN_INTENSITY} = subtle, {self.MAX_GRAIN_INTENSITY} = heavy grain)",
@@ -38,9 +39,8 @@ class AddFilmGrain(BaseVideoProcessor):
         grain_intensity_parameter.add_trait(Slider(min_val=self.MIN_GRAIN_INTENSITY, max_val=self.MAX_GRAIN_INTENSITY))
 
         # Add luminance threshold parameter
-        luminance_threshold_parameter = Parameter(
+        luminance_threshold_parameter = ParameterInt(
             name="luminance_threshold",
-            type="int",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=self.DEFAULT_LUMINANCE_THRESHOLD,
             tooltip=f"Luminance level where grain is most visible (typically {self.DEFAULT_LUMINANCE_THRESHOLD} for lighter areas)",
@@ -51,9 +51,8 @@ class AddFilmGrain(BaseVideoProcessor):
         )
 
         # Add grain scale parameter
-        grain_scale_parameter = Parameter(
+        grain_scale_parameter = ParameterFloat(
             name="grain_scale",
-            type="float",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=self.DEFAULT_GRAIN_SCALE,
             tooltip="Grain scale factor (higher = larger grain particles)",

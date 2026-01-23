@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
-from urllib.parse import urlparse
 
 from griptape.artifacts import UrlArtifact
 
@@ -18,6 +17,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     ListDirectoryResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes_library.utils.image_utils import resolve_localhost_url_to_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,23 +81,7 @@ class FileOperationBaseNode(SuccessFailureNode):
         Returns:
             Resolved file path relative to workspace, or original string if not a localhost URL
         """
-        if not isinstance(url, str):
-            return url
-
-        # Strip query parameters (cachebuster ?t=...)
-        if "?" in url:
-            url = url.split("?")[0]
-
-        # Check if it's a localhost URL (any port)
-        if url.startswith(("http://localhost:", "https://localhost:")):
-            parsed = urlparse(url)
-            # Extract path after /workspace/
-            if "/workspace/" in parsed.path:
-                workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
-                return workspace_relative_path
-
-        # Not a localhost workspace URL, return as-is
-        return url
+        return resolve_localhost_url_to_path(url)
 
     def _clean_source_paths(self, paths: list[str | Any]) -> list[str]:
         """Clean a list of source paths to remove newlines/carriage returns that cause Windows errors.

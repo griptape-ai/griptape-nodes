@@ -9,6 +9,10 @@ from json_schema_to_pydantic import create_model  # pyright: ignore[reportMissin
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterType
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_json import ParameterJson
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
@@ -61,37 +65,28 @@ class DescribeImage(ControlNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                type="ImageArtifact",
                 tooltip="The image you would like to describe",
                 default_value=None,
                 ui_options={"expander": True},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 tooltip="Explain how you'd like to describe the image.",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "placeholder_text": "Explain the various aspects of the image you want to describe.",
-                    "multiline": True,
-                    "display_name": "description prompt",
-                },
+                placeholder_text="Explain the various aspects of the image you want to describe.",
+                multiline=True,
+                ui_options={"display_name": "description prompt"},
             ),
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="description_only",
-                input_types=["bool"],
-                type="bool",
                 tooltip="Only return the description of the image, no conversation",
                 default_value=True,
             )
@@ -99,29 +94,23 @@ class DescribeImage(ControlNode):
 
         # Parameter for output schema
         self.add_parameter(
-            Parameter(
+            ParameterJson(
                 name="output_schema",
-                input_types=["json"],
-                type="json",
                 tooltip="Optional JSON schema for structured output validation.",
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
-                output_type="str",
-                type="str",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={
-                    "placeholder_text": "The description of the image",
-                    "multiline": True,
-                    "display_name": "output",
-                },
+                multiline=True,
+                placeholder_text="The description of the image",
+                ui_options={"display_name": "output"},
             )
         )
 

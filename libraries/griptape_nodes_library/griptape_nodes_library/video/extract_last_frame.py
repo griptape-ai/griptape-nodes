@@ -4,8 +4,9 @@ from typing import Any
 
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -23,9 +24,8 @@ class ExtractLastFrame(BaseVideoProcessor):
 
         # Add image output parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="last_frame_image",
-                output_type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The last frame extracted from the video as an image",
                 ui_options={"pulse_on_run": True, "expander": True},

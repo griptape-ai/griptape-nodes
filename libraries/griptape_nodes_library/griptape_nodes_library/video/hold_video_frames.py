@@ -1,6 +1,7 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -15,9 +16,8 @@ class HoldVideoFrames(BaseVideoProcessor):
     def _setup_custom_parameters(self) -> None:
         """Setup custom parameters for frame holding."""
         # Add hold frames parameter
-        hold_frames_parameter = Parameter(
+        hold_frames_parameter = ParameterInt(
             name="hold_frames",
-            type="int",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             default_value=self.DEFAULT_HOLD_FRAMES,
             tooltip="Number of frames to hold (e.g., 2 = video updates every 2 frames)",

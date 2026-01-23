@@ -1,6 +1,7 @@
 from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes_library.image.display_mask import DisplayMask
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -18,10 +19,8 @@ class DisplayChannel(DisplayMask):
         self.remove_parameter_element_by_name("output_mask")
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Generated channel image.",
                 ui_options={"expander": True},
                 allowed_modes={ParameterMode.OUTPUT},

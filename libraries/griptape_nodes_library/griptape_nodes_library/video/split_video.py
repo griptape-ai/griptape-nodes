@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# static_ffmpeg is dynamically installed by the library loader at runtime
-# into the library's own virtual environment, but not available during type checking
 import static_ffmpeg.run  # type: ignore[import-untyped]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape.drivers.prompt.griptape_cloud_prompt_driver import GriptapeCloudPromptDriver
@@ -15,6 +13,11 @@ from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+
+# static_ffmpeg is dynamically installed by the library loader at runtime
+# into the library's own virtual environment, but not available during type checking
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
@@ -118,10 +121,8 @@ class SplitVideo(ControlNode):
 
         # Add video input parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                input_types=["VideoUrlArtifact", "VideoArtifact"],
-                type="VideoUrlArtifact",
                 allowed_modes={ParameterMode.INPUT},
                 tooltip="The video to split",
             )
@@ -149,9 +150,8 @@ class SplitVideo(ControlNode):
         self.add_parameter(self.split_videos_list)
         # Group for logging information
         with ParameterGroup(name="Logs") as logs_group:
-            Parameter(
+            ParameterString(
                 name="logs",
-                type="str",
                 tooltip="Displays processing logs and detailed events if enabled.",
                 ui_options={"multiline": True, "placeholder_text": "Logs"},
                 allowed_modes={ParameterMode.OUTPUT},

@@ -11,14 +11,23 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -92,10 +101,8 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="qwen-image-edit-plus",
                 tooltip="Select the Qwen image editing model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -133,27 +140,21 @@ class QwenImageEdit(SuccessFailureNode):
 
         # Negative prompt parameter
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="negative_prompt",
-                input_types=["str"],
-                type="str",
                 default_value="",
                 tooltip="Description of content to avoid (max 500 characters)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "multiline": True,
-                    "placeholder_text": "Describe what you don't want in the image...",
-                    "display_name": "Negative Prompt",
-                },
+                multiline=True,
+                placeholder_text="Describe what you don't want in the image...",
+                ui_options={"display_name": "Negative Prompt"},
             )
         )
 
         # Watermark parameter
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="watermark",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add 'Qwen-Image' watermark in bottom-right corner",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -166,33 +167,28 @@ class QwenImageEdit(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -206,6 +202,16 @@ class QwenImageEdit(SuccessFailureNode):
             result_details_placeholder="Editing status and details will appear here.",
             parameter_group_initially_collapsed=True,
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+        self._seed_parameter.after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("images", updated_list)
 
     async def aprocess(self) -> None:
         await self._process()
@@ -260,6 +266,11 @@ class QwenImageEdit(SuccessFailureNode):
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
         images = self.get_parameter_value("images")
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        if isinstance(images, list):
+            images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         # Validate images
         if not images or len(images) == 0:
@@ -372,14 +383,16 @@ class QwenImageEdit(SuccessFailureNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -401,8 +414,13 @@ class QwenImageEdit(SuccessFailureNode):
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""

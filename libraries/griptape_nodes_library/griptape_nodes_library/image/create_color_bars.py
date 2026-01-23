@@ -7,6 +7,9 @@ from PIL import Image, ImageDraw
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import save_pil_image_with_named_filename
@@ -72,9 +75,8 @@ class CreateColorBars(BaseNode):
 
         # Add color bar type selector
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="bar_type",
-                type="str",
                 default_value="SMPTE 219-100 Bars",
                 tooltip="Type of color bars to generate",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -84,9 +86,8 @@ class CreateColorBars(BaseNode):
 
         # Add width parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="width",
-                input_types=["int"],
                 default_value=1920,
                 tooltip="Width of the color bars image in pixels",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -95,9 +96,8 @@ class CreateColorBars(BaseNode):
 
         # Add height parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="height",
-                input_types=["int"],
                 default_value=1080,
                 tooltip="Height of the color bars image in pixels",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -106,9 +106,8 @@ class CreateColorBars(BaseNode):
 
         # Add PLUGE-specific parameters (hidden by default)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="pluge_ire_setup",
-                type="str",
                 default_value="NTSC 7.5 IRE",
                 tooltip="IRE setup type for PLUGE pattern calibration",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -118,10 +117,8 @@ class CreateColorBars(BaseNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="pluge_bar_count",
-                input_types=["int"],
-                type="int",
                 default_value=self.PLUGE_DEFAULT_BAR_COUNT,
                 tooltip="Number of PLUGE bars (typically 3: super black, black, above black)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -130,9 +127,8 @@ class CreateColorBars(BaseNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="pluge_orientation",
-                type="str",
                 default_value="vertical",
                 tooltip="Orientation of PLUGE bars",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -143,10 +139,8 @@ class CreateColorBars(BaseNode):
 
         # Add output image parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                type="ImageUrlArtifact",
-                output_type="ImageUrlArtifact",
                 tooltip="Generated color bars image",
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=None,
