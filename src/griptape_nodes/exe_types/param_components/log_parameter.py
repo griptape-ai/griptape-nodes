@@ -69,8 +69,7 @@ class StdoutCapture:
         self._original_stdout.flush()
 
     def isatty(self) -> bool:
-        # Return False to prevent libraries from outputting ANSI color codes
-        return False
+        return self._original_stdout.isatty()
 
     def __enter__(self) -> "StdoutCapture":
         sys.stdout = self
