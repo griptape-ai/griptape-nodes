@@ -3,7 +3,10 @@
 from collections.abc import Callable
 from typing import Any
 
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
 
 class ParameterImage(Parameter):
@@ -122,6 +125,16 @@ class ParameterImage(Parameter):
         else:
             final_input_types = ["ImageUrlArtifact"]
 
+        # Add automatic converter to normalize string inputs to ImageUrlArtifact
+        # This allows ParameterImage to automatically handle file paths and localhost URLs
+        image_converters = list(converters) if converters else []
+        if accept_any:
+            # Create a converter function that uses normalize_artifact_input with ImageUrlArtifact
+            def _normalize_image(value: Any) -> Any:
+                return normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
+            image_converters.insert(0, _normalize_image)
+
         # Call parent with explicit parameters, following ControlParameter pattern
         super().__init__(
             name=name,
@@ -135,7 +148,7 @@ class ParameterImage(Parameter):
             tooltip_as_output=tooltip_as_output,
             allowed_modes=allowed_modes,
             traits=traits,
-            converters=converters,
+            converters=image_converters,
             validators=validators,
             ui_options=ui_options,
             hide=hide,
