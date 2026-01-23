@@ -140,7 +140,9 @@ class YOLOv8FaceDetection(ControlNode):
         confidence_threshold = float(self.get_parameter_value("confidence_threshold") or 0.5)
         dilation = float(self.get_parameter_value("dilation") or 0.0)
 
-        self.params.log_params.append_to_logs(f"Running face detection (confidence threshold: {confidence_threshold})...\n")
+        self.params.log_params.append_to_logs(
+            f"Running face detection (confidence threshold: {confidence_threshold})...\n"
+        )
 
         # Run YOLO inference
         results = model(input_image_pil)
