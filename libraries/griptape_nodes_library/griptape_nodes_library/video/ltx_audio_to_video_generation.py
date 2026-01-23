@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json as _json
 import logging
 import os
+import subprocess
+import tempfile
 from contextlib import suppress
+from pathlib import Path
 from time import monotonic
 from typing import Any
 from urllib.parse import urljoin
@@ -17,6 +21,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -245,15 +250,191 @@ class LTXAudioToVideoGeneration(SuccessFailureNode):
         if not audio_url:
             return None
 
-        # If it's already a data URL, return it
+        # If it's already a data URL, normalize the MIME type if needed
         if audio_url.startswith("data:audio/"):
-            return audio_url
+            return self._normalize_audio_data_url(audio_url)
 
         # If it's an external URL, download and convert to data URL
         if audio_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(audio_url, "audio/mpeg")
+            downloaded_url = await self._inline_external_url_async(audio_url, "audio/mpeg")
+            if downloaded_url:
+                return self._normalize_audio_data_url(downloaded_url)
+            return None
 
         return audio_url
+
+    def _normalize_audio_data_url(self, audio_url: str) -> str:
+        """Normalize audio data URL to ensure MIME type and codec are supported.
+
+        The LTX API requires audio in specific formats. This method:
+        1. Normalizes non-standard MIME types (e.g., audio/x-wav -> audio/wav)
+        2. Transcodes audio with unsupported codecs (e.g., pcm_f32le) to MP3
+
+        Supported MIME types: audio/wav, audio/mpeg, audio/mp4, audio/ogg
+        Supported codecs: aac, mp3, vorbis, opus, flac
+
+        Args:
+            audio_url: Data URL with audio/ prefix
+
+        Returns:
+            Normalized data URL with supported MIME type and codec
+        """
+        # Extract MIME type from data URL (format: data:audio/TYPE;base64,DATA)
+        if not audio_url.startswith("data:audio/"):
+            return audio_url
+
+        if ";" not in audio_url:
+            return audio_url
+
+        parts = audio_url.split(";", 1)
+        mime_type = parts[0].replace("data:", "")
+        rest = parts[1]
+
+        # Normalize non-standard MIME types
+        normalized_mime = self._normalize_audio_mime_type(mime_type)
+
+        if normalized_mime != mime_type:
+            logger.info(
+                "%s normalized audio MIME type from '%s' to '%s'",
+                self.name,
+                mime_type,
+                normalized_mime,
+            )
+
+        # For WAV files, we need to transcode to MP3 because WAV typically contains
+        # PCM codec which the API doesn't support. MP3 uses a supported codec.
+        if normalized_mime == "audio/wav":
+            logger.info(
+                "%s transcoding WAV audio to MP3 to ensure codec compatibility",
+                self.name,
+            )
+            try:
+                return self._transcode_audio_to_mp3(audio_url)
+            except RuntimeError as e:
+                logger.warning(
+                    "%s failed to transcode audio: %s. Sending as-is and hoping for the best.",
+                    self.name,
+                    e,
+                )
+                return f"data:{normalized_mime};{rest}"
+
+        # For other formats, update MIME type if needed
+        if normalized_mime != mime_type:
+            return f"data:{normalized_mime};{rest}"
+
+        return audio_url
+
+    def _transcode_audio_to_mp3(self, audio_url: str) -> str:
+        """Transcode audio data URL to MP3 format using ffmpeg.
+
+        Args:
+            audio_url: Data URL with base64-encoded audio data
+
+        Returns:
+            Data URL with MP3-encoded audio
+
+        Raises:
+            RuntimeError: If transcoding fails
+        """
+        # Extract base64 data from data URL
+        if not audio_url.startswith("data:"):
+            error_msg = f"{self.name} invalid data URL format for transcoding"
+            raise RuntimeError(error_msg)
+
+        if "base64," not in audio_url:
+            error_msg = f"{self.name} data URL must contain base64-encoded data"
+            raise RuntimeError(error_msg)
+
+        base64_data = audio_url.split("base64,", 1)[1]
+
+        try:
+            audio_bytes = base64.b64decode(base64_data)
+        except Exception as e:
+            error_msg = f"{self.name} failed to decode base64 audio data: {e}"
+            raise RuntimeError(error_msg) from e
+
+        # Create temporary files for input and output
+        input_file = None
+        output_file = None
+
+        try:
+            # Write input audio to temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+                input_file = Path(f.name)
+                f.write(audio_bytes)
+
+            # Create output temp file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                output_file = Path(f.name)
+
+            # Run ffmpeg to transcode
+            try:
+                ffmpeg_path = get_ffmpeg_path()
+            except RuntimeError as e:
+                error_msg = f"{self.name} ffmpeg not available: {e}"
+                raise RuntimeError(error_msg) from e
+
+            cmd = [
+                ffmpeg_path,
+                "-y",  # Overwrite output file
+                "-i",
+                str(input_file.absolute()),
+                "-c:a",
+                "libmp3lame",  # Use MP3 codec
+                "-b:a",
+                "192k",  # Bitrate
+                str(output_file.absolute()),
+            ]
+
+            result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)  # noqa: S603
+            if result.returncode != 0:
+                error_msg = f"{self.name} ffmpeg transcoding failed: {result.stderr}"
+                raise RuntimeError(error_msg)
+
+            # Read transcoded audio
+            try:
+                with output_file.open("rb") as f:
+                    mp3_bytes = f.read()
+            except OSError as e:
+                error_msg = f"{self.name} failed to read transcoded audio: {e}"
+                raise RuntimeError(error_msg) from e
+
+            # Encode to base64 and create data URL
+            mp3_base64 = base64.b64encode(mp3_bytes).decode("utf-8")
+            return f"data:audio/mpeg;base64,{mp3_base64}"
+
+        finally:
+            # Clean up temp files
+            if input_file and input_file.exists():
+                with suppress(Exception):
+                    input_file.unlink()
+            if output_file and output_file.exists():
+                with suppress(Exception):
+                    output_file.unlink()
+
+    @staticmethod
+    def _normalize_audio_mime_type(mime_type: str) -> str:
+        """Normalize audio MIME type to standard format.
+
+        Args:
+            mime_type: Original MIME type
+
+        Returns:
+            Normalized MIME type
+        """
+        # Map of non-standard to standard MIME types
+        mime_type_map = {
+            "audio/x-wav": "audio/wav",
+            "audio/wave": "audio/wav",
+            "audio/x-mpeg": "audio/mpeg",
+            "audio/mp3": "audio/mpeg",
+            "audio/x-mp4": "audio/mp4",
+            "audio/m4a": "audio/mp4",
+            "audio/x-ogg": "audio/ogg",
+            "audio/ogg-vorbis": "audio/ogg",
+        }
+
+        return mime_type_map.get(mime_type, mime_type)
 
     async def _prepare_image_data_url_async(self, image_input: Any) -> str | None:
         """Convert image input to a base64 data URL."""
