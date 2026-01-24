@@ -2611,7 +2611,6 @@ class NodeManager:
     def _serialize_group_with_children(
         self,
         group_node: BaseNodeGroup,
-        explicitly_selected_names: set[str],
         unique_uuid_to_values: dict,
         serialized_parameter_value_tracker: "SerializedParameterValueTracker",
     ) -> SerializedGroupResult:
@@ -2638,10 +2637,6 @@ class NodeManager:
 
         # Serialize each child node that isn't explicitly selected
         for child_name in group_node.nodes:
-            if child_name in explicitly_selected_names:
-                # Child is already being serialized separately, skip
-                continue
-
             # Child is implicitly selected via group membership - serialize it
             child_result = self.on_serialize_node_to_commands(
                 SerializeNodeToCommandsRequest(
@@ -2693,12 +2688,6 @@ class NodeManager:
             group_command.create_node_command.metadata = {}
 
         group_command.create_node_command.metadata["child_node_uuids"] = child_uuids
-
-        # Store original group position for calculating child position offsets during paste
-        if "position" in group_command.create_node_command.metadata:
-            group_command.create_node_command.metadata["original_group_position"] = (
-                group_command.create_node_command.metadata["position"].copy()
-            )
 
         return SerializedGroupResult(
             group_command=group_command,
@@ -3125,7 +3114,6 @@ class NodeManager:
                 # Use special method to handle group + children
                 group_result = self._serialize_group_with_children(
                     group_node=node,
-                    explicitly_selected_names=explicitly_selected,
                     unique_uuid_to_values=unique_uuid_to_values,
                     serialized_parameter_value_tracker=serialized_parameter_value_tracker,
                 )
@@ -3145,6 +3133,13 @@ class NodeManager:
                     child_name = child_command.create_node_command.node_name
                     if not child_name:
                         continue
+                    if child_name in explicitly_selected and child_name in node_commands:
+                        # We need to remove the explicity selected name from the commands that already exist
+                        node_commands.pop(child_name)
+                        duplicated_node_uuid = node_name_to_uuid.pop(child_name)
+                        parameter_commands.pop(duplicated_node_uuid)
+                        lock_commands.pop(duplicated_node_uuid)
+                    # Now we'll re-add everything else
                     child_node_commands_list.append(child_command)
                     node_name_to_uuid[child_name] = child_command.node_uuid
                     parameter_commands[child_command.node_uuid] = group_result.child_parameter_commands[
@@ -3153,8 +3148,13 @@ class NodeManager:
                     lock_commands[child_command.node_uuid] = child_command.lock_node_command
                     # Add to connection filtering set
                     all_selected_for_connections.add(child_name)
+                    # We need to somehow get connections here.
 
             else:
+                # Check to make sure it hasn't been child serialized
+                if node_name in node_name_to_uuid:
+                    # We've already serialized this node as a child.
+                    continue
                 # Regular node - serialize normally
                 result = self.on_serialize_node_to_commands(
                     SerializeNodeToCommandsRequest(
@@ -3173,6 +3173,7 @@ class NodeManager:
                 lock_commands[result.serialized_node_commands.node_uuid] = (
                     result.serialized_node_commands.lock_node_command
                 )
+        for node_name in all_selected_for_connections:
             try:
                 flow_name = self.get_node_parent_flow_by_name(node_name)
                 GriptapeNodes.FlowManager().get_flow_by_name(flow_name)
@@ -3361,62 +3362,6 @@ class NodeManager:
                     if not lock_node_result.succeeded():
                         details = f"Failed to lock node {lock_command.node_name}"
                         logger.warning(details)
-
-        # Update child node positions to maintain relative offsets from their parent groups
-        # Collect all position updates to apply in a batch
-        child_position_updates = {}
-
-        for node_command in commands.serialized_node_commands:
-            metadata = node_command.create_node_command.metadata
-
-            # Check if this is a group with children and original position info
-            if metadata and "child_node_uuids" in metadata and "original_group_position" in metadata:
-                original_group_pos = metadata["original_group_position"]
-
-                # Get the newly created group node
-                group_name = node_uuid_to_name.get(node_command.node_uuid)
-                if not group_name:
-                    continue
-
-                group_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(group_name, BaseNode)
-
-                if group_node and group_node.metadata and "position" in group_node.metadata:
-                    new_group_pos = group_node.metadata["position"]
-
-                    # Calculate offset between old and new group positions
-                    offset_x = new_group_pos["x"] - original_group_pos["x"]
-                    offset_y = new_group_pos["y"] - original_group_pos["y"]
-
-                    # Collect position updates for all children
-                    for child_uuid in metadata["child_node_uuids"]:
-                        child_name = node_uuid_to_name.get(child_uuid)
-                        if not child_name:
-                            continue
-
-                        child_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(
-                            child_name, BaseNode
-                        )
-
-                        if child_node and child_node.metadata and "position" in child_node.metadata:
-                            original_child_pos = child_node.metadata["position"]
-
-                            # Calculate new position: original position + offset
-                            new_child_pos = {
-                                "x": original_child_pos["x"] + offset_x,
-                                "y": original_child_pos["y"] + offset_y,
-                            }
-
-                            # Store for batch update (will notify UI via WebSocket)
-                            child_position_updates[child_name] = {"position": new_child_pos}
-
-        # Apply all child position updates in a single batch request
-        # This ensures the UI receives position change notifications via WebSocket
-        if child_position_updates:
-            batch_request = BatchSetNodeMetadataRequest(node_metadata_updates=child_position_updates)
-            batch_result = GriptapeNodes.handle_request(batch_request)
-
-            if batch_result.failed():
-                logger.warning("Failed to update child node positions after paste")
 
         # create Connections
         for connection_command in connections:
