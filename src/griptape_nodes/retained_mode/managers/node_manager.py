@@ -2765,8 +2765,10 @@ class NodeManager:
                     return SerializeNodeToCommandsResultFailure(result_details=details)
 
                 # Remove node_names_in_group from metadata - it's redundant and will be regenerated
+                # Remove subflow_name so deserialized groups create fresh subflows
                 metadata_copy = copy.deepcopy(node.metadata)
                 metadata_copy.pop("node_names_in_group", None)
+                metadata_copy.pop("subflow_name", None)
 
                 # Note: Child serialization is handled in _serialize_group_with_children()
                 # which is called from on_serialize_selected_nodes_to_commands()
@@ -3320,8 +3322,6 @@ class NodeManager:
 
                 # Remove temporary serialization metadata
                 del metadata["child_node_uuids"]
-                if "original_group_position" in metadata:
-                    del metadata["original_group_position"]
 
             result = self.on_deserialize_node_from_commands(
                 DeserializeNodeFromCommandsRequest(serialized_node_commands=node_command)
