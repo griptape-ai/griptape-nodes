@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import ast
+import json
 import logging
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
+from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL import Image
@@ -19,10 +20,12 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import _resolve_file_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -43,6 +46,7 @@ class CombineFrames(SuccessFailureNode):
         - frame_rate (float): Output frame rate in fps (default: 30.0)
         - ordering_mode (str): "Sequential" (1 frame per image) or "Respect frame numbers" (gaps indicate holds)
         - format (str): Output video format - mp4, mov, or gif
+        - audio (AudioUrlArtifact | str, optional): Optional audio file to add to video (only applies to mp4/mov, not GIF)
 
     Outputs:
         - video (VideoUrlArtifact): Combined video output
@@ -96,6 +100,16 @@ class CombineFrames(SuccessFailureNode):
                 tooltip="Output video format",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=FORMAT_OPTIONS)},
+            )
+        )
+
+        # Audio input (optional) - only applies to mp4/mov formats
+        self.add_parameter(
+            ParameterAudio(
+                name="audio",
+                default_value="",
+                tooltip="Optional audio file to add to the video (only applies to mp4/mov formats, not GIF)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
 
@@ -193,6 +207,9 @@ class CombineFrames(SuccessFailureNode):
             logger.error("%s validation failed: no processed frames", self.name)
             return
 
+        # Get audio input (optional, only used for mp4/mov)
+        audio_input = self.get_parameter_value("audio")
+
         # Combine frames into video or image (gif)
         try:
             if format_type == "gif":
@@ -201,12 +218,11 @@ class CombineFrames(SuccessFailureNode):
                 self.parameter_output_values["video"] = None
                 result_details = f"Successfully combined {len(processed_frames)} frames into GIF at {frame_rate} fps"
             else:
-                video_artifact = self._combine_frames_to_video(processed_frames, frame_rate, format_type)
+                video_artifact = self._combine_frames_to_video(processed_frames, frame_rate, format_type, audio_input)
                 self.parameter_output_values["video"] = video_artifact
                 self.parameter_output_values["image"] = None
-                result_details = (
-                    f"Successfully combined {len(processed_frames)} frames into {format_type} video at {frame_rate} fps"
-                )
+                audio_note = " with audio" if audio_input else ""
+                result_details = f"Successfully combined {len(processed_frames)} frames into {format_type} video at {frame_rate} fps{audio_note}"
 
             self._set_status_results(was_successful=True, result_details=result_details)
             logger.info("%s combined %d frames successfully", self.name, len(processed_frames))
@@ -236,9 +252,93 @@ class CombineFrames(SuccessFailureNode):
             logger.warning("%s skipping invalid/corrupted image file %s: %s", self.name, image_path, e)
             return False
 
+    def _detect_image_format(self, image_path: Path) -> tuple[str, str]:
+        """Detect the actual image format and return (format_name, extension).
+
+        Args:
+            image_path: Path to the image file
+
+        Returns:
+            Tuple of (format_name, extension) e.g., ("PNG", ".png")
+            Falls back to ("PNG", ".png") if detection fails
+        """
+        if not image_path.exists():
+            return ("PNG", ".png")
+
+        try:
+            with Image.open(image_path) as img:
+                actual_format = img.format
+                if actual_format:
+                    # Map PIL format names to extensions
+                    format_to_ext = {
+                        "PNG": ".png",
+                        "JPEG": ".jpg",
+                        "JPG": ".jpg",
+                        "WEBP": ".webp",
+                        "GIF": ".gif",
+                        "BMP": ".bmp",
+                        "TIFF": ".tiff",
+                        "TIF": ".tiff",
+                    }
+                    ext = format_to_ext.get(actual_format.upper(), ".png")
+                    return (actual_format.upper(), ext)
+        except Exception as e:
+            logger.warning("%s failed to detect format for %s: %s", self.name, image_path, e)
+
+        # Default fallback
+        return ("PNG", ".png")
+
+    def _normalize_image_for_ffmpeg(self, image_path: Path, output_path: Path, target_format: str) -> None:
+        """Normalize an image for FFmpeg by converting to RGB and saving in target format.
+
+        Args:
+            image_path: Source image path
+            output_path: Destination path with correct extension
+            target_format: Target format name (e.g., "PNG", "JPEG")
+        """
+        with Image.open(image_path) as img:
+            # Convert to RGB if necessary (for formats like RGBA, LA, P, etc.)
+            if img.mode in ("RGBA", "LA", "P"):
+                # Create RGB background
+                rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode == "P":
+                    img = img.convert("RGBA")
+                rgb_img.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+                img = rgb_img
+            elif img.mode != "RGB":
+                img = img.convert("RGB")
+
+            # Save in target format
+            save_kwargs = {}
+            if target_format == "JPEG" or target_format == "WEBP":
+                save_kwargs["quality"] = 95
+
+            img.save(output_path, target_format, **save_kwargs)
+
     def _get_frame_paths(self, frames_input: Any) -> list[Path]:
         """Get list of frame file paths from input (list of paths/ImageUrlArtifacts or directory path)."""
         frame_paths = []
+
+        # Handle case where list is passed as a string (e.g., serialized list)
+        if isinstance(frames_input, str):
+            # Check if it looks like a list representation
+            stripped = frames_input.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    # Try to parse as JSON first
+                    parsed = json.loads(frames_input)
+                    if isinstance(parsed, list):
+                        frames_input = parsed
+                    else:
+                        # If JSON parsing gives non-list, try ast.literal_eval
+                        frames_input = ast.literal_eval(frames_input)
+                except (json.JSONDecodeError, ValueError, SyntaxError):
+                    # If JSON parsing fails, try ast.literal_eval as fallback
+                    try:
+                        frames_input = ast.literal_eval(frames_input)
+                    except (ValueError, SyntaxError) as e:
+                        logger.warning("%s failed to parse list string '%s...': %s", self.name, frames_input[:100], e)
+                        # Fall through to treat as directory path string
 
         if isinstance(frames_input, list):
             # Input is a list of file paths or ImageUrlArtifacts
@@ -281,72 +381,41 @@ class CombineFrames(SuccessFailureNode):
         return frame_paths
 
     def _extract_path_from_item(self, item: Any) -> Path | None:
-        """Extract file path from various input types (str, Path, ImageUrlArtifact)."""
-        if isinstance(item, str):
-            # Resolve localhost URLs to workspace paths
-            resolved = self._resolve_localhost_url_to_path(item)
-            return Path(resolved)
+        """Extract file path from various input types (str, Path, ImageUrlArtifact).
 
+        Uses _resolve_file_path from artifact_normalization to handle localhost URL resolution.
+        """
         if isinstance(item, Path):
             return item
 
-        if isinstance(item, ImageUrlArtifact):
-            # Extract URL/path from ImageUrlArtifact
+        # Extract URL/path string from various input types
+        url_or_path = None
+
+        if isinstance(item, str):
+            url_or_path = item
+
+        elif isinstance(item, ImageUrlArtifact):
             url_or_path = item.value
             if not url_or_path:
                 return None
-
             if not isinstance(url_or_path, str):
                 return Path(str(url_or_path))
 
-            # Check if it's a localhost URL - resolve to workspace path
-            if url_or_path.startswith(("http://localhost:", "https://localhost:")):
-                resolved_path = self._resolve_localhost_url_to_path(url_or_path)
-                workspace_path = GriptapeNodes.ConfigManager().workspace_path
-                full_path = workspace_path / resolved_path
-                if full_path.exists():
-                    return full_path
-                # If resolved path doesn't exist, try as relative path
-                return Path(resolved_path)
+        else:
+            return None
 
-            # If it's an external URL, download it to a temp file
-            if url_or_path.startswith(("http://", "https://")):
+        # If it's an external URL (not localhost), download it to a temp file
+        if isinstance(url_or_path, str) and url_or_path.startswith(("http://", "https://")):
+            if not url_or_path.startswith(("http://localhost:", "https://localhost:")):
                 return self._download_url_to_temp_file(url_or_path)
 
-            # Otherwise treat as file path
-            return Path(url_or_path)
+        # Use _resolve_file_path to handle localhost URLs and path resolution
+        resolved_path = _resolve_file_path(url_or_path)
+        if resolved_path:
+            return resolved_path
 
-        return None
-
-    def _resolve_localhost_url_to_path(self, url: str) -> str:
-        """Resolve localhost static file URLs to workspace file paths.
-
-        Converts URLs like http://localhost:8124/workspace/static_files/file.jpg
-        to actual workspace file paths like static_files/file.jpg
-
-        Args:
-            url: URL string that may be a localhost URL
-
-        Returns:
-            Resolved file path relative to workspace, or original string if not a localhost URL
-        """
-        if not isinstance(url, str):
-            return url
-
-        # Strip query parameters (cachebuster ?t=...)
-        if "?" in url:
-            url = url.split("?")[0]
-
-        # Check if it's a localhost URL (any port)
-        if url.startswith(("http://localhost:", "https://localhost:")):
-            parsed = urlparse(url)
-            # Extract path after /workspace/
-            if "/workspace/" in parsed.path:
-                workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
-                return workspace_relative_path
-
-        # Not a localhost workspace URL, return as-is
-        return url
+        # Fallback: try as direct path
+        return Path(url_or_path) if url_or_path else None
 
     def _download_url_to_temp_file(self, url: str) -> Path | None:
         """Download image from URL to temporary file."""
@@ -447,20 +516,26 @@ class CombineFrames(SuccessFailureNode):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Determine extension to use (use first file's extension)
-            first_extension = frame_paths[0].suffix.lower()
-            if not first_extension:
-                first_extension = ".jpg"
+            # Detect format from first frame (assume all frames are same format)
+            detected_format, detected_ext = self._detect_image_format(frame_paths[0])
+            logger.debug("%s detected image format: %s (extension: %s)", self.name, detected_format, detected_ext)
 
-            # Copy or link frames to sequential names for ffmpeg
+            # Normalize all frames to detected format with correct extension
+            # This handles cases where files have wrong extensions (e.g., .jpg but are actually PNG)
             for idx, frame_path in enumerate(frame_paths):
-                # Create sequential filename with consistent extension
-                seq_filename = f"frame_{idx + 1:04d}{first_extension}"
+                # Create sequential filename with detected extension (start from 0 to match FFmpeg pattern)
+                seq_filename = f"frame_{idx:04d}{detected_ext}"
                 seq_path = temp_path / seq_filename
-                shutil.copy2(frame_path, seq_path)
 
-            # Build ffmpeg command with specific extension in pattern
-            input_pattern = str(temp_path / f"frame_%04d{first_extension}")
+                # Normalize image format (convert to RGB, save in detected format)
+                try:
+                    self._normalize_image_for_ffmpeg(frame_path, seq_path, detected_format)
+                except Exception as e:
+                    error_msg = f"Failed to normalize frame {frame_path}: {e}"
+                    raise RuntimeError(error_msg) from e
+
+            # Build ffmpeg command with detected extension in pattern
+            input_pattern = str(temp_path / f"frame_%04d{detected_ext}")
             output_path = temp_path / "output.gif"
 
             cmd = self._build_ffmpeg_command(ffmpeg_path, input_pattern, output_path, frame_rate, "gif")
@@ -492,7 +567,7 @@ class CombineFrames(SuccessFailureNode):
             return ImageUrlArtifact(value=saved_url, name=filename)
 
     def _combine_frames_to_video(
-        self, frame_paths: list[Path], frame_rate: float, format_type: str
+        self, frame_paths: list[Path], frame_rate: float, format_type: str, audio_input: Any = None
     ) -> VideoUrlArtifact:
         """Combine frames into video using ffmpeg."""
         if not frame_paths:
@@ -509,28 +584,36 @@ class CombineFrames(SuccessFailureNode):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Determine extension to use (use first file's extension)
-            first_extension = frame_paths[0].suffix.lower()
-            if not first_extension:
-                first_extension = ".jpg"
+            # Detect format from first frame (assume all frames are same format)
+            detected_format, detected_ext = self._detect_image_format(frame_paths[0])
+            logger.debug("%s detected image format: %s (extension: %s)", self.name, detected_format, detected_ext)
 
-            # Copy or link frames to sequential names for ffmpeg
+            # Normalize all frames to detected format with correct extension
+            # This handles cases where files have wrong extensions (e.g., .jpg but are actually PNG)
             sequential_frames = []
             for idx, frame_path in enumerate(frame_paths):
-                # Create sequential filename with consistent extension
-                # ffmpeg expects pattern like frame_%04d.jpg (must match exactly)
-                seq_filename = f"frame_{idx + 1:04d}{first_extension}"
+                # Create sequential filename with detected extension (start from 0 to match FFmpeg pattern)
+                seq_filename = f"frame_{idx:04d}{detected_ext}"
                 seq_path = temp_path / seq_filename
 
-                # Copy file to temp directory
-                shutil.copy2(frame_path, seq_path)
-                sequential_frames.append(seq_path)
+                # Normalize image format (convert to RGB, save in detected format)
+                try:
+                    self._normalize_image_for_ffmpeg(frame_path, seq_path, detected_format)
+                    sequential_frames.append(seq_path)
+                except Exception as e:
+                    error_msg = f"Failed to normalize frame {frame_path}: {e}"
+                    raise RuntimeError(error_msg) from e
 
-            # Build ffmpeg command with specific extension in pattern
-            input_pattern = str(temp_path / f"frame_%04d{first_extension}")
+            # Build ffmpeg command with detected extension in pattern
+            input_pattern = str(temp_path / f"frame_%04d{detected_ext}")
             output_path = temp_path / f"output.{format_type}"
 
-            cmd = self._build_ffmpeg_command(ffmpeg_path, input_pattern, output_path, frame_rate, format_type)
+            # Extract audio URL if provided
+            audio_url = self._extract_audio_url(audio_input)
+
+            cmd = self._build_ffmpeg_command(
+                ffmpeg_path, input_pattern, output_path, frame_rate, format_type, audio_url
+            )
 
             # Run ffmpeg
             try:
@@ -558,17 +641,82 @@ class CombineFrames(SuccessFailureNode):
 
             return VideoUrlArtifact(value=saved_url, name=filename)
 
+    def _extract_audio_url(self, audio_input: Any) -> str | None:
+        """Extract audio URL from audio input (AudioUrlArtifact, string, etc.).
+
+        Args:
+            audio_input: Audio input (AudioUrlArtifact, string URL, or None)
+
+        Returns:
+            Absolute audio file path if found, None otherwise
+        """
+        if not audio_input:
+            return None
+
+        audio_url = None
+
+        if isinstance(audio_input, AudioUrlArtifact):
+            audio_url = audio_input.value
+            if not isinstance(audio_url, str):
+                return None
+
+        elif isinstance(audio_input, str):
+            audio_url = audio_input
+
+        elif isinstance(audio_input, dict) and "value" in audio_input:
+            audio_url = str(audio_input.get("value", ""))
+
+        elif hasattr(audio_input, "value"):
+            try:
+                audio_value = getattr(audio_input, "value", None)
+                if audio_value:
+                    audio_url = str(audio_value)
+            except (AttributeError, TypeError):
+                pass
+
+        if not audio_url:
+            return None
+
+        # Use _resolve_file_path to handle localhost URLs and path resolution
+        resolved_path = _resolve_file_path(audio_url)
+        if resolved_path:
+            return str(resolved_path)
+
+        # If _resolve_file_path returned None, might be an external URL - return as-is
+        return audio_url
+
     def _build_ffmpeg_command(
-        self, ffmpeg_path: str, input_pattern: str, output_path: Path, frame_rate: float, format_type: str
+        self,
+        ffmpeg_path: str,
+        input_pattern: str,
+        output_path: Path,
+        frame_rate: float,
+        format_type: str,
+        audio_url: str | None = None,
     ) -> list[str]:
-        """Build ffmpeg command for combining frames."""
+        """Build ffmpeg command for combining frames.
+
+        Args:
+            ffmpeg_path: Path to ffmpeg executable
+            input_pattern: Pattern for input frames (e.g., "frame_%04d.png")
+            output_path: Output video file path
+            frame_rate: Frame rate for the video
+            format_type: Output format (mp4, mov, gif)
+            audio_url: Optional audio file URL/path to add to video
+        """
         cmd = [
             ffmpeg_path,
+            "-f",
+            "image2",
             "-framerate",
             str(frame_rate),
             "-i",
             input_pattern,
         ]
+
+        # Add audio input if provided (only for mp4/mov, not GIF)
+        if audio_url and format_type in ("mp4", "mov"):
+            cmd.extend(["-i", audio_url])
 
         if format_type == "gif":
             # GIF requires special handling with palette
@@ -576,6 +724,8 @@ class CombineFrames(SuccessFailureNode):
             palette_path = output_path.parent / "palette.png"
             palette_cmd = [
                 ffmpeg_path,
+                "-f",
+                "image2",
                 "-framerate",
                 str(frame_rate),
                 "-i",
@@ -597,6 +747,8 @@ class CombineFrames(SuccessFailureNode):
                 # Second pass: use palette
                 cmd = [
                     ffmpeg_path,
+                    "-f",
+                    "image2",
                     "-framerate",
                     str(frame_rate),
                     "-i",
@@ -619,6 +771,26 @@ class CombineFrames(SuccessFailureNode):
                     "+faststart",
                 ]
             )
+
+            # Add audio handling if audio is provided
+            if audio_url:
+                # Map audio stream and encode with AAC codec
+                cmd.extend(
+                    [
+                        "-map",
+                        "0:v",  # Map video from first input (frames)
+                        "-map",
+                        "1:a",  # Map audio from second input (audio file)
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
+                        "-shortest",  # End when shortest input ends (sync audio to video length)
+                    ]
+                )
+            else:
+                # No audio - explicitly disable audio
+                cmd.append("-an")
 
         cmd.extend(["-y", str(output_path)])
         return cmd

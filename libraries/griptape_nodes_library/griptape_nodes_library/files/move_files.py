@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
@@ -49,6 +49,11 @@ class MoveFiles(FrameNumberMixin, CopyFiles):
 
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
+
+        # Hide copied_paths output
+        copied_paths_param = self.get_parameter_by_name("copied_paths")
+        if copied_paths_param:
+            copied_paths_param.hide = True
 
         # Add moved_paths output parameter (copied_paths_output from parent will remain but won't be used)
         self.moved_paths_output = Parameter(

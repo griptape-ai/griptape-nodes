@@ -105,7 +105,21 @@ class ExtractFrames(SuccessFailureNode):
             )
 
         self.add_node_element(video_info_group)
-
+        self.add_parameter(
+            ParameterRange(
+                name="frame_range",
+                default_value=[0.0, 100.0],
+                tooltip="Frame range [start, end] to extract from",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                range_slider=True,
+                min_val=0.0,
+                max_val=1000.0,
+                step=1.0,
+                min_label="start frame",
+                max_label="end frame",
+                hide_range_labels=False,
+            )
+        )
         with ParameterGroup(name="Extraction Options") as extraction_options_group:
             # Extraction mode dropdown
             ParameterString(
@@ -134,20 +148,6 @@ class ExtractFrames(SuccessFailureNode):
                 tooltip="Extract every Nth frame (e.g., 2 = every 2nd frame)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 hide=True,
-            )
-
-            ParameterRange(
-                name="frame_range",
-                default_value=[0.0, 100.0],
-                tooltip="Frame range [start, end] to extract from",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                range_slider=True,
-                min_val=0.0,
-                max_val=1000.0,
-                step=1.0,
-                min_label="start frame",
-                max_label="end frame",
-                hide_range_labels=False,
             )
 
             # Frame numbering option
@@ -762,6 +762,12 @@ class ExtractFrames(SuccessFailureNode):
             static_files_path = workspace_path / static_files_dir
             output_dir = static_files_path / output_folder
 
+        # Check if path exists as a file (not a directory) - this would cause errors
+        if output_dir.exists() and not output_dir.is_dir():
+            error_msg = f"{self.name} output folder path exists as a file, not a directory: {output_dir}"
+            raise ValueError(error_msg)
+
+        # Create directory if it doesn't exist (exist_ok=True handles case where it already exists as directory)
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
 

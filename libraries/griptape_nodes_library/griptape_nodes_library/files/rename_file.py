@@ -185,9 +185,13 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
         self._clear_execution_status()
 
         # Get parameter values
-        old_path = self.get_parameter_value("old_path")
+        old_path_raw = self.get_parameter_value("old_path")
         new_path_input = self.get_parameter_value("new_path")
         overwrite = self.get_parameter_value("overwrite") or False
+
+        # Extract value from artifacts and resolve localhost URLs to workspace paths
+        old_path = self._extract_value_from_artifact(old_path_raw)
+        new_path_input = self._extract_value_from_artifact(new_path_input)
 
         # Clean paths to remove newlines/carriage returns that cause Windows errors
         old_path = GriptapeNodes.OSManager().sanitize_path_string(old_path)
@@ -239,21 +243,28 @@ class RenameFile(FrameNumberMixin, FileOperationBaseNode):
         # Create parent directory of new_path if it doesn't exist
         new_path_obj = Path(new_path)
         parent_dir = new_path_obj.parent
-        if parent_dir and not parent_dir.exists():
-            try:
-                parent_dir.mkdir(parents=True, exist_ok=True)
-            except PermissionError as e:
-                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
+        if parent_dir:
+            # Check if parent exists as a file (not a directory) - this would prevent creating the directory
+            if parent_dir.exists() and not parent_dir.is_dir():
+                msg = (
+                    f"{self.name} cannot rename to '{new_path_obj.name}' because the parent path '{parent_dir}' "
+                    f"exists as a file, not a directory. Please remove or rename the conflicting file first."
+                )
                 self.set_parameter_value(self.old_path_output.name, "")
                 self.set_parameter_value(self.new_path_output.name, "")
                 self._set_status_results(was_successful=False, result_details=msg)
                 return
-            except OSError as e:
-                msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
-                self.set_parameter_value(self.old_path_output.name, "")
-                self.set_parameter_value(self.new_path_output.name, "")
-                self._set_status_results(was_successful=False, result_details=msg)
-                return
+
+            # Only create directory if it doesn't exist (exist_ok=True handles race conditions)
+            if not parent_dir.exists():
+                try:
+                    parent_dir.mkdir(parents=True, exist_ok=True)
+                except (PermissionError, OSError) as e:
+                    msg = f"{self.name} attempted to rename but failed to create parent directory: {e}"
+                    self.set_parameter_value(self.old_path_output.name, "")
+                    self.set_parameter_value(self.new_path_output.name, "")
+                    self._set_status_results(was_successful=False, result_details=msg)
+                    return
 
         # SUCCESS PATH AT END: Execute rename
         rename_request = RenameFileRequest(old_path=old_path, new_path=new_path, workspace_only=False)
