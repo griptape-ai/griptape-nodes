@@ -18,6 +18,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -42,6 +43,7 @@ class LTXAudioToVideoGeneration(SuccessFailureNode):
         - prompt (str): Text prompt for video generation (required)
         - image (ImageArtifact|ImageUrlArtifact|str): Input image (optional, base64 data URI format)
         - resolution (str): Video resolution (1920x1080)
+        - guidance_scale (float): Guidance scale for generation (1-50, optional)
 
     Outputs:
         - generation_id (str): Griptape Cloud generation id
@@ -114,6 +116,21 @@ class LTXAudioToVideoGeneration(SuccessFailureNode):
                 tooltip="Video resolution",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["1920x1080"])},
+            )
+        )
+
+        self.add_parameter(
+            ParameterFloat(
+                name="guidance_scale",
+                tooltip="Guidance scale for generation (1-50). Higher values follow the prompt more closely. Leave empty to use the API default.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                min_val=1.0,
+                max_val=50.0,
+                validate_min_max=True,
+                step=0.1,
+                ui_options={
+                    "placeholder_text": "Optional (e.g., 7.5)",
+                },
             )
         )
 
@@ -232,6 +249,7 @@ class LTXAudioToVideoGeneration(SuccessFailureNode):
             "audio_uri": await self._prepare_audio_data_url_async(self.get_parameter_value("audio")),
             "image_uri": await self._prepare_image_data_url_async(self.get_parameter_value("image")),
             "resolution": self.get_parameter_value("resolution") or "1920x1080",
+            "guidance_scale": self.get_parameter_value("guidance_scale"),
         }
 
     def _validate_api_key(self) -> str:
@@ -590,6 +608,8 @@ class LTXAudioToVideoGeneration(SuccessFailureNode):
         }
         if params["image_uri"]:
             payload["image_uri"] = params["image_uri"]
+        if params["guidance_scale"] is not None:
+            payload["guidance_scale"] = params["guidance_scale"]
 
         return payload
 
