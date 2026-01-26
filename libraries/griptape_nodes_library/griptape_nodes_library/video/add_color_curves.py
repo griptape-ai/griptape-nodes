@@ -1,6 +1,6 @@
 from typing import Any, ClassVar
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -25,9 +25,8 @@ class AddColorCurves(BaseVideoProcessor):
 
     def _setup_custom_parameters(self) -> None:
         """Setup color curves parameters."""
-        parameter = Parameter(
+        parameter = ParameterString(
             name="curve_preset",
-            type="str",
             default_value="none",
             tooltip="Built-in curve preset for color grading effects",
         )

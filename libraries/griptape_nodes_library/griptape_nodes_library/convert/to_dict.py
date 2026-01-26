@@ -30,7 +30,7 @@ class ToDictionary(DataNode):
                 output_type="dict",
                 type="dict",
                 tooltip="The converted data as dict",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )

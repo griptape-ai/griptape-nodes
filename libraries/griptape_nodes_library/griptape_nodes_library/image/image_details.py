@@ -4,8 +4,12 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes_library.utils.image_utils import (
     calculate_aspect_ratio,
     get_image_color_info,
@@ -28,11 +32,9 @@ class ImageDetails(DataNode):
 
         # Add input parameter for the image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
                 default_value=value,
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The image to analyze",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
@@ -40,41 +42,33 @@ class ImageDetails(DataNode):
 
         # Dimensions group (default open)
         with ParameterGroup(name="Dimensions") as dimensions_group:
-            self._width_parameter = Parameter(
+            self._width_parameter = ParameterInt(
                 name="width",
-                type="int",
                 default_value=0,
-                output_type="int",
                 tooltip="Image width in pixels",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
             )
 
-            self._height_parameter = Parameter(
+            self._height_parameter = ParameterInt(
                 name="height",
-                type="int",
                 default_value=0,
-                output_type="int",
                 tooltip="Image height in pixels",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
             )
 
-            self._ratio_str_parameter = Parameter(
+            self._ratio_str_parameter = ParameterString(
                 name="ratio_str",
-                type="str",
                 default_value="0:0",
-                output_type="str",
                 tooltip="Aspect ratio as string (e.g., '16:9')",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
             )
 
-            self._ratio_decimal_parameter = Parameter(
+            self._ratio_decimal_parameter = ParameterFloat(
                 name="ratio_decimal",
-                type="float",
                 default_value=0.0,
-                output_type="float",
                 tooltip="Aspect ratio as decimal (width/height)",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
@@ -83,21 +77,17 @@ class ImageDetails(DataNode):
 
         # Color Details group (collapsed by default)
         with ParameterGroup(name="Color Details", ui_options={"collapsed": True}) as color_group:
-            self._color_space_parameter = Parameter(
+            self._color_space_parameter = ParameterString(
                 name="color_space",
-                type="str",
                 default_value="UNKNOWN",
-                output_type="str",
                 tooltip="Color space/mode (e.g., 'RGB', 'RGBA', 'L')",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
             )
 
-            self._channels_parameter = Parameter(
+            self._channels_parameter = ParameterInt(
                 name="channels",
-                type="int",
                 default_value=0,
-                output_type="int",
                 tooltip="Number of color channels",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,
@@ -106,11 +96,9 @@ class ImageDetails(DataNode):
 
         # Image Format group (collapsed by default)
         with ParameterGroup(name="Image Format", ui_options={"collapsed": True}) as format_group:
-            self._format_parameter = Parameter(
+            self._format_parameter = ParameterString(
                 name="format",
-                type="str",
                 default_value="UNKNOWN",
-                output_type="str",
                 tooltip="Image format (e.g., 'JPEG', 'PNG', 'WEBP')",
                 allowed_modes={ParameterMode.OUTPUT},
                 settable=False,

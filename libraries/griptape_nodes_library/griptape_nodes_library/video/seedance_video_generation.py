@@ -7,15 +7,20 @@ from contextlib import suppress
 from typing import Any, ClassVar
 
 import httpx
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -68,10 +73,8 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
 
         # INPUTS / PROPERTIES
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value="Seedance 1.5 Pro",
                 tooltip="Model to use for video generation",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -107,10 +110,8 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         )
         # Optional first frame (image) - accepts artifact or URL/base64 string
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="first_frame",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip="Optional first frame image (URL or base64 data URI)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -120,10 +121,8 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
 
         # Optional last frame (image) - accepts artifact or URL/base64 string valid only with seedance-1-0-lite-i2v
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="last_frame",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip="Optional Last frame image for seedance-1-0-lite-i2v model(URL or base64 data URI)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -135,7 +134,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         self.add_parameter(
             ParameterList(
                 name="reference_images",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
                 default_value=[],
                 tooltip="Optional reference images (1-4 images) for seedance-1-0-lite-i2v model",
                 allowed_modes={ParameterMode.INPUT},
@@ -192,9 +191,8 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide=True,
@@ -202,22 +200,18 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -307,6 +301,12 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
             else:
                 self.hide_parameter_by_name("generate_audio")
 
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "reference_images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("reference_images", updated_list)
+
         return super().after_value_set(parameter, value)
 
     def _get_api_model_id(self) -> str:
@@ -340,6 +340,14 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         # Convert friendly name to provider model ID
         model_id = self._get_provider_model_id(raw_model_id)
 
+        # Normalize reference images (handles cases where values come from connections)
+        reference_images = self.get_parameter_value("reference_images") or []
+        normalized_reference_images = (
+            normalize_artifact_list(reference_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if reference_images
+            else []
+        )
+
         return {
             "prompt": self.get_parameter_value("prompt") or "",
             "model_id": model_id,
@@ -347,7 +355,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
             "ratio": self.get_parameter_value("ratio") or "adaptive",
             "first_frame": self.get_parameter_value("first_frame"),
             "last_frame": self.get_parameter_value("last_frame"),
-            "reference_images": self.get_parameter_value("reference_images"),
+            "reference_images": normalized_reference_images,
             "duration": self.get_parameter_value("duration"),
             "camerafixed": self.get_parameter_value("camerafixed"),
             "generate_audio": self.get_parameter_value("generate_audio"),

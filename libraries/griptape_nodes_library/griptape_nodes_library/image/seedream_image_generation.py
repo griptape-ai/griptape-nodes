@@ -10,11 +10,20 @@ from typing import Any
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -115,10 +124,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="Seedream 4.5",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -142,10 +149,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Optional single image input for Seedream 3.0 I2I (backwards compatibility)
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 default_value=None,
                 tooltip="Input image (required for Seedream 3.0 I2I)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -174,10 +179,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Size parameter - will be updated dynamically based on model selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="size",
-                input_types=["str"],
-                type="str",
                 default_value="2K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -187,10 +190,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Seed parameter
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="seed",
-                input_types=["int"],
-                type="int",
                 default_value=-1,
                 tooltip="Random seed for reproducible results (-1 for random)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -213,10 +214,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Guidance scale for Seedream 3.0 T2I
         self.add_parameter(
-            Parameter(
+            ParameterFloat(
                 name="guidance_scale",
-                input_types=["float"],
-                type="float",
                 default_value=2.5,
                 tooltip="Guidance scale (Seedream 3.0 T2I only, default: 2.5)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -226,24 +225,21 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
@@ -254,10 +250,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         for i in range(1, 16):
             param_name = "image_url" if i == 1 else f"image_url_{i}"
             self.add_parameter(
-                Parameter(
+                ParameterImage(
                     name=param_name,
-                    output_type="ImageUrlArtifact",
-                    type="ImageUrlArtifact",
                     tooltip=f"Generated image {i}",
                     allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                     settable=False,
@@ -317,6 +311,17 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         """Update size options and parameter visibility based on parameter changes."""
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "image" and isinstance(value, str) and value:
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if artifact != value:
+                self.set_parameter_value("image", artifact)
+        elif parameter.name == "images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("images", updated_list)
+
         return super().after_value_set(parameter, value)
 
     def _get_api_model_id(self) -> str:
@@ -462,10 +467,18 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         return exceptions if exceptions else None
 
     def _get_parameters(self) -> dict[str, Any]:
+        image = self.get_parameter_value("image")
+        images = self.get_parameter_list_value("images") or []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        image = normalize_artifact_input(image, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
         params = {
             "model": self.get_parameter_value("model") or "Seedream 4.5",
             "prompt": self.get_parameter_value("prompt") or "",
-            "image": self.get_parameter_value("image"),
+            "image": image,
             "size": self.get_parameter_value("size") or "2K",
             "seed": self.get_parameter_value("seed") or -1,
             "guidance_scale": self.get_parameter_value("guidance_scale") or 2.5,
@@ -474,7 +487,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         # Get image list for Seedream 4.5 and Seedream 4.0
         if params["model"] in ("Seedream 4.5", "Seedream 4.0"):
-            params["images"] = self.get_parameter_list_value("images") or []
+            params["images"] = images
             params["sequential_image_generation"] = "auto"
             params["sequential_image_generation_options"] = {
                 "max_images": self.get_parameter_value("max_images"),
@@ -544,14 +557,16 @@ class SeedreamImageGeneration(GriptapeProxyNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -573,8 +588,13 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""

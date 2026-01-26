@@ -3,6 +3,10 @@ from typing import Any, NamedTuple
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
 
@@ -133,19 +137,16 @@ class AspectRatio(SuccessFailureNode):
 
         # Inputs group
         with ParameterGroup(name="Dimensions") as inputs_group:
-            self._preset_parameter = Parameter(
+            self._preset_parameter = ParameterString(
                 name="preset",
-                type="str",
                 tooltip="Select a preset aspect ratio or 'Custom' for manual configuration",
-                default_value="Custom",
+                default_value="1024x1024 (1:1)",
                 allowed_modes={ParameterMode.PROPERTY},
                 traits={Options(choices=list(ASPECT_RATIO_PRESETS.keys()))},
             )
 
-            self._width_parameter = Parameter(
+            self._width_parameter = ParameterInt(
                 name="width",
-                input_types=["int"],
-                type="int",
                 tooltip="Width in pixels",
                 default_value=1024,
                 allowed_modes={ParameterMode.PROPERTY},
@@ -153,9 +154,8 @@ class AspectRatio(SuccessFailureNode):
             )
 
             # Hidden parameter to store fractional width for precise ratio calculations
-            self._internal_width_float_parameter = Parameter(
+            self._internal_width_float_parameter = ParameterFloat(
                 name="internal_width_float",
-                type="float",
                 tooltip="Internal fractional width for precise aspect ratio calculations",
                 default_value=None,
                 allowed_modes={ParameterMode.PROPERTY},
@@ -163,9 +163,8 @@ class AspectRatio(SuccessFailureNode):
                 hide=True,
             )
 
-            self._height_parameter = Parameter(
+            self._height_parameter = ParameterInt(
                 name="height",
-                type="int",
                 tooltip="Height in pixels",
                 default_value=1024,
                 allowed_modes={ParameterMode.PROPERTY},
@@ -173,9 +172,8 @@ class AspectRatio(SuccessFailureNode):
             )
 
             # Hidden parameter to store fractional height for precise ratio calculations
-            self._internal_height_float_parameter = Parameter(
+            self._internal_height_float_parameter = ParameterFloat(
                 name="internal_height_float",
-                type="float",
                 tooltip="Internal fractional height for precise aspect ratio calculations",
                 default_value=None,
                 allowed_modes={ParameterMode.PROPERTY},
@@ -183,11 +181,12 @@ class AspectRatio(SuccessFailureNode):
                 hide=True,
             )
 
-            self._ratio_str_parameter = Parameter(
+            self._ratio_str_parameter = ParameterString(
                 name="ratio_str",
                 type="str",
                 tooltip="Aspect ratio as string (e.g., '16:9')",
                 default_value="1:1",
+                placeholder_text="1:1",
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_ratio_str],
             )
@@ -195,18 +194,16 @@ class AspectRatio(SuccessFailureNode):
 
         # Modifiers group
         with ParameterGroup(name="Modifiers") as modifiers_group:
-            self._upscale_value_parameter = Parameter(
+            self._upscale_value_parameter = ParameterFloat(
                 name="upscale_value",
-                type="float",
                 tooltip="Multiplier for scaling dimensions",
                 default_value=1.0,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 validators=[validate_upscale],
             )
 
-            self._swap_dimensions_parameter = Parameter(
+            self._swap_dimensions_parameter = ParameterBool(
                 name="swap_dimensions",
-                type="bool",
                 tooltip="Swap width and height",
                 default_value=False,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -215,36 +212,32 @@ class AspectRatio(SuccessFailureNode):
 
         # Outputs group
         with ParameterGroup(name="Outputs") as outputs_group:
-            self._final_width_parameter = Parameter(
+            self._final_width_parameter = ParameterInt(
                 name="final_width",
-                output_type="int",
                 settable=False,
                 default_value=1024,
                 tooltip="Final calculated width after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
             )
 
-            self._final_height_parameter = Parameter(
+            self._final_height_parameter = ParameterInt(
                 name="final_height",
-                output_type="int",
                 settable=False,
                 default_value=1024,
                 tooltip="Final calculated height after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
             )
 
-            self._final_ratio_str_parameter = Parameter(
+            self._final_ratio_str_parameter = ParameterString(
                 name="final_ratio_str",
-                output_type="str",
                 settable=False,
                 default_value="1:1",
                 tooltip="Final aspect ratio as string (e.g., '16:9')",
                 allowed_modes={ParameterMode.OUTPUT},
             )
 
-            self._final_ratio_decimal_parameter = Parameter(
+            self._final_ratio_decimal_parameter = ParameterFloat(
                 name="final_ratio_decimal",
-                output_type="float",
                 settable=False,
                 default_value=1.0,
                 tooltip="Final aspect ratio as decimal (width/height)",

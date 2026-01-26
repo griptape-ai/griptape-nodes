@@ -51,7 +51,7 @@ class DepthAnythingForDepthEstimationVideo(ControlNode):
             msg = "Input video is required"
             raise ValueError(msg)
 
-        self.append_value_to_parameter("logs", "Loading video frames...\n")
+        self.params.log_params.append_to_logs("Loading video frames...\n")
 
         # Load video frames using diffusers utilities
         input_frames = diffusers.utils.load_video(input_video_artifact.value)
@@ -65,24 +65,25 @@ class DepthAnythingForDepthEstimationVideo(ControlNode):
         preview_placeholder_video = self._create_placeholder_video([first_frame])
         self.publish_update_to_parameter("output_video", preview_placeholder_video)
 
-        self.append_value_to_parameter("logs", "Preparing models...\n")
-        with self.params.append_stdout_to_logs():
+        self.params.log_params.append_to_logs("Preparing models...\n")
+        with self.params.log_params.append_profile_to_logs("Loading models"):
             image_processor, model = self.params.load_models()
 
-        self.append_value_to_parameter("logs", f"Processing {len(input_frames)} frames...\n")
+        self.params.log_params.append_to_logs(f"Processing {len(input_frames)} frames...\n")
 
         # Process each frame for depth estimation
         depth_frames = []
-        for i, frame in enumerate(input_frames):
-            frame_rgb = frame.convert("RGB")
-            depth_frame = self.params.process_depth_estimation(image_processor, model, frame_rgb)
-            depth_frames.append(depth_frame)
+        with self.params.log_params.append_profile_to_logs("Processing depth estimation"):
+            for i, frame in enumerate(input_frames):
+                frame_rgb = frame.convert("RGB")
+                depth_frame = self.params.process_depth_estimation(image_processor, model, frame_rgb)
+                depth_frames.append(depth_frame)
 
-            # Log progress every 10 frames
-            if (i + 1) % 10 == 0 or i == 0:
-                self.append_value_to_parameter("logs", f"Processed frame {i + 1}/{len(input_frames)}\n")
+                # Log progress every 10 frames
+                if (i + 1) % 10 == 0 or i == 0:
+                    self.params.log_params.append_to_logs(f"Processed frame {i + 1}/{len(input_frames)}\n")
 
-        self.append_value_to_parameter("logs", "Exporting depth video...\n")
+        self.params.log_params.append_to_logs("Exporting depth video...\n")
 
         # Export frames to video
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_file_obj:

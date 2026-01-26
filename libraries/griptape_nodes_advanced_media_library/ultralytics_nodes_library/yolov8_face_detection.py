@@ -115,14 +115,13 @@ class YOLOv8FaceDetection(ControlNode):
         return BoundingBox(x=new_x, y=new_y, width=new_width, height=new_height)
 
     def process(self) -> AsyncResult | None:
-        self.append_value_to_parameter("logs", "Loading YOLOv8 face detection model...\n")
+        self.params.log_params.append_to_logs("Loading YOLOv8 face detection model...\n")
 
         cache_key = self.params.get_cache_key()
         builder = self.params.get_model_builder()
 
-        model = yield lambda: model_cache.get_or_build_pipeline(cache_key, builder)
-
-        self.append_value_to_parameter("logs", "Model loading complete.\n")
+        with self.params.log_params.append_profile_to_logs("Loading model"):
+            model = yield lambda: model_cache.get_or_build_pipeline(cache_key, builder)
 
         yield lambda: self._process(model)
 
@@ -141,8 +140,8 @@ class YOLOv8FaceDetection(ControlNode):
         confidence_threshold = float(self.get_parameter_value("confidence_threshold") or 0.5)
         dilation = float(self.get_parameter_value("dilation") or 0.0)
 
-        self.append_value_to_parameter(
-            "logs", f"Running face detection (confidence threshold: {confidence_threshold})...\n"
+        self.params.log_params.append_to_logs(
+            f"Running face detection (confidence threshold: {confidence_threshold})...\n"
         )
 
         # Run YOLO inference
@@ -179,7 +178,7 @@ class YOLOv8FaceDetection(ControlNode):
                     }
                 )
 
-        self.append_value_to_parameter("logs", f"Detected {len(detected_faces)} face(s)\n")
+        self.params.log_params.append_to_logs(f"Detected {len(detected_faces)} face(s)\n")
 
         # Set output
         self.set_parameter_value("detected_faces", detected_faces)
