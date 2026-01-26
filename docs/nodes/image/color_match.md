@@ -21,8 +21,8 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the ColorMatch node to your workflow
-2. Connect the target image to "input_image" (the image you want to modify)
-3. Connect the reference image to "reference_image" (the image with the color palette you want to copy)
+2. Connect the reference image to "reference_image" (the image with the color palette you want to copy)
+3. Connect the target image to "target_image" (the image you want to modify)
 4. Select a color transfer method
 5. Adjust the strength parameter as needed
 6. The color-matched image will be available at the "output" parameter
@@ -31,8 +31,8 @@ Use this node when you want to:
 
 #### Image Inputs
 
-- **input_image**: The target image to apply color transfer to (will be modified)
 - **reference_image**: The reference image providing the color palette to transfer
+- **target_image**: The target image to apply color transfer to (will be modified)
 
 #### Color Match Settings
 

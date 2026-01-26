@@ -9,18 +9,20 @@ and Multi-Variate Gaussian Distribution methods.
 from typing import Any, ClassVar
 
 import numpy as np
+from griptape.artifacts import ImageUrlArtifact
 from PIL import Image
 
 from color_matcher import ColorMatcher
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
-from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -28,7 +30,7 @@ from griptape_nodes_library.utils.image_utils import (
 )
 
 
-class ColorMatch(BaseImageProcessor):
+class ColorMatch(SuccessFailureNode):
     """Transfer color characteristics from a reference image to a target image.
 
     This node uses the color-matcher library to perform color transfer between images,
@@ -56,17 +58,32 @@ class ColorMatch(BaseImageProcessor):
     MAX_STRENGTH = 10.0
     DEFAULT_STRENGTH = 1.0
 
-    def _setup_custom_parameters(self) -> None:
-        """Setup color match specific parameters."""
-        # Reference image input
-        with ParameterGroup(name="inputs", ui_options={"collapsed": False}) as inputs_group:
-            ref_image_param = ParameterImage(
+    def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
+        super().__init__(name, metadata)
+
+        # Reference image input (FIRST - the source of the color palette)
+        self.add_parameter(
+            ParameterImage(
                 name="reference_image",
                 tooltip="Reference image - the source of the color palette to transfer",
+                ui_options={
+                    "clickable_file_browser": True,
+                    "expander": True,
+                },
             )
-            self.add_parameter(ref_image_param)
+        )
 
-        self.add_node_element(inputs_group)
+        # Target image input (SECOND - the image to modify)
+        self.add_parameter(
+            ParameterImage(
+                name="target_image",
+                tooltip="Target image - the image to apply the color transfer to",
+                ui_options={
+                    "clickable_file_browser": True,
+                    "expander": True,
+                },
+            )
+        )
 
         # Color match settings
         with ParameterGroup(name="color_match_settings", ui_options={"collapsed": False}) as settings_group:
@@ -102,17 +119,34 @@ class ColorMatch(BaseImageProcessor):
 
         self.add_node_element(settings_group)
 
+        # Output image parameter
+        self.add_parameter(
+            ParameterImage(
+                name="output",
+                allowed_modes={ParameterMode.OUTPUT},
+                tooltip="The color-matched output image",
+                ui_options={"pulse_on_run": True, "expander": True},
+            )
+        )
+
+        # Add status parameters using the SuccessFailureNode helper method
+        self._create_status_parameters(
+            result_details_tooltip="Details about the color matching result",
+            result_details_placeholder="Details on the color matching will be presented here.",
+            parameter_group_initially_collapsed=True,
+        )
+
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Process image automatically when inputs or parameters change."""
-        if parameter.name in ["input_image", "reference_image"] and value is not None:
+        if parameter.name in ["target_image", "reference_image"] and value is not None:
             # Check if both images are available
-            target_image = self.get_parameter_value("input_image")
+            target_image = self.get_parameter_value("target_image")
             ref_image = self.get_parameter_value("reference_image")
             if target_image is not None and ref_image is not None:
                 self._process_images_immediately(target_image, ref_image)
         elif parameter.name in ["method", "strength"]:
             # Process when color match parameters change (for live preview)
-            target_image = self.get_parameter_value("input_image")
+            target_image = self.get_parameter_value("target_image")
             ref_image = self.get_parameter_value("reference_image")
             if target_image is not None and ref_image is not None:
                 self._process_images_immediately(target_image, ref_image)
@@ -137,10 +171,10 @@ class ColorMatch(BaseImageProcessor):
             ref_pil = load_pil_from_url(ref_artifact.value)
 
             # Process with current settings
-            processed_image = self._process_images(target_pil, ref_pil, **self._get_custom_parameters())
+            processed_image = self._process_images(target_pil, ref_pil)
 
             # Save and set output with proper filename
-            filename = self._generate_processed_image_filename("png")
+            filename = self._generate_filename("_colormatch", "png")
             output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
 
             self.set_parameter_value("output", output_artifact)
@@ -150,31 +184,20 @@ class ColorMatch(BaseImageProcessor):
             # Log error but don't fail the node
             logger.warning(f"{self.name}: Live preview failed: {e}")
 
-    def _get_processing_description(self) -> str:
-        """Get description of what this processor does."""
-        return "color matching/transfer"
-
-    def _process_image(self, pil_image: Image.Image, **kwargs) -> Image.Image:  # noqa: ARG002
-        """Process a single image (required by BaseImageProcessor).
-
-        This method is required by the abstract base class but not used for this node
-        since we work with two images. Return the input image unchanged.
-        """
-        return pil_image
-
-    def _process_images(self, target_pil: Image.Image, ref_pil: Image.Image, **kwargs) -> Image.Image:
+    def _process_images(self, target_pil: Image.Image, ref_pil: Image.Image) -> Image.Image:
         """Process the PIL images by applying color transfer.
 
         Args:
             target_pil: The target image to apply color transfer to
             ref_pil: The reference image providing the color palette
-            **kwargs: Additional parameters (method, strength)
 
         Returns:
             The color-matched image
         """
-        method = kwargs.get("method", "mkl")
-        strength = kwargs.get("strength", self.DEFAULT_STRENGTH)
+        method = self.get_parameter_value("method") or "mkl"
+        strength = self.get_parameter_value("strength")
+        if strength is None:
+            strength = self.DEFAULT_STRENGTH
 
         # Skip processing if strength is 0
         if strength == 0:
@@ -218,14 +241,22 @@ class ColorMatch(BaseImageProcessor):
         result_uint8 = (result * 255).astype(np.uint8)
         return Image.fromarray(result_uint8, mode="RGB")
 
-    def _validate_custom_parameters(self) -> list[Exception] | None:
-        """Validate color match parameters."""
+    def _generate_filename(self, suffix: str = "", extension: str = "png") -> str:
+        """Generate a meaningful filename based on workflow and node information."""
+        return generate_filename(
+            node_name=self.name,
+            suffix=suffix,
+            extension=extension,
+        )
+
+    def validate_before_node_run(self) -> list[Exception] | None:
+        """Validate parameters before running."""
         exceptions = []
 
         # Check that both images are provided
-        input_image = self.get_parameter_value("input_image")
+        target_image = self.get_parameter_value("target_image")
         ref_image = self.get_parameter_value("reference_image")
-        if input_image is None:
+        if target_image is None:
             exceptions.append(ValueError(f"{self.name} - Target image is required"))
         if ref_image is None:
             exceptions.append(ValueError(f"{self.name} - Reference image is required"))
@@ -242,18 +273,13 @@ class ColorMatch(BaseImageProcessor):
             msg = f"{self.name} - Invalid method '{method}'. Must be one of: {', '.join(self.COLOR_MATCH_METHODS)}"
             exceptions.append(ValueError(msg))
 
+        # Set failure status if there are validation errors
+        if exceptions:
+            error_messages = [str(e) for e in exceptions]
+            error_details = f"Validation failed: {'; '.join(error_messages)}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_details}")
+
         return exceptions if exceptions else None
-
-    def _get_custom_parameters(self) -> dict[str, Any]:
-        """Get color match parameters."""
-        return {
-            "method": self.get_parameter_value("method"),
-            "strength": self.get_parameter_value("strength"),
-        }
-
-    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
-        """Get output filename suffix."""
-        return "_colormatch"
 
     async def aprocess(self) -> None:
         """Main workflow execution method."""
@@ -261,7 +287,7 @@ class ColorMatch(BaseImageProcessor):
         self._clear_execution_status()
 
         # Get input images
-        target_image = self.get_parameter_value("input_image")
+        target_image = self.get_parameter_value("target_image")
         ref_image = self.get_parameter_value("reference_image")
 
         if target_image is None or ref_image is None:
@@ -281,10 +307,10 @@ class ColorMatch(BaseImageProcessor):
             ref_pil = load_pil_from_url(ref_image.value)
 
             # Process with current settings
-            processed_image = self._process_images(target_pil, ref_pil, **self._get_custom_parameters())
+            processed_image = self._process_images(target_pil, ref_pil)
 
             # Save and set output with proper filename
-            filename = self._generate_processed_image_filename("png")
+            filename = self._generate_filename("_colormatch", "png")
             output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
 
             self.set_parameter_value("output", output_artifact)
@@ -294,7 +320,7 @@ class ColorMatch(BaseImageProcessor):
             method = self.get_parameter_value("method")
             strength = self.get_parameter_value("strength")
             success_details = (
-                f"Successfully applied color transfer: {self._get_processing_description()}\n"
+                f"Successfully applied color transfer\n"
                 f"Method: {method}, Strength: {strength}\n"
                 f"Target: {target_pil.width}x{target_pil.height}\n"
                 f"Reference: {ref_pil.width}x{ref_pil.height}\n"
@@ -307,7 +333,7 @@ class ColorMatch(BaseImageProcessor):
             logger.error(f"{self.name}: Processing failed: {error_message}")
 
             # Set failure status with detailed error information
-            failure_details = f"Color matching failed: {self._get_processing_description()}\nError: {error_message}"
+            failure_details = f"Color matching failed\nError: {error_message}"
             self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
 
             # Handle failure based on whether failure output is connected
