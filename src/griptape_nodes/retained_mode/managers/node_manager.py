@@ -3136,7 +3136,7 @@ class NodeManager:
                     if not child_name:
                         continue
                     if child_name in explicitly_selected and child_name in node_commands:
-                        # We need to remove the explicity selected name from the commands that already exist
+                        # We need to remove the explicitly selected name from the commands that already exist
                         node_commands.pop(child_name)
                         duplicated_node_uuid = node_name_to_uuid.pop(child_name)
                         parameter_commands.pop(duplicated_node_uuid)
