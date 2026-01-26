@@ -9,17 +9,15 @@ and Multi-Variate Gaussian Distribution methods.
 from typing import Any, ClassVar
 
 import numpy as np
-from griptape.artifacts import ImageUrlArtifact
+from color_matcher import ColorMatcher  # type: ignore[reportMissingImports]
 from PIL import Image
-
-from color_matcher import ColorMatcher
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.file_utils import generate_filename
@@ -229,8 +227,7 @@ class ColorMatch(SuccessFailureNode):
         cm = ColorMatcher()
         result = cm.transfer(src=target_np, ref=ref_np, method=method)
 
-        # Apply strength blending if not 1.0
-        # Formula: result = target + strength * (result - target)
+        # Apply strength blending if not 1.0 using linear interpolation
         if strength != 1.0:
             result = target_np + strength * (result - target_np)
 
