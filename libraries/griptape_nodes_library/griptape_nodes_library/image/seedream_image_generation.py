@@ -7,7 +7,7 @@ from contextlib import suppress
 from copy import deepcopy
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageUrlArtifact, ImageArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
