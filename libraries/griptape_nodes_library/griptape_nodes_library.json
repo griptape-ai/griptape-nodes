@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.58.0",
+    "library_version": "0.59.0",
     "engine_version": "0.71.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
@@ -40,7 +40,8 @@
         "numpy>=1.26.0",
         "scikit-learn>=1.3.0",
         "pillow>=11.2.1",
-        "asteval>=1.0.8"
+        "asteval>=1.0.8",
+        "color-matcher"
       ]
     }
   },
@@ -2650,6 +2651,17 @@
         "description": "Split a grid image into individual images (auto or manual grid detection).",
         "display_name": "Image Grid Splitter",
         "icon": "grid-3x3",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "ColorMatch",
+      "file_path": "griptape_nodes_library/image/color_match.py",
+      "metadata": {
+        "category": "image",
+        "description": "Transfer color characteristics from a reference image to a target image using various color matching algorithms.",
+        "display_name": "Color Match",
+        "icon": "palette",
         "group": "edit"
       }
     }
