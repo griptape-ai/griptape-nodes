@@ -4,6 +4,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator
 from types import TracebackType
+from typing import Self
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
@@ -71,7 +72,7 @@ class StdoutCapture:
     def isatty(self) -> bool:
         return self._original_stdout.isatty()
 
-    def __enter__(self) -> "StdoutCapture":
+    def __enter__(self) -> Self:
         sys.stdout = self
         return self
 
@@ -100,7 +101,7 @@ class LoggerCapture:
         self.target_level = level
         self._handler = CallbackHandler(callback)
 
-    def __enter__(self) -> "LoggerCapture":
+    def __enter__(self) -> Self:
         self.original_level = self.logger.level
         self.logger.setLevel(self.target_level)
         self.logger.addHandler(self._handler)
