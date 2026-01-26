@@ -21,11 +21,11 @@ Use this node when you want to:
 ### Basic Setup
 
 1. Add the ColorMatch node to your workflow
-2. Connect the reference image to "reference_image" (the image with the color palette you want to copy)
-3. Connect the target image to "target_image" (the image you want to modify)
-4. Select a color transfer method
-5. Adjust the strength parameter as needed
-6. The color-matched image will be available at the "output" parameter
+1. Connect the reference image to "reference_image" (the image with the color palette you want to copy)
+1. Connect the target image to "target_image" (the image you want to modify)
+1. Select a color transfer method
+1. Adjust the strength parameter as needed
+1. The color-matched image will be available at the "output" parameter
 
 ### Parameters
 
@@ -60,12 +60,12 @@ Use this node when you want to:
 A typical color matching workflow:
 
 1. Load two images using LoadImage nodes
-2. Connect the image you want to modify to "input_image"
-3. Connect the reference image (with the desired colors) to "reference_image"
-4. Select the "mkl" method for a good balance of speed and quality
-5. Set strength to 1.0 for full color transfer
-6. Connect the "output" to DisplayImage to view the result
-7. Adjust strength if the effect is too strong or too subtle
+1. Connect the image you want to modify to "input_image"
+1. Connect the reference image (with the desired colors) to "reference_image"
+1. Select the "mkl" method for a good balance of speed and quality
+1. Set strength to 1.0 for full color transfer
+1. Connect the "output" to DisplayImage to view the result
+1. Adjust strength if the effect is too strong or too subtle
 
 ### Use Cases
 
@@ -74,26 +74,26 @@ A typical color matching workflow:
 Match the color palette of a professionally graded photo to your own images:
 
 1. Load your photo as the target image
-2. Load the reference photo with the desired color grading
-3. Use "reinhard" or "mkl" method
-4. Adjust strength to taste (0.7-1.0 for subtle, 1.0-1.5 for dramatic)
+1. Load the reference photo with the desired color grading
+1. Use "reinhard" or "mkl" method
+1. Adjust strength to taste (0.7-1.0 for subtle, 1.0-1.5 for dramatic)
 
 #### Stop-Motion Correction
 
 Correct lighting inconsistencies between stop-motion frames:
 
 1. Load a frame with correct lighting as the reference
-2. Load frames that need correction as target images
-3. Use "mkl" method for fast processing
-4. Set strength to 1.0 for accurate matching
+1. Load frames that need correction as target images
+1. Use "mkl" method for fast processing
+1. Set strength to 1.0 for accurate matching
 
 #### Batch Style Transfer
 
 Apply a consistent color style across multiple images:
 
 1. Load your style reference image
-2. Process each target image through the ColorMatch node
-3. Use "hm-mvgd-hm" for highest quality results
+1. Process each target image through the ColorMatch node
+1. Use "hm-mvgd-hm" for highest quality results
 
 ## Important Notes
 
