@@ -6,8 +6,9 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest, WriteFileResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils import resolve_workspace_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -44,7 +45,7 @@ class LocalStorageDriver(BaseStorageDriver):
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> CreateSignedUploadUrlResponse:
         # on_write_file_request seems to work most reliably with an absolute path.
-        absolute_path = path if path.is_absolute() else self.workspace_directory / path
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
 
         # Always delegate to OSManager for file path resolution and policy handling.
         # Creating an empty file before the upload url gives us a chance to claim ownership
@@ -94,9 +95,55 @@ class LocalStorageDriver(BaseStorageDriver):
             "file_path": str(resolved_path),
         }
 
+    def save_file(
+        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    ) -> str:
+        """Save a file to local storage by writing directly to disk.
+
+        Args:
+            path: The path of the file to save.
+            file_content: The file content as bytes.
+            existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+
+        Returns:
+            The absolute file path where the file was saved.
+
+        Raises:
+            FileExistsError: When existing_file_policy is FAIL and file already exists.
+            RuntimeError: If file write fails.
+        """
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
+
+        result = GriptapeNodes.OSManager().on_write_file_request(
+            WriteFileRequest(
+                file_path=str(absolute_path),
+                content=file_content,
+                existing_file_policy=existing_file_policy,
+            )
+        )
+
+        if not isinstance(result, WriteFileResultSuccess):
+            msg = f"Failed to write file {path}: {result.result_details}"
+            raise ValueError(msg)  # noqa: TRY004
+
+        return result.final_file_path
+
     def create_signed_download_url(self, path: Path) -> str:
-        # The base_url already includes the /static path, so just append the path
-        url = f"{self.base_url}/{path.as_posix()}"
+        # Resolve path, treating relative paths as workspace-relative
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
+
+        # Automatically determine if the file is external to the workspace
+        try:
+            workspace_relative_path = absolute_path.relative_to(self.workspace_directory.resolve())
+            # Internal files: use workspace-relative path
+            url = f"{self.base_url}/{workspace_relative_path.as_posix()}"
+        except ValueError:
+            # For external files, use /external path and strip leading slash from absolute path
+            path_str = str(absolute_path).removeprefix("/")
+            # Build URL with /external prefix, replacing the /workspace part of base_url
+            base_without_workspace = self.base_url.rsplit("/workspace", 1)[0]
+            url = f"{base_without_workspace}/external/{path_str}"
+
         # Add a cache-busting query parameter to the URL so that the browser always reloads the file
         cache_busted_url = f"{url}?t={int(time.time())}"
         return cache_busted_url
@@ -137,3 +184,17 @@ class LocalStorageDriver(BaseStorageDriver):
 
         response_data = response.json()
         return response_data.get("files", [])
+
+    def get_asset_url(self, path: Path) -> str:
+        """Get the permanent URL for a local asset.
+
+        Returns the absolute file path.
+
+        Args:
+            path: The path of the file
+
+        Returns:
+            Absolute file path as a string
+        """
+        absolute_path = resolve_workspace_path(path, self.workspace_directory)
+        return str(absolute_path)

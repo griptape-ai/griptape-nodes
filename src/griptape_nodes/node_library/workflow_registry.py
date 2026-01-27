@@ -12,6 +12,7 @@ from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -175,15 +176,11 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     def get_complete_file_path(cls, relative_file_path: str) -> str:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        # If the path is already absolute, return it as-is
-        if Path(relative_file_path).is_absolute():
-            return relative_file_path
-
-        # Otherwise, resolve it relative to the workspace
+        # Resolve path using utility function
         config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
-        complete_file_path = workspace_path / relative_file_path
-        return str(complete_file_path)
+        resolved_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
+        return str(resolved_path)
 
     @classmethod
     def delete_workflow_by_name(cls, name: str) -> Workflow:
