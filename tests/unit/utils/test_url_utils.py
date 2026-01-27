@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from griptape_nodes.utils.url_utils import (
@@ -9,6 +10,8 @@ from griptape_nodes.utils.url_utils import (
     is_url_or_path,
     uri_to_path,
 )
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 class TestIsUrlOrPath:
@@ -118,32 +121,44 @@ class TestGetContentTypeFromExtension:
         assert get_content_type_from_extension("photo.jpeg") == "image/jpeg"
         assert get_content_type_from_extension("icon.gif") == "image/gif"
         assert get_content_type_from_extension("vector.svg") == "image/svg+xml"
-        assert get_content_type_from_extension("image.webp") == "image/webp"
+        # webp MIME type may not be registered on Windows
+        webp_result = get_content_type_from_extension("image.webp")
+        assert webp_result in ("image/webp", None)
 
     def test_text_extensions(self) -> None:
         """Test text file extensions."""
         assert get_content_type_from_extension("file.txt") == "text/plain"
         assert get_content_type_from_extension("page.html") == "text/html"
         assert get_content_type_from_extension("style.css") == "text/css"
-        assert get_content_type_from_extension("script.js") == "text/javascript"
+        # JavaScript MIME type varies: text/javascript (standard) vs application/javascript (also valid)
+        js_result = get_content_type_from_extension("script.js")
+        assert js_result in ("text/javascript", "application/javascript")
 
     def test_data_extensions(self) -> None:
         """Test data file extensions."""
         assert get_content_type_from_extension("data.json") == "application/json"
-        assert get_content_type_from_extension("data.xml") == "application/xml"
-        assert get_content_type_from_extension("archive.zip") == "application/zip"
+        # XML MIME type varies: application/xml vs text/xml
+        xml_result = get_content_type_from_extension("data.xml")
+        assert xml_result in ("application/xml", "text/xml")
+        # ZIP MIME type varies: application/zip vs application/x-zip-compressed
+        zip_result = get_content_type_from_extension("archive.zip")
+        assert zip_result in ("application/zip", "application/x-zip-compressed")
         assert get_content_type_from_extension("document.pdf") == "application/pdf"
 
     def test_video_extensions(self) -> None:
         """Test video file extensions."""
         assert get_content_type_from_extension("video.mp4") == "video/mp4"
         assert get_content_type_from_extension("video.webm") == "video/webm"
-        assert get_content_type_from_extension("movie.avi") == "video/x-msvideo"
+        # AVI MIME type varies: video/x-msvideo vs video/avi
+        avi_result = get_content_type_from_extension("movie.avi")
+        assert avi_result in ("video/x-msvideo", "video/avi")
 
     def test_audio_extensions(self) -> None:
         """Test audio file extensions."""
         assert get_content_type_from_extension("audio.mp3") == "audio/mpeg"
-        assert get_content_type_from_extension("audio.wav") == "audio/x-wav"
+        # WAV MIME type varies: audio/x-wav vs audio/wav
+        wav_result = get_content_type_from_extension("audio.wav")
+        assert wav_result in ("audio/x-wav", "audio/wav")
         assert get_content_type_from_extension("audio.ogg") == "audio/ogg"
 
     def test_path_object_input(self) -> None:
@@ -172,7 +187,9 @@ class TestGetContentTypeFromExtension:
 
     def test_multiple_dots(self) -> None:
         """Test files with multiple dots in name."""
-        assert get_content_type_from_extension("file.min.js") == "text/javascript"
+        # JavaScript MIME type varies: text/javascript vs application/javascript
+        js_result = get_content_type_from_extension("file.min.js")
+        assert js_result in ("text/javascript", "application/javascript")
         assert get_content_type_from_extension("archive.tar.gz") == "application/x-tar"
         assert get_content_type_from_extension("data.backup.json") == "application/json"
 
@@ -190,13 +207,15 @@ class TestUriToPath:
         """Test conversion of Unix file URIs."""
         result = uri_to_path("file:///home/user/file.txt")
         assert isinstance(result, Path)
-        assert str(result) == "/home/user/file.txt"
+        # Use as_posix() for cross-platform comparison
+        assert result.as_posix() == "/home/user/file.txt"
 
     def test_unix_absolute_path(self) -> None:
         """Test conversion of Unix absolute paths."""
         result = uri_to_path("file:///var/log/app.log")
         assert isinstance(result, Path)
-        assert str(result) == "/var/log/app.log"
+        # Use as_posix() for cross-platform comparison
+        assert result.as_posix() == "/var/log/app.log"
 
     def test_windows_file_uri(self) -> None:
         """Test conversion of Windows file URIs."""
@@ -209,13 +228,15 @@ class TestUriToPath:
         """Test URIs with URL-encoded spaces."""
         result = uri_to_path("file:///home/user/my%20file.txt")
         assert isinstance(result, Path)
-        assert str(result) == "/home/user/my file.txt"
+        # Use as_posix() for cross-platform comparison
+        assert result.as_posix() == "/home/user/my file.txt"
 
     def test_uri_with_special_characters(self) -> None:
         """Test URIs with URL-encoded special characters."""
         result = uri_to_path("file:///path/with%20spaces%20and%20%26%20symbols.txt")
         assert isinstance(result, Path)
-        assert str(result) == "/path/with spaces and & symbols.txt"
+        # Use as_posix() for cross-platform comparison
+        assert result.as_posix() == "/path/with spaces and & symbols.txt"
 
     def test_returns_path_object(self) -> None:
         """Test that the function returns a Path object."""
