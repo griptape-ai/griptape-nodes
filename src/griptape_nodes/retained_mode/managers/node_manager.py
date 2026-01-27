@@ -3210,6 +3210,14 @@ class NodeManager:
         # Final result for serialized node commands
         # Children must come before parents for proper deserialization ordering
         all_serialized_commands = child_node_commands_list + list(node_commands.values())
+
+        # Build node_names_in_order to match the actual command serialization order
+        # This ensures remake_connections receives matching old/new node name lists
+        uuid_to_node_name = {uuid: name for name, uuid in node_name_to_uuid.items()}
+        node_names_in_order = []
+        for command in all_serialized_commands:
+            node_name = uuid_to_node_name[command.node_uuid]
+            node_names_in_order.append(node_name)
         final_result = SerializedSelectedNodesCommands(
             serialized_node_commands=all_serialized_commands,
             serialized_connection_commands=serialized_connections,
@@ -3233,6 +3241,7 @@ class NodeManager:
         return SerializeSelectedNodesToCommandsResultSuccess(
             pickled_commands_string,  # Send pickled string instead of object
             pickled_values=encoded_values,
+            node_names_serialized=node_names_in_order,
             result_details=f"Successfully serialized {len(request.nodes_to_serialize)} selected nodes to commands.",
         )
 
@@ -3403,13 +3412,13 @@ class NodeManager:
             return DuplicateSelectedNodesResultFailure(result_details=details)
 
         # Remake duplicate connections of node
-        # request.nodes_to_duplicate is in this format: ['nodes_to_duplicate1', 'time'], ['nodes_to_duplicate2', 'time']
-        # This list comprehension gets the first element in each sublist in order to generate the old_node_names
-        initial_nodes = [sublist[0] for sublist in request.nodes_to_duplicate]
 
-        NodeManager.remake_connections(self, new_node_names=result.node_names, old_node_names=initial_nodes)
+        NodeManager.remake_connections(
+            self, new_node_names=result.node_names, old_node_names=serialize_result.node_names_serialized
+        )
         return DuplicateSelectedNodesResultSuccess(
-            result.node_names, result_details=f"Successfully duplicated {len(initial_nodes)} nodes."
+            result.node_names,
+            result_details=f"Successfully duplicated {len(serialize_result.node_names_serialized)} nodes.",
         )
 
     @staticmethod

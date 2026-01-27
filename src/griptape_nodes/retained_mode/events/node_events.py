@@ -651,6 +651,7 @@ class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, Res
     # Could be a flow command if it's all nodes in a flow.
     serialized_selected_node_commands: str
     pickled_values: dict[str, str]
+    node_names_serialized: list[str]
 
 
 @dataclass
