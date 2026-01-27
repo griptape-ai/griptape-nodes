@@ -100,27 +100,38 @@ class CreateStaticFileUploadUrlResultFailure(WorkflowNotAlteredMixin, ResultPayl
 @dataclass
 @PayloadRegistry.register
 class CreateStaticFileDownloadUrlRequest(RequestPayload):
-    """Create a presigned URL for downloading a static file via HTTP GET.
+    """Create a presigned URL for downloading a static file from the staticfiles directory via HTTP GET.
 
-    Use when: Providing secure file access, implementing file sharing,
-    enabling temporary download links, controlling file access permissions.
+    Use when: Providing secure file access to files in the staticfiles directory,
+    implementing file sharing, enabling temporary download links, controlling file access permissions.
 
     Args:
-        file_name: Name of the file to be downloaded (deprecated, use file_url)
-        file_url: File URL or path. Accepts both:
-                  - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
-                  - Absolute paths (e.g., "/absolute/path/to/file.jpg")
-                  - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
-                  If relative, resolved relative to workspace root. If outside workspace,
-                  file will be copied to staticfiles directory.
+        file_name: Name of the file to be downloaded from the staticfiles directory
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
-
-    Note: Exactly one of file_name or file_url must be provided.
     """
 
-    file_name: str | None = None
-    file_url: str | None = None
+    file_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
+    """Create a presigned URL for downloading a file from an arbitrary path.
+
+    Use when: Need to create download URLs for files outside the staticfiles directory,
+    working with absolute paths, file:// URLs, or workspace-relative paths.
+
+    Args:
+        file_path: File path or URL. Accepts:
+                   - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
+                   - Absolute paths (e.g., "/absolute/path/to/file.jpg")
+                   - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+
+    Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
+    """
+
+    file_path: str
 
 
 @dataclass

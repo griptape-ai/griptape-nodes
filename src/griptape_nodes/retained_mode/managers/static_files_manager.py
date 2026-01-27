@@ -13,6 +13,7 @@ from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriv
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.static_file_events import (
+    CreateStaticFileDownloadUrlFromPathRequest,
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
     CreateStaticFileDownloadUrlResultSuccess,
@@ -96,6 +97,10 @@ class StaticFilesManager:
             event_manager.assign_manager_to_request_type(
                 CreateStaticFileDownloadUrlRequest, self.on_handle_create_static_file_download_url_request
             )
+            event_manager.assign_manager_to_request_type(
+                CreateStaticFileDownloadUrlFromPathRequest,
+                self.on_handle_create_static_file_download_url_from_path_request,
+            )
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
@@ -156,34 +161,48 @@ class StaticFilesManager:
         self,
         request: CreateStaticFileDownloadUrlRequest,
     ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
-        """Handle the request to create a presigned URL for downloading a static file.
+        """Handle the request to create a presigned URL for downloading a static file from the staticfiles directory.
 
         Args:
-            request: The request object containing the file name or file URL.
+            request: The request object containing the file name.
 
         Returns:
             A result object indicating success or failure.
         """
         resolved_directory = self._get_static_files_directory()
-        file_name = request.file_name
-        file_url = request.file_url
+        full_file_path = Path(resolved_directory) / request.file_name
 
-        if file_name is not None:
-            full_file_path = Path(resolved_directory) / file_name
-        elif file_url is not None:
-            full_file_path = Path(uri_to_path(file_url))
-        else:
-            return CreateStaticFileDownloadUrlResultFailure(
-                error="Either file_name or file_url must be provided.",
-                result_details="Invalid request parameters.",
-            )
+        try:
+            url = self.storage_driver.create_signed_download_url(full_file_path)
+        except Exception as e:
+            msg = f"Failed to create presigned URL for file {request.file_name}: {e}"
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        return CreateStaticFileDownloadUrlResultSuccess(
+            url=url,
+            file_url=self.storage_driver.get_asset_url(full_file_path),
+            result_details="Successfully created static file download URL",
+        )
+
+    def on_handle_create_static_file_download_url_from_path_request(
+        self,
+        request: CreateStaticFileDownloadUrlFromPathRequest,
+    ) -> CreateStaticFileDownloadUrlResultSuccess | CreateStaticFileDownloadUrlResultFailure:
+        """Handle request to create download URL from arbitrary file path.
+
+        Args:
+            request: Request containing file_path parameter.
+
+        Returns:
+            Result with download URL or failure message.
+        """
+        full_file_path = Path(uri_to_path(request.file_path))
 
         try:
             # TODO: use the driver appropriate for the file format. i.e. If local path use LocalStorageDriver, if GTC path use GriptapeCloudStorageDriver https://github.com/griptape-ai/griptape-nodes/issues/3739
             url = self.storage_driver.create_signed_download_url(full_file_path)
         except Exception as e:
-            identifier = file_name if file_name is not None else file_url
-            msg = f"Failed to create presigned URL for file {identifier}: {e}"
+            msg = f"Failed to create presigned URL for file {request.file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
@@ -203,7 +222,7 @@ class StaticFilesManager:
         file_name: str,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        use_direct_save: bool = False,
+        use_direct_save: bool = True,
     ) -> str:
         """Saves a static file to the workspace directory.
 
