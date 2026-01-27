@@ -3315,7 +3315,10 @@ class NodeManager:
                         remapped_child_names.append(node_uuid_to_name[child_uuid])
                     else:
                         # This shouldn't happen - child should have been created first
-                        logger.warning("Child node UUID %s not found in UUID mapping", child_uuid)
+                        logger.error("Child node UUID %s not found in UUID mapping", child_uuid)
+                        return DeserializeSelectedNodesFromCommandsResultFailure(
+                            result_details="Child node UUID not found in UUID mapping"
+                        )
 
                 # Update node_names_to_add with the remapped names
                 node_command.create_node_command.node_names_to_add = remapped_child_names
