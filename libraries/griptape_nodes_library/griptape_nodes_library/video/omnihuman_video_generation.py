@@ -31,6 +31,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
@@ -376,7 +377,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
     def _is_external_url(self, url: str) -> bool:
         """Check if a URL is external (not localhost)."""
-        return url.startswith(("http://", "https://")) and "localhost" not in url
+        return is_url_or_path(url) and "localhost" not in url
 
     def _read_local_file(self, url: str) -> bytes | None:
         """Read file contents from local static files directory."""
