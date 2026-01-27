@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -342,7 +343,7 @@ def convert_image_value_to_base64_data_uri(image_value: str, context_name: str =
         return image_value
 
     # If it's a URL, return None (caller should handle async download)
-    if image_value.startswith(("http://", "https://")):
+    if is_url_or_path(image_value):
         return None
 
     # Try to read as file path first (works cross-platform)

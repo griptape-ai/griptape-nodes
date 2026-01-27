@@ -25,6 +25,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -625,7 +626,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             return image_value
 
         # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
+        if is_url_or_path(image_value):
             return await self._download_and_encode_image(image_value)
 
         # Assume it's raw base64 without data URI prefix

@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 
 logger = logging.getLogger("griptape_nodes")
@@ -607,7 +608,7 @@ class Rodin23DGeneration(SuccessFailureNode):
         import base64
 
         # If it's a URL, download the image
-        if value.startswith(("http://", "https://")):
+        if is_url_or_path(value):
             return await self._download_bytes_from_url(value)
 
         # If it's a data URI, extract and decode the base64 part

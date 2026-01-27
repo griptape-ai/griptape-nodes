@@ -22,6 +22,7 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.video_utils import validate_url
 
 
@@ -446,8 +447,8 @@ class ArtifactPathTethering:
 
     @staticmethod
     def _is_url(path: str) -> bool:
-        """Check if the path is a URL."""
-        return path.startswith(("http://", "https://"))
+        """Check if the path is a URL or file path."""
+        return is_url_or_path(path)
 
     def _resolve_file_path(self, file_path: str) -> Path:
         """Resolve file path to absolute path relative to workspace."""
