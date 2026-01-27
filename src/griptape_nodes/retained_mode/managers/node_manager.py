@@ -3213,9 +3213,14 @@ class NodeManager:
 
         # Build node_names_in_order to match the actual command serialization order
         # This ensures remake_connections receives matching old/new node name lists
+        # Exclude child nodes - only include explicitly selected nodes (groups and regular nodes)
         uuid_to_node_name = {uuid: name for name, uuid in node_name_to_uuid.items()}
+        child_node_uuids = {cmd.node_uuid for cmd in child_node_commands_list}
         node_names_in_order = []
         for command in all_serialized_commands:
+            # Skip child nodes - they're handled by their parent groups
+            if command.node_uuid in child_node_uuids:
+                continue
             node_name = uuid_to_node_name[command.node_uuid]
             node_names_in_order.append(node_name)
         final_result = SerializedSelectedNodesCommands(
@@ -3387,8 +3392,10 @@ class NodeManager:
             if result.failed():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
+        # Filter out child nodes - only return explicitly selected nodes for remake_connections
+        explicit_node_names = [name for uuid, name in node_uuid_to_name.items() if uuid not in child_node_uuids]
         return DeserializeSelectedNodesFromCommandsResultSuccess(
-            node_names=list(node_uuid_to_name.values()),
+            node_names=explicit_node_names,
             result_details=f"Successfully deserialized {len(node_uuid_to_name)} nodes from commands.",
         )
 
