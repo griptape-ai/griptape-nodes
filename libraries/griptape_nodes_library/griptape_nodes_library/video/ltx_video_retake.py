@@ -26,6 +26,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -511,7 +512,7 @@ class LTXVideoRetake(SuccessFailureNode):
             return video_url
 
         # If it's an external URL, download and convert to data URL
-        if video_url.startswith(("http://", "https://")):
+        if is_url_or_path(video_url):
             return await self._download_and_encode_video_async(video_url)
 
         # If it's a local URL (e.g., from static files), read and encode
