@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from rich.logging import RichHandler
 
@@ -132,6 +133,70 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
+async def _serve_library_component(library_name: str, file_path: str) -> FileResponse:
+    """Serve a custom component bundle file from a library.
+
+    Custom components are pre-built ES module bundles that libraries can provide
+    for custom parameter UI rendering in the frontend.
+
+    Args:
+        library_name: Name of the library containing the component
+        file_path: Relative path to the component bundle within the library directory
+
+    Returns:
+        FileResponse containing the JavaScript bundle
+
+    Raises:
+        HTTPException: If library not found, file not found, or path traversal detected
+    """
+    library_manager = GriptapeNodes.LibraryManager()
+
+    # Find the library's directory by looking up its info
+    library_dir: Path | None = None
+    for lib_path, lib_info in library_manager._library_file_path_to_info.items():
+        if lib_info.library_name == library_name:
+            library_dir = Path(lib_path).parent
+            break
+
+    if library_dir is None:
+        raise HTTPException(status_code=404, detail=f"Library '{library_name}' not found")
+
+    # Construct full path to the component file
+    full_path = library_dir / file_path
+
+    # Security: Ensure the resolved path is within the library directory
+    try:
+        resolved_path = full_path.resolve()
+        resolved_library_dir = library_dir.resolve()
+        if not resolved_path.is_relative_to(resolved_library_dir):
+            logger.warning("Path traversal attempt detected: %s", file_path)
+            raise HTTPException(status_code=403, detail="Access denied")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check if file exists
+    if not resolved_path.exists():
+        raise HTTPException(status_code=404, detail=f"Component file not found: {file_path}")
+
+    if not resolved_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Path is not a file: {file_path}")
+
+    # Determine content type based on file extension
+    content_type = "application/javascript"
+    if file_path.endswith(".css"):
+        content_type = "text/css"
+    elif file_path.endswith(".json"):
+        content_type = "application/json"
+
+    return FileResponse(
+        path=resolved_path,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+        },
+    )
+
+
 def start_static_server() -> None:
     """Run uvicorn server synchronously using uvicorn.run."""
     logger.debug("Starting static server...")
@@ -145,6 +210,13 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/{file_path_prefix:path}", _list_static_files, methods=["GET"])
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
+    # Route for serving custom component bundles from libraries
+    # The file_path is relative to the library directory (e.g., "components/dist/MyComponent.js")
+    app.add_api_route(
+        "/api/libraries/{library_name}/assets/{file_path:path}",
+        _serve_library_component,
+        methods=["GET"],
+    )
 
     # Build CORS allowed origins list
     allowed_origins = [
@@ -152,6 +224,7 @@ def start_static_server() -> None:
         "https://app.nodes-staging.griptape.ai",
         "https://app-nightly.nodes.griptape.ai",
         "http://localhost:5173",
+        "http://localhost:5174",
         GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
     ]
 

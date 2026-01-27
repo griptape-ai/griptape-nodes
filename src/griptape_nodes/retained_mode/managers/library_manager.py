@@ -58,6 +58,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
+    CustomComponentInfo,
     DiscoveredLibrary,
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
@@ -1895,7 +1896,7 @@ class LibraryManager:
     def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
         # Does this library exist?
         try:
-            LibraryRegistry.get_library(name=request.library)
+            library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
             result = GetAllInfoForLibraryResultFailure(result_details=details)
@@ -1952,11 +1953,42 @@ class LibraryManager:
             # Put it into the map.
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
+        # Build component info list if the library has components
+        components_info: list[CustomComponentInfo] | None = None
+        library_data = library.get_library_data()
+        if library_data.components:
+            logger.info(
+                "Library '%s' has %d component(s), building component info",
+                request.library,
+                len(library_data.components),
+            )
+            # Get the static server base URL for constructing absolute bundle URLs
+            static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            components_info = []
+            for component_def in library_data.components:
+                # Construct the full URL for this component
+                # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/assets/{path}
+                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/assets/{component_def.path}"
+                logger.debug(
+                    "Component '%s' from library '%s': bundle_url=%s",
+                    component_def.name,
+                    request.library,
+                    bundle_url,
+                )
+                components_info.append(
+                    CustomComponentInfo(
+                        name=component_def.name,
+                        bundle_url=bundle_url,
+                        description=component_def.description,
+                    )
+                )
+
         details = f"Successfully got all library info for a Library named '{request.library}'."
         result = GetAllInfoForLibraryResultSuccess(
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,
             node_type_name_to_node_metadata_details=node_type_name_to_node_metadata_details,
+            components=components_info,
             result_details=details,
         )
         return result

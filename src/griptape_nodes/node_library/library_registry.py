@@ -143,6 +143,18 @@ class Setting(BaseModel):
     )  # JSON schema for the setting (including enums)
 
 
+class CustomComponentDefinition(BaseModel):
+    """Defines a custom UI component provided by the library.
+
+    Custom components are pre-built ES module bundles that the frontend
+    can dynamically load to render custom parameter UI.
+    """
+
+    name: str  # Component name (e.g., "ColorGradientPicker")
+    path: str  # Relative path to component JS file (e.g., "components/ColorGradientPicker.js")
+    description: str | None = None  # Optional description for documentation
+
+
 class LibrarySchema(BaseModel):
     """Schema for a library definition file.
 
@@ -151,7 +163,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.4.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.5.0"
 
     name: str
     library_schema_version: str
@@ -163,6 +175,7 @@ class LibrarySchema(BaseModel):
     settings: list[Setting] | None = None
     is_default_library: bool | None = None
     advanced_library_path: str | None = None
+    components: list[CustomComponentDefinition] | None = None
 
 
 class LibraryRegistry(metaclass=SingletonMeta):
