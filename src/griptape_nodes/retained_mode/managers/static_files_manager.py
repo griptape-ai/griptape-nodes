@@ -222,7 +222,7 @@ class StaticFilesManager:
         file_name: str,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
-        use_direct_save: bool = True,
+        use_direct_save: bool = False,
     ) -> str:
         """Saves a static file to the workspace directory.
 
