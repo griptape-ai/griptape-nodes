@@ -2987,7 +2987,7 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
-    def discover_libraries_request(
+    def discover_libraries_request(  # noqa: C901
         self,
         request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
@@ -2997,14 +2997,15 @@ class LibraryManager:
         Scans configured library paths and creates LibraryInfo entries in DISCOVERED state.
         """
         try:
-            config_library_paths = set(self._discover_library_files())
+            config_library_paths = self._discover_library_files()
         except Exception as e:
             logger.exception("Failed to discover library files")
             return DiscoverLibrariesResultFailure(
                 result_details=f"Failed to discover library files: {e}",
             )
 
-        discovered_libraries = set()
+        discovered_libraries = []
+        seen_libraries = set()
 
         # Process sandbox library first if requested
         if request.include_sandbox:
@@ -3033,7 +3034,9 @@ class LibraryManager:
                     # Continue anyway if write failed - lifecycle will fail gracefully
 
                     # Add to discovered libraries with is_sandbox=True
-                    discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
+                    if sandbox_json_path not in seen_libraries:
+                        seen_libraries.add(sandbox_json_path)
+                        discovered_libraries.append(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
                     # Create minimal LibraryInfo entry in discovered state if not already tracked
                     if sandbox_json_path_str not in self._library_file_path_to_info:
@@ -3051,7 +3054,9 @@ class LibraryManager:
             file_path_str = str(file_path)
 
             # Add to discovered libraries with is_sandbox=False
-            discovered_libraries.add(DiscoveredLibrary(path=file_path, is_sandbox=False))
+            if file_path not in seen_libraries:
+                seen_libraries.add(file_path)
+                discovered_libraries.append(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
             # Skip if already tracked
             if file_path_str in self._library_file_path_to_info:
@@ -3230,20 +3235,25 @@ class LibraryManager:
         """Discover library JSON files from config and workspace recursively.
 
         Returns:
-            List of library file paths found
+            List of library file paths found, in the order they appear in config
         """
         config_mgr = GriptapeNodes.ConfigManager()
         user_libraries_section = LIBRARIES_TO_REGISTER_KEY
 
-        discovered_libraries = set()
+        discovered_libraries = []
+        seen_libraries = set()
 
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Recursively find library files, skipping hidden directories
-                discovered_libraries.update(find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
-            elif path.suffix == ".json":
-                discovered_libraries.add(path)
+                for lib_path in find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN):
+                    if lib_path not in seen_libraries:
+                        seen_libraries.add(lib_path)
+                        discovered_libraries.append(lib_path)
+            elif path.suffix == ".json" and path not in seen_libraries:
+                seen_libraries.add(path)
+                discovered_libraries.append(path)
 
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
@@ -3254,7 +3264,7 @@ class LibraryManager:
                 if library_path.exists():
                     process_path(library_path)
 
-        return list(discovered_libraries)
+        return discovered_libraries
 
     async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Check if a library has updates available via git."""

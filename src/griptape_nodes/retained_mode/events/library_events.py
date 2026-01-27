@@ -607,7 +607,7 @@ class DiscoverLibrariesRequest(RequestPayload):
 class DiscoverLibrariesResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Libraries discovered successfully."""
 
-    libraries_discovered: set[DiscoveredLibrary]  # Discovered libraries with type info
+    libraries_discovered: list[DiscoveredLibrary]  # Discovered libraries in config order
 
 
 @dataclass
