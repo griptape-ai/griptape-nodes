@@ -742,7 +742,7 @@ class Rodin23DGeneration(SuccessFailureNode):
                     static_filename = f"rodin2_3d_{timestamp}_{idx}_{base_name}.{extension}"
 
                     saved_url = static_files_manager.save_static_file(
-                        file_bytes, static_filename, ExistingFilePolicy.CREATE_NEW
+                        file_bytes, static_filename, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
                     )
                     all_file_urls.append(saved_url)
                     self._log(f"Saved file: {static_filename}")

@@ -83,7 +83,9 @@ class PaintMask(DataNode):
                 suffix="_mask",
                 extension="png",
             )
-            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
+            mask_url = GriptapeNodes.StaticFilesManager().save_static_file(
+                mask_buffer.getvalue(), mask_filename, use_direct_save=True
+            )
 
             # Create ImageUrlArtifact directly with source_image_url in meta
             mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": input_image.value})
@@ -134,7 +136,9 @@ class PaintMask(DataNode):
             suffix="_mask",
             extension="png",
         )
-        mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_buffer.getvalue(), mask_filename)
+        mask_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            mask_buffer.getvalue(), mask_filename, use_direct_save=True
+        )
         output_mask_artifact = ImageUrlArtifact(mask_url, meta={"source_image_url": image_artifact.value})
         self.set_parameter_value("output_mask", output_mask_artifact)
         self.set_parameter_value("output_image", image_artifact)
@@ -160,7 +164,9 @@ class PaintMask(DataNode):
                     suffix="_mask",
                     extension="png",
                 )
-                mask_url = GriptapeNodes.StaticFilesManager().save_static_file(mask_content, new_mask_filename)
+                mask_url = GriptapeNodes.StaticFilesManager().save_static_file(
+                    mask_content, new_mask_filename, use_direct_save=True
+                )
                 mask_artifact = ImageUrlArtifact(
                     mask_url, meta={"source_image_url": image_artifact.value, "maskEdited": True}
                 )

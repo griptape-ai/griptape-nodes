@@ -29,6 +29,8 @@ def dict_to_three_d_url_artifact(three_d_dict: dict, three_d_format: str | None 
         else:
             three_d_format = "glb"
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(three_d_bytes, f"{uuid.uuid4()}.{three_d_format}")
+    url = GriptapeNodes.StaticFilesManager().save_static_file(
+        three_d_bytes, f"{uuid.uuid4()}.{three_d_format}", use_direct_save=True
+    )
 
     return ThreeDUrlArtifact(url)

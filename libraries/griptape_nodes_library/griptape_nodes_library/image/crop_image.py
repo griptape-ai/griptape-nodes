@@ -318,7 +318,7 @@ class CropImage(ControlNode):
 
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(save_format.lower())
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename)
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename, use_direct_save=True)
         self.parameter_output_values["output"] = ImageUrlArtifact(value=static_url)
 
     def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002

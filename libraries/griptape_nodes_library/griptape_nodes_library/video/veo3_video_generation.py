@@ -1007,7 +1007,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
             # Save to static storage
             filename = f"veo3_video_{generation_id}_{idx}.{extension}"
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
 
             logger.info("%s: Saved video %s as %s (%s bytes)", self.name, idx, filename, len(video_bytes))
 

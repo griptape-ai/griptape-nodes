@@ -431,7 +431,9 @@ class ResizeVideo(ControlNode):
             # Extract original filename from URL and create new filename
             original_filename = Path(input_url).stem  # Get filename without extension
             filename = f"{original_filename}_resized_{settings.scaling_algorithm}.{detected_format}"
-            url = GriptapeNodes.StaticFilesManager().save_static_file(resized_video_bytes, filename)
+            url = GriptapeNodes.StaticFilesManager().save_static_file(
+                resized_video_bytes, filename, use_direct_save=True
+            )
 
             self.append_value_to_parameter("logs", f"Successfully resized video: {filename}\n")
 

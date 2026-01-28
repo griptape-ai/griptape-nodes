@@ -364,7 +364,7 @@ class SaveVideo(SuccessFailureNode):
                 raise RuntimeError(msg)
 
         # Save to static storage
-        return GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, output_file)
+        return GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, output_file, use_direct_save=True)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []
