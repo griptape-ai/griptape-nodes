@@ -220,8 +220,8 @@ class ParameterNumber(Parameter):
         traits: set[type[Trait] | Trait] | None,
         *,
         slider: bool,
-        min_val: float,
-        max_val: float,
+        min_val: float | None,
+        max_val: float | None,
         validate_min_max: bool,
     ) -> None:
         """Set up constraint traits based on parameters.
