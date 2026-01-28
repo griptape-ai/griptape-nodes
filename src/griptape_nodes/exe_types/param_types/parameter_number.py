@@ -337,14 +337,12 @@ class ParameterNumber(Parameter):
         """Set MinMax validation."""
         if value:
             # Check if we have stored min/max values
-            min_val = getattr(self, "_min_val", None)
-            max_val = getattr(self, "_max_val", None)
-            if min_val is None or max_val is None:
+            if self.min_val is None or self.max_val is None:
                 msg = f"{self.name}: Cannot enable validate_min_max without min_val and max_val"
                 raise ValueError(msg)
             # Replace existing constraint traits with MinMax
             self._remove_constraint_traits()
-            self.add_trait(MinMax(min_val=min_val, max_val=max_val))
+            self.add_trait(MinMax(min_val=self.min_val, max_val=self.max_val))
         else:
             # Remove MinMax trait and replace with Clamp if we have min/max
             min_max_traits = self.find_elements_by_type(MinMax)
