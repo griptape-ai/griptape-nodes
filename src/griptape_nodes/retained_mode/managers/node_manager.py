@@ -3392,10 +3392,12 @@ class NodeManager:
             if result.failed():
                 details = f"Failed to create a connection between {connection_request.source_node_name} and {connection_request.target_node_name}"
                 logger.warning(details)
-        # Filter out child nodes - only return explicitly selected nodes for remake_connections
+        # Build both lists: all nodes and explicitly selected nodes (for remake_connections)
+        all_node_names = list(node_uuid_to_name.values())
         explicit_node_names = [name for uuid, name in node_uuid_to_name.items() if uuid not in child_node_uuids]
         return DeserializeSelectedNodesFromCommandsResultSuccess(
-            node_names=explicit_node_names,
+            node_names=all_node_names,
+            duplicate_names=explicit_node_names,
             result_details=f"Successfully deserialized {len(node_uuid_to_name)} nodes from commands.",
         )
 
@@ -3418,10 +3420,10 @@ class NodeManager:
             details = "Failed to deserialize selected nodes."
             return DuplicateSelectedNodesResultFailure(result_details=details)
 
-        # Remake duplicate connections of node
+        # Remake duplicate connections of node (only for explicitly selected nodes, not children)
 
         NodeManager.remake_connections(
-            self, new_node_names=result.node_names, old_node_names=serialize_result.node_names_serialized
+            self, new_node_names=result.duplicate_names, old_node_names=serialize_result.node_names_serialized
         )
         return DuplicateSelectedNodesResultSuccess(
             result.node_names,
