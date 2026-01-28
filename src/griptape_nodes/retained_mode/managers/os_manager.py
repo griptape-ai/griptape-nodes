@@ -326,8 +326,9 @@ class OSManager:
         # Success path at the end - compute final path and return
         if special_path is not None:
             # Use special folder path
-            if remaining_parts:
-                final_path = special_path / Path(*remaining_parts)
+            extra_parts: list[str] = remaining_parts if remaining_parts else []
+            if extra_parts:
+                final_path = special_path / Path(*extra_parts)
             else:
                 final_path = special_path
         else:
