@@ -354,7 +354,9 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         # Save shrunk image to static files
         shrunk_filename = f"shrunk_{uuid4().hex}.webp"
-        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
+        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            shrunk_bytes, shrunk_filename, use_direct_save=True
+        )
 
         new_artifact = ImageUrlArtifact(value=shrunk_url)
         self._log(f"Resized image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
@@ -709,7 +711,9 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 response = await client.get(url, timeout=120.0)
                 response.raise_for_status()
                 video_filename = f"omnihuman_video_{int(time.time())}.mp4"
-                GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
+                GriptapeNodes.StaticFilesManager().save_static_file(
+                    response.content, video_filename, use_direct_save=True
+                )
                 return video_filename
         except Exception:
             return None

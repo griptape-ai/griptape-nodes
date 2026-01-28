@@ -722,7 +722,9 @@ class ImageBash(DataNode):
 
         # Save composed image and publish
         filename = self._generate_filename("png")
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(self._pil_to_bytes(canvas, "PNG"), filename)
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            self._pil_to_bytes(canvas, "PNG"), filename, use_direct_save=True
+        )
         output_artifact = ImageUrlArtifact(value=static_url)
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact

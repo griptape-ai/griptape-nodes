@@ -156,7 +156,7 @@ class ExtractAudio(BaseVideoProcessor):
 
         # Generate meaningful filename
         filename = f"extracted_audio{suffix}_{uuid.uuid4().hex[:8]}.{format_extension}"
-        url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)
+        url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename, use_direct_save=True)
         return AudioUrlArtifact(url)
 
     def process(self) -> AsyncResult[None]:
