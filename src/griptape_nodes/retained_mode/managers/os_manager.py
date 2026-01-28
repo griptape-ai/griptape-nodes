@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import platformdirs
+
 import aioshutil
 import portalocker
 from binaryornot.check import is_binary
@@ -231,17 +233,58 @@ class OSManager:
         return GriptapeNodes.ConfigManager().workspace_path
 
     def _expand_path(self, path_str: str) -> Path:
-        """Expand a path string, handling tilde and environment variables.
+        """Expand a path string, handling tilde, environment variables, and special folders.
+
+        Handles Windows special folders (like Desktop) that may be redirected to OneDrive
+        by using platformdirs to get the actual system paths.
 
         Args:
-            path_str: Path string that may contain ~ or environment variables
+            path_str: Path string that may contain ~, environment variables, or special folder names
 
         Returns:
             Expanded Path object
         """
-        # Expand environment variables first, then tilde
+        # Expand environment variables first
         expanded_vars = os.path.expandvars(path_str)
-        return self.resolve_path_safely(Path(expanded_vars).expanduser())
+        
+        # Expand tilde to home directory
+        expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
+        
+        # Map common special folder names to platformdirs functions
+        # This handles Windows OneDrive redirection and other platform-specific locations
+        special_folders = {
+            "desktop": platformdirs.user_desktop_path,
+            "documents": platformdirs.user_documents_path,
+            "downloads": platformdirs.user_downloads_path,
+            "pictures": platformdirs.user_pictures_path,
+            "videos": platformdirs.user_videos_path,
+            "music": platformdirs.user_music_path,
+        }
+        
+        # Convert to Path to work with parts
+        path = Path(expanded_user)
+        home_path = Path.home()
+        
+        # Check if path is under home directory and contains a special folder
+        try:
+            # Try to get relative path from home
+            if path.is_absolute() and str(path).lower().startswith(str(home_path).lower()):
+                relative_to_home = path.relative_to(home_path)
+                path_parts = relative_to_home.parts
+                
+                # Check if first part is a special folder
+                if path_parts and path_parts[0].lower() in special_folders:
+                    folder_name = path_parts[0].lower()
+                    special_path = Path(special_folders[folder_name]())
+                    # Append remaining parts
+                    if len(path_parts) > 1:
+                        return self.resolve_path_safely(special_path / Path(*path_parts[1:]))
+                    return self.resolve_path_safely(special_path)
+        except (ValueError, RuntimeError):
+            # Path is not under home, continue with normal expansion
+            pass
+
+        return self.resolve_path_safely(path)
 
     def resolve_path_safely(self, path: Path) -> Path:
         """Resolve a path consistently across platforms.
@@ -296,8 +339,14 @@ class OSManager:
             Resolved Path object
         """
         try:
-            if Path(path_str).is_absolute() or path_str.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
+            # Check if path contains environment variables (Windows: %VAR%, Unix: $VAR or ${VAR})
+            # or starts with ~, or is already absolute
+            has_env_vars = "%" in path_str or "$" in path_str
+            is_absolute = Path(path_str).is_absolute()
+            starts_with_tilde = path_str.startswith("~")
+            
+            if has_env_vars or is_absolute or starts_with_tilde:
+                # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
                 return self._expand_path(path_str)
             # Both workspace and system-wide modes resolve relative to current directory
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
@@ -1200,12 +1249,19 @@ class OSManager:
             if request.directory_path is None:
                 directory = self._get_workspace_path()
             # Handle paths consistently - always resolve relative paths relative to current directory
-            elif Path(request.directory_path).is_absolute() or request.directory_path.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
-                directory = self._expand_path(request.directory_path)
             else:
-                # Both workspace and system-wide modes resolve relative to current directory
-                directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
+                # Check if path contains environment variables (Windows: %VAR%, Unix: $VAR or ${VAR})
+                # or starts with ~, or is already absolute
+                has_env_vars = "%" in request.directory_path or "$" in request.directory_path
+                is_absolute = Path(request.directory_path).is_absolute()
+                starts_with_tilde = request.directory_path.startswith("~")
+                
+                if has_env_vars or is_absolute or starts_with_tilde:
+                    # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
+                    directory = self._expand_path(request.directory_path)
+                else:
+                    # Both workspace and system-wide modes resolve relative to current directory
+                    directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
 
             # Check if directory exists
             if not directory.exists():
