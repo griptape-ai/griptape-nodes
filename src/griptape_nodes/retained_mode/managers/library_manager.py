@@ -240,6 +240,61 @@ class LibraryUpdateResult(NamedTuple):
     result: ResultPayload
 
 
+def _normalize_library_entry(entry: str | dict[str, Any]) -> tuple[str, bool]:
+    """Normalize a library entry to (path, enabled) tuple.
+
+    Args:
+        entry: Either a string path or dict with library_name and enabled keys
+
+    Returns:
+        Tuple of (library_path, enabled). Strings are implicitly enabled=True.
+    """
+    if isinstance(entry, str):
+        return entry, True
+    if isinstance(entry, dict):
+        library_name = entry.get("library_name", "")
+        enabled = entry.get("enabled", True)
+        return library_name, enabled
+    return "", False
+
+
+def _is_library_in_config(library_path: str, libraries_to_register: list[str | dict[str, Any]]) -> bool:
+    """Check if a library path is already in the config (string or dict format)."""
+    for entry in libraries_to_register:
+        path, _ = _normalize_library_entry(entry)
+        if path == library_path:
+            return True
+    return False
+
+
+def _set_library_enabled(
+    library_path: str,
+    libraries_to_register: list[str | dict[str, Any]],
+    *,
+    enabled: bool,
+) -> list[str | dict[str, Any]]:
+    """Set the enabled status for a library entry in the config list.
+
+    Args:
+        library_path: The path to the library to update
+        libraries_to_register: The current config list
+        enabled: Whether the library should be enabled
+
+    Returns:
+        Updated list with the library's enabled status changed.
+        If the library is not found, the list is returned unchanged.
+    """
+    result: list[str | dict[str, Any]] = []
+    for entry in libraries_to_register:
+        path, _ = _normalize_library_entry(entry)
+        if path == library_path:
+            # Update to dict format with new enabled status
+            result.append({"library_name": library_path, "enabled": enabled})
+        else:
+            result.append(entry)
+    return result
+
+
 class LibraryManager:
     SANDBOX_LIBRARY_NAME = "Sandbox Library"
     LIBRARY_CONFIG_FILENAME = "griptape_nodes_library.json"
@@ -1833,6 +1888,10 @@ class LibraryManager:
             return False
 
     def unload_library_from_registry_request(self, request: UnloadLibraryFromRegistryRequest) -> ResultPayload:
+        # Get library info before unloading so we can disable it in config
+        lib_info = self.get_library_info_by_library_name(request.library_name)
+        library_path = lib_info.library_path if lib_info else None
+
         try:
             LibraryRegistry.unregister_library(library_name=request.library_name)
         except Exception as e:
@@ -1844,9 +1903,16 @@ class LibraryManager:
 
         # Remove the library from our library info list. This prevents it from still showing
         # up in the table of attempted library loads.
-        lib_info = self.get_library_info_by_library_name(request.library_name)
         if lib_info:
             del self._library_file_path_to_info[lib_info.library_path]
+
+        # Disable the library in config so it won't be loaded on next startup
+        if library_path:
+            config_mgr = GriptapeNodes.ConfigManager()
+            libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
+            libraries_to_register = _set_library_enabled(library_path, libraries_to_register, enabled=False)
+            config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
+
         details = f"Successfully unloaded (and unregistered) library '{request.library_name}'."
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
@@ -2386,13 +2452,33 @@ class LibraryManager:
             target_directory_name = extract_repo_name_from_url(git_url)
             target_path = libraries_path / target_directory_name
 
-            # Skip if already exists
+            # Skip download if already exists, but ensure it's registered
             if target_path.exists():
-                logger.info("Library at '%s' already exists, skipping", target_path)
+                logger.info("Library at '%s' already exists, skipping download", target_path)
+
+                # Find and register the existing library so it gets loaded
+                library_json_path = find_file_in_directory(target_path, "griptape[-_]nodes[-_]library.json")
+                if library_json_path:
+                    # Add to libraries_to_register if not already there
+                    libraries_to_register = config_mgr.get_config_value(LIBRARIES_TO_REGISTER_KEY, default=[])
+                    library_json_str = str(library_json_path)
+                    if not _is_library_in_config(library_json_str, libraries_to_register):
+                        # Add as dict format with enabled=True
+                        libraries_to_register.append({"library_name": library_json_str, "enabled": True})
+                        config_mgr.set_config_value(LIBRARIES_TO_REGISTER_KEY, libraries_to_register)
+                        logger.info("Added existing library '%s' to config for registration", library_json_str)
+
+                    return git_url_with_ref, {
+                        "success": True,
+                        "library_name": target_directory_name,
+                        "error": None,
+                        "skipped": True,
+                    }
+                logger.warning("Library directory exists but no griptape_nodes_library.json found: %s", target_path)
                 return git_url_with_ref, {
                     "success": False,
                     "library_name": None,
-                    "error": None,
+                    "error": "Library directory exists but missing griptape_nodes_library.json",
                     "skipped": True,
                 }
 
@@ -2854,21 +2940,28 @@ class LibraryManager:
         return True
 
     def _remove_missing_libraries_from_config(self, config_category: str) -> None:
-        # Now remove all libraries that were missing from the user's config.
+        # Disable (set enabled=False) all libraries that were missing from the user's config.
         config_mgr = GriptapeNodes.ConfigManager()
         libraries_to_register_category = config_mgr.get_config_value(config_category)
 
-        paths_to_remove = set()
+        if not libraries_to_register_category:
+            return
+
+        paths_to_disable = set()
         for library_path, library_info in self._library_file_path_to_info.items():
             if library_info.fitness == LibraryManager.LibraryFitness.MISSING:
-                # Remove this file path from the config.
-                paths_to_remove.add(library_path.lower())
+                # Mark this file path for disabling in the config.
+                paths_to_disable.add(library_path)
 
-        if paths_to_remove and libraries_to_register_category:
-            libraries_to_register_category = [
-                library for library in libraries_to_register_category if library.lower() not in paths_to_remove
-            ]
-            config_mgr.set_config_value(config_category, libraries_to_register_category)
+        if not paths_to_disable:
+            return
+
+        # Disable each missing library instead of removing it
+        for path_to_disable in paths_to_disable:
+            libraries_to_register_category = _set_library_enabled(
+                path_to_disable, libraries_to_register_category, enabled=False
+            )
+        config_mgr.set_config_value(config_category, libraries_to_register_category)
 
     def _migrate_old_xdg_library_paths(self) -> None:
         """Automatically removes old XDG library paths and adds git URLs to download list.
@@ -3254,7 +3347,11 @@ class LibraryManager:
 
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
-        for library_path_str in config_libraries:
+        for entry in config_libraries:
+            library_path_str, enabled = _normalize_library_entry(entry)
+            # Skip disabled libraries
+            if not enabled:
+                continue
             # Filter out falsy values that will resolve to current directory
             if library_path_str:
                 library_path = Path(library_path_str)
