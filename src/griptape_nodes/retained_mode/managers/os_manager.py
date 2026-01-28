@@ -1,4 +1,5 @@
 import base64
+import ctypes
 import logging
 import mimetypes
 import os
@@ -7,12 +8,12 @@ import shutil
 import stat
 import subprocess
 import sys
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
 import aioshutil
-import platformdirs
 import portalocker
 from binaryornot.check import is_binary
 from rich.console import Console
@@ -231,11 +232,49 @@ class OSManager:
         """Get the workspace path from config."""
         return GriptapeNodes.ConfigManager().workspace_path
 
+    def _get_windows_special_folder_path(self, csidl: int) -> Path | None:
+        """Get Windows special folder path using Shell API.
+
+        Source: https://stackoverflow.com/a/30924555
+        Uses SHGetFolderPathW to get the actual location of special folders,
+        handling OneDrive redirections and other Windows folder redirections.
+
+        Args:
+            csidl: CSIDL constant for the special folder (e.g., CSIDL_DESKTOP)
+
+        Returns:
+            Path to the special folder, or None if not available or not on Windows
+        """
+        if sys.platform != "win32":
+            return None
+
+        try:
+            # CSIDL constants for Windows special folders
+            # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+            sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW
+            sh_get_folder_path.argtypes = [
+                wintypes.HWND,
+                ctypes.c_int,
+                wintypes.HANDLE,
+                wintypes.DWORD,
+                wintypes.LPCWSTR,
+            ]
+
+            path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
+            if result == 0:  # S_OK
+                return Path(path_buf.value)
+        except (OSError, AttributeError):
+            # Windows API not available or failed
+            pass
+
+        return None
+
     def _expand_path(self, path_str: str) -> Path:
         """Expand a path string, handling tilde, environment variables, and special folders.
 
         Handles Windows special folders (like Desktop) that may be redirected to OneDrive
-        by using platformdirs to get the actual system paths.
+        by using Windows Shell API (SHGetFolderPathW) to get the actual system paths.
 
         Args:
             path_str: Path string that may contain ~, environment variables, or special folder names
@@ -249,39 +288,65 @@ class OSManager:
         # Expand tilde to home directory
         expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
 
-        # Map common special folder names to platformdirs functions
-        # This handles Windows OneDrive redirection and other platform-specific locations
-        special_folders = {
-            "desktop": platformdirs.user_desktop_path,
-            "documents": platformdirs.user_documents_path,
-            "downloads": platformdirs.user_downloads_path,
-            "pictures": platformdirs.user_pictures_path,
-            "videos": platformdirs.user_videos_path,
-            "music": platformdirs.user_music_path,
-        }
-
         # Convert to Path to work with parts
         path = Path(expanded_user)
         home_path = Path.home()
 
         # Check if path is under home directory and contains a special folder
+        special_path = None
+        path_parts = None
         try:
             # Try to get relative path from home
-            if path.is_absolute() and str(path).lower().startswith(str(home_path).lower()):
+            if not path.is_absolute():
+                # Not absolute, cannot be a special folder path
+                pass
+            elif not str(path).lower().startswith(str(home_path).lower()):
+                # Path is not under home directory
+                pass
+            else:
+                # Path is under home, check if it contains a special folder
                 relative_to_home = path.relative_to(home_path)
                 path_parts = relative_to_home.parts
 
                 # Check if first part is a special folder
-                if path_parts and path_parts[0].lower() in special_folders:
+                if not path_parts:
+                    # No path parts, cannot be a special folder
+                    pass
+                else:
                     folder_name = path_parts[0].lower()
-                    special_path = Path(special_folders[folder_name]())
-                    # Append remaining parts
-                    if len(path_parts) > 1:
-                        return self.resolve_path_safely(special_path / Path(*path_parts[1:]))
-                    return self.resolve_path_safely(special_path)
+
+                    # Map common special folder names to Windows CSIDL constants
+                    # CSIDL constants: https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+                    if sys.platform != "win32":
+                        # On non-Windows, skip special folder handling - use normal path expansion
+                        pass
+                    else:
+                        # Use Windows Shell API for accurate folder locations (handles OneDrive redirections)
+                        csidl_map = {
+                            "desktop": 0x0000,  # CSIDL_DESKTOP
+                            "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
+                            "downloads": 0x002D,  # CSIDL_DOWNLOADS
+                            "pictures": 0x0027,  # CSIDL_MYPICTURES
+                            "videos": 0x000E,  # CSIDL_MYVIDEO
+                            "music": 0x000D,  # CSIDL_MYMUSIC
+                        }
+
+                        if folder_name not in csidl_map:
+                            # Not a recognized special folder
+                            pass
+                        else:
+                            special_path = self._get_windows_special_folder_path(csidl_map[folder_name])
+                            # If Windows API fails, special_path remains None and we'll use normal expansion
         except (ValueError, RuntimeError):
             # Path is not under home, continue with normal expansion
             pass
+
+        # Success path at the end - return resolved path
+        if special_path is not None:
+            # Append remaining parts if any
+            if path_parts is not None and len(path_parts) > 1:
+                return self.resolve_path_safely(special_path / Path(*path_parts[1:]))
+            return self.resolve_path_safely(special_path)
 
         return self.resolve_path_safely(path)
 
