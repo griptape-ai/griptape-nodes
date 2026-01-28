@@ -193,6 +193,7 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -2530,9 +2531,7 @@ class LibraryManager:
             return None
 
         # Resolve relative path to absolute path
-        advanced_library_module_path = Path(library_data.advanced_library_path)
-        if not advanced_library_module_path.is_absolute():
-            advanced_library_module_path = base_dir / advanced_library_module_path
+        advanced_library_module_path = resolve_workspace_path(Path(library_data.advanced_library_path), base_dir)
 
         # Load the module (supports hot reloading)
         try:
@@ -2624,9 +2623,7 @@ class LibraryManager:
         # Process each node in the metadata
         for node_definition in library_data.nodes:
             # Resolve relative path to absolute path
-            node_file_path = Path(node_definition.file_path)
-            if not node_file_path.is_absolute():
-                node_file_path = base_dir / node_file_path
+            node_file_path = resolve_workspace_path(Path(node_definition.file_path), base_dir)
 
             try:
                 # Dynamically load the module containing the node class
@@ -3018,7 +3015,7 @@ class LibraryManager:
             library_version=library_version,
         )
 
-    def discover_libraries_request(
+    def discover_libraries_request(  # noqa: C901
         self,
         request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
@@ -3028,14 +3025,15 @@ class LibraryManager:
         Scans configured library paths and creates LibraryInfo entries in DISCOVERED state.
         """
         try:
-            config_library_paths = set(self._discover_library_files())
+            config_library_paths = self._discover_library_files()
         except Exception as e:
             logger.exception("Failed to discover library files")
             return DiscoverLibrariesResultFailure(
                 result_details=f"Failed to discover library files: {e}",
             )
 
-        discovered_libraries = set()
+        discovered_libraries = []
+        seen_libraries = set()
 
         # Process sandbox library first if requested
         if request.include_sandbox:
@@ -3064,7 +3062,9 @@ class LibraryManager:
                     # Continue anyway if write failed - lifecycle will fail gracefully
 
                     # Add to discovered libraries with is_sandbox=True
-                    discovered_libraries.add(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
+                    if sandbox_json_path not in seen_libraries:
+                        seen_libraries.add(sandbox_json_path)
+                        discovered_libraries.append(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
                     # Create LibraryInfo entry for the sandbox library
                     self._create_library_info_entry(sandbox_json_path_str, is_sandbox=True)
@@ -3074,7 +3074,9 @@ class LibraryManager:
             file_path_str = str(file_path)
 
             # Add to discovered libraries with is_sandbox=False
-            discovered_libraries.add(DiscoveredLibrary(path=file_path, is_sandbox=False))
+            if file_path not in seen_libraries:
+                seen_libraries.add(file_path)
+                discovered_libraries.append(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
             # Create LibraryInfo entry for the library
             self._create_library_info_entry(file_path_str, is_sandbox=False)
@@ -3242,20 +3244,25 @@ class LibraryManager:
         """Discover library JSON files from config and workspace recursively.
 
         Returns:
-            List of library file paths found
+            List of library file paths found, in the order they appear in config
         """
         config_mgr = GriptapeNodes.ConfigManager()
         user_libraries_section = LIBRARIES_TO_REGISTER_KEY
 
-        discovered_libraries = set()
+        discovered_libraries = []
+        seen_libraries = set()
 
         def process_path(path: Path) -> None:
             """Process a path, handling both files and directories."""
             if path.is_dir():
                 # Recursively find library files, skipping hidden directories
-                discovered_libraries.update(find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN))
-            elif path.suffix == ".json":
-                discovered_libraries.add(path)
+                for lib_path in find_files_recursive(path, LibraryManager.LIBRARY_CONFIG_GLOB_PATTERN):
+                    if lib_path not in seen_libraries:
+                        seen_libraries.add(lib_path)
+                        discovered_libraries.append(lib_path)
+            elif path.suffix == ".json" and path not in seen_libraries:
+                seen_libraries.add(path)
+                discovered_libraries.append(path)
 
         # Add from config
         config_libraries = config_mgr.get_config_value(user_libraries_section, default=[])
@@ -3266,7 +3273,7 @@ class LibraryManager:
                 if library_path.exists():
                     process_path(library_path)
 
-        return list(discovered_libraries)
+        return discovered_libraries
 
     async def check_library_update_request(self, request: CheckLibraryUpdateRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Check if a library has updates available via git."""

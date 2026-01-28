@@ -1,12 +1,14 @@
 from io import BytesIO
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact, UrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact, UrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.image_utils import load_pil_from_url
 
 
@@ -40,9 +42,8 @@ class ImagesToPdf(ControlNode):
         self.add_parameter(self.images)
 
         # Filename parameter
-        self.filename_param = Parameter(
+        self.filename_param = ParameterString(
             name="filename",
-            type="str",
             default_value="output.pdf",
             tooltip="Output filename for the PDF file",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -58,6 +59,16 @@ class ImagesToPdf(ControlNode):
             allowed_modes={ParameterMode.OUTPUT},
         )
         self.add_parameter(self.output)
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Normalize image inputs when the list is set."""
+        super().after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("images", updated_list)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate that images list is not empty."""
@@ -82,6 +93,11 @@ class ImagesToPdf(ControlNode):
     def process(self) -> None:
         """Convert list of images to a multi-page PDF file."""
         images = self.get_parameter_list_value("images") or []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
         filename = self.get_parameter_value("filename")
 
         logger.info(f"{self.name}: Converting {len(images)} images to PDF")

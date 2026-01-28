@@ -11,11 +11,14 @@ from urllib.parse import urljoin
 
 import httpx
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import extract_image_url
@@ -61,10 +64,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         # INPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value=self.MODEL_IDS[0],
                 tooltip="Model identifier to use for recognition",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -74,10 +75,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         self._public_image_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterImage(
                 name="image_url",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="URL of the image to analyze for subject recognition.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
@@ -91,9 +90,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Griptape Cloud generation identifier",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide=True,
@@ -101,10 +99,8 @@ class OmnihumanSubjectRecognition(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="contains_subject",
-                output_type="bool",
-                type="bool",
                 tooltip="Whether the image contains human or human-like subjects",
                 allowed_modes={ParameterMode.OUTPUT},
             )

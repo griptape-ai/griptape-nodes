@@ -14,6 +14,10 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.node_types import ControlNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.color_picker import ColorPicker
@@ -73,10 +77,8 @@ class CropImage(ControlNode):
         self._processing = False  # Lock to prevent live cropping during process()
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
-                input_types=["ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 default_value=None,
                 tooltip="Input image to crop",
                 ui_options={"crop_image": True},
@@ -92,33 +94,29 @@ class CropImage(ControlNode):
             )
         )
         with ParameterGroup(name="crop_coordinates", ui_options={"collapsed": False}) as crop_coordinates:
-            Parameter(
+            ParameterInt(
                 name="left",
-                type="int",
                 default_value=0,
                 tooltip="Left edge of crop area in pixels",
                 traits={Slider(min_val=0, max_val=self.MAX_WIDTH)},
             )
 
-            Parameter(
+            ParameterInt(
                 name="top",
-                type="int",
                 default_value=0,
                 tooltip="Top edge of crop area in pixels",
                 traits={Slider(min_val=0, max_val=self.MAX_HEIGHT)},
             )
 
-            Parameter(
+            ParameterInt(
                 name="width",
-                type="int",
                 default_value=0,
                 tooltip="Width of crop area in pixels (0 = use full width)",
                 traits={Slider(min_val=0, max_val=self.MAX_WIDTH)},
             )
 
-            Parameter(
+            ParameterInt(
                 name="height",
-                type="int",
                 default_value=0,
                 tooltip="Height of crop area in pixels (0 = use full height)",
                 traits={Slider(min_val=0, max_val=self.MAX_HEIGHT)},
@@ -126,16 +124,14 @@ class CropImage(ControlNode):
         self.add_node_element(crop_coordinates)
 
         with ParameterGroup(name="transform_options", ui_options={"collapsed": False}) as transform_options:
-            Parameter(
+            ParameterFloat(
                 name="zoom",
-                type="float",
                 default_value=NO_ZOOM,
                 tooltip="Zoom percentage (100 = no zoom, 200 = 2x zoom in, 50 = 0.5x zoom out)",
                 traits={Slider(min_val=0.0, max_val=MAX_ZOOM)},
             )
-            Parameter(
+            ParameterFloat(
                 name="rotate",
-                type="float",
                 default_value=0.0,
                 tooltip="Rotation in degrees (-180 to 180)",
                 traits={Slider(min_val=ROTATION_MIN, max_val=ROTATION_MAX)},
@@ -143,24 +139,22 @@ class CropImage(ControlNode):
 
         self.add_node_element(transform_options)
         with ParameterGroup(name="output_options", ui_options={"collapsed": True}) as output_options:
-            Parameter(
+            ParameterString(
                 name="background_color",
-                type="str",
                 default_value="#00000000",
+                placeholder_text="#00000000",
                 tooltip="Background color (RGBA or hex) for transparent areas",
                 traits={ColorPicker(format="hexa")},
             )
-            Parameter(
+            ParameterString(
                 name="output_format",
-                type="str",
                 default_value="PNG",
                 tooltip="Output format: PNG, JPEG, WEBP",
                 traits={Options(choices=["PNG", "JPEG", "WEBP"])},
             )
 
-            Parameter(
+            ParameterFloat(
                 name="output_quality",
-                type="float",
                 default_value=0.9,
                 tooltip="Output quality (0.0 to 1.0) for lossy formats",
             )
@@ -169,9 +163,8 @@ class CropImage(ControlNode):
 
         # Output parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Cropped output image",
             )

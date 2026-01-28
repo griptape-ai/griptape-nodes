@@ -1,4 +1,5 @@
 import base64
+import logging
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -8,6 +9,8 @@ from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
+
+logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
 DOWNLOAD_CHUNK_SIZE = 8192

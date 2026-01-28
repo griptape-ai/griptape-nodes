@@ -63,6 +63,7 @@ from griptape_nodes.retained_mode.events.project_events import (
     SetCurrentProjectResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
@@ -522,10 +523,7 @@ class ProjectManager:
         resolved_path = Path(resolved_string)
 
         # Make absolute path by resolving against project base directory
-        if resolved_path.is_absolute():
-            absolute_path = resolved_path
-        else:
-            absolute_path = project_info.project_base_dir / resolved_path
+        absolute_path = resolve_workspace_path(resolved_path, project_info.project_base_dir)
 
         return GetPathForMacroResultSuccess(
             resolved_path=resolved_path,
@@ -964,9 +962,7 @@ class ProjectManager:
                 raise RuntimeError(msg) from e
 
             # Make absolute (resolve relative paths against project base directory)
-            resolved_dir_path = Path(resolved_path_str)
-            if not resolved_dir_path.is_absolute():
-                resolved_dir_path = project_base_dir / resolved_dir_path
+            resolved_dir_path = resolve_workspace_path(Path(resolved_path_str), project_base_dir)
             # Normalize for consistent cross-platform comparison
             resolved_dir_path = os_manager.resolve_path_safely(resolved_dir_path)
 

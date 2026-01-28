@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import mimetypes
@@ -13,6 +14,7 @@ from typing import Any, NamedTuple
 
 import aioshutil
 import portalocker
+import send2trash
 from binaryornot.check import is_binary
 from rich.console import Console
 
@@ -35,6 +37,8 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
     DeleteFileResultSuccess,
+    DeletionBehavior,
+    DeletionOutcome,
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
@@ -2251,6 +2255,7 @@ class OSManager:
         for file_path, _ in files_with_times:
             try:
                 # Delete the file.
+                # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
                 file_path.unlink()
                 removed_count += 1
 
@@ -2538,10 +2543,10 @@ class OSManager:
             console.print(f"[red]Details: {e}[/red]")
             raise
 
-    async def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, C901
+    async def on_delete_file_request(  # noqa: PLR0911, PLR0912, PLR0915, C901
+        self, request: DeleteFileRequest
+    ) -> DeleteFileResultSuccess | DeleteFileResultFailure:
         """Handle a request to delete a file or directory."""
-        # FAILURE CASES FIRST (per CLAUDE.md)
-
         # Validate exactly one of path or file_entry provided and determine path to delete
         if request.path is not None and request.file_entry is not None:
             msg = "Attempted to delete file with both path and file_entry. Failed due to invalid parameters"
@@ -2578,28 +2583,88 @@ class OSManager:
         else:
             deleted_paths = [str(resolved_path)]
 
-        # Perform deletion
-        try:
-            if is_directory:
-                await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
-            else:
-                resolved_path.unlink()
-        except PermissionError as e:
-            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
-            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except OSError as e:
-            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to I/O error: {e}"
-            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-        except Exception as e:
-            msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to unexpected error: {type(e).__name__}: {e}"
-            return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+        # Helper function for permanent deletion
+        async def attempt_permanent_delete() -> DeleteFileResultFailure | None:
+            """Permanently delete the file/directory. Returns failure result or None on success."""
+            try:
+                if is_directory:
+                    await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
+                else:
+                    resolved_path.unlink()
+            except PermissionError as e:
+                msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
+                return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
+            except OSError as e:
+                msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to I/O error: {e}"
+                return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+            except Exception as e:
+                msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to unexpected error: {type(e).__name__}: {e}"
+                return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+            return None
+
+        # Helper function for recycle bin deletion
+        async def attempt_recycle_bin_delete() -> DeleteFileResultFailure | None:
+            """Send to recycle bin. Returns failure result or None on success."""
+            try:
+                await asyncio.to_thread(send2trash.send2trash, str(resolved_path))
+            except send2trash.TrashPermissionError as e:
+                msg = f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin. Failed due to recycle bin unavailable: {e}"
+                return DeleteFileResultFailure(
+                    failure_reason=FileIOFailureReason.RECYCLE_BIN_UNAVAILABLE, result_details=msg
+                )
+            except OSError as e:
+                msg = f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin. Failed due to I/O error: {e}"
+                return DeleteFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
+            except Exception as e:
+                msg = f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin. Failed due to unexpected error: {type(e).__name__}: {e}"
+                return DeleteFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+            return None
+
+        # Perform deletion based on requested behavior
+        match request.deletion_behavior:
+            case DeletionBehavior.PERMANENTLY_DELETE:
+                failure = await attempt_permanent_delete()
+                if failure:
+                    return failure
+                outcome = DeletionOutcome.PERMANENTLY_DELETED
+                result_details = (
+                    f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}"
+                )
+
+            case DeletionBehavior.RECYCLE_BIN_ONLY:
+                failure = await attempt_recycle_bin_delete()
+                if failure:
+                    return failure
+                outcome = DeletionOutcome.SENT_TO_RECYCLE_BIN
+                result_details = f"Successfully sent {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin"
+
+            case DeletionBehavior.PREFER_RECYCLE_BIN:
+                failure = await attempt_recycle_bin_delete()
+                if failure:
+                    # Fall back to permanent deletion
+                    failure = await attempt_permanent_delete()
+                    if failure:
+                        return failure
+                    outcome = DeletionOutcome.PERMANENTLY_DELETED
+                    result_details = ResultDetails(
+                        message=f"Attempted to send {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin, but this failed; fell back to permanent deletion, which succeeded.",
+                        level=logging.WARNING,
+                    )
+                else:
+                    outcome = DeletionOutcome.SENT_TO_RECYCLE_BIN
+                    result_details = f"Successfully sent {'directory' if is_directory else 'file'} at path {path_to_delete} to the recycle bin"
+
+            case _:
+                msg = f"Unknown/unsupported deletion behavior: {request.deletion_behavior}"
+                raise ValueError(msg)
 
         # SUCCESS PATH AT END
         return DeleteFileResultSuccess(
             deleted_path=str(resolved_path),
             was_directory=is_directory,
             deleted_paths=deleted_paths,
-            result_details=f"Successfully deleted {'directory' if is_directory else 'file'} at path {path_to_delete}",
+            outcome=outcome,
+            result_details=result_details,
         )
 
     def on_get_file_info_request(  # noqa: PLR0911

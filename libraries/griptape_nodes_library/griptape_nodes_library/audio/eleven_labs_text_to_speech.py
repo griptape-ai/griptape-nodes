@@ -9,7 +9,10 @@ from typing import Any
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -63,10 +66,8 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
         # INPUTS / PROPERTIES
         # Model Selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value="eleven_v3",
                 tooltip="Select the Eleven Labs text-to-speech model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -91,10 +92,8 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
 
         # Voice preset selection
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="voice_preset",
-                input_types=["str"],
-                type="str",
                 default_value="Alexandra",
                 tooltip="Select a preset voice or choose 'Custom...' to enter a voice ID",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -126,42 +125,33 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
 
         # Custom voice ID field (hidden by default)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="custom_voice_id",
-                input_types=["str"],
-                type="str",
                 tooltip="Enter a custom Eleven Labs voice ID (must be publicly accessible)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "display_name": "Custom Voice ID",
-                    "hide": True,
-                    "placeholder_text": "e.g., 21m00Tcm4TlvDq8ikWAM",
-                },
+                hide=True,
+                placeholder_text="e.g., 21m00Tcm4TlvDq8ikWAM",
+                ui_options={"display_name": "Custom Voice ID"},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="language_code",
-                input_types=["str"],
-                type="str",
                 tooltip="ISO 639-1 language code as a hint for pronunciation (optional, defaults to 'en')",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={
-                    "display_name": "Language Code",
-                    "placeholder_text": "e.g., en, es, fr",
-                },
+                placeholder_text="e.g., en, es, fr",
+                ui_options={"display_name": "Language Code"},
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="seed",
-                input_types=["int"],
-                type="int",
                 default_value=-1,
                 tooltip="Seed for reproducible generation (-1 for random seed)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=[-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])},
                 ui_options={"display_name": "Seed"},
             )
         )
@@ -218,59 +208,50 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Generation ID from the API",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="audio_url",
-                output_type="AudioUrlArtifact",
-                type="AudioUrlArtifact",
                 tooltip="Generated speech audio as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
         # Alignment outputs
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="alignment",
-                output_type="dict",
-                type="dict",
                 tooltip="Character alignment data with start/end times",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="normalized_alignment",
-                output_type="dict",
-                type="dict",
                 tooltip="Normalized character alignment data",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 

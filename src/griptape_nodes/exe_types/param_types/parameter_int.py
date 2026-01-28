@@ -43,8 +43,8 @@ class ParameterInt(ParameterNumber):
         ui_options: dict | None = None,
         step: int | None = None,
         slider: bool = False,
-        min_val: float = 0,
-        max_val: float = 100,
+        min_val: float | None = None,
+        max_val: float | None = None,
         validate_min_max: bool = False,
         accept_any: bool = True,
         hide: bool | None = None,
@@ -77,8 +77,8 @@ class ParameterInt(ParameterNumber):
             ui_options: Dictionary of UI options
             step: Step size for numeric input controls
             slider: Whether to use slider trait
-            min_val: Minimum value for constraints
-            max_val: Maximum value for constraints
+            min_val: Minimum value for constraints (None to disable constraints)
+            max_val: Maximum value for constraints (None to disable constraints)
             validate_min_max: Whether to validate min/max with error
             accept_any: Whether to accept any input type and convert to integer (default: True)
             hide: Whether to hide the entire parameter

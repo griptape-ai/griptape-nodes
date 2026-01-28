@@ -1,12 +1,15 @@
 import io
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
@@ -35,7 +38,7 @@ class MergeImages(ControlNode):
         self.add_parameter(
             ParameterList(
                 name="Images",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
                 default_value=None,
                 tooltip="Images to merge (add up to 4)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -45,9 +48,8 @@ class MergeImages(ControlNode):
 
         # Add layout parameter (default to grid)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="layout",
-                type="str",
                 tooltip="Select how to arrange the images",
                 default_value=self.LAYOUTS[0],
                 allowed_modes={ParameterMode.PROPERTY},
@@ -57,9 +59,8 @@ class MergeImages(ControlNode):
 
         # Add output parameter
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                type="ImageUrlArtifact",
                 tooltip="The merged image",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
@@ -72,6 +73,8 @@ class MergeImages(ControlNode):
         if images:
             if not isinstance(images, list):
                 images = [images]
+            # Normalize string paths to ImageUrlArtifact
+            images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
             return images[:4]  # Enforce max 4
         return []
 
@@ -79,7 +82,10 @@ class MergeImages(ControlNode):
         """Convert various image types to PIL Image."""
         if isinstance(img, dict):
             img = dict_to_image_url_artifact(img)
-        if isinstance(img, ImageUrlArtifact):
+        if isinstance(img, ImageArtifact):
+            # ImageArtifact has base64 data
+            img = Image.open(io.BytesIO(img.to_bytes()))
+        elif isinstance(img, ImageUrlArtifact):
             img = Image.open(io.BytesIO(img.to_bytes()))
         return img
 

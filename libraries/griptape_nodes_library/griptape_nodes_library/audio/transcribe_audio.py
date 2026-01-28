@@ -7,6 +7,8 @@ from griptape.tasks import AudioTranscriptionTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -34,10 +36,8 @@ class TranscribeAudio(ControlNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                type="str",
-                output_type="str",
                 default_value=DEFAULT_MODEL,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Choose a model, or connect an AudioTranscription Model Configuration or an Agent",
@@ -46,11 +46,8 @@ class TranscribeAudio(ControlNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterAudio(
                 name="audio",
-                input_types=["AudioArtifact", "AudioUrlArtifact"],
-                type="AudioArtifact",
-                output_type="AudioUrlArtifact",
                 default_value=None,
                 ui_options={"clickable_file_browser": True, "expander": True},
                 tooltip="Audio to transcribe",
@@ -58,18 +55,14 @@ class TranscribeAudio(ControlNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="output",
-                output_type="str",
-                type="str",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={
-                    "placeholder_text": "The description of the image",
-                    "multiline": True,
-                    "display_name": "output",
-                },
+                multiline=True,
+                placeholder_text="The transcribed text",
+                ui_options={"display_name": "output"},
             )
         )
 
