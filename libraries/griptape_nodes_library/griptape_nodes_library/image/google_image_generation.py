@@ -470,7 +470,7 @@ class GoogleImageGeneration(SuccessFailureNode):
             filename = f"google_image_{timestamp}_{candidate_idx}_{part_idx}.{ext}"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
             image_artifacts.append(ImageUrlArtifact(value=saved_url, name=filename))
 
             msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"

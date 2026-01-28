@@ -316,7 +316,7 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         image_bytes = buffer.getvalue()
 
         # Save to static file with our custom filename
-        url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+        url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename, use_direct_save=True)
         return ImageUrlArtifact(url)
 
     def _pil_to_bytes(self, pil_image: Image.Image, format_extension: str) -> bytes:

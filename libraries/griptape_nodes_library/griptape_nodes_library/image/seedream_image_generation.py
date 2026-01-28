@@ -667,7 +667,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 filename = f"seedream_image_{int(time.time())}_{index}.jpg"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
             self._log(f"Saved image {index} to static storage as {filename}")
             return ImageUrlArtifact(value=saved_url, name=filename)
 

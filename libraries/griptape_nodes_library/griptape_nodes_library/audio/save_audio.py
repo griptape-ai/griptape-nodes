@@ -364,7 +364,7 @@ class SaveAudio(SuccessFailureNode):
                 raise RuntimeError(msg)
 
         # Save to static storage
-        return GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, output_file)
+        return GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, output_file, use_direct_save=True)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = []

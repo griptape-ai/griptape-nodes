@@ -108,7 +108,7 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
 
     # Save to static file server
     filename = f"{uuid.uuid4()}.{video_format}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+    url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename, use_direct_save=True)
 
     return VideoUrlArtifact(url)
 
