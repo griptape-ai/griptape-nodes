@@ -31,6 +31,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.image_utils import resize_image_for_resolution, shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
@@ -353,7 +354,9 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
         # Save shrunk image to static files
         shrunk_filename = f"shrunk_{uuid4().hex}.webp"
-        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(shrunk_bytes, shrunk_filename)
+        shrunk_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            shrunk_bytes, shrunk_filename, use_direct_save=True
+        )
 
         new_artifact = ImageUrlArtifact(value=shrunk_url)
         self._log(f"Resized image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
@@ -376,7 +379,7 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
 
     def _is_external_url(self, url: str) -> bool:
         """Check if a URL is external (not localhost)."""
-        return url.startswith(("http://", "https://")) and "localhost" not in url
+        return is_url_or_path(url) and "localhost" not in url
 
     def _read_local_file(self, url: str) -> bytes | None:
         """Read file contents from local static files directory."""
@@ -708,7 +711,9 @@ class OmnihumanVideoGeneration(SuccessFailureNode):
                 response = await client.get(url, timeout=120.0)
                 response.raise_for_status()
                 video_filename = f"omnihuman_video_{int(time.time())}.mp4"
-                GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
+                GriptapeNodes.StaticFilesManager().save_static_file(
+                    response.content, video_filename, use_direct_save=True
+                )
                 return video_filename
         except Exception:
             return None

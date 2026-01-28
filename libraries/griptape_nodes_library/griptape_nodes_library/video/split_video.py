@@ -591,7 +591,7 @@ If no title is provided, just use "Segment X:" format.
                 )
 
                 # Save to static files
-                url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+                url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename, use_direct_save=True)
 
                 # Create output artifact
                 video_artifact = VideoUrlArtifact(url)

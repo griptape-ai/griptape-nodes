@@ -18,6 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
@@ -585,7 +586,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             return image_value
 
         # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
+        if is_url_or_path(image_value):
             return await self._download_and_encode_image(image_value)
 
         # Try to read as file path first (works cross-platform)
@@ -666,7 +667,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 filename = f"seedream_image_{int(time.time())}_{index}.jpg"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
             self._log(f"Saved image {index} to static storage as {filename}")
             return ImageUrlArtifact(value=saved_url, name=filename)
 

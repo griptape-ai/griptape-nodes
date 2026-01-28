@@ -15,6 +15,7 @@ import static_ffmpeg.run  # type: ignore[import-untyped]  # static_ffmpeg is dyn
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.utils.async_utils import subprocess_run
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -107,7 +108,7 @@ def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None
 
     # Save to static file server
     filename = f"{uuid.uuid4()}.{video_format}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+    url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename, use_direct_save=True)
 
     return VideoUrlArtifact(url)
 
@@ -150,14 +151,14 @@ def is_downloadable_video_url(obj: Any) -> bool:
         True if object contains an http/https URL that needs downloading
     """
     # Direct URL string
-    if isinstance(obj, str) and obj.startswith(("http://", "https://")):
+    if isinstance(obj, str) and is_url_or_path(obj):
         return True
 
     # Any VideoUrlArtifact-like object with downloadable URL
     if is_video_url_artifact(obj) and hasattr(obj, "value"):
         value = obj.value  # type: ignore[attr-defined]
         if isinstance(value, str):
-            return value.startswith(("http://", "https://"))
+            return is_url_or_path(value)
 
     return False
 
