@@ -195,6 +195,8 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
             "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
         },
     )
+
+
 async def _serve_external_file(file_path: str) -> FileResponse:
     """Serve a file from outside the workspace.
 
