@@ -282,73 +282,47 @@ class OSManager:
         Returns:
             Expanded Path object
         """
+        # On Windows, check for special folder names in the path before expansion
+        # This handles cases like ~/Downloads or %UserProfile%/Downloads
+        if sys.platform == "win32":
+            # Map common special folder names to Windows CSIDL constants
+            # CSIDL constants: https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+            csidl_map = {
+                "desktop": 0x0000,  # CSIDL_DESKTOP
+                "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
+                "downloads": 0x002D,  # CSIDL_DOWNLOADS
+                "pictures": 0x0027,  # CSIDL_MYPICTURES
+                "videos": 0x000E,  # CSIDL_MYVIDEO
+                "music": 0x000D,  # CSIDL_MYMUSIC
+            }
+
+            # Parse path to find special folder names
+            # Normalize separators and split
+            normalized = path_str.replace("\\", "/").strip("/")
+            parts = [p.lower() for p in normalized.split("/") if p]
+
+            # Check if any part matches a special folder name
+            for i, part in enumerate(parts):
+                if part in csidl_map:
+                    # Found a special folder, get its actual path using Shell API
+                    special_path = self._get_windows_special_folder_path(csidl_map[part])
+                    if special_path is not None:
+                        # Append remaining parts after the special folder
+                        remaining_parts = parts[i + 1 :]
+                        if remaining_parts:
+                            return self.resolve_path_safely(special_path / Path(*remaining_parts))
+                        return self.resolve_path_safely(special_path)
+                    # If Shell API fails, fall through to normal expansion
+                    break
+
         # Expand environment variables first
         expanded_vars = os.path.expandvars(path_str)
 
         # Expand tilde to home directory
         expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
 
-        # Convert to Path to work with parts
-        path = Path(expanded_user)
-        home_path = Path.home()
-
-        # Check if path is under home directory and contains a special folder
-        special_path = None
-        path_parts = None
-        try:
-            # Try to get relative path from home
-            if not path.is_absolute():
-                # Not absolute, cannot be a special folder path
-                pass
-            elif not str(path).lower().startswith(str(home_path).lower()):
-                # Path is not under home directory
-                pass
-            else:
-                # Path is under home, check if it contains a special folder
-                relative_to_home = path.relative_to(home_path)
-                path_parts = relative_to_home.parts
-
-                # Check if first part is a special folder
-                if not path_parts:
-                    # No path parts, cannot be a special folder
-                    pass
-                else:
-                    folder_name = path_parts[0].lower()
-
-                    # Map common special folder names to Windows CSIDL constants
-                    # CSIDL constants: https://learn.microsoft.com/en-us/windows/win32/shell/csidl
-                    if sys.platform != "win32":
-                        # On non-Windows, skip special folder handling - use normal path expansion
-                        pass
-                    else:
-                        # Use Windows Shell API for accurate folder locations (handles OneDrive redirections)
-                        csidl_map = {
-                            "desktop": 0x0000,  # CSIDL_DESKTOP
-                            "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
-                            "downloads": 0x002D,  # CSIDL_DOWNLOADS
-                            "pictures": 0x0027,  # CSIDL_MYPICTURES
-                            "videos": 0x000E,  # CSIDL_MYVIDEO
-                            "music": 0x000D,  # CSIDL_MYMUSIC
-                        }
-
-                        if folder_name not in csidl_map:
-                            # Not a recognized special folder
-                            pass
-                        else:
-                            special_path = self._get_windows_special_folder_path(csidl_map[folder_name])
-                            # If Windows API fails, special_path remains None and we'll use normal expansion
-        except (ValueError, RuntimeError):
-            # Path is not under home, continue with normal expansion
-            pass
-
         # Success path at the end - return resolved path
-        if special_path is not None:
-            # Append remaining parts if any
-            if path_parts is not None and len(path_parts) > 1:
-                return self.resolve_path_safely(special_path / Path(*path_parts[1:]))
-            return self.resolve_path_safely(special_path)
-
-        return self.resolve_path_safely(path)
+        return self.resolve_path_safely(Path(expanded_user))
 
     def resolve_path_safely(self, path: Path) -> Path:
         """Resolve a path consistently across platforms.
