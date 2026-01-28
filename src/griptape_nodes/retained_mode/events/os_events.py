@@ -54,6 +54,24 @@ class FileIOFailureReason(StrEnum):
     IO_ERROR = "io_error"  # Generic I/O error
     UNKNOWN = "unknown"  # Unexpected error
 
+    # Recycle bin errors
+    RECYCLE_BIN_UNAVAILABLE = "recycle_bin_unavailable"  # Recycle bin unavailable and behavior was RECYCLE_BIN_ONLY
+
+
+class DeletionBehavior(StrEnum):
+    """How to handle file/directory deletion."""
+
+    PERMANENTLY_DELETE = "permanently_delete"  # Permanently delete (default, current behavior)
+    RECYCLE_BIN_ONLY = "recycle_bin_only"  # Send to recycle bin; fail if unavailable
+    PREFER_RECYCLE_BIN = "prefer_recycle_bin"  # Try recycle bin; fall back to permanent deletion
+
+
+class DeletionOutcome(StrEnum):
+    """The actual outcome of a deletion operation."""
+
+    PERMANENTLY_DELETED = "permanently_deleted"
+    SENT_TO_RECYCLE_BIN = "sent_to_recycle_bin"
+
 
 @dataclass
 class FileSystemEntry:
@@ -585,6 +603,7 @@ class DeleteFileRequest(RequestPayload):
         path: Path to file/directory to delete (mutually exclusive with file_entry)
         file_entry: FileSystemEntry from directory listing (mutually exclusive with path)
         workspace_only: If True, constrain to workspace directory
+        deletion_behavior: How to handle deletion (permanent, recycle bin only, or prefer recycle bin)
 
     Results: DeleteFileResultSuccess | DeleteFileResultFailure
     """
@@ -592,6 +611,7 @@ class DeleteFileRequest(RequestPayload):
     path: str | None = None
     file_entry: FileSystemEntry | None = None
     workspace_only: bool | None = True
+    deletion_behavior: DeletionBehavior = DeletionBehavior.PERMANENTLY_DELETE
 
 
 @dataclass
@@ -603,11 +623,13 @@ class DeleteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
         deleted_path: The absolute path that was deleted (primary path)
         was_directory: Whether the deleted item was a directory
         deleted_paths: List of all paths that were deleted (for recursive deletes, includes all files/dirs)
+        outcome: The actual outcome of the deletion (permanently deleted or sent to recycle bin)
     """
 
     deleted_path: str
     was_directory: bool
     deleted_paths: list[str]
+    outcome: DeletionOutcome = DeletionOutcome.PERMANENTLY_DELETED
 
 
 @dataclass
