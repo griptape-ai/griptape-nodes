@@ -246,10 +246,10 @@ class OSManager:
         """
         # Expand environment variables first
         expanded_vars = os.path.expandvars(path_str)
-        
+
         # Expand tilde to home directory
         expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
-        
+
         # Map common special folder names to platformdirs functions
         # This handles Windows OneDrive redirection and other platform-specific locations
         special_folders = {
@@ -260,18 +260,18 @@ class OSManager:
             "videos": platformdirs.user_videos_path,
             "music": platformdirs.user_music_path,
         }
-        
+
         # Convert to Path to work with parts
         path = Path(expanded_user)
         home_path = Path.home()
-        
+
         # Check if path is under home directory and contains a special folder
         try:
             # Try to get relative path from home
             if path.is_absolute() and str(path).lower().startswith(str(home_path).lower()):
                 relative_to_home = path.relative_to(home_path)
                 path_parts = relative_to_home.parts
-                
+
                 # Check if first part is a special folder
                 if path_parts and path_parts[0].lower() in special_folders:
                     folder_name = path_parts[0].lower()
@@ -344,7 +344,7 @@ class OSManager:
             has_env_vars = "%" in path_str or "$" in path_str
             is_absolute = Path(path_str).is_absolute()
             starts_with_tilde = path_str.startswith("~")
-            
+
             if has_env_vars or is_absolute or starts_with_tilde:
                 # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
                 return self._expand_path(path_str)
@@ -1255,7 +1255,7 @@ class OSManager:
                 has_env_vars = "%" in request.directory_path or "$" in request.directory_path
                 is_absolute = Path(request.directory_path).is_absolute()
                 starts_with_tilde = request.directory_path.startswith("~")
-                
+
                 if has_env_vars or is_absolute or starts_with_tilde:
                     # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
                     directory = self._expand_path(request.directory_path)
