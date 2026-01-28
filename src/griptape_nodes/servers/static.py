@@ -172,7 +172,7 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
             logger.warning("Path traversal attempt detected: %s", file_path)
             raise HTTPException(status_code=403, detail="Access denied")
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Access denied") from None
 
     # Check if file exists
     if not resolved_path.exists():

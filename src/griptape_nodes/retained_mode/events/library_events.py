@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from griptape_nodes.node_library.library_registry import (
-        CustomComponentDefinition,
         LibraryMetadata,
         LibrarySchema,
         NodeMetadata,
