@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import httpx
+from PIL import Image
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -40,6 +41,9 @@ from griptape_nodes.utils.url_utils import uri_to_path
 logger = logging.getLogger("griptape_nodes")
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
+
+# Supported image extensions for preview generation
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 
 
 class StaticFilesManager:
@@ -112,6 +116,107 @@ class StaticFilesManager:
                 self.on_app_initialization_complete,
             )
             # TODO: Listen for shutdown event (https://github.com/griptape-ai/griptape-nodes/issues/2149) to stop static server
+
+    def _is_preview_up_to_date(self, original_path: Path, preview_path: Path) -> bool:
+        """Check if cached preview exists and is newer than the original file.
+
+        Args:
+            original_path: Path to the original image file
+            preview_path: Path to the cached preview
+
+        Returns:
+            True if preview exists and is up-to-date, False otherwise
+        """
+        if not preview_path.exists():
+            return False
+
+        try:
+            original_mtime = original_path.stat().st_mtime
+            preview_mtime = preview_path.stat().st_mtime
+        except OSError as e:
+            logger.warning("Failed to check preview modification time: %s", e)
+            return False
+        else:
+            return preview_mtime >= original_mtime
+
+    def _generate_preview_if_needed(self, file_path: Path) -> Path:
+        """Generate preview for an image file if needed.
+
+        Returns path to preview file if generated/cached, or original file path if:
+        - File is not an image
+        - Preview generation fails
+
+        Args:
+            file_path: Path to the original file
+
+        Returns:
+            Path to preview file or original file
+        """
+        # Check if file is an image
+        file_extension = file_path.suffix.lower()
+        if file_extension not in IMAGE_EXTENSIONS:
+            return file_path
+
+        # Determine preview cache path using workflow-aware directory structure
+        workspace_path = self.config_manager.workspace_path
+
+        # Get the base directory for the original file relative to workspace
+        try:
+            relative_file_path = file_path.relative_to(workspace_path)
+        except ValueError:
+            # File is outside workspace, use absolute path structure
+            logger.warning("File %s is outside workspace, using absolute path for preview", file_path)
+            # For external files, use a flattened structure in workspace/thumbnails
+            preview_cache_dir = workspace_path / "thumbnails" / "external"
+            preview_filename = f"{file_path.stem}_{hash(str(file_path))}.webp"
+            preview_path = preview_cache_dir / preview_filename
+        else:
+            # File is inside workspace, use workflow-aware structure
+            # Replace staticfiles with thumbnails in the path
+            relative_str = str(relative_file_path)
+            if "staticfiles" in relative_str:
+                preview_relative_str = relative_str.replace("staticfiles", "thumbnails", 1)
+            else:
+                # File not in staticfiles directory, use parallel thumbnails structure
+                preview_relative_str = str(Path("thumbnails") / relative_file_path)
+
+            preview_relative_path = Path(preview_relative_str).with_suffix(".webp")
+            preview_path = workspace_path / preview_relative_path
+
+        # Check if cached preview is up-to-date
+        if self._is_preview_up_to_date(file_path, preview_path):
+            return preview_path
+
+        # Generate preview
+        try:
+            with Image.open(file_path) as original_img:
+                # Convert RGBA to RGB for formats that don't support transparency
+                if original_img.mode in ("RGBA", "LA", "P"):
+                    # Create white background
+                    background = Image.new("RGB", original_img.size, (255, 255, 255))
+                    img_to_paste = original_img.convert("RGBA") if original_img.mode == "P" else original_img
+                    background.paste(
+                        img_to_paste, mask=img_to_paste.split()[-1] if img_to_paste.mode in ("RGBA", "LA") else None
+                    )
+                    processed_img = background
+                elif original_img.mode != "RGB":
+                    processed_img = original_img.convert("RGB")
+                else:
+                    processed_img = original_img.copy()
+
+                # Resize while maintaining aspect ratio
+                processed_img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+
+                # Create preview directory if it doesn't exist
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Save preview to cache
+                processed_img.save(preview_path, format="WEBP", quality=85)
+        except Exception as e:
+            logger.warning("Failed to generate preview for %s: %s", file_path, e)
+            return file_path
+        else:
+            return preview_path
 
     def on_handle_create_static_file_request(
         self,
@@ -222,7 +327,7 @@ class StaticFilesManager:
         """Handle request to create download URL from arbitrary file path.
 
         Args:
-            request: Request containing file_path parameter.
+            request: Request containing file_path and preview parameters.
 
         Returns:
             Result with download URL or failure message.
@@ -262,15 +367,25 @@ class StaticFilesManager:
             # For local paths, convert URI to path
             file_path_for_driver = Path(uri_to_path(file_path))
 
+        # If preview requested and file is local, generate preview
+        if request.preview and bucket_id is None:
+            try:
+                file_path_to_use = self._generate_preview_if_needed(file_path_for_driver)
+            except Exception as e:
+                logger.warning("Preview generation failed for %s, using original: %s", request.file_path, e)
+                file_path_to_use = file_path_for_driver
+        else:
+            file_path_to_use = file_path_for_driver
+
         try:
-            url = driver.create_signed_download_url(file_path_for_driver)
+            url = driver.create_signed_download_url(file_path_to_use)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
-            file_url=driver.get_asset_url(file_path_for_driver),
+            file_url=driver.get_asset_url(file_path_to_use),
             result_details="Successfully created static file download URL",
         )
 

@@ -134,12 +134,15 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
         macro_variables: Optional variable substitutions for macro paths
                          (e.g., {"file_name": "output", "file_ext": "png"}).
                          Ignored for non-macro paths.
+        preview: If True, generates a smaller preview version for image files.
+                 Defaults to False.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_path: str
     macro_variables: MacroVariables = field(default_factory=dict)
+    preview: bool = False
 
 
 @dataclass
