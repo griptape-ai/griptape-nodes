@@ -11,9 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
-import platformdirs
-
 import aioshutil
+import platformdirs
 import portalocker
 from binaryornot.check import is_binary
 from rich.console import Console
