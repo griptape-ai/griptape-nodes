@@ -9,6 +9,9 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
+# Maximum dimension value (supports up to 16K resolution)
+MAX_DIMENSION = 16384
+
 
 class AspectRatioPreset(NamedTuple):
     """Represents an aspect ratio preset with optional pixel dimensions and aspect ratio."""
@@ -152,7 +155,7 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_width],
                 min_val=0,
-                max_val=16384,  # Support up to 16K resolution
+                max_val=MAX_DIMENSION,
             )
 
             # Hidden parameter to store fractional width for precise ratio calculations
@@ -164,7 +167,7 @@ class AspectRatio(SuccessFailureNode):
                 settable=False,
                 hide=True,
                 min_val=0,
-                max_val=16384,  # Support up to 16K resolution
+                max_val=MAX_DIMENSION,
             )
 
             self._height_parameter = ParameterInt(
@@ -174,7 +177,7 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_height],
                 min_val=0,
-                max_val=16384,  # Support up to 16K resolution
+                max_val=MAX_DIMENSION,
             )
 
             # Hidden parameter to store fractional height for precise ratio calculations
@@ -186,7 +189,7 @@ class AspectRatio(SuccessFailureNode):
                 settable=False,
                 hide=True,
                 min_val=0,
-                max_val=16384,  # Support up to 16K resolution
+                max_val=MAX_DIMENSION,
             )
 
             self._ratio_str_parameter = ParameterString(
