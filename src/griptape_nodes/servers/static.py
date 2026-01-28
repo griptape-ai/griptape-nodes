@@ -134,6 +134,45 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
+async def _serve_workspace_file(file_path: str, _request: Request) -> FileResponse:
+    """Serve a file from the workspace directory.
+
+    Preview generation now happens in StaticFilesManager when creating download URLs.
+    This endpoint simply serves the requested file.
+
+    Args:
+        file_path: The relative file path within workspace (e.g., "images/photo.jpg")
+        _request: FastAPI Request object (unused, kept for route signature compatibility)
+
+    Returns:
+        FileResponse with the requested file
+    """
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise HTTPException(status_code=500, detail=msg)
+
+    workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
+    full_file_path = workspace_directory / file_path
+
+    if not full_file_path.exists():
+        logger.warning("Workspace file not found: %s", file_path)
+        raise HTTPException(status_code=404, detail=f"File {file_path} not found")
+
+    if not full_file_path.is_file():
+        msg = f"Path {file_path} is not a file"
+        logger.error(msg)
+        raise HTTPException(status_code=400, detail=msg)
+
+    try:
+        full_file_path.resolve().relative_to(workspace_directory.resolve())
+    except ValueError as e:
+        msg = f"Invalid path: {file_path}"
+        logger.error(msg)
+        raise HTTPException(status_code=400, detail=msg) from e
+
+    return FileResponse(full_file_path)
+
+
 async def _serve_external_file(file_path: str) -> FileResponse:
     """Serve a file from outside the workspace.
 
@@ -199,10 +238,11 @@ def start_static_server() -> None:
     workspace_directory = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory"))
     static_files_directory = Path(GriptapeNodes.ConfigManager().get_config_value("static_files_directory"))
 
-    app.mount(
-        STATIC_SERVER_URL,
-        StaticFiles(directory=workspace_directory),
-        name="workspace",
+    # Register workspace file handler with preview generation
+    app.add_api_route(
+        f"{STATIC_SERVER_URL}/{{file_path:path}}",
+        _serve_workspace_file,
+        methods=["GET"],
     )
     static_files_path = workspace_directory / static_files_directory
     static_files_path.mkdir(parents=True, exist_ok=True)
