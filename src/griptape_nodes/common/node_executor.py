@@ -3232,7 +3232,7 @@ class NodeExecutor:
                 WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
 
         delete_request = DeleteWorkflowRequest(name=workflow_name)
-        delete_result = GriptapeNodes.handle_request(delete_request)
+        delete_result = await GriptapeNodes.ahandle_request(delete_request)
         if isinstance(delete_result, DeleteWorkflowResultFailure):
             logger.error(
                 "Failed to delete workflow '%s'. Error: %s",

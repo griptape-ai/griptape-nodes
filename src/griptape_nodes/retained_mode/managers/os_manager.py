@@ -2255,6 +2255,7 @@ class OSManager:
         for file_path, _ in files_with_times:
             try:
                 # Delete the file.
+                # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
                 file_path.unlink()
                 removed_count += 1
 
@@ -2542,7 +2543,9 @@ class OSManager:
             console.print(f"[red]Details: {e}[/red]")
             raise
 
-    async def on_delete_file_request(self, request: DeleteFileRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
+    async def on_delete_file_request(  # noqa: PLR0911, PLR0912, PLR0915, C901
+        self, request: DeleteFileRequest
+    ) -> DeleteFileResultSuccess | DeleteFileResultFailure:
         """Handle a request to delete a file or directory."""
         # Validate exactly one of path or file_entry provided and determine path to delete
         if request.path is not None and request.file_entry is not None:
