@@ -83,29 +83,36 @@ class ExtractFrames(SuccessFailureNode):
             )
         )
 
-        # Video details display and refresh button
+        # Video information parameters
         with ParameterGroup(name="Video Information") as video_info_group:
             ParameterString(
-                name="video_details",
-                default_value="No video loaded",
-                tooltip="Video information: FPS, frame count, and frame range",
-                allowed_modes={ParameterMode.PROPERTY},
-                multiline=True,
+                name="frame_rate",
+                default_value="",
+                tooltip="Video frame rate (FPS) - set automatically based on connected video",
                 allow_input=False,
                 allow_property=False,
-                placeholder_text="Video details will appear here...",
+                placeholder_text="FPS will appear here...",
+            )
+
+            ParameterInt(
+                name="frame_count",
+                default_value=0,
+                tooltip="Total number of frames in the video - set automatically based on connected video",
+                allow_input=False,
+                allow_property=False,
             )
 
             ParameterButton(
-                name="refresh_video_details",
-                label="Refresh Video Details",
+                name="refresh_video_info",
+                label="Refresh Video Info",
                 variant="secondary",
                 icon="refresh-cw",
-                on_click=self._refresh_video_details,
+                on_click=self._refresh_video_info,
             )
 
         self.add_node_element(video_info_group)
-        self.add_parameter(
+        with ParameterGroup(name="Extraction Options") as extraction_options_group:
+            # Frame range selector
             ParameterRange(
                 name="frame_range",
                 default_value=[0.0, 100.0],
@@ -117,10 +124,8 @@ class ExtractFrames(SuccessFailureNode):
                 step=1.0,
                 min_label="start frame",
                 max_label="end frame",
-                hide_range_labels=False,
+                hide_range_labels=True,
             )
-        )
-        with ParameterGroup(name="Extraction Options") as extraction_options_group:
             # Extraction mode dropdown
             ParameterString(
                 name="extraction_mode",
@@ -130,7 +135,6 @@ class ExtractFrames(SuccessFailureNode):
                 traits={Options(choices=EXTRACTION_MODES)},
             )
 
-            # Frame range selector using ParameterRange (frame-based)
             # Frame list string field (shown when mode is "List")
             ParameterString(
                 name="frame_list",
@@ -250,8 +254,8 @@ class ExtractFrames(SuccessFailureNode):
         # Only update if not currently executing (to avoid modifying user's frame range during execution)
         if parameter.name == "video" and self.state != NodeResolutionState.RESOLVING:
             self._update_frame_range_from_video(value)
-            # Update video details when video changes
-            self._update_video_details()
+            # Update video information parameters when video changes
+            self._update_video_info()
 
     def _update_frame_range_from_video(self, video_input: Any) -> None:
         """Update the frame_range parameter's max value based on video frame count.
@@ -337,52 +341,42 @@ class ExtractFrames(SuccessFailureNode):
         ):
             return None
 
-    def _update_video_details(self) -> None:
-        """Update the video_details parameter with current video information."""
+    def _update_video_info(self) -> None:
+        """Update the frame_rate and frame_count parameters based on connected video."""
         video = self.get_parameter_value("video")
         if not video:
-            self.set_parameter_value("video_details", "No video loaded")
+            self.set_parameter_value("frame_rate", "")
+            self.set_parameter_value("frame_count", 0)
             return
 
         video_url = self._extract_video_url(video)
         if not video_url:
-            self.set_parameter_value("video_details", "Could not extract video URL")
+            self.set_parameter_value("frame_rate", "")
+            self.set_parameter_value("frame_count", 0)
             return
 
         # Get video information
         frame_count = self._get_video_frame_count(video_url)
         fps = self._get_video_fps(video_url)
-        frame_range = self.get_parameter_value("frame_range") or [0.0, 100.0]
 
-        # Build details string
-        details_lines = []
+        # Update frame_rate
         if fps is not None:
-            details_lines.append(f"Frame Rate (FPS): {fps:.2f}")
+            self.set_parameter_value("frame_rate", f"{fps:.2f}")
         else:
-            details_lines.append("Frame Rate (FPS): Unknown")
+            self.set_parameter_value("frame_rate", "")
 
+        # Update frame_count
         if frame_count is not None:
-            details_lines.append(f"Total Frames: {frame_count}")
-            details_lines.append(f"Frame Range: 0 - {frame_count - 1}")
+            self.set_parameter_value("frame_count", frame_count)
         else:
-            details_lines.append("Total Frames: Unknown")
-            details_lines.append("Frame Range: Unknown")
+            self.set_parameter_value("frame_count", 0)
 
-        if isinstance(frame_range, list) and len(frame_range) == 2:
-            start_frame = int(frame_range[0])
-            end_frame = int(frame_range[1])
-            details_lines.append(f"Selected Range: {start_frame} - {end_frame}")
-
-        details_text = "\n".join(details_lines)
-        self.set_parameter_value("video_details", details_text)
-        self.publish_update_to_parameter("video_details", details_text)
-
-    def _refresh_video_details(self, _button: Button, _details: ButtonDetailsMessagePayload) -> NodeMessageResult:
-        """Refresh video details when button is clicked."""
-        self._update_video_details()
+    def _refresh_video_info(self, _button: Button, _details: ButtonDetailsMessagePayload) -> NodeMessageResult:
+        """Refresh video information when button is clicked."""
+        self._update_video_info()
         return NodeMessageResult(
             success=True,
-            details="Video details refreshed",
+            details="Video information refreshed",
             response=None,
             altered_workflow_state=False,
         )
