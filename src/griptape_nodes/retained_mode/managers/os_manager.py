@@ -290,30 +290,41 @@ class OSManager:
             csidl_map = {
                 "desktop": 0x0000,  # CSIDL_DESKTOP
                 "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
-                "downloads": 0x002D,  # CSIDL_DOWNLOADS
+                "downloads": 0x0033,  # CSIDL_DOWNLOADS
                 "pictures": 0x0027,  # CSIDL_MYPICTURES
                 "videos": 0x000E,  # CSIDL_MYVIDEO
                 "music": 0x000D,  # CSIDL_MYMUSIC
             }
 
             # Parse path to find special folder names
-            # Normalize separators and split
-            normalized = path_str.replace("\\", "/").strip("/")
+            # Normalize separators and split, handling ~ and %UserProfile% prefixes
+            normalized = path_str.replace("\\", "/")
+            # Remove leading ~ or %UserProfile% to focus on the actual path parts
+            if normalized.startswith("~/"):
+                normalized = normalized[2:]
+            elif normalized.startswith("~"):
+                normalized = normalized[1:]
+            # Expand %UserProfile% if present
+            if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
+                normalized = os.path.expandvars(normalized)
+                # Remove the user profile path prefix if it's at the start
+                userprofile = os.environ.get("USERPROFILE", "")
+                if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
+                    normalized = normalized[len(userprofile) :].lstrip("/\\")
+
             parts = [p.lower() for p in normalized.split("/") if p]
 
-            # Check if any part matches a special folder name
-            for i, part in enumerate(parts):
-                if part in csidl_map:
-                    # Found a special folder, get its actual path using Shell API
-                    special_path = self._get_windows_special_folder_path(csidl_map[part])
-                    if special_path is not None:
-                        # Append remaining parts after the special folder
-                        remaining_parts = parts[i + 1 :]
-                        if remaining_parts:
-                            return self.resolve_path_safely(special_path / Path(*remaining_parts))
-                        return self.resolve_path_safely(special_path)
-                    # If Shell API fails, fall through to normal expansion
-                    break
+            # Check if first part matches a special folder name
+            if parts and parts[0] in csidl_map:
+                # Found a special folder, get its actual path using Shell API
+                special_path = self._get_windows_special_folder_path(csidl_map[parts[0]])
+                if special_path is not None:
+                    # Append remaining parts after the special folder
+                    remaining_parts = parts[1:]
+                    if remaining_parts:
+                        return self.resolve_path_safely(special_path / Path(*remaining_parts))
+                    return self.resolve_path_safely(special_path)
+                # If Shell API fails, fall through to normal expansion
 
         # Expand environment variables first
         expanded_vars = os.path.expandvars(path_str)
