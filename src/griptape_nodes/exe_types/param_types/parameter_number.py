@@ -2,7 +2,7 @@
 
 import math
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.traits.clamp import Clamp
@@ -350,8 +350,8 @@ class ParameterNumber(Parameter):
 
     def _update_constraint_traits(self) -> None:
         """Update constraint traits based on current min/max values."""
-        min_val = cast("float | None", getattr(self, "_min_val", None))
-        max_val = cast("float | None", getattr(self, "_max_val", None))
+        min_val = getattr(self, "_min_val", None)
+        max_val = getattr(self, "_max_val", None)
 
         if min_val is None and max_val is None:
             self._remove_constraint_traits()
@@ -368,14 +368,18 @@ class ParameterNumber(Parameter):
         # Determine which trait to use based on current state
         if self.slider:
             # Checked above: both min_val and max_val are available when slider is enabled.
-            min_val_float = cast("float", min_val)
-            max_val_float = cast("float", max_val)
+            # Type narrowing: assign to variables after None check so type checker understands
+            min_val_float: float = min_val  # type: ignore[assignment]
+            max_val_float: float = max_val  # type: ignore[assignment]
+            # Python will naturally coerce int to float if needed (no precision loss for reasonable values)
             self._remove_constraint_traits()
             self.add_trait(Slider(min_val=min_val_float, max_val=max_val_float))
         elif self.validate_min_max:
             # Checked above: both min_val and max_val are available when validate_min_max is enabled.
-            min_val_float = cast("float", min_val)
-            max_val_float = cast("float", max_val)
+            # Type narrowing: assign to variables after None check so type checker understands
+            min_val_float: float = min_val  # type: ignore[assignment]
+            max_val_float: float = max_val  # type: ignore[assignment]
+            # Python will naturally coerce int to float if needed (no precision loss for reasonable values)
             self._remove_constraint_traits()
             self.add_trait(MinMax(min_val=min_val_float, max_val=max_val_float))
         else:
