@@ -1010,7 +1010,11 @@ class BaseNode(ABC):
     def get_node_dependencies(self) -> NodeDependencies | None:
         """Return the dependencies that this node has on external resources.
 
-        This method should be overridden by nodes that have dependencies on:
+        This base implementation collects library dependencies from Component traits
+        on parameters. Subclasses should call super().get_node_dependencies() and
+        aggregate their own dependencies using NodeDependencies.aggregate_from().
+
+        This method can be overridden by nodes that have additional dependencies on:
         - Referenced workflows: Other workflows that this node calls or references
         - Static files: Files that this node reads from or requires for operation
         - Python imports: Modules or classes that this node imports beyond standard dependencies
@@ -1024,16 +1028,48 @@ class BaseNode(ABC):
 
         Example:
             def get_node_dependencies(self) -> NodeDependencies | None:
-                return NodeDependencies(
-                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
-                    static_files={"config.json", "model_weights.pkl"},
-                    imports={
-                        ImportDependency("numpy"),
-                        ImportDependency("sklearn.linear_model", "LinearRegression"),
-                        ImportDependency("custom_module", "SpecialProcessor")
-                    }
-                )
+                # Start with base class dependencies (Component traits)
+                deps = super().get_node_dependencies()
+                if deps is None:
+                    deps = NodeDependencies()
+
+                # Add this node's specific dependencies
+                deps.referenced_workflows.update({"image_processing_workflow", "validation_workflow"})
+                deps.static_files.update({"config.json", "model_weights.pkl"})
+                deps.imports.update({
+                    ImportDependency("numpy"),
+                    ImportDependency("sklearn.linear_model", "LinearRegression"),
+                    ImportDependency("custom_module", "SpecialProcessor")
+                })
+                return deps
         """
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+        from griptape_nodes.traits.component import Component
+
+        component_libraries: set[LibraryNameAndVersion] = set()
+
+        logger.info("Getting dependencies for node: %s", self.name)
+
+        for parameter in self.parameters:
+            components = parameter.find_elements_by_type(Component)
+            for component in components:
+                if component.library:
+                    try:
+                        library = LibraryRegistry.get_library(component.library)
+                        library_data = library.get_library_data()
+                        component_libraries.add(
+                            LibraryNameAndVersion(
+                                library_name=library_data.name,
+                                library_version=library_data.metadata.library_version,
+                            )
+                        )
+                    except KeyError:
+                        # Library not found - skip (may be unregistered)
+                        pass
+
+        if component_libraries:
+            logger.debug("Node '%s' has component library dependencies: %s", self.name, component_libraries)
+            return NodeDependencies(libraries=component_libraries)
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
