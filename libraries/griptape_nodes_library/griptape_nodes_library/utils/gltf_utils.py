@@ -29,6 +29,8 @@ def dict_to_gltf_url_artifact(gltf_dict: dict, gltf_format: str | None = None) -
         else:
             gltf_format = "glb"
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(gltf_bytes, f"{uuid.uuid4()}.{gltf_format}")
+    url = GriptapeNodes.StaticFilesManager().save_static_file(
+        gltf_bytes, f"{uuid.uuid4()}.{gltf_format}", use_direct_save=True
+    )
 
     return GLTFUrlArtifact(url)

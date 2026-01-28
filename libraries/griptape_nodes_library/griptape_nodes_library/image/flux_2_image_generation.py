@@ -437,7 +437,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             if image_bytes:
                 filename = f"flux_image_{generation_id}.jpg"
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
                 self._log(f"Saved image to static storage as {filename}")
                 self._set_status_results(

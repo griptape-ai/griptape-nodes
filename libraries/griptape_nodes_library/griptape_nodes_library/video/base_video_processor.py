@@ -309,7 +309,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
 
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(suffix, format_extension)
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
+        url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename, use_direct_save=True)
         return VideoUrlArtifact(url)
 
     def _run_ffmpeg_command(self, cmd: list[str], timeout: int = 300) -> None:

@@ -513,7 +513,7 @@ class ArtifactPathTethering:
 
         # Save to static storage using direct save
         static_files_manager = GriptapeNodes.StaticFilesManager()
-        download_url = static_files_manager.save_static_file(response.content, filename)
+        download_url = static_files_manager.save_static_file(response.content, filename, use_direct_save=True)
 
         return download_url
 

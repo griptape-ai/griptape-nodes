@@ -469,7 +469,7 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
             try:
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 filename = f"kling_image_to_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.info("%s saved video to static storage as %s", self.name, filename)
                 self._set_status_results(

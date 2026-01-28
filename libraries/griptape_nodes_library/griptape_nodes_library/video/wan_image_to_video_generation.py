@@ -697,7 +697,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.info("Saved video to static storage as %s", filename)
                 self._set_status_results(
