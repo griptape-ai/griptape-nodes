@@ -76,7 +76,8 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
             call_args = mock_os_manager.on_write_file_request.call_args[0][0]
             assert isinstance(call_args, WriteFileRequest)
             # LocalStorageDriver converts relative paths to absolute before calling OSManager
-            expected_absolute_path = Path("/workspace") / TEST_FILE_PATH
+            # resolve_workspace_path normalizes the path by calling .resolve()
+            expected_absolute_path = (Path("/workspace") / TEST_FILE_PATH).resolve()
             assert call_args.file_path == str(expected_absolute_path)
             assert call_args.content == b""  # Empty content for URL generation
             assert call_args.existing_file_policy == ExistingFilePolicy.FAIL

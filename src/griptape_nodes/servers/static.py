@@ -195,6 +195,32 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
             "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
         },
     )
+async def _serve_external_file(file_path: str) -> FileResponse:
+    """Serve a file from outside the workspace.
+
+    Args:
+        file_path: The file path without leading slash (e.g., "tmp/video.mp4" for "/tmp/video.mp4")
+    """
+    if not STATIC_SERVER_ENABLED:
+        msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."
+        raise HTTPException(status_code=500, detail=msg)
+
+    # Reconstruct absolute path by adding leading slash
+    absolute_path = Path(f"/{file_path}")
+
+    # Check if file exists
+    if not absolute_path.exists():
+        logger.warning("External file not found: %s", absolute_path)
+        raise HTTPException(status_code=404, detail=f"File {absolute_path} not found")
+
+    # Check if it's actually a file (not a directory)
+    if not absolute_path.is_file():
+        msg = f"Path {absolute_path} is not a file"
+        logger.error(msg)
+        raise HTTPException(status_code=400, detail=msg)
+
+    # Serve the file
+    return FileResponse(absolute_path)
 
 
 def start_static_server() -> None:
@@ -217,6 +243,7 @@ def start_static_server() -> None:
         _serve_library_component,
         methods=["GET"],
     )
+    app.add_api_route("/external/{file_path:path}", _serve_external_file, methods=["GET"])
 
     # Build CORS allowed origins list
     allowed_origins = [

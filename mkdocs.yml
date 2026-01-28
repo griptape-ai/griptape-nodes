@@ -168,6 +168,7 @@ nav:
           - Gaussian Edge Fade: nodes/image/gaussian_edge_fade.md
           - Crop Image: nodes/image/crop_image.md
           - Image Blend Compositor: nodes/image/image_blend_compositor.md
+          - Color Match: nodes/image/color_match.md
           - Image Bash: nodes/image/image_bash.md
           - Rescale Image: nodes/image/rescale_image.md
           - Compare Images: nodes/image/compare_images.md

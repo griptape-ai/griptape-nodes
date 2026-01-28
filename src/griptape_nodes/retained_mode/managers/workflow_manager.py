@@ -150,6 +150,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -631,11 +632,9 @@ class WorkflowManager:
                 raise RuntimeError(error_message)
 
     async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
-        relative_file_path_obj = Path(relative_file_path)
-        if relative_file_path_obj.is_absolute():
-            complete_file_path = relative_file_path_obj
-        else:
-            complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        # Resolve path using utility function
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         try:
             # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
