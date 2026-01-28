@@ -651,6 +651,7 @@ class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, Res
     # Could be a flow command if it's all nodes in a flow.
     serialized_selected_node_commands: str
     pickled_values: dict[str, str]
+    node_names_serialized: list[str]
 
 
 @dataclass
@@ -687,10 +688,12 @@ class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, Re
     """Nodes recreated successfully from serialized commands. Parameter values and connections restored.
 
     Args:
-        node_names: List of names assigned to newly created nodes
+        node_names: List of all node names created (including children)
+        duplicate_names: List of explicitly selected node names (excludes group children) for connection remaking
     """
 
     node_names: list[str]
+    duplicate_names: list[str] = field(default_factory=list)
 
 
 @dataclass
