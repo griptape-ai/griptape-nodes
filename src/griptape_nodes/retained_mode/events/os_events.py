@@ -611,7 +611,7 @@ class DeleteFileRequest(RequestPayload):
     path: str | None = None
     file_entry: FileSystemEntry | None = None
     workspace_only: bool | None = True
-    deletion_behavior: DeletionBehavior = DeletionBehavior.PERMANENTLY_DELETE
+    deletion_behavior: DeletionBehavior = DeletionBehavior.PREFER_RECYCLE_BIN
 
 
 @dataclass
@@ -629,7 +629,7 @@ class DeleteFileResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     deleted_path: str
     was_directory: bool
     deleted_paths: list[str]
-    outcome: DeletionOutcome = DeletionOutcome.PERMANENTLY_DELETED
+    outcome: DeletionOutcome
 
 
 @dataclass

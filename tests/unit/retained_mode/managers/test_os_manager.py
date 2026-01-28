@@ -690,7 +690,11 @@ class TestDeleteFileRequest:
         file_path.write_text("test content")
 
         with patch.object(Path, "unlink", side_effect=PermissionError("Access denied")):
-            request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PERMANENTLY_DELETE,
+            )
             result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultFailure)
@@ -938,10 +942,10 @@ class TestDeleteFileRequest:
         assert isinstance(result.result_details, ResultDetails)
 
     @pytest.mark.asyncio
-    async def test_delete_outcome_default_is_permanently_deleted(
+    async def test_delete_outcome_default_is_sent_to_recycle_bin(
         self, griptape_nodes: GriptapeNodes, temp_dir: Path
     ) -> None:
-        """Test that default deletion (no behavior specified) reports PERMANENTLY_DELETED outcome."""
+        """Test that default deletion (no behavior specified) reports SENT_TO_RECYCLE_BIN outcome."""
         os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("test content")
@@ -950,7 +954,7 @@ class TestDeleteFileRequest:
         result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultSuccess)
-        assert result.outcome == DeletionOutcome.PERMANENTLY_DELETED
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
 
 
 class TestGetFileInfoRequest:
