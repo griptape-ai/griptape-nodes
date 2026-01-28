@@ -282,8 +282,10 @@ class OSManager:
         Returns:
             Expanded Path object
         """
-        # On Windows, check for special folder names in the path before expansion
-        # This handles cases like ~/Downloads or %UserProfile%/Downloads
+        # Check for Windows special folder handling
+        special_path = None
+        remaining_parts = None
+
         if sys.platform == "win32":
             # Map common special folder names to Windows CSIDL constants
             # CSIDL constants: https://learn.microsoft.com/en-us/windows/win32/shell/csidl
@@ -319,21 +321,23 @@ class OSManager:
                 # Found a special folder, get its actual path using Shell API
                 special_path = self._get_windows_special_folder_path(csidl_map[parts[0]])
                 if special_path is not None:
-                    # Append remaining parts after the special folder
                     remaining_parts = parts[1:]
-                    if remaining_parts:
-                        return self.resolve_path_safely(special_path / Path(*remaining_parts))
-                    return self.resolve_path_safely(special_path)
-                # If Shell API fails, fall through to normal expansion
 
-        # Expand environment variables first
-        expanded_vars = os.path.expandvars(path_str)
+        # Success path at the end - compute final path and return
+        if special_path is not None:
+            # Use special folder path
+            if remaining_parts:
+                final_path = special_path / Path(*remaining_parts)
+            else:
+                final_path = special_path
+        else:
+            # Expand environment variables first
+            expanded_vars = os.path.expandvars(path_str)
+            # Expand tilde to home directory
+            expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
+            final_path = Path(expanded_user)
 
-        # Expand tilde to home directory
-        expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
-
-        # Success path at the end - return resolved path
-        return self.resolve_path_safely(Path(expanded_user))
+        return self.resolve_path_safely(final_path)
 
     def resolve_path_safely(self, path: Path) -> Path:
         """Resolve a path consistently across platforms.
