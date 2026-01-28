@@ -9,9 +9,6 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 
-# Maximum dimension value (supports up to 16K resolution)
-MAX_DIMENSION = 16384
-
 
 class AspectRatioPreset(NamedTuple):
     """Represents an aspect ratio preset with optional pixel dimensions and aspect ratio."""
@@ -155,10 +152,12 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_width],
                 min_val=0,
-                max_val=MAX_DIMENSION,
             )
 
             # Hidden parameter to store fractional width for precise ratio calculations
+            # This has nuanced semantic behavior:
+            # * if None, it means use the INTEGER values directly for calculating aspect ratio.
+            # * if NOT None, dimensions were calculated from a ratio; use these precise values to avoid rounding errors.
             self._internal_width_float_parameter = ParameterFloat(
                 name="internal_width_float",
                 tooltip="Internal fractional width for precise aspect ratio calculations",
@@ -166,8 +165,7 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 settable=False,
                 hide=True,
-                min_val=0,
-                max_val=MAX_DIMENSION,
+                min_val=0.0,
             )
 
             self._height_parameter = ParameterInt(
@@ -177,10 +175,12 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 validators=[validate_height],
                 min_val=0,
-                max_val=MAX_DIMENSION,
             )
 
             # Hidden parameter to store fractional height for precise ratio calculations
+            # This has nuanced semantic behavior:
+            # * if None, it means use the INTEGER values directly for calculating aspect ratio.
+            # * if NOT None, dimensions were calculated from a ratio; use these precise values to avoid rounding errors.
             self._internal_height_float_parameter = ParameterFloat(
                 name="internal_height_float",
                 tooltip="Internal fractional height for precise aspect ratio calculations",
@@ -188,8 +188,7 @@ class AspectRatio(SuccessFailureNode):
                 allowed_modes={ParameterMode.PROPERTY},
                 settable=False,
                 hide=True,
-                min_val=0,
-                max_val=MAX_DIMENSION,
+                min_val=0.0,
             )
 
             self._ratio_str_parameter = ParameterString(
@@ -211,6 +210,7 @@ class AspectRatio(SuccessFailureNode):
                 default_value=1.0,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 validators=[validate_upscale],
+                min_val=0.0,
             )
 
             self._swap_dimensions_parameter = ParameterBool(
@@ -229,6 +229,7 @@ class AspectRatio(SuccessFailureNode):
                 default_value=1024,
                 tooltip="Final calculated width after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
+                min_val=0,
             )
 
             self._final_height_parameter = ParameterInt(
@@ -237,6 +238,7 @@ class AspectRatio(SuccessFailureNode):
                 default_value=1024,
                 tooltip="Final calculated height after applying modifiers",
                 allowed_modes={ParameterMode.OUTPUT},
+                min_val=0,
             )
 
             self._final_ratio_str_parameter = ParameterString(
@@ -253,6 +255,7 @@ class AspectRatio(SuccessFailureNode):
                 default_value=1.0,
                 tooltip="Final aspect ratio as decimal (width/height)",
                 allowed_modes={ParameterMode.OUTPUT},
+                min_val=0.0,
             )
         self.add_node_element(outputs_group)
 
@@ -444,8 +447,25 @@ class AspectRatio(SuccessFailureNode):
             self._clear_output_values()
             self._handle_failure_exception(e)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Handle cascading parameter updates after a value is set."""
+    def set_parameter_value(
+        self,
+        param_name: str,
+        value: Any,
+        *,
+        initial_setup: bool = False,
+        emit_change: bool = True,
+        skip_before_value_set: bool = False,
+    ) -> None:
+        """Override to add locking logic for preset/working/modifier parameters."""
+        # Call parent first to set the value
+        super().set_parameter_value(
+            param_name,
+            value,
+            initial_setup=initial_setup,
+            emit_change=emit_change,
+            skip_before_value_set=skip_before_value_set,
+        )
+
         # Early out if locked
         if self._updating_lock:
             return
@@ -460,14 +480,14 @@ class AspectRatio(SuccessFailureNode):
             self._swap_dimensions_parameter.name,
         }
 
-        if parameter.name not in managed_param_names:
+        if param_name not in managed_param_names:
             return
 
         # Acquire lock and handle parameter changes
         self._updating_lock = True
         try:
             # Handle parameter changes based on which parameter was set
-            match parameter.name:
+            match param_name:
                 case self._preset_parameter.name:
                     self._handle_preset_change(value)
                 case self._width_parameter.name:
@@ -592,27 +612,25 @@ class AspectRatio(SuccessFailureNode):
             error_msg = "Pixel preset must have both width and height specified."
             raise ValueError(error_msg)
 
-        # Store exact pixel values as floats in internal parameters first
-        # This preserves the exact dimensions before integer conversion
-        self.set_parameter_value(self._internal_width_float_parameter.name, float(preset.width))
-        self.set_parameter_value(self._internal_height_float_parameter.name, float(preset.height))
+        # Calculate ratio from pixels first (preset may have an aspect ratio specified, but it may not be exact)
+        ratio = self._calculate_ratio(preset.width, preset.height)
+        if ratio is None:
+            error_msg = f"Failed to calculate ratio from preset dimensions {preset.width}x{preset.height}."
+            raise ValueError(error_msg)
 
-        # Update all parameters (these will be rounded to ints)
+        # Update all parameters
         self.set_parameter_value(self._width_parameter.name, preset.width)
         self.set_parameter_value(self._height_parameter.name, preset.height)
 
-        # Use aspect ratio from preset if available, otherwise calculate from pixels
-        if preset.aspect_width is not None and preset.aspect_height is not None:
-            ratio_str = f"{preset.aspect_width}:{preset.aspect_height}"
-        else:
-            # Fallback: calculate ratio from pixel dimensions
-            ratio = self._calculate_ratio(preset.width, preset.height)
-            if ratio is None:
-                error_msg = f"Failed to calculate ratio from preset dimensions {preset.width}x{preset.height}."
-                raise ValueError(error_msg)
-            ratio_str = f"{ratio[0]}:{ratio[1]}"
+        # Clear fractional values since preset provided explicit integers
+        self.set_parameter_value(self._internal_width_float_parameter.name, None)
+        self.set_parameter_value(self._internal_height_float_parameter.name, None)
 
+        ratio_str = f"{ratio[0]}:{ratio[1]}"
         self.set_parameter_value(self._ratio_str_parameter.name, ratio_str)
+
+        ratio_decimal = ratio[0] / ratio[1]
+        self.set_parameter_value(self._final_ratio_decimal_parameter.name, ratio_decimal)
 
     def _apply_ratio_preset(self, preset_aspect_width: int, preset_aspect_height: int) -> None:
         """Apply a preset with only ratio specified - calculate pixels from current dimensions."""
@@ -814,10 +832,7 @@ class AspectRatio(SuccessFailureNode):
         # Create ratio string
         ratio_str = f"{ratio[0]}:{ratio[1]}"
 
-        # Calculate decimal - protect against division by zero
-        if ratio[1] == 0:
-            return ratio_str, 0.0
-
+        # Calculate decimal
         ratio_decimal = ratio[0] / ratio[1]
 
         return ratio_str, ratio_decimal
@@ -840,9 +855,15 @@ class AspectRatio(SuccessFailureNode):
         width_float = self.get_parameter_value(self._internal_width_float_parameter.name)
         height_float = self.get_parameter_value(self._internal_height_float_parameter.name)
 
-        if width_float is not None and height_float is not None and height_float != 0:
-            # Calculate ratio from fractional values
-            # Round to reasonable precision to detect common ratios
+        # If the width_float or height_float are not None, that means the user had specified
+        # an explicit ratio, and we're preserving the fractional pieces.
+
+        if width_float is not None and height_float is not None:
+            # height_float cannot be 0 here - if it were, height would also be 0,
+            # and we would have returned early above. See _calculate_dimensions_from_primary.
+            if height_float == 0:
+                error_msg = "Invariant violation: height_float is 0 but we didn't hit early return"
+                raise ValueError(error_msg)
 
             # Try common aspect ratios first (within 0.1% tolerance)
             ratio_decimal = width_float / height_float
