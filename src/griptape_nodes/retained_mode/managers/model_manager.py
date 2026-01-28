@@ -1119,6 +1119,7 @@ class ModelManager:
             msg = f"Download status file not found for model '{model_id}'"
             raise FileNotFoundError(msg)
 
+        # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
         status_file.unlink()
         return str(status_file)
 
