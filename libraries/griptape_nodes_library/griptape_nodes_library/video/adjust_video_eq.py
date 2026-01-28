@@ -1,6 +1,7 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -32,9 +33,8 @@ class AdjustVideoEQ(BaseVideoProcessor):
         """Setup EQ-specific parameters."""
         with ParameterGroup(name="eq_settings", ui_options={"collapsed": False}) as eq_group:
             # Brightness parameter
-            brightness_parameter = Parameter(
+            brightness_parameter = ParameterFloat(
                 name="brightness",
-                type="float",
                 default_value=self.DEFAULT_BRIGHTNESS,
                 tooltip=f"Brightness adjustment ({self.MIN_BRIGHTNESS}-{self.MAX_BRIGHTNESS})",
             )
@@ -42,9 +42,8 @@ class AdjustVideoEQ(BaseVideoProcessor):
             brightness_parameter.add_trait(Slider(min_val=self.MIN_BRIGHTNESS, max_val=self.MAX_BRIGHTNESS))
 
             # Contrast parameter
-            contrast_parameter = Parameter(
+            contrast_parameter = ParameterFloat(
                 name="contrast",
-                type="float",
                 default_value=self.DEFAULT_CONTRAST,
                 tooltip=f"Contrast adjustment ({self.MIN_CONTRAST}-{self.MAX_CONTRAST})",
             )
@@ -52,9 +51,8 @@ class AdjustVideoEQ(BaseVideoProcessor):
             contrast_parameter.add_trait(Slider(min_val=self.MIN_CONTRAST, max_val=self.MAX_CONTRAST))
 
             # Saturation parameter
-            saturation_parameter = Parameter(
+            saturation_parameter = ParameterFloat(
                 name="saturation",
-                type="float",
                 default_value=self.DEFAULT_SATURATION,
                 tooltip=f"Saturation adjustment ({self.MIN_SATURATION}-{self.MAX_SATURATION})",
             )
@@ -62,9 +60,8 @@ class AdjustVideoEQ(BaseVideoProcessor):
             saturation_parameter.add_trait(Slider(min_val=self.MIN_SATURATION, max_val=self.MAX_SATURATION))
 
             # Gamma parameter
-            gamma_parameter = Parameter(
+            gamma_parameter = ParameterFloat(
                 name="gamma",
-                type="float",
                 default_value=self.DEFAULT_GAMMA,
                 tooltip=f"Gamma adjustment ({self.MIN_GAMMA}-{self.MAX_GAMMA})",
             )

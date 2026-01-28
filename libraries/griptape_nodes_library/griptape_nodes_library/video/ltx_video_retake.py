@@ -20,8 +20,10 @@ from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -94,10 +96,8 @@ class LTXVideoRetake(SuccessFailureNode):
 
         # Video input parameter
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 tooltip="Input video to edit (max 21 seconds, max resolution 3840x2160)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "input video"},
@@ -150,22 +150,18 @@ class LTXVideoRetake(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Response from API (latest polling response)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video with retake applied",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

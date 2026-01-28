@@ -16,8 +16,11 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
@@ -99,15 +102,13 @@ class SoraVideoGeneration(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="start_frame",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="Optional: Starting frame image (auto-updates size if dimensions are supported)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                clickable_file_browser=True,
                 ui_options={
                     "display_name": "Start Frame",
-                    "clickable_file_browser": True,
                     "expander": True,
                 },
             )
@@ -137,32 +138,28 @@ class SoraVideoGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="generation_id",
-                output_type="str",
                 tooltip="Griptape Cloud generation id",
                 allowed_modes={ParameterMode.OUTPUT},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video_url",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

@@ -3,6 +3,7 @@ from typing import Any
 from PIL import Image, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
@@ -25,9 +26,8 @@ class GaussianBlurImage(BaseImageProcessor):
         """Setup blur-specific parameters."""
         with ParameterGroup(name="blur_settings", ui_options={"collapsed": False}) as blur_group:
             # Radius parameter
-            radius_param = Parameter(
+            radius_param = ParameterFloat(
                 name="radius",
-                type="float",
                 default_value=self.DEFAULT_RADIUS,
                 tooltip=f"Blur radius ({self.MIN_RADIUS}-{self.MAX_RADIUS}, higher values create more blur)",
             )

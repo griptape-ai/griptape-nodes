@@ -428,9 +428,7 @@ class NodeManager:
             )
         # modifying to exception to try to catch all possible issues with node creation.
         except Exception as err:
-            import traceback
-
-            traceback.print_exc()
+            logger.error(err)
             details = f"Could not create Node '{final_node_name}' of type '{request.node_type}': {err}"
 
             # Check if we should create an Error Proxy node instead of failing

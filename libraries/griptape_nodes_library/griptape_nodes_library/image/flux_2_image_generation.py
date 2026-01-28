@@ -1,21 +1,31 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
 
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -62,6 +72,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         - input_images (list): Optional input images for image-to-image generation
         - width (int): Output width in pixels. Must be a multiple of 16. (default: 1024)
         - height (int): Output height in pixels. Must be a multiple of 16. (default: 1024)
+        - force_output_dimension (bool): When enabled, automatically adjusts width and height to the nearest multiple of 16 (default: False)
         - randomize_seed (bool): If true, randomize the seed on each run (default: False)
         - seed (int): Random seed for reproducible results (default: 42)
         - output_format (str): Desired format of the output image ("jpeg" or "png")
@@ -151,6 +162,16 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             )
         )
 
+        # Force output dimension parameter
+        self.add_parameter(
+            ParameterBool(
+                name="force_output_dimension",
+                default_value=False,
+                tooltip="When enabled, automatically adjusts width and height to the nearest multiple of 16.\n(Required for Flux.2 [flex] model to work correctly.)",
+                allow_output=False,
+            )
+        )
+
         # Seed parameter (using SeedParameter component)
         self._seed_parameter = SeedParameter(self)
         self._seed_parameter.add_input_parameters()
@@ -216,26 +237,22 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_url",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Generated image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                pulse_on_run=True,
             )
         )
 
@@ -254,9 +271,16 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         super().after_value_set(parameter, value)
         self._seed_parameter.after_value_set(parameter, value)
 
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("input_images", updated_list)
+
         if parameter.name == "model":
             # Map friendly name to API model ID
-            api_model_id = MODEL_MAPPING.get(value, value)
+            model_value = str(value) if value is not None else ""
+            api_model_id = MODEL_MAPPING.get(model_value, model_value)
             if api_model_id == "flux-2-flex":
                 self.show_parameter_by_name("steps")
                 self.show_parameter_by_name("guidance")
@@ -273,7 +297,8 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             str: The API model ID to use in the API request
         """
         model = self.get_parameter_value("model") or DEFAULT_MODEL
-        return MODEL_MAPPING.get(model, model)
+        model_str = str(model) if model is not None else DEFAULT_MODEL
+        return MODEL_MAPPING.get(model_str, model_str)
 
     def _parse_safety_tolerance(self, value: str | None) -> int:
         """Parse safety tolerance integer from preset string value.
@@ -301,6 +326,17 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
+    def _round_to_nearest_multiple_of_16(self, value: int) -> int:
+        """Round a value to the nearest multiple of 16.
+
+        Args:
+            value: The value to round
+
+        Returns:
+            The nearest multiple of 16
+        """
+        return round(value / IMAGE_DIMENSION_STEP) * IMAGE_DIMENSION_STEP
+
     async def _build_payload(self) -> dict[str, Any]:
         """Build the request payload for Flux image generation.
 
@@ -319,6 +355,19 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         seed = self._seed_parameter.get_seed()
         width = self.get_parameter_value("width") or DEFAULT_IMAGE_SIZE
         height = self.get_parameter_value("height") or DEFAULT_IMAGE_SIZE
+
+        # Adjust dimensions to be divisible by 16 if force_output_dimension is enabled
+        force_output_dimension = self.get_parameter_value("force_output_dimension") or False
+        if force_output_dimension:
+            original_width = width
+            original_height = height
+            width = self._round_to_nearest_multiple_of_16(width)
+            height = self._round_to_nearest_multiple_of_16(height)
+            # Log the adjustment if dimensions changed
+            if original_width != width or original_height != height:
+                self._log(
+                    f"Adjusted dimensions to be divisible by 16: {original_width}x{original_height} -> {width}x{height}"
+                )
 
         # Build base payload
         payload = {
@@ -340,6 +389,12 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         input_images_list = self.get_parameter_list_value("input_images") or []
         if not isinstance(input_images_list, list):
             input_images_list = [input_images_list] if input_images_list else []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_images_list = normalize_artifact_list(
+            input_images_list, ImageUrlArtifact, accepted_types=(ImageArtifact,)
+        )
 
         image_index = 0
         for image_input in input_images_list:
@@ -416,14 +471,16 @@ class Flux2ImageGeneration(GriptapeProxyNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -445,16 +502,19 @@ class Flux2ImageGeneration(GriptapeProxyNode):
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
             image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
-                import base64
-
                 b64_string = base64.b64encode(image_bytes).decode("utf-8")
                 return f"data:image/png;base64,{b64_string}"
         except Exception as e:

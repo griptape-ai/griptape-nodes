@@ -46,7 +46,7 @@ class Reroute(DataNode):
             default_value=None,
             tooltip="",
             allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT},
-            ui_options={"hide_property": True},
+            hide_property=True,
         )
         self.add_parameter(self.pass_thru)
 

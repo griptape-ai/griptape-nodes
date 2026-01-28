@@ -3,6 +3,11 @@ from typing import Any, ClassVar
 from PIL import Image, ImageChops
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -48,10 +53,8 @@ class ImageBlendCompositor(BaseImageProcessor):
         """Setup blend compositor parameters."""
         # Input parameters
         with ParameterGroup(name="inputs", ui_options={"collapsed": False}) as inputs_group:
-            blend_image_param = Parameter(
+            blend_image_param = ParameterImage(
                 name="blend_image",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                type="ImageUrlArtifact",
                 tooltip="The image to blend/composite onto the base image",
             )
             self.add_parameter(blend_image_param)
@@ -61,9 +64,8 @@ class ImageBlendCompositor(BaseImageProcessor):
         # Blend settings
         with ParameterGroup(name="blend_settings", ui_options={"collapsed": False}) as blend_group:
             # Blend mode
-            blend_mode_param = Parameter(
+            blend_mode_param = ParameterString(
                 name="blend_mode",
-                type="string",
                 default_value="normal",
                 tooltip="The blend mode to use for compositing",
             )
@@ -71,9 +73,8 @@ class ImageBlendCompositor(BaseImageProcessor):
             self.add_parameter(blend_mode_param)
 
             # Opacity
-            opacity_param = Parameter(
+            opacity_param = ParameterFloat(
                 name="opacity",
-                type="float",
                 default_value=self.DEFAULT_OPACITY,
                 tooltip=f"Opacity of the blend image ({self.MIN_OPACITY}-{self.MAX_OPACITY}, 0.0 = transparent, 1.0 = fully opaque)",
             )
@@ -85,27 +86,24 @@ class ImageBlendCompositor(BaseImageProcessor):
         # Position and sizing
         with ParameterGroup(name="position_and_sizing", ui_options={"collapsed": False}) as position_group:
             # Blend position X
-            blend_position_x_param = Parameter(
+            blend_position_x_param = ParameterInt(
                 name="blend_position_x",
-                type="int",
                 default_value=self.DEFAULT_POSITION,
                 tooltip="X-coordinate position of the blend image (0 = center, negative = left, positive = right)",
             )
             self.add_parameter(blend_position_x_param)
 
             # Blend position Y
-            blend_position_y_param = Parameter(
+            blend_position_y_param = ParameterInt(
                 name="blend_position_y",
-                type="int",
                 default_value=self.DEFAULT_POSITION,
                 tooltip="Y-coordinate position of the blend image (0 = center, negative = up, positive = down)",
             )
             self.add_parameter(blend_position_y_param)
 
             # Resize blend to fit
-            resize_blend_to_fit_param = Parameter(
+            resize_blend_to_fit_param = ParameterBool(
                 name="resize_blend_to_fit",
-                type="bool",
                 default_value=False,
                 tooltip="Whether to resize the blend image to match the base image dimensions",
             )
@@ -116,18 +114,16 @@ class ImageBlendCompositor(BaseImageProcessor):
         # Advanced options
         with ParameterGroup(name="advanced_options", ui_options={"collapsed": True}) as advanced_group:
             # Preserve alpha
-            preserve_alpha_param = Parameter(
+            preserve_alpha_param = ParameterBool(
                 name="preserve_alpha",
-                type="bool",
                 default_value=True,
                 tooltip="Whether to preserve the alpha channel of the blend image",
             )
             self.add_parameter(preserve_alpha_param)
 
             # Invert blend
-            invert_blend_param = Parameter(
+            invert_blend_param = ParameterBool(
                 name="invert_blend",
-                type="bool",
                 default_value=False,
                 tooltip="Whether to invert the blend image before compositing",
             )

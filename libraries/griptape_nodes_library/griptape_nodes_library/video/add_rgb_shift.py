@@ -1,6 +1,9 @@
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -27,57 +30,50 @@ class AddRGBShift(BaseVideoProcessor):
         # RGB shift parameters
         with ParameterGroup(name="rgb_shift_settings", ui_options={"collapsed": False}) as rgb_group:
             # Red channel horizontal shift
-            Parameter(
+            ParameterInt(
                 name="red_horizontal",
-                type="int",
                 default_value=-self.DEFAULT_SHIFT,
                 tooltip=f"Red channel horizontal shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Red channel vertical shift
-            Parameter(
+            ParameterInt(
                 name="red_vertical",
-                type="int",
                 default_value=0,
                 tooltip=f"Red channel vertical shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Green channel horizontal shift
-            Parameter(
+            ParameterInt(
                 name="green_horizontal",
-                type="int",
                 default_value=self.DEFAULT_SHIFT,
                 tooltip=f"Green channel horizontal shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Green channel vertical shift
-            Parameter(
+            ParameterInt(
                 name="green_vertical",
-                type="int",
                 default_value=0,
                 tooltip=f"Green channel vertical shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Blue channel horizontal shift
-            Parameter(
+            ParameterInt(
                 name="blue_horizontal",
-                type="int",
                 default_value=0,
                 tooltip=f"Blue channel horizontal shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Blue channel vertical shift
-            Parameter(
+            ParameterInt(
                 name="blue_vertical",
-                type="int",
                 default_value=0,
                 tooltip=f"Blue channel vertical shift ({self.MIN_SHIFT} to {self.MAX_SHIFT} pixels)",
             ).add_trait(Slider(min_val=self.MIN_SHIFT, max_val=self.MAX_SHIFT))
 
             # Overall intensity
-            Parameter(
+            ParameterFloat(
                 name="intensity",
-                type="float",
                 default_value=self.DEFAULT_INTENSITY,
                 tooltip=f"Overall intensity of the RGB shift effect ({self.MIN_INTENSITY}-{self.MAX_INTENSITY})",
             ).add_trait(Slider(min_val=self.MIN_INTENSITY, max_val=self.MAX_INTENSITY))
@@ -86,23 +82,20 @@ class AddRGBShift(BaseVideoProcessor):
 
         # Tear effect parameters
         with ParameterGroup(name="tear_effect_settings", ui_options={"collapsed": True}) as tear_group:
-            Parameter(
+            ParameterBool(
                 name="tear_enabled",
-                type="bool",
                 default_value=False,
                 tooltip="Enable tear effect",
             )
 
-            Parameter(
+            ParameterFloat(
                 name="tear_position",
-                type="float",
                 default_value=0.5,
                 tooltip="Vertical position of tear (0.0-1.0, where 0.5 is center)",
             ).add_trait(Slider(min_val=0.0, max_val=1.0))
 
-            Parameter(
+            ParameterInt(
                 name="tear_offset",
-                type="int",
                 default_value=10,
                 tooltip=f"Horizontal offset amount for tear effect ({self.MIN_TEAR_OFFSET} to {self.MAX_TEAR_OFFSET} pixels)",
             ).add_trait(Slider(min_val=self.MIN_TEAR_OFFSET, max_val=self.MAX_TEAR_OFFSET))

@@ -33,7 +33,7 @@ class DictToList(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=[],
                 tooltip="List of dictionary keys",
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 
@@ -45,7 +45,7 @@ class DictToList(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=[],
                 tooltip="List of dictionary values",
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 

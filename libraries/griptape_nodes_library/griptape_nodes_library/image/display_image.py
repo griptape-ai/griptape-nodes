@@ -10,6 +10,8 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -24,20 +26,15 @@ class DisplayImage(DataNode):
 
         # Add parameter for the image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
                 default_value=value,
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="The image to display",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="width",
-                type="int",
                 default_value=0,
                 tooltip="The width of the image",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -45,9 +42,8 @@ class DisplayImage(DataNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="height",
-                type="int",
                 default_value=0,
                 tooltip="The height of the image",
                 allowed_modes={ParameterMode.OUTPUT},
@@ -75,11 +71,39 @@ class DisplayImage(DataNode):
         if isinstance(image, ImageArtifact):
             return image.width, image.height
         if isinstance(image, ImageUrlArtifact):
-            response = requests.get(image.value, timeout=30)
-            response.raise_for_status()
-            image_data = response.content
-            pil_image = Image.open(BytesIO(image_data))
-            return pil_image.width, pil_image.height
+            # Check if it's an SVG file - PIL cannot open SVG files
+            # TODO: Add SVG support using cairosvg or similar library to rasterize SVG files: https://github.com/griptape-ai/griptape-nodes/issues/3721
+            # and determine dimensions properly
+            url_lower = image.value.lower()
+            if url_lower.endswith(".svg") or "image/svg+xml" in url_lower:
+                # SVG files are vector graphics - return default dimensions
+                # since we can't determine dimensions without rasterizing
+                logger.debug(f"{self.name}: SVG file detected, cannot determine dimensions without rasterization")
+                return 0, 0
+
+            try:
+                response = requests.get(image.value, timeout=30)
+                response.raise_for_status()
+
+                # Check content type for SVG
+                content_type = response.headers.get("content-type", "").lower()
+                if "image/svg+xml" in content_type:
+                    logger.debug(
+                        f"{self.name}: SVG content type detected, cannot determine dimensions without rasterization"
+                    )
+                    return 0, 0
+
+                image_data = response.content
+                pil_image = Image.open(BytesIO(image_data))
+            except Exception as e:
+                # If PIL cannot identify the image (e.g., SVG), log and return 0,0
+                if "cannot identify image file" in str(e).lower():
+                    logger.debug(f"{self.name}: Cannot identify image file (may be SVG or unsupported format): {e}")
+                    return 0, 0
+                # Re-raise other exceptions
+                raise
+            else:
+                return pil_image.width, pil_image.height
         if image:
             logger.warning(f"{self.name}: Could not determine image dimensions, as it is not a valid image")
         return 0, 0

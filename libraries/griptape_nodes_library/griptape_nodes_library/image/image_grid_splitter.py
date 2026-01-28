@@ -14,6 +14,9 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     AddParameterToNodeResultSuccess,
@@ -110,22 +113,20 @@ class ImageGridSplitter(DataNode):
         self._last_gap_strip_colors: list[np.ndarray] = []
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 tooltip="Grid input image to split.",
-                type="ImageUrlArtifact",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "dict", "str"],
                 default_value=None,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Input Image", "hide_property": True, "expander": True},
+                ui_options={"display_name": "Input Image", "expander": True},
+                hide_property=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="grid_detection_mode",
                 tooltip="Auto attempts to infer rows/cols. Manual uses the configured row/col sliders.",
-                type=ParameterTypeBuiltin.STR.value,
                 default_value="auto",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={self._grid_detection_mode},
@@ -133,10 +134,9 @@ class ImageGridSplitter(DataNode):
             )
         )
 
-        rows_param = Parameter(
+        rows_param = ParameterInt(
             name="rows",
             tooltip=f"Manual grid rows ({self.MIN_GRID}-{self.MAX_GRID}).",
-            type=ParameterTypeBuiltin.INT.value,
             default_value=2,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"display_name": "Rows", "hide": True, "step": 1},
@@ -144,10 +144,9 @@ class ImageGridSplitter(DataNode):
         rows_param.add_child(Slider(min_val=self.MIN_GRID, max_val=self.MAX_GRID))
         self.add_parameter(rows_param)
 
-        cols_param = Parameter(
+        cols_param = ParameterInt(
             name="cols",
             tooltip=f"Manual grid columns ({self.MIN_GRID}-{self.MAX_GRID}).",
-            type=ParameterTypeBuiltin.INT.value,
             default_value=2,
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             ui_options={"display_name": "Columns", "hide": True, "step": 1},
@@ -156,10 +155,9 @@ class ImageGridSplitter(DataNode):
         self.add_parameter(cols_param)
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="preview",
                 tooltip="Preview of detected/manual grid (dotted yellow lines).",
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 ui_options={"display_name": "Preview", "expander": True},
             )

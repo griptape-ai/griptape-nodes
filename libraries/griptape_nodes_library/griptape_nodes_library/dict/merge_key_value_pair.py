@@ -33,7 +33,7 @@ class MergeKeyValuePairs(DataNode):
                 output_type="dict",
                 default_value="",
                 tooltip="The merged key value pair result.",
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 

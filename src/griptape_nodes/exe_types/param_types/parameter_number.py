@@ -37,8 +37,8 @@ class ParameterNumber(Parameter):
         ui_options: dict | None = None,
         step: float | None = None,
         slider: bool = False,
-        min_val: float = 0,
-        max_val: float = 100,
+        min_val: float | None = None,
+        max_val: float | None = None,
         validate_min_max: bool = False,
         accept_any: bool = True,
         hide: bool | None = None,
@@ -74,8 +74,8 @@ class ParameterNumber(Parameter):
             ui_options: Dictionary of UI options
             step: Step size for numeric input controls
             slider: Whether to use slider trait
-            min_val: Minimum value for constraints
-            max_val: Maximum value for constraints
+            min_val: Minimum value for constraints (None to disable constraints)
+            max_val: Maximum value for constraints (None to disable constraints)
             validate_min_max: Whether to validate min/max with error
             accept_any: Whether to accept any input type and convert to number (default: True)
             hide: Whether to hide the entire parameter
@@ -220,8 +220,8 @@ class ParameterNumber(Parameter):
         traits: set[type[Trait] | Trait] | None,
         *,
         slider: bool,
-        min_val: float,
-        max_val: float,
+        min_val: float | None,
+        max_val: float | None,
         validate_min_max: bool,
     ) -> None:
         """Set up constraint traits based on parameters.
@@ -278,14 +278,14 @@ class ParameterNumber(Parameter):
     def slider(self, value: bool) -> None:
         """Set slider trait."""
         if value:
-            if not hasattr(self, "_constraint_traits") or not self._constraint_traits:
+            # Get min/max from stored values
+            min_val = getattr(self, "_min_val", None)
+            max_val = getattr(self, "_max_val", None)
+            if min_val is None or max_val is None:
                 msg = f"{self.name}: Cannot enable slider without min_val and max_val"
                 raise ValueError(msg)
             # Find existing constraint traits and replace with slider
             self._remove_constraint_traits()
-            # Get min/max from existing traits or use defaults
-            min_val = getattr(self, "_min_val", 0)
-            max_val = getattr(self, "_max_val", 100)
             self.add_trait(Slider(min_val=min_val, max_val=max_val))
         else:
             # Remove slider trait
@@ -337,14 +337,12 @@ class ParameterNumber(Parameter):
         """Set MinMax validation."""
         if value:
             # Check if we have stored min/max values
-            min_val = getattr(self, "_min_val", None)
-            max_val = getattr(self, "_max_val", None)
-            if min_val is None or max_val is None:
+            if self.min_val is None or self.max_val is None:
                 msg = f"{self.name}: Cannot enable validate_min_max without min_val and max_val"
                 raise ValueError(msg)
             # Replace existing constraint traits with MinMax
             self._remove_constraint_traits()
-            self.add_trait(MinMax(min_val=min_val, max_val=max_val))
+            self.add_trait(MinMax(min_val=self.min_val, max_val=self.max_val))
         else:
             # Remove MinMax trait and replace with Clamp if we have min/max
             min_max_traits = self.find_elements_by_type(MinMax)
