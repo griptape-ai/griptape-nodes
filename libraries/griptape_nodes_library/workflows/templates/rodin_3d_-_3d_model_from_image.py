@@ -7,7 +7,7 @@
 # engine_version_created_with = "0.71.0"
 # node_libraries_referenced = [["Griptape Nodes Library", "0.60.1"]]
 # node_types_used = [["Griptape Nodes Library", "DescribeImage"], ["Griptape Nodes Library", "EndFlow"], ["Griptape Nodes Library", "Flux2ImageGeneration"], ["Griptape Nodes Library", "LoadImage"], ["Griptape Nodes Library", "MergeTexts"], ["Griptape Nodes Library", "Note"], ["Griptape Nodes Library", "Rodin23DGeneration"], ["Griptape Nodes Library", "StartFlow"]]
-# description = "Generate a 3D model from an image using Hyper3D Rodin, Google Gemini Nano Banana Pro, and OpenAI gpt-4.1-mini."
+# description = "Generate a 3D model from an image using Hyper3D Rodin, Flux-2 Klein, and OpenAI gpt-4.1-mini."
 # is_griptape_provided = true
 # is_template = true
 # creation_date = 2026-01-28T16:08:13.790218Z
