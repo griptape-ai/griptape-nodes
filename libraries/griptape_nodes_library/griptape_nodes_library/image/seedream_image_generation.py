@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import asyncio
 import json as _json
 import logging
-import os
 import time
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -23,6 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
     read_image_from_file_path,
@@ -36,17 +32,17 @@ __all__ = ["SeedreamImageGeneration"]
 # Define constant for prompt truncation length
 PROMPT_TRUNCATE_LENGTH = 100
 
-# Model mapping from human-friendly names to API model IDs
-MODEL_MAPPING = {
-    "seedream-4.5": "seedream-4-5-251128",
-    "seedream-4.0": "seedream-4-0-250828",
-    "seedream-3.0-t2i": "seedream-3-0-t2i-250415",
-    "seededit-3.0-i2i": "seededit-3-0-i2i-250628",
+# Model mapping from user-facing names to API model IDs
+MODEL_NAME_MAP = {
+    "Seedream 4.5": "seedream-4-5-251128",
+    "Seedream 4.0": "seedream-4-0-250828",
+    "Seedream 3.0 T2I": "seedream-3-0-t2i-250415",
+    "Seedream 3.0 I2I": "seededit-3-0-i2i-250628",
 }
 
-# Size options for different models
+# Size options for different models (using friendly names)
 SIZE_OPTIONS = {
-    "seedream-4.5": [
+    "Seedream 4.5": [
         "2K",
         "4K",
         "2560x1440",
@@ -57,7 +53,7 @@ SIZE_OPTIONS = {
         "2160x4096",
         "4096x4096",
     ],
-    "seedream-4.0": [
+    "Seedream 4.0": [
         "1K",
         "2K",
         "4K",
@@ -70,7 +66,7 @@ SIZE_OPTIONS = {
         "1664x2496",
         "3024x1296",
     ],
-    "seedream-3.0-t2i": [
+    "Seedream 3.0 T2I": [
         "2048x2048",
         "2304x1728",
         "1728x2304",
@@ -80,36 +76,36 @@ SIZE_OPTIONS = {
         "1664x2496",
         "3024x1296",
     ],
-    "seededit-3.0-i2i": [
+    "Seedream 3.0 I2I": [
         "adaptive",
     ],
 }
 
-# Maximum number of input images for models that support multiple images
+# Maximum number of input images for models that support multiple images (using friendly names)
 MAX_IMAGES_PER_MODEL = {
-    "seedream-4.5": 14,
-    "seedream-4.0": 10,
+    "Seedream 4.5": 14,
+    "Seedream 4.0": 10,
 }
 
 
-class SeedreamImageGeneration(SuccessFailureNode):
+class SeedreamImageGeneration(GriptapeProxyNode):
     """Generate images using Seedream models via Griptape model proxy.
 
     Supports four models:
-    - seedream-4.5: Latest model with optional multiple image inputs (up to 14) and shorthand size options (2K, 4K)
+    - Seedream 4.5: Latest model with optional multiple image inputs (up to 14) and shorthand size options (2K, 4K)
       Minimum resolution: 2560x1440, Maximum resolution: 4096x4096
-    - seedream-4.0: Advanced model with optional multiple image inputs (up to 10) and shorthand size options (1K, 2K, 4K)
-    - seedream-3.0-t2i: Text-to-image only model with explicit size dimensions (WIDTHxHEIGHT format)
-    - seededit-3.0-i2i: Image-to-image editing model requiring single input image (WIDTHxHEIGHT format)
+    - Seedream 4.0: Advanced model with optional multiple image inputs (up to 10) and shorthand size options (1K, 2K, 4K)
+    - Seedream 3.0 T2I: Text-to-image only model with explicit size dimensions (WIDTHxHEIGHT format)
+    - Seedream 3.0 I2I: Image-to-image editing model requiring single input image (WIDTHxHEIGHT format)
 
     Inputs:
-        - model (str): Model selection (seedream-4.5, seedream-4.0, seedream-3.0-t2i, seededit-3.0-i2i)
+        - model (str): Model selection (Seedream 4.5, Seedream 4.0, Seedream 3.0 T2I, Seedream 3.0 I2I)
         - prompt (str): Text prompt for image generation
-        - image (ImageArtifact): Single input image (required for seededit-3.0-i2i, hidden for other models)
-        - images (list): Multiple input images (seedream-4.5 supports up to 14, seedream-4.0 up to 10)
+        - image (ImageArtifact): Single input image (required for Seedream 3.0 I2I, hidden for other models)
+        - images (list): Multiple input images (Seedream 4.5 supports up to 14, Seedream 4.0 up to 10)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
-        - max_images (int): Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)
+        - max_images (int): Maximum number of images to generate (1-15, Seedream 4.0 and Seedream 4.5 only)
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
 
     Outputs:
@@ -121,28 +117,19 @@ class SeedreamImageGeneration(SuccessFailureNode):
         - result_details (str): Details about the generation result or error
     """
 
-    SERVICE_NAME = "Griptape"
-    API_KEY_NAME = "GT_CLOUD_API_KEY"
-
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate images using Seedream models via Griptape model proxy"
 
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/v2/")
-
         # Model selection
         self.add_parameter(
             ParameterString(
                 name="model",
-                default_value="seedream-4.5",
+                default_value="Seedream 4.5",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["seedream-4.5", "seedream-4.0", "seedream-3.0-t2i", "seededit-3.0-i2i"])},
+                traits={Options(choices=["Seedream 4.5", "Seedream 4.0", "Seedream 3.0 T2I", "Seedream 3.0 I2I"])},
             )
         )
 
@@ -160,18 +147,18 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Optional single image input for seededit-3.0-i2i (backwards compatibility)
+        # Optional single image input for Seedream 3.0 I2I (backwards compatibility)
         self.add_parameter(
             ParameterImage(
                 name="image",
                 default_value=None,
-                tooltip="Input image (required for seededit-3.0-i2i)",
+                tooltip="Input image (required for Seedream 3.0 I2I)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
             )
         )
 
-        # Multiple image inputs for seedream-4.5/4.0 (up to 14/10 images)
+        # Multiple image inputs for Seedream 4.5/4.0 (up to 14/10 images)
         self.add_parameter(
             ParameterList(
                 name="images",
@@ -184,7 +171,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                     "list[ImageUrlArtifact]",
                 ],
                 default_value=[],
-                tooltip="Input images for seedream (up to 14 for v4.5, 10 for v4.0)",
+                tooltip="Input images for Seedream (up to 14 for Seedream 4.5, 10 for Seedream 4.0)",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"expander": True, "display_name": "Input Images"},
             )
@@ -197,7 +184,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 default_value="2K",
                 tooltip="Image size specification",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=SIZE_OPTIONS["seedream-4.5"])},
+                traits={Options(choices=SIZE_OPTIONS["Seedream 4.5"])},
             )
         )
 
@@ -211,11 +198,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Max images parameter for seedream-4.5 and seedream-4.0
+        # Max images parameter for Seedream 4.5 and Seedream 4.0
         self.add_parameter(
             ParameterInt(
                 name="max_images",
-                tooltip="Maximum number of images to generate (1-15, seedream-4.0 and seedream-4.5 only)",
+                tooltip="Maximum number of images to generate (1-15, Seedream 4.0 and Seedream 4.5 only)",
                 default_value=10,
                 slider=True,
                 min_val=1,
@@ -225,12 +212,12 @@ class SeedreamImageGeneration(SuccessFailureNode):
             )
         )
 
-        # Guidance scale for seedream-3.0-t2i
+        # Guidance scale for Seedream 3.0 T2I
         self.add_parameter(
             ParameterFloat(
                 name="guidance_scale",
                 default_value=2.5,
-                tooltip="Guidance scale (seedream-3.0-t2i only, default: 2.5)",
+                tooltip="Guidance scale (Seedream 3.0 T2I only, default: 2.5)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"hide": True},
             )
@@ -279,7 +266,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             parameter_group_initially_collapsed=True,
         )
 
-        # Initialize parameter visibility based on default model (seedream-4.5)
+        # Initialize parameter visibility based on default model (Seedream 4.5)
         self._initialize_parameter_visibility()
 
     def _show_image_output_parameters(self, count: int) -> None:
@@ -300,20 +287,20 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model") or "seedream-4.5"
-        if default_model in ("seedream-4.5", "seedream-4.0"):
+        default_model = self.get_parameter_value("model") or "Seedream 4.5"
+        if default_model in ("Seedream 4.5", "Seedream 4.0"):
             # Hide single image input, show images list, show max_images, hide guidance scale
             self.hide_parameter_by_name("image")
             self.show_parameter_by_name("images")
             self.show_parameter_by_name("max_images")
             self.hide_parameter_by_name("guidance_scale")
-        elif default_model == "seedream-3.0-t2i":
+        elif default_model == "Seedream 3.0 T2I":
             # Hide image inputs (not supported), hide max_images, show guidance scale
             self.hide_parameter_by_name("image")
             self.hide_parameter_by_name("images")
             self.hide_parameter_by_name("max_images")
             self.hide_parameter_by_name("guidance_scale")
-        elif default_model == "seededit-3.0-i2i":
+        elif default_model == "Seedream 3.0 I2I":
             # Show single image input (required), hide images list, hide max_images, show guidance scale
             self.show_parameter_by_name("image")
             self.hide_parameter_by_name("images")
@@ -337,20 +324,28 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return super().after_value_set(parameter, value)
 
+    def _get_api_model_id(self) -> str:
+        """Get the API model ID for this generation.
+
+        Converts friendly model name to API model ID.
+        """
+        model = self.get_parameter_value("model") or "Seedream 4.5"
+        return MODEL_NAME_MAP.get(model, model)
+
     def _update_model_parameters(self, model: str) -> None:
         """Update parameters and UI based on selected model."""
         new_choices = SIZE_OPTIONS[model]
         current_size = self.get_parameter_value("size")
 
-        if model in ("seedream-4.5", "seedream-4.0"):
+        if model in ("Seedream 4.5", "Seedream 4.0"):
             self._configure_v4_models(model, new_choices, current_size)
-        elif model == "seedream-3.0-t2i":
+        elif model == "Seedream 3.0 T2I":
             self._configure_v3_t2i_model(new_choices, current_size)
-        elif model == "seededit-3.0-i2i":
+        elif model == "Seedream 3.0 I2I":
             self._configure_seededit_model(new_choices, current_size)
 
     def _configure_v4_models(self, model: str, new_choices: list[str], current_size: str) -> None:
-        """Configure UI for seedream-4.5 and seedream-4.0 models."""
+        """Configure UI for Seedream 4.5 and Seedream 4.0 models."""
         self.hide_parameter_by_name("image")
         self.show_parameter_by_name("images")
         self.show_parameter_by_name("max_images")
@@ -359,12 +354,12 @@ class SeedreamImageGeneration(SuccessFailureNode):
         if current_size in new_choices:
             self._update_option_choices("size", new_choices, current_size)
         else:
-            default_size = "2K" if model == "seedream-4.5" else "1K"
+            default_size = "2K" if model == "Seedream 4.5" else "1K"
             default_size = default_size if default_size in new_choices else new_choices[0]
             self._update_option_choices("size", new_choices, default_size)
 
     def _configure_v3_t2i_model(self, new_choices: list[str], current_size: str) -> None:
-        """Configure UI for seedream-3.0-t2i model."""
+        """Configure UI for Seedream 3.0 T2I model."""
         self.hide_parameter_by_name("image")
         self.hide_parameter_by_name("images")
         self.hide_parameter_by_name("max_images")
@@ -377,7 +372,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._update_option_choices("size", new_choices, "2048x2048")
 
     def _configure_seededit_model(self, new_choices: list[str], current_size: str) -> None:
-        """Configure UI for seededit-3.0-i2i model."""
+        """Configure UI for Seedream 3.0 I2I model."""
         self.show_parameter_by_name("image")
         self.hide_parameter_by_name("images")
         self.hide_parameter_by_name("max_images")
@@ -385,7 +380,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         image_param = self.get_parameter_by_name("image")
         if image_param:
-            image_param.tooltip = "Input image (required for seededit-3.0-i2i)"
+            image_param.tooltip = "Input image (required for Seedream 3.0 I2I)"
             image_param.ui_options["display_name"] = "Input Image"
 
         self.set_parameter_value("guidance_scale", 2.5)
@@ -398,6 +393,62 @@ class SeedreamImageGeneration(SuccessFailureNode):
     def _log(self, message: str) -> None:
         with suppress(Exception):
             logger.info(message)
+
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        """Parse the result and set output parameters.
+
+        Args:
+            result_json: The JSON response from the /result endpoint
+            generation_id: The generation ID for this request
+        """
+        # Extract image data
+        data = result_json.get("data", [])
+        if not data:
+            self._log("No image data in result")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"{self.name} generation completed but no image data was found in the response.",
+            )
+            return
+
+        # Process all images from the response
+        image_artifacts = []
+        for idx, image_data in enumerate(data):
+            image_url = image_data.get("url")
+            if not image_url:
+                self._log(f"No URL found for image {idx}")
+                continue
+
+            artifact = await self._save_single_image_from_url(image_url, generation_id, idx)
+            if artifact:
+                image_artifacts.append(artifact)
+
+        if not image_artifacts:
+            self._log("No images could be saved")
+            self._set_safe_defaults()
+            self._set_status_results(
+                was_successful=False,
+                result_details=f"{self.name} generation completed but no image URLs were found in the response.",
+            )
+            return
+
+        # Show the appropriate number of image output parameters based on actual image count
+        self._show_image_output_parameters(len(image_artifacts))
+
+        # Set individual image output parameters
+        for idx, artifact in enumerate(image_artifacts, start=1):
+            param_name = "image_url" if idx == 1 else f"image_url_{idx}"
+            self.parameter_output_values[param_name] = artifact
+
+        # Set success status
+        count = len(image_artifacts)
+        filenames = [artifact.name for artifact in image_artifacts]
+        if count == 1:
+            details = f"Image generated successfully and saved as {filenames[0]}."
+        else:
+            details = f"Generated {count} images successfully: {', '.join(filenames)}."
+        self._set_status_results(was_successful=True, result_details=details)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate parameters before running the node."""
@@ -415,47 +466,6 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        params = self._get_parameters()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        model = params["model"]
-        self._log(f"Generating image with {model}")
-
-        # Submit request to get generation ID
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
-
     def _get_parameters(self) -> dict[str, Any]:
         image = self.get_parameter_value("image")
         images = self.get_parameter_list_value("images") or []
@@ -466,7 +476,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
         images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
         params = {
-            "model": self.get_parameter_value("model") or "seedream-4.5",
+            "model": self.get_parameter_value("model") or "Seedream 4.5",
             "prompt": self.get_parameter_value("prompt") or "",
             "image": image,
             "size": self.get_parameter_value("size") or "2K",
@@ -475,8 +485,8 @@ class SeedreamImageGeneration(SuccessFailureNode):
             "watermark": False,
         }
 
-        # Get image list for seedream-4.5 and seedream-4.0
-        if params["model"] in ("seedream-4.5", "seedream-4.0"):
+        # Get image list for Seedream 4.5 and Seedream 4.0
+        if params["model"] in ("Seedream 4.5", "Seedream 4.0"):
             params["images"] = images
             params["sequential_image_generation"] = "auto"
             params["sequential_image_generation_options"] = {
@@ -485,59 +495,13 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
         return params
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
-
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        payload = await self._build_payload(params)
-        # Map friendly model name to API model ID
-        api_model_id = MODEL_MAPPING.get(params["model"], params["model"])
-        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
-
-        self._log(f"Submitting request to Griptape model proxy with model: {params['model']}")
-        self._log_request(payload)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_json = response.json()
-                self._log("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
-            return str(generation_id)
-        self._log("No generation_id returned from POST response")
-        return None
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _build_payload(self) -> dict[str, Any]:
+        """Build the request payload for Seedream API (without model field)."""
+        params = self._get_parameters()
         model = params["model"]
-        # Map friendly model name to API model ID
-        api_model_id = MODEL_MAPPING.get(model, model)
+
         payload = {
-            "model": api_model_id,
+            "model": self._get_api_model_id(),
             "prompt": params["prompt"],
             "size": params["size"],
             "response_format": "url",
@@ -549,7 +513,7 @@ class SeedreamImageGeneration(SuccessFailureNode):
             payload["seed"] = params["seed"]
 
         # Model-specific parameters
-        if model in ("seedream-4.5", "seedream-4.0"):
+        if model in ("Seedream 4.5", "Seedream 4.0"):
             # Add sequential image generation configuration
             payload["sequential_image_generation"] = params["sequential_image_generation"]
             payload["sequential_image_generation_options"] = params["sequential_image_generation_options"]
@@ -565,11 +529,11 @@ class SeedreamImageGeneration(SuccessFailureNode):
                 if image_array:
                     payload["image"] = image_array
 
-        elif model == "seedream-3.0-t2i":
+        elif model == "Seedream 3.0 T2I":
             # Add guidance scale for v3 t2i
             payload["guidance_scale"] = params["guidance_scale"]
 
-        elif model == "seededit-3.0-i2i":
+        elif model == "Seedream 3.0 I2I":
             # Add guidance scale and required image for seededit
             payload["guidance_scale"] = params["guidance_scale"]
             image_data = await self._process_input_image(params["image"])
@@ -676,139 +640,6 @@ class SeedreamImageGeneration(SuccessFailureNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 240  # 20 minutes with 5s intervals
-        poll_interval = 5
-
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
-
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
-
-                    if status == "COMPLETED":
-                        # Fetch the actual result
-                        await self._fetch_result(generation_id, headers, client)
-                        return
-                    if status in ["FAILED", "ERROR"]:
-                        self._log(f"Generation failed with status: {status}")
-                        self._set_safe_defaults()
-                        # Extract error details from the response
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing (QUEUED or RUNNING), wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    self._log(f"Error while polling: {e}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            self._log("Polling timed out waiting for result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
-            )
-
-    async def _fetch_result(self, generation_id: str, headers: dict[str, str], client: httpx.AsyncClient) -> None:
-        """Fetch the final result from the generations endpoint."""
-        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
-        self._log(f"Fetching result from {result_url}")
-
-        try:
-            response = await client.get(result_url, headers=headers, timeout=60)
-            response.raise_for_status()
-            result_json = response.json()
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
-            self._set_safe_defaults()
-            error_msg = f"Failed to fetch generation result: HTTP {e.response.status_code}"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            return
-        except Exception as e:
-            self._log(f"Error fetching result: {e}")
-            self._set_safe_defaults()
-            error_msg = f"Failed to fetch generation result: {e}"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            return
-
-        # Update provider_response with the final result
-        self.parameter_output_values["provider_response"] = result_json
-
-        # Extract image data
-        data = result_json.get("data", [])
-        if not data:
-            self._log("No image data in result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no image data was found in the response.",
-            )
-            return
-
-        # Process all images from the response
-        image_artifacts = []
-        for idx, image_data in enumerate(data):
-            image_url = image_data.get("url")
-            if not image_url:
-                self._log(f"No URL found for image {idx}")
-                continue
-
-            artifact = await self._save_single_image_from_url(image_url, generation_id, idx)
-            if artifact:
-                image_artifacts.append(artifact)
-
-        if not image_artifacts:
-            self._log("No images could be saved")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details="Generation completed but no image URLs were found in the response.",
-            )
-            return
-
-        # Show the appropriate number of image output parameters based on actual image count
-        self._show_image_output_parameters(len(image_artifacts))
-
-        # Set individual image output parameters
-        for idx, artifact in enumerate(image_artifacts, start=1):
-            param_name = "image_url" if idx == 1 else f"image_url_{idx}"
-            self.parameter_output_values[param_name] = artifact
-
-        # Set success status
-        count = len(image_artifacts)
-        filenames = [artifact.name for artifact in image_artifacts]
-        if count == 1:
-            details = f"Image generated successfully and saved as {filenames[0]}."
-        else:
-            details = f"Generated {count} images successfully: {', '.join(filenames)}."
-        self._set_status_results(was_successful=True, result_details=details)
-
     async def _save_single_image_from_url(
         self, image_url: str, generation_id: str | None = None, index: int = 0
     ) -> ImageUrlArtifact | None:
@@ -843,39 +674,44 @@ class SeedreamImageGeneration(SuccessFailureNode):
             self._log(f"Failed to save image {index} from URL: {e}")
             return ImageUrlArtifact(value=image_url)
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
-        """Extract error details from API response.
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+        """Extract error message from failed/errored generation response.
+
+        Tries Seedream-specific error patterns first, then falls back to base implementation.
 
         Args:
-            response_json: The JSON response from the API that may contain error information
+            response_json: The JSON response from the generation status endpoint
 
         Returns:
-            A formatted error message string
+            str: A formatted error message to display to the user
         """
         if not response_json:
-            return "Generation failed with no error details provided by API."
+            return super()._extract_error_message(response_json)
 
         # Check for v2 API status_detail first (for FAILED/ERROR statuses)
         status_detail = response_json.get("status_detail")
         if status_detail:
             error_msg = self._format_status_detail_error(status_detail)
             if error_msg:
-                return error_msg
+                return f"{self.name} {error_msg}"
 
-        top_level_error = response_json.get("error")
+        # Try to extract from provider response (legacy pattern)
         parsed_provider_response = self._parse_provider_response(response_json.get("provider_response"))
+        if parsed_provider_response:
+            provider_error = parsed_provider_response.get("error")
+            if provider_error:
+                if isinstance(provider_error, dict):
+                    error_message = provider_error.get("message", "")
+                    details = f"{self.name} {error_message}"
+                    if error_code := provider_error.get("code"):
+                        details += f"\nError Code: {error_code}"
+                    if error_type := provider_error.get("type"):
+                        details += f"\nError Type: {error_type}"
+                    return details
+                return f"{self.name} Provider error: {provider_error}"
 
-        # Try to extract from provider response first (more detailed)
-        provider_error_msg = self._format_provider_error(parsed_provider_response, top_level_error)
-        if provider_error_msg:
-            return provider_error_msg
-
-        # Fall back to top-level error
-        if top_level_error:
-            return self._format_top_level_error(top_level_error)
-
-        # Final fallback
-        return f"Generation failed.\n\nFull API response:\n{response_json}"
+        # Fall back to base implementation
+        return super()._extract_error_message(response_json)
 
     def _format_status_detail_error(self, status_detail: dict[str, Any]) -> str | None:
         r"""Format error message from v2 API status_detail field.
@@ -940,41 +776,6 @@ class SeedreamImageGeneration(SuccessFailureNode):
             return provider_response
         return None
 
-    def _format_provider_error(
-        self, parsed_provider_response: dict[str, Any] | None, top_level_error: Any
-    ) -> str | None:
-        """Format error message from parsed provider response."""
-        if not parsed_provider_response:
-            return None
-
-        provider_error = parsed_provider_response.get("error")
-        if not provider_error:
-            return None
-
-        if isinstance(provider_error, dict):
-            error_message = provider_error.get("message", "")
-            details = f"{error_message}"
-
-            if error_code := provider_error.get("code"):
-                details += f"\nError Code: {error_code}"
-            if error_type := provider_error.get("type"):
-                details += f"\nError Type: {error_type}"
-            if top_level_error:
-                details = f"{top_level_error}\n\n{details}"
-            return details
-
-        error_msg = str(provider_error)
-        if top_level_error:
-            return f"{top_level_error}\n\nProvider error: {error_msg}"
-        return f"Generation failed. Provider error: {error_msg}"
-
-    def _format_top_level_error(self, top_level_error: Any) -> str:
-        """Format error message from top-level error field."""
-        if isinstance(top_level_error, dict):
-            error_msg = top_level_error.get("message") or top_level_error.get("error") or str(top_level_error)
-            return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
-        return f"Generation failed with error: {top_level_error!s}"
-
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
@@ -983,14 +784,3 @@ class SeedreamImageGeneration(SuccessFailureNode):
         for i in range(1, 16):
             param_name = "image_url" if i == 1 else f"image_url_{i}"
             self.parameter_output_values[param_name] = None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
