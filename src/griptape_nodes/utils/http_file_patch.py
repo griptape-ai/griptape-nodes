@@ -21,7 +21,6 @@ from urllib.request import url2pathname
 import httpx
 import requests
 
-from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.utils.url_utils import get_content_type_from_extension
 
 logger = logging.getLogger("griptape_nodes")
@@ -263,6 +262,9 @@ def _patched_httpx_request(method: str, url: str | httpx.URL, **kwargs: Any) -> 
     Returns:
         httpx.Response or FileHttpxResponse
     """
+    # Lazy import to avoid circular dependency: utils/__init__.py -> http_file_patch -> storage drivers -> os_events -> payload_registry
+    from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+
     # Convert httpx.URL to string for checking
     url_str = str(url)
 
@@ -327,6 +329,9 @@ def _patched_requests_get(url: str, **kwargs: Any) -> requests.Response | FileRe
     Returns:
         requests.Response or FileRequestsResponse
     """
+    # Lazy import to avoid circular dependency: utils/__init__.py -> http_file_patch -> storage drivers -> os_events -> payload_registry
+    from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+
     # Detect and convert cloud asset URLs to signed download URLs
     if GriptapeCloudStorageDriver.is_cloud_asset_url(url):
         signed_url = GriptapeCloudStorageDriver.create_signed_download_url_from_asset_url(
@@ -372,6 +377,9 @@ def _patched_client_request(
     Returns:
         httpx.Response or FileHttpxResponse
     """
+    # Lazy import to avoid circular dependency: utils/__init__.py -> http_file_patch -> storage drivers -> os_events -> payload_registry
+    from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+
     url_str = str(url)
 
     # Cloud asset URL conversion
@@ -443,6 +451,9 @@ async def _patched_async_client_request(
     Returns:
         httpx.Response or FileHttpxResponse
     """
+    # Lazy import to avoid circular dependency: utils/__init__.py -> http_file_patch -> storage drivers -> os_events -> payload_registry
+    from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+
     url_str = str(url)
 
     # Cloud asset URL conversion
