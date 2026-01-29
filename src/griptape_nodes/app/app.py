@@ -369,7 +369,7 @@ async def _process_event_request(event: EventRequest) -> None:
 async def _process_app_event(event: AppEvent) -> None:
     """Process AppEvents and send them to the API (async version)."""
     # Let Griptape Nodes broadcast it.
-    await griptape_nodes.broadcast_app_event(event.payload)
+    await griptape_nodes.abroadcast_app_event(event.payload)
 
     await _send_message("app_event", event.json())
 
