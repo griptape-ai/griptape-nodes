@@ -331,9 +331,9 @@ class OSManager:
             result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
             if result == 0:  # S_OK
                 return Path(path_buf.value)
-        except (OSError, AttributeError):
-            # Windows API not available or failed
-            pass
+        except (OSError, AttributeError) as e:
+            msg = f"Windows Shell API SHGetFolderPathW failed for CSIDL {csidl}: {e}"
+            logger.warning(msg)
 
         return None
 
