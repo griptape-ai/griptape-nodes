@@ -64,6 +64,12 @@ from griptape_nodes.retained_mode.events.node_events import (
     SetNodeMetadataRequest,
     SetNodeMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import (
+    CopyFileRequest,
+    CopyFileResultSuccess,
+    CopyTreeRequest,
+    CopyTreeResultSuccess,
+)
 from griptape_nodes.retained_mode.events.parameter_events import (
     GetParameterValueRequest,
     GetParameterValueResultSuccess,
@@ -212,6 +218,33 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             logger.error(details)
             raise ValueError(details)
         return secret_value
+
+    @classmethod
+    def _copy_file(cls, source_path: str | Path, destination_path: str | Path) -> None:
+        """Copies a file from source to destination using OS events for cross-platform compatibility."""
+        copy_file_result = GriptapeNodes.handle_request(
+            CopyFileRequest(
+                source_path=str(source_path),
+                destination_path=str(destination_path),
+            )
+        )
+        if not isinstance(copy_file_result, CopyFileResultSuccess):
+            details = f"Failed to copy file from '{source_path}' to '{destination_path}'."
+            logger.error(details)
+            raise TypeError(details)
+
+    @classmethod
+    def _normalize_line_endings(cls, file_path: str | Path) -> None:
+        """Normalizes line endings to LF for Linux compatibility.
+
+        This is necessary because Windows may have CRLF line endings which cause
+        'not found' errors when executing shell scripts on Linux.
+        """
+        path = Path(file_path)
+        with path.open("r", encoding="utf-8") as f:
+            content = f.read()
+        with path.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
 
     def _get_publish_workflow_response_metadata(self, structure_id: str) -> dict[str, Any]:
         structure_url = urljoin(
@@ -550,11 +583,21 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                     abs_paths.append(p)
                 common_root = Path(os.path.commonpath([str(p) for p in abs_paths]))
                 dest = destination_path / common_root.name
-                shutil.copytree(
-                    common_root, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "__pycache__")
+                copy_tree_request = CopyTreeRequest(
+                    source_path=str(common_root),
+                    destination_path=str(dest),
+                    ignore_patterns=[".venv", "__pycache__"],
+                    dirs_exist_ok=True,
                 )
+                copy_tree_result = GriptapeNodes.handle_request(copy_tree_request)
+                if not isinstance(copy_tree_result, CopyTreeResultSuccess):
+                    details = f"Failed to copy library files from '{common_root}' to '{dest}' for library '{library_ref.library_name}'."
+                    logger.error(details)
+                    raise TypeError(details)
                 library_path_relative_to_common_root = absolute_library_path.relative_to(common_root)
-                library_paths.append(str(runtime_env_path / common_root.name / library_path_relative_to_common_root))
+                library_paths.append(
+                    (runtime_env_path / common_root.name / library_path_relative_to_common_root).as_posix()
+                )
             else:
                 library_paths.append(library.library_path)
 
@@ -632,8 +675,8 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             set_key(env_file_path, key, str(val))
 
     def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
-        config_manager = GriptapeNodes.get_instance()._config_manager
-        secrets_manager = GriptapeNodes.get_instance()._secrets_manager
+        config_manager = GriptapeNodes.ConfigManager()
+        secrets_manager = GriptapeNodes.SecretsManager()
         workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
 
         engine_version: str = ""
@@ -684,11 +727,13 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
 
             try:
                 # Copy the workflow file, libraries, and structure files to the temporary directory
-                shutil.copyfile(full_workflow_file_path, temp_workflow_file_path)
-                shutil.copyfile(structure_workflow_executor_file_path, temp_structure_workflow_executor_path)
-                shutil.copyfile(pre_build_install_script_path, temp_pre_build_install_script_path)
-                shutil.copyfile(post_build_install_script_path, temp_post_build_install_script_path)
-                shutil.copyfile(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
+                self._copy_file(full_workflow_file_path, temp_workflow_file_path)
+                self._copy_file(structure_workflow_executor_file_path, temp_structure_workflow_executor_path)
+                self._copy_file(pre_build_install_script_path, temp_pre_build_install_script_path)
+                self._normalize_line_endings(temp_pre_build_install_script_path)
+                self._copy_file(post_build_install_script_path, temp_post_build_install_script_path)
+                self._normalize_line_endings(temp_post_build_install_script_path)
+                self._copy_file(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
 
                 # Write the environment variables to the .env file
                 self._write_env_file(tmp_dir_path / ".env", env_file_mapping)
@@ -739,7 +784,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 with init_file_path.open("w", encoding="utf-8") as init_file:
                     init_file.write('"""This is a temporary __init__.py file for the structure."""\n')
 
-                shutil.copyfile(config_file_path, tmp_dir_path / "griptape_nodes_config.json")
+                self._copy_file(config_file_path, tmp_dir_path / "griptape_nodes_config.json")
 
             except Exception as e:
                 details = f"Failed to copy files to temporary directory. Error: {e}"
