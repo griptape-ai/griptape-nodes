@@ -324,7 +324,8 @@ class OSManager:
             return None
 
         try:
-            sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW
+            # windll is Windows-only; code path is guarded by is_windows()
+            sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW  # pyright: ignore[reportAttributeAccessIssue]
             sh_get_folder_path.argtypes = self._SH_GET_FOLDER_PATH_ARGTYPES
 
             path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
