@@ -320,7 +320,7 @@ class OSManager:
         Returns:
             Path to the special folder, or None if not available or not on Windows
         """
-        if sys.platform != "win32":
+        if not self.is_windows():
             return None
 
         try:
@@ -352,7 +352,7 @@ class OSManager:
         special_path = None
         remaining_parts = None
 
-        if sys.platform == "win32":
+        if self.is_windows():
             parts = normalize_path_parts_for_special_folder(path_str)
             special_path, remaining_parts = try_resolve_windows_special_folder(
                 parts, self._get_windows_special_folder_path
