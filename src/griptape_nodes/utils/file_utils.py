@@ -101,7 +101,7 @@ def find_all_files_in_directory(directory: Path, pattern: str) -> list[Path]:
     return matches
 
 
-def find_files_recursive(directory: Path, pattern: str, *, skip_hidden: bool = True) -> set[Path]:
+def find_files_recursive(directory: Path, pattern: str, *, skip_hidden: bool = True) -> list[Path]:
     """Search directory recursively for files matching pattern.
 
     Args:
@@ -111,38 +111,38 @@ def find_files_recursive(directory: Path, pattern: str, *, skip_hidden: bool = T
             This is more efficient when dealing with large hidden directories like .git, .venv, etc.
 
     Returns:
-        Set of all matching file paths. Returns empty set if none found.
+        Sorted list of all matching file paths. Returns empty list if none found.
 
     Examples:
         >>> find_files_recursive(Path("/workspace"), "*.json")
-        {Path("/workspace/a.json"), Path("/workspace/sub/b.json")}
+        [Path("/workspace/a.json"), Path("/workspace/sub/b.json")]
         >>> find_files_recursive(Path("/workspace"), "*.json", skip_hidden=False)
-        {Path("/workspace/a.json"), Path("/workspace/.config/b.json")}
+        [Path("/workspace/.config/b.json"), Path("/workspace/a.json")]
         >>> find_files_recursive(Path("/empty"), "*.txt")
-        set()
+        []
     """
     if not directory.exists():
         logger.debug("Directory does not exist: %s", directory)
-        return set()
+        return []
 
     if not directory.is_dir():
         logger.debug("Path is not a directory: %s", directory)
-        return set()
+        return []
 
-    def _recurse(path: Path) -> set[Path]:
+    def _recurse(path: Path) -> list[Path]:
         """Recursively find files."""
-        results = set()
+        results = []
         try:
-            for item in path.iterdir():
+            for item in sorted(path.iterdir()):
                 # Skip hidden files/directories if requested
                 if skip_hidden and item.name.startswith("."):
                     continue
 
                 if item.is_file() and fnmatch(item.name, pattern):
-                    results.add(item)
+                    results.append(item)
                 elif item.is_dir():
                     # Recurse into directories
-                    results.update(_recurse(item))
+                    results.extend(_recurse(item))
         except (PermissionError, OSError) as e:
             # Skip directories we can't access
             logger.debug("Cannot access directory %s: %s", path, e)
@@ -156,4 +156,4 @@ def find_files_recursive(directory: Path, pattern: str, *, skip_hidden: bool = T
     else:
         logger.debug("Found %d file(s) matching pattern '%s' in directory: %s", len(matches), pattern, directory)
 
-    return matches
+    return sorted(matches)

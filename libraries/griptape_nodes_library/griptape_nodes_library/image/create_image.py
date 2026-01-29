@@ -9,6 +9,9 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -55,21 +58,18 @@ class GenerateImage(ControlNode):
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="prompt",
-                input_types=["str"],
-                output_type="str",
-                type="str",
                 tooltip="None",
                 default_value="",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"multiline": True, "placeholder_text": "Enter your image generation prompt here."},
+                multiline=True,
+                placeholder_text="Enter your image generation prompt here.",
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="image_size",
-                type="str",
                 default_value=DEFAULT_SIZE,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the size of the generated image.",
@@ -78,21 +78,16 @@ class GenerateImage(ControlNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="enhance_prompt",
-                input_types=["bool"],
-                type="bool",
                 tooltip="None",
                 default_value=False,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="output",
-                input_types=["ImageArtifact", "ImageUrlArtifact"],
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="None",
                 default_value=None,
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},

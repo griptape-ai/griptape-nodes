@@ -139,7 +139,7 @@ class BaseIterativeStartNode(BaseNode):
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
                 settable=False,
                 default_value=0,
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         self.add_node_element(group)
 

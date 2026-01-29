@@ -11,15 +11,24 @@ from typing import Any
 from urllib.parse import urljoin
 
 import httpx
-from griptape.artifacts import ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -323,10 +332,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Input image
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_input",
-                input_types=["ImageArtifact", "ImageUrlArtifact", "str"],
-                type="ImageArtifact",
                 tooltip="Input image to process",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Input Image"},
@@ -416,10 +423,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Face enhancement toggle
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="face_enhancement",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Enable face-specific enhancements",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -522,10 +527,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Auto-prompt parameter (Redefine only)
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="autoprompt",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Use auto-prompting model to generate a prompt. If enabled, ignores manual prompt input.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -592,10 +595,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Grain parameters (Dust-Scratch V2 only)
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="grain",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Add film grain to the restored image",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -655,10 +656,8 @@ class TopazImageEnhance(SuccessFailureNode):
 
         # Lighting parameters
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="color_correction",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip="Enable color correction",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -779,26 +778,22 @@ class TopazImageEnhance(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from Griptape model proxy",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image_output",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="Processed image as URL artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -827,6 +822,12 @@ class TopazImageEnhance(SuccessFailureNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "image_input" and isinstance(value, str) and value:
+            artifact = normalize_artifact_input(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if artifact != value:
+                self.set_parameter_value("image_input", artifact)
 
         if parameter.name == "operation":
             models_dict = OPERATION_MODELS.get(value, {})
@@ -887,10 +888,14 @@ class TopazImageEnhance(SuccessFailureNode):
     def _get_parameters(self) -> dict[str, Any]:
         operation = self.get_parameter_value("operation") or "enhance"
         model = self.get_parameter_value("model") or "Standard V2"
+        image_input = self.get_parameter_value("image_input")
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        image_input = normalize_artifact_input(image_input, ImageUrlArtifact, accepted_types=(ImageArtifact,))
         params = {
             "operation": operation,
             "model": model,
-            "image_input": self.get_parameter_value("image_input"),
+            "image_input": image_input,
             "output_format": self.get_parameter_value("output_format"),
         }
 
@@ -994,14 +999,18 @@ class TopazImageEnhance(SuccessFailureNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
+            # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
+            # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
                 b64 = getattr(image_input, "base64", None)
                 if isinstance(b64, str) and b64:
@@ -1013,13 +1022,21 @@ class TopazImageEnhance(SuccessFailureNode):
 
     async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
+        # If it's already a data URI, return it
         if image_value.startswith("data:image/"):
             return image_value
 
+        # If it's a URL, download and convert to base64
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""

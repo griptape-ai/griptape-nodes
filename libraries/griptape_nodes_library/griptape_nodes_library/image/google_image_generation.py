@@ -9,15 +9,24 @@ from typing import Any, ClassVar
 from urllib.parse import urljoin
 
 import httpx
+from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.image_utils import shrink_image_to_size
+from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.utils.image_utils import (
+    convert_image_value_to_base64_data_uri,
+    read_image_from_file_path,
+    resolve_localhost_url_to_path,
+    shrink_image_to_size,
+)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -61,10 +70,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Model ID
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model",
-                input_types=["str"],
-                type="str",
                 default_value=next(iter(self.SUPPORTED_MODELS_TO_API_MODELS.keys())),
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -95,7 +102,7 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterList(
                 name="input_images",
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
                 default_value=[],
                 tooltip="Optional reference images for the generation",
                 allowed_modes={ParameterMode.INPUT},
@@ -134,10 +141,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Strict image size validation
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="auto_image_resize",
-                input_types=["bool"],
-                type="bool",
                 default_value=True,
                 tooltip=f"If disabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If enabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -146,10 +151,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Aspect ratio
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="aspect_ratio",
-                input_types=["str"],
-                type="str",
                 default_value="16:9",
                 tooltip="Aspect ratio for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -159,10 +162,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Image size (resolution)
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="image_size",
-                input_types=["str"],
-                type="str",
                 default_value="1K",
                 tooltip="Image size/resolution for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -186,10 +187,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # Google Search
         self.add_parameter(
-            Parameter(
+            ParameterBool(
                 name="use_google_search",
-                input_types=["bool"],
-                type="bool",
                 default_value=False,
                 tooltip="Enable Google Search to ground the model's responses",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -198,10 +197,8 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="image",
-                output_type="ImageUrlArtifact",
-                type="ImageUrlArtifact",
                 tooltip="First generated image as artifact",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
@@ -224,8 +221,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterString(
                 name="text",
-                output_type="str",
-                type="str",
                 tooltip="Text output from the model response",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 multiline=True,
@@ -241,6 +236,15 @@ class GoogleImageGeneration(SuccessFailureNode):
             result_details_placeholder="Generation status and details will appear here.",
             parameter_group_initially_collapsed=True,
         )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        super().after_value_set(parameter, value)
+
+        # Convert string paths to ImageUrlArtifact by uploading to static storage
+        if parameter.name == "input_images" and isinstance(value, list):
+            updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+            if updated_list != value:
+                self.set_parameter_value("input_images", updated_list)
 
     def validate_before_node_run(self) -> list[Exception] | None:
         exceptions = super().validate_before_node_run() or []
@@ -301,6 +305,13 @@ class GoogleImageGeneration(SuccessFailureNode):
         input_images = self.get_parameter_list_value("input_images") or []
         object_images = self.get_parameter_list_value("object_images") or []
         human_images = self.get_parameter_list_value("human_images") or []
+
+        # Normalize string paths to ImageUrlArtifact during processing
+        # (handles cases where values come from connections and bypass after_value_set)
+        input_images = normalize_artifact_list(input_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        object_images = normalize_artifact_list(object_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+        human_images = normalize_artifact_list(human_images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
+
         all_images = input_images + object_images + human_images
 
         # Build contents array with prompt and optional images
@@ -682,14 +693,16 @@ class GoogleImageGeneration(SuccessFailureNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            return image_input
+            # Resolve localhost URLs to workspace paths
+            return resolve_localhost_url_to_path(image_input)
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    return value
+                    # Resolve localhost URLs to workspace paths
+                    return resolve_localhost_url_to_path(value)
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -712,8 +725,13 @@ class GoogleImageGeneration(SuccessFailureNode):
         if image_value.startswith(("http://", "https://")):
             return await self._download_and_encode_image(image_value)
 
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
+        # Try to read as file path first (works cross-platform)
+        file_path = read_image_from_file_path(image_value, self.name)
+        if file_path:
+            return file_path
+
+        # Use utility function to handle raw base64
+        return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""

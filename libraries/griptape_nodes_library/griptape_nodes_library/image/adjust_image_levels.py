@@ -3,6 +3,8 @@ from typing import Any
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
@@ -37,9 +39,8 @@ class AdjustImageLevels(BaseImageProcessor):
         # Input levels group
         with ParameterGroup(name="input_levels", ui_options={"collapsed": False}):
             # Shadows parameter
-            shadows_param = Parameter(
+            shadows_param = ParameterInt(
                 name="shadows",
-                type="int",
                 default_value=self.DEFAULT_SHADOWS,
                 tooltip="Input shadows level (0-255). Pixels below this value will be mapped to output shadows.",
             )
@@ -47,9 +48,8 @@ class AdjustImageLevels(BaseImageProcessor):
             self.add_parameter(shadows_param)
 
             # Midtones parameter
-            midtones_param = Parameter(
+            midtones_param = ParameterFloat(
                 name="midtones",
-                type="float",
                 default_value=self.DEFAULT_MIDTONES,
                 tooltip="Midtones adjustment (0.1-10.0). Values < 1.0 lighten midtones, > 1.0 darken midtones.",
             )
@@ -57,9 +57,8 @@ class AdjustImageLevels(BaseImageProcessor):
             self.add_parameter(midtones_param)
 
             # Highlights parameter
-            highlights_param = Parameter(
+            highlights_param = ParameterInt(
                 name="highlights",
-                type="int",
                 default_value=self.DEFAULT_HIGHLIGHTS,
                 tooltip="Input highlights level (0-255). Pixels above this value will be mapped to output highlights.",
             )
@@ -81,7 +80,6 @@ class AdjustImageLevels(BaseImageProcessor):
             # Output highlights parameter
             output_highlights_param = Parameter(
                 name="output_highlights",
-                type="int",
                 default_value=self.DEFAULT_OUTPUT_HIGHLIGHTS,
                 tooltip="Output highlights level (0-255). Input highlights will be mapped to this value.",
             )

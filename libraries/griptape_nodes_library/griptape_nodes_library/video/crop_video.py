@@ -10,6 +10,9 @@ from PIL import Image, ImageDraw
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.image_utils import save_pil_image_to_static_file
 from griptape_nodes_library.utils.video_utils import to_video_artifact
@@ -103,9 +106,8 @@ class CropVideo(BaseVideoProcessor):
     def _setup_custom_parameters(self) -> None:
         """Setup custom parameters specific to this video processor."""
         # Add crop size parameter with presets
-        size_param = Parameter(
+        size_param = ParameterString(
             name="crop_size",
-            type="str",
             default_value="Custom",
             tooltip="Target crop size. Choose a preset or enter custom dimensions (e.g., '1280x1024')",
         )
@@ -114,26 +116,23 @@ class CropVideo(BaseVideoProcessor):
 
         # Add custom width/height parameters (shown when Custom is selected)
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="custom_width",
-                type="int",
                 default_value=800,
                 tooltip="Custom crop width in pixels",
             )
         )
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="custom_height",
-                type="int",
                 default_value=800,
                 tooltip="Custom crop height in pixels",
             )
         )
 
         # Add crop position parameter (center, top-left, etc.)
-        position_param = Parameter(
+        position_param = ParameterString(
             name="crop_position",
-            type="str",
             default_value="center",
             tooltip="Where to position the crop area",
         )
@@ -156,9 +155,8 @@ class CropVideo(BaseVideoProcessor):
 
         # Add preview image output
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="preview",
-                output_type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="Preview image showing the crop area overlaid on the first frame of the video",
                 ui_options={"expander": True},
@@ -260,6 +258,7 @@ class CropVideo(BaseVideoProcessor):
 
         if parameter.name == "video":
             # Extract first frame when video changes
+            # (Normalization is handled by BaseVideoProcessor.after_value_set)
             if value:
                 try:
                     # Convert to VideoUrlArtifact if needed (handles dict, VideoUrlArtifact, etc.)

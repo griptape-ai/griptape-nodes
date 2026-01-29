@@ -17,9 +17,11 @@ from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_
     PublicArtifactUrlParameter,
 )
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 
@@ -48,10 +50,8 @@ class SeedVRVideoUpscale(SuccessFailureNode):
 
         # INPUTS / PROPERTIES
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="model_id",
-                input_types=["str"],
-                type="str",
                 default_value="seedvr2-upscale-video",
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -72,10 +72,8 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         # Video URL
         self._public_video_url_parameter = PublicArtifactUrlParameter(
             node=self,
-            artifact_url_parameter=Parameter(
+            artifact_url_parameter=ParameterVideo(
                 name="video_url",
-                input_types=["VideoUrlArtifact"],
-                type="VideoUrlArtifact",
                 default_value="",
                 tooltip="Video URL",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -177,22 +175,18 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterDict(
                 name="provider_response",
-                output_type="dict",
-                type="dict",
                 tooltip="Verbatim response from API (initial POST)",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"hide_property": True},
+                hide_property=True,
                 hide=True,
             )
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                output_type="VideoUrlArtifact",
-                type="VideoUrlArtifact",
                 tooltip="Saved video as URL artifact for downstream display",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,

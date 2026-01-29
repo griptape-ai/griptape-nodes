@@ -117,6 +117,7 @@ class LocalThreadStorageDriver(BaseThreadStorageDriver):
             msg = f"Cannot delete thread {thread_id}. Archive it first."
             raise ValueError(msg)
 
+        # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
         thread_file.unlink()
 
     def thread_exists(self, thread_id: str) -> bool:

@@ -1,6 +1,8 @@
 from typing import Any, ClassVar
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
@@ -60,27 +62,24 @@ class AddOverlay(BaseVideoProcessor):
         )
         self.add_parameter(overlay_param)
 
-        blend_mode_param = Parameter(
+        blend_mode_param = ParameterString(
             name="blend_mode",
-            type="str",
             default_value="overlay",
             tooltip="Blend mode for combining the overlay with the base video",
         )
         blend_mode_param.add_trait(Options(choices=self.BLEND_MODES))
         self.add_parameter(blend_mode_param)
 
-        amount_param = Parameter(
+        amount_param = ParameterFloat(
             name="amount",
-            type="float",
             default_value=self.DEFAULT_AMOUNT,
             tooltip=f"Strength of the overlay effect ({self.MIN_AMOUNT}-{self.MAX_AMOUNT})",
         )
         amount_param.add_trait(Slider(min_val=self.MIN_AMOUNT, max_val=self.MAX_AMOUNT))
         self.add_parameter(amount_param)
 
-        sizing_param = Parameter(
+        sizing_param = ParameterString(
             name="sizing",
-            type="str",
             default_value="Scale to cover",
             tooltip="How to size the overlay: Scale to cover (maintains aspect), Scale to fit (stretches)",
         )

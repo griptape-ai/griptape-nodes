@@ -7,8 +7,11 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
+from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -53,15 +56,13 @@ class ExtractKeyColors(DataNode):
         self.number_of_color_params = 0  # Internal counter for dynamic parameters
 
         self.add_parameter(
-            Parameter(
+            ParameterImage(
                 name="input_image",
                 tooltip="The image to extract key colors from",
-                type="ImageUrlArtifact",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                input_types=["ImageUrlArtifact", "ImageArtifact"],
+                clickable_file_browser=True,
                 ui_options={
                     "display_name": "Input Image",
-                    "clickable_file_browser": True,
                     "file_browser_options": {
                         "extensions": ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "ico", "webp"],
                         "allow_multiple": False,
@@ -72,10 +73,9 @@ class ExtractKeyColors(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterInt(
                 name="num_colors",
                 tooltip="Target number of colors to extract",
-                type=ParameterTypeBuiltin.INT.value,
                 traits={Slider(min_val=2, max_val=12)},
                 default_value=3,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
@@ -84,10 +84,9 @@ class ExtractKeyColors(DataNode):
         )
 
         self.add_parameter(
-            Parameter(
+            ParameterString(
                 name="algorithm",
                 tooltip="Algorithm to use for color extraction",
-                type=ParameterTypeBuiltin.STR.value,
                 default_value="kmeans",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=["kmeans", "median_cut"])},
@@ -463,11 +462,10 @@ class ExtractKeyColors(DataNode):
             logger.debug("Creating parameter %s with value %s", param_name, hex_color)
 
             self.add_parameter(
-                Parameter(
+                ParameterString(
                     name=param_name,
                     default_value=hex_color,
                     allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                    type="str",
                     tooltip="Hex color",
                     traits={ColorPicker(format="hex")},
                     settable=False,

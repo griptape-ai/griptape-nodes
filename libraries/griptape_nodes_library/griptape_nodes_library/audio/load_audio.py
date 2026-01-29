@@ -4,6 +4,7 @@ from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes_library.utils.artifact_path_tethering import (
     ArtifactPathTethering,
     ArtifactTetheringConfig,
@@ -27,11 +28,8 @@ class LoadAudio(DataNode):
             url_content_type_prefix="audio/",
         )
 
-        self.audio_parameter = Parameter(
+        self.audio_parameter = ParameterAudio(
             name="audio",
-            input_types=["AudioArtifact", "AudioUrlArtifact", "str"],
-            type="AudioUrlArtifact",
-            output_type="AudioUrlArtifact",
             default_value=None,
             ui_options={
                 "clickable_file_browser": True,

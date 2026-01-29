@@ -3,6 +3,7 @@ from typing import Any
 from PIL import Image, ImageOps
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
@@ -20,9 +21,8 @@ class FlipImage(BaseImageProcessor):
         """Setup flip-specific parameters."""
         with ParameterGroup(name="flip_settings", ui_options={"collapsed": False}) as flip_group:
             # Flip direction parameter
-            direction_parameter = Parameter(
+            direction_parameter = ParameterString(
                 name="direction",
-                type="str",
                 default_value="horizontal",
                 tooltip="Flip direction: horizontal, vertical, or both",
             )

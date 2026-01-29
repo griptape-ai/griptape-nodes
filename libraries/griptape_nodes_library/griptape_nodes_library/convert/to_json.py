@@ -31,7 +31,7 @@ class ToJson(DataNode):
                 output_type="json",
                 type="json",
                 tooltip="The converted data as json",
-                ui_options={"hide_property": True},
+                hide_property=True,
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
             )
         )

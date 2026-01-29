@@ -4,6 +4,7 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -74,9 +75,8 @@ class RescaleImage(BaseImageProcessor):
         """Setup rescale-specific parameters."""
         with ParameterGroup(name="rescale_settings", ui_options={"collapsed": False}) as rescale_group:
             # Resize mode parameter
-            resize_mode_param = Parameter(
+            resize_mode_param = ParameterString(
                 name="resize_mode",
-                type="str",
                 default_value=self.RESIZE_MODE_PERCENTAGE,
                 tooltip="How to resize the image: by width, height, percentage, or width and height",
             )
@@ -92,19 +92,16 @@ class RescaleImage(BaseImageProcessor):
             )
 
             # Target size parameter (for width/height modes)
-            target_size_param = Parameter(
+            target_size_param = ParameterInt(
                 name="target_size",
-                type="int",
                 default_value=self.DEFAULT_TARGET_SIZE,
                 tooltip=f"Target size in pixels for width/height modes ({self.MIN_TARGET_SIZE}-{self.MAX_TARGET_SIZE})",
             )
             target_size_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
             # Percentage scale parameter (for percentage mode)
-            percentage_scale_param = Parameter(
+            percentage_scale_param = ParameterInt(
                 name="percentage_scale",
-                input_types=["int", "float"],
-                type="int",
                 default_value=self.DEFAULT_PERCENTAGE_SCALE,
                 tooltip=f"Scale factor as percentage ({self.MIN_PERCENTAGE_SCALE}-{self.MAX_PERCENTAGE_SCALE}%, 100% = original size)",
             )
@@ -131,9 +128,8 @@ class RescaleImage(BaseImageProcessor):
             target_height_param.add_trait(Slider(min_val=self.MIN_TARGET_SIZE, max_val=self.MAX_TARGET_SIZE))
 
             # Fit mode parameter (for width and height mode)
-            fit_mode_param = Parameter(
+            fit_mode_param = ParameterString(
                 name="fit_mode",
-                type="str",
                 default_value=self.FIT_MODE_FIT,
                 tooltip="How to fit the image within the target dimensions",
             )
@@ -148,18 +144,16 @@ class RescaleImage(BaseImageProcessor):
             )
 
             # Background color parameter (for width and height mode with fit/fill)
-            background_color_param = Parameter(
+            background_color_param = ParameterString(
                 name="background_color",
-                type="str",
                 default_value="#000000",
                 tooltip="Background color for letterboxing/matting",
             )
             background_color_param.add_trait(ColorPicker(format="hex"))
 
             # Resample filter parameter
-            resample_filter_param = Parameter(
+            resample_filter_param = ParameterString(
                 name="resample_filter",
-                type="str",
                 default_value="lanczos",
                 tooltip="Resample filter for resizing (higher quality = slower processing)",
             )

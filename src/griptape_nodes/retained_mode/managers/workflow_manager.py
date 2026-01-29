@@ -60,6 +60,9 @@ from griptape_nodes.retained_mode.events.library_events import (
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
+    DeleteFileRequest,
+    DeleteFileResultFailure,
+    DeletionBehavior,
     ExistingFilePolicy,
     FileIOFailureReason,
     WriteFileRequest,
@@ -150,6 +153,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -631,11 +635,9 @@ class WorkflowManager:
                 raise RuntimeError(error_message)
 
     async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
-        relative_file_path_obj = Path(relative_file_path)
-        if relative_file_path_obj.is_absolute():
-            complete_file_path = relative_file_path_obj
-        else:
-            complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+        # Resolve path using utility function
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+        complete_file_path = resolve_workspace_path(Path(relative_file_path), workspace_path)
         try:
             # Libraries are now loaded only on app initialization and explicit reload requests
             # Now execute the workflow.
@@ -820,7 +822,7 @@ class WorkflowManager:
             workflows=workflows, result_details=f"Successfully retrieved {len(workflows)} workflows."
         )
 
-    def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
+    async def on_delete_workflows_request(self, request: DeleteWorkflowRequest) -> ResultPayload:
         try:
             workflow = WorkflowRegistry.delete_workflow_by_name(request.name)
         except Exception as e:
@@ -834,10 +836,15 @@ class WorkflowManager:
             return DeleteWorkflowResultFailure(result_details=details)
         # delete the actual file
         full_path = config_manager.workspace_path.joinpath(workflow.file_path)
-        try:
-            full_path.unlink()
-        except Exception as e:
-            details = f"Failed to delete workflow file with path '{workflow.file_path}'. Exception: {e}"
+
+        delete_request = DeleteFileRequest(
+            path=str(full_path),
+            workspace_only=False,
+            deletion_behavior=DeletionBehavior.PREFER_RECYCLE_BIN,
+        )
+        delete_result = await GriptapeNodes.ahandle_request(delete_request)
+        if isinstance(delete_result, DeleteFileResultFailure):
+            details = f"Failed to delete workflow file with path '{workflow.file_path}'. {delete_result.result_details}"
             return DeleteWorkflowResultFailure(result_details=details)
         return DeleteWorkflowResultSuccess(
             result_details=ResultDetails(message=f"Successfully deleted workflow: {request.name}", level=logging.INFO)
@@ -4100,6 +4107,7 @@ class WorkflowManager:
             result_messages = []
             try:
                 WorkflowRegistry.delete_workflow_by_name(request.workflow_name)
+                # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
                 Path(branch_content_file_path).unlink()
                 cleanup_message = f"Deleted branch workflow file and registry entry for '{request.workflow_name}'"
                 result_messages.append(ResultDetail(message=cleanup_message, level=logging.INFO))

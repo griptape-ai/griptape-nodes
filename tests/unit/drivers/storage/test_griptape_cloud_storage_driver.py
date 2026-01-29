@@ -132,3 +132,100 @@ class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
 
             # Verify NO warning was logged
             assert len(caplog.records) == 0
+
+
+class TestGriptapeCloudStorageDriverParseCloudAssetPath:
+    """Test GriptapeCloudStorageDriver._parse_cloud_asset_path() domain validation."""
+
+    @pytest.fixture
+    def cloud_storage_driver(self) -> GriptapeCloudStorageDriver:
+        """Create GriptapeCloudStorageDriver instance for testing."""
+        return GriptapeCloudStorageDriver(
+            workspace_directory=Path("/workspace"),
+            bucket_id="test-bucket-123",
+            api_key="test-api-key",
+            base_url="https://cloud.griptape.ai",
+        )
+
+    def test_parse_full_url_with_matching_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Valid full URL with matching domain should extract path correctly."""
+        full_url = "https://cloud.griptape.ai/buckets/9ff5bda9-8f55-409f-a1dd-d1aba54fa233/assets/days_of_christmas.zip"
+        result = cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert result == Path("days_of_christmas.zip")
+
+    def test_parse_full_url_with_mismatched_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Full URL with different domain should raise ValueError."""
+        full_url = "https://evil-domain.com/buckets/test-bucket/assets/file.txt"
+        with pytest.raises(ValueError, match="Invalid cloud asset URL") as exc_info:
+            cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert "evil-domain.com" in str(exc_info.value)
+        assert "cloud.griptape.ai" in str(exc_info.value)
+
+    def test_parse_full_url_case_insensitive_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Domain comparison should be case-insensitive."""
+        full_url = "https://CLOUD.GRIPTAPE.AI/buckets/test-bucket/assets/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert result == Path("file.txt")
+
+    def test_parse_full_url_with_http_scheme(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """http:// URLs should work if domain matches."""
+        # Update base_url to use http for this test
+        cloud_storage_driver.base_url = "http://cloud.griptape.ai"
+        full_url = "http://cloud.griptape.ai/buckets/test-bucket/assets/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert result == Path("file.txt")
+
+    def test_parse_path_only_no_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Path-only format (no domain) should work as before."""
+        path_only = "/buckets/test-bucket/assets/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(path_only)
+        assert result == Path("file.txt")
+
+    def test_parse_workspace_relative_path(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Workspace-relative paths should pass through unchanged."""
+        workspace_path = "simple/path/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(Path(workspace_path))
+        assert result == Path(workspace_path)
+
+    def test_parse_url_with_port_in_domain(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """URLs with ports should be handled correctly."""
+        # Update base_url to include port
+        cloud_storage_driver.base_url = "https://cloud.griptape.ai:8443"
+        full_url = "https://cloud.griptape.ai:8443/buckets/test-bucket/assets/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert result == Path("file.txt")
+
+    def test_parse_url_with_port_mismatch(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """URLs with different ports should raise ValueError."""
+        cloud_storage_driver.base_url = "https://cloud.griptape.ai:8443"
+        full_url = "https://cloud.griptape.ai:9000/buckets/test-bucket/assets/file.txt"
+        with pytest.raises(ValueError, match="Invalid cloud asset URL"):
+            cloud_storage_driver._parse_cloud_asset_path(full_url)
+
+    def test_error_message_content(
+        self, cloud_storage_driver: GriptapeCloudStorageDriver, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verify error message includes all necessary context."""
+        caplog.clear()
+        caplog.set_level(logging.ERROR)
+
+        full_url = "https://wrong-domain.com/buckets/test-bucket/assets/file.txt"
+        with pytest.raises(ValueError, match="Invalid cloud asset URL") as exc_info:
+            cloud_storage_driver._parse_cloud_asset_path(full_url)
+
+        error_message = str(exc_info.value)
+        assert "Invalid cloud asset URL" in error_message
+        assert "wrong-domain.com" in error_message
+        assert "https://cloud.griptape.ai" in error_message
+        assert "cloud.griptape.ai" in error_message
+
+        # Verify error was also logged
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.ERROR
+        assert "Invalid cloud asset URL" in caplog.records[0].message
+
+    def test_parse_full_url_with_nested_path(self, cloud_storage_driver: GriptapeCloudStorageDriver) -> None:
+        """Full URL with nested path after assets should extract correctly."""
+        full_url = "https://cloud.griptape.ai/buckets/test-bucket/assets/nested/path/to/file.txt"
+        result = cloud_storage_driver._parse_cloud_asset_path(full_url)
+        assert result == Path("nested/path/to/file.txt")

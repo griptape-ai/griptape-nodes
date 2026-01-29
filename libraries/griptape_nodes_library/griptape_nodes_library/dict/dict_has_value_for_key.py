@@ -45,7 +45,7 @@ class DictHasValueForKey(DataNode):
                 allowed_modes={ParameterMode.OUTPUT},
                 default_value=False,
                 tooltip="True if the key exists in the dictionary, False otherwise",
-                ui_options={"hide_property": True},
+                hide_property=True,
             )
         )
 

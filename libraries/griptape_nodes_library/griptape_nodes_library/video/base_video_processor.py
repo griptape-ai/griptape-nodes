@@ -11,6 +11,8 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import (
@@ -48,13 +50,11 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="video",
-                input_types=["VideoUrlArtifact", "VideoArtifact"],
-                type="VideoUrlArtifact",
                 tooltip="The video to process",
+                clickable_file_browser=True,
                 ui_options={
-                    "clickable_file_browser": True,
                     "expander": True,
                     "display_name": "Video or Path to Video",
                 },
@@ -65,9 +65,8 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         self._setup_custom_parameters()
 
         # Add frame rate parameter
-        frame_rate_param = Parameter(
+        frame_rate_param = ParameterString(
             name="output_frame_rate",
-            type="str",
             default_value="auto",
             tooltip="Output frame rate. Choose 'auto' to preserve input frame rate, or select a specific rate for your target platform.",
         )
@@ -75,9 +74,8 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         self.add_parameter(frame_rate_param)
 
         # Add processing speed parameter
-        speed_param = Parameter(
+        speed_param = ParameterString(
             name="processing_speed",
-            type="str",
             default_value="balanced",
             tooltip="Processing speed vs quality trade-off",
         )
@@ -85,12 +83,11 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         self.add_parameter(speed_param)
 
         self.add_parameter(
-            Parameter(
+            ParameterVideo(
                 name="output",
-                output_type="VideoUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
                 tooltip="The processed video",
-                ui_options={"pulse_on_run": True, "expander": True},
+                ui_options={"pulse_on_run": True, "expander": True, "display_name": "Processed Video"},
             )
         )
 
@@ -251,7 +248,11 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
             return False
 
     def _convert_video_input(self, value: Any) -> Any:
-        """Convert video input (dict or VideoUrlArtifact) to VideoUrlArtifact."""
+        """Convert video input (dict or VideoUrlArtifact) to VideoUrlArtifact.
+
+        Note: String paths are automatically normalized to VideoUrlArtifact
+        by ParameterVideo's normalize_video_input converter (runs before this).
+        """
         if isinstance(value, dict):
             return dict_to_video_url_artifact(value)
         return value
