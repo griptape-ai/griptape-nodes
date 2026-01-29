@@ -2615,8 +2615,8 @@ class NodeManager:
         """Serialize a group node and its children for copy/paste operations.
 
         This method handles the special case of group nodes by serializing all child nodes
-        that aren't explicitly selected, tracking their UUIDs for deserialization remapping,
-        and storing the UUID mapping in the group's metadata.
+        that aren't explicitly selected (a node that has been manually selected by the user when copying), tracking their UUIDs for deserialization remapping,
+        and storing the UUID mapping in the group's metadata. All child nodes should be copied if their parent node was copied, even if they were not manually selected.
 
         Args:
             group_node: The group node to serialize
@@ -2670,14 +2670,8 @@ class NodeManager:
         if not isinstance(group_result, SerializeNodeToCommandsResultSuccess):
             # This shouldn't happen, log error
             logger.error("Failed to serialize group node '%s'", group_name)
-            # Return empty result - caller will need to handle this
-            return SerializedGroupResult(
-                group_command=None,
-                group_parameter_commands=[],
-                child_commands=[],
-                child_parameter_commands={},
-                child_uuids=[],
-            )
+            msg = f"Failed to serialize children and group node '{group_name}'"
+            raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
         group_command = group_result.serialized_node_commands
 
@@ -3395,7 +3389,7 @@ class NodeManager:
         explicit_node_names = [name for uuid, name in node_uuid_to_name.items() if uuid not in child_node_uuids]
         return DeserializeSelectedNodesFromCommandsResultSuccess(
             node_names=all_node_names,
-            duplicate_names=explicit_node_names,
+            non_children_names=explicit_node_names,
             result_details=f"Successfully deserialized {len(node_uuid_to_name)} nodes from commands.",
         )
 
@@ -3421,7 +3415,7 @@ class NodeManager:
         # Remake duplicate connections of node (only for explicitly selected nodes, not children)
 
         NodeManager.remake_connections(
-            self, new_node_names=result.duplicate_names, old_node_names=serialize_result.node_names_serialized
+            self, new_node_names=result.non_children_names, old_node_names=serialize_result.node_names_serialized
         )
         return DuplicateSelectedNodesResultSuccess(
             result.node_names,

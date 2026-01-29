@@ -689,11 +689,11 @@ class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, Re
 
     Args:
         node_names: List of all node names created (including children)
-        duplicate_names: List of explicitly selected node names (excludes group children) for connection remaking
+        non_children_names: List of node names that are not children, which should have connections remapped in a duplicate operation.
     """
 
     node_names: list[str]
-    duplicate_names: list[str] = field(default_factory=list)
+    non_children_names: list[str] = field(default_factory=list)
 
 
 @dataclass
