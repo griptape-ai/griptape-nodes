@@ -2429,7 +2429,18 @@ class LibraryManager:
         # Collect results
         return dict(task.result() for task in tasks)
 
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+        if payload.skip_library_loading:
+            # Register all secrets even in headless mode
+            GriptapeNodes.SecretsManager().register_all_secrets()
+
+            # Still need to tell WorkflowManager to register workflows
+            # Pass the specific workflows if provided, otherwise it will scan workspace
+            GriptapeNodes.WorkflowManager().on_libraries_initialization_complete(
+                workflows_to_register=payload.workflows_to_register
+            )
+            return
+
         # Automatically migrate old XDG library paths from config
         # TODO: Remove https://github.com/griptape-ai/griptape-nodes/issues/3348
         self._migrate_old_xdg_library_paths()
@@ -3015,7 +3026,7 @@ class LibraryManager:
             library_version=library_version,
         )
 
-    def discover_libraries_request(  # noqa: C901
+    def discover_libraries_request(
         self,
         request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:

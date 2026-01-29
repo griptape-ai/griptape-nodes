@@ -396,7 +396,7 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def on_libraries_initialization_complete(self) -> None:
+    def on_libraries_initialization_complete(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
         self._workflows_loading_complete.clear()
@@ -405,15 +405,16 @@ class WorkflowManager:
             default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
             config_mgr = GriptapeNodes.ConfigManager()
 
-            workflows_to_register = []
+            if workflows_to_register is None:
+                workflows_to_register = []
 
-            # Add from config
-            config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
-            workflows_to_register.extend(config_workflows)
+                # Add from config
+                config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
+                workflows_to_register.extend(config_workflows)
 
-            # Add from workspace (avoiding duplicates)
-            workspace_path = config_mgr.workspace_path
-            workflows_to_register.extend([workspace_path])
+                # Add from workspace (avoiding duplicates)
+                workspace_path = config_mgr.workspace_path
+                workflows_to_register.extend([str(workspace_path)])
 
             # Register all discovered workflows at once if any were found
             self._process_workflows_for_registration(workflows_to_register)
@@ -2155,7 +2156,8 @@ class WorkflowManager:
             ),
         )
 
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum)
+        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum, skip_library_loading=True, workflows_to_register=[__file__])
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
             value=ast.BoolOp(
@@ -2168,6 +2170,11 @@ class WorkflowManager:
                         keywords=[
                             ast.keyword(
                                 arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
+                            ),
+                            ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
+                            ast.keyword(
+                                arg="workflows_to_register",
+                                value=ast.List(elts=[ast.Name(id="__file__", ctx=ast.Load())], ctx=ast.Load()),
                             ),
                         ],
                     ),
