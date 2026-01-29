@@ -538,7 +538,7 @@ class TestNormalizePathPartsForSpecialFolder:
         assert result == []
 
     def test_backslash_normalized_to_slash(self) -> None:
-        """~\\Downloads -> ['downloads']."""
+        r"""~\Downloads -> ['downloads']."""
         result = normalize_path_parts_for_special_folder("~\\Downloads")
         assert result == ["downloads"]
 
@@ -578,7 +578,7 @@ class TestTryResolveWindowsSpecialFolder:
 
     def test_downloads_resolved_returns_path_and_empty_remaining(self) -> None:
         """Known folder with no remaining parts."""
-        mock_path = Path("/tmp/Downloads")
+        mock_path = Path("/mock/Downloads")
 
         def mock_get(csidl: int) -> Path | None:
             assert csidl == WINDOWS_CSIDL_MAP["downloads"]
@@ -590,7 +590,7 @@ class TestTryResolveWindowsSpecialFolder:
 
     def test_desktop_with_remaining_parts(self) -> None:
         """Known folder with remaining parts."""
-        mock_path = Path("/tmp/Desktop")
+        mock_path = Path("/mock/Desktop")
 
         def mock_get(csidl: int) -> Path | None:
             assert csidl == WINDOWS_CSIDL_MAP["desktop"]
@@ -628,7 +628,11 @@ class TestExpandPath:
         yield
         griptape_nodes.ConfigManager().workspace_path = original_workspace
 
-    def test_expand_path_relative_resolved_against_cwd(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    def test_expand_path_relative_resolved_against_cwd(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
         """Relative path is resolved against current working directory."""
         os_manager = griptape_nodes.OSManager()
         result = os_manager._expand_path("subdir")
@@ -644,7 +648,11 @@ class TestExpandPath:
         assert result == temp_dir or result.resolve() == temp_dir.resolve()
 
     @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific special folder test")
-    def test_expand_path_windows_special_folder_mocked(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    def test_expand_path_windows_special_folder_mocked(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
         """On Windows, special folder is resolved via Shell API when path is ~/Downloads."""
         os_manager = griptape_nodes.OSManager()
         mock_downloads = Path("C:/mock/Downloads")
@@ -654,7 +662,11 @@ class TestExpandPath:
             mock_get.assert_called_once()
             assert result == os_manager.resolve_path_safely(mock_downloads)
 
-    def test_expand_path_non_windows_uses_expanduser(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+    def test_expand_path_non_windows_uses_expanduser(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
         """On non-Windows, ~/path uses expanduser (no special folder logic)."""
         if platform.system() == "Windows":
             pytest.skip("Non-Windows test")
