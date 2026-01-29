@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -172,6 +173,70 @@ class CopyTreeStats:
     total_bytes_copied: int
 
 
+# Windows CSIDL constants for special folders (used by _expand_path)
+# https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+WINDOWS_CSIDL_MAP: dict[str, int] = {
+    "desktop": 0x0000,  # CSIDL_DESKTOP
+    "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
+    "downloads": 0x0033,  # CSIDL_DOWNLOADS
+    "pictures": 0x0027,  # CSIDL_MYPICTURES
+    "videos": 0x000E,  # CSIDL_MYVIDEO
+    "music": 0x000D,  # CSIDL_MYMUSIC
+}
+
+
+def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
+    """Parse a path string into normalized parts for special folder detection.
+
+    Strips leading ~ or %UserProfile%, expands env vars, and returns lowercased
+    path parts. Used to detect Windows special folder names (e.g. ~/Downloads).
+
+    Args:
+        path_str: Path string that may contain ~ or %UserProfile%
+
+    Returns:
+        List of lowercased path parts, e.g. ["downloads"] for "~/Downloads"
+    """
+    normalized = path_str.replace("\\", "/")
+    if normalized.startswith("~/"):
+        normalized = normalized[2:]
+    elif normalized.startswith("~"):
+        normalized = normalized[1:]
+    if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
+        normalized = os.path.expandvars(normalized)
+        userprofile = os.environ.get("USERPROFILE", "")
+        if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
+            normalized = normalized[len(userprofile) :].lstrip("/\\")
+    parts = [p.lower() for p in normalized.split("/") if p]
+    return parts
+
+
+def try_resolve_windows_special_folder(
+    parts: list[str],
+    get_folder_path: Callable[[int], Path | None],
+) -> tuple[Path | None, list[str] | None]:
+    """Resolve Windows special folder from path parts.
+
+    If the first part matches a known special folder name, calls get_folder_path
+    with the corresponding CSIDL and returns (path, remaining_parts).
+
+    Args:
+        parts: Lowercased path parts from normalize_path_parts_for_special_folder
+        get_folder_path: Callback that takes CSIDL and returns Path or None
+
+    Returns:
+        (special_path, remaining_parts) if resolved, else (None, None)
+    """
+    if not parts or parts[0] not in WINDOWS_CSIDL_MAP:
+        return None, None
+    csidl = WINDOWS_CSIDL_MAP[parts[0]]
+    special_path = get_folder_path(csidl)
+    if special_path is None:
+        return None, None
+    remaining = parts[1:] if len(parts) > 1 else []
+    return special_path, remaining
+
+
 class OSManager:
     """A class to manage OS-level scenarios.
 
@@ -282,59 +347,24 @@ class OSManager:
         Returns:
             Expanded Path object
         """
-        # Check for Windows special folder handling
         special_path = None
         remaining_parts = None
 
         if sys.platform == "win32":
-            # Map common special folder names to Windows CSIDL constants
-            # CSIDL constants: https://learn.microsoft.com/en-us/windows/win32/shell/csidl
-            csidl_map = {
-                "desktop": 0x0000,  # CSIDL_DESKTOP
-                "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
-                "downloads": 0x0033,  # CSIDL_DOWNLOADS
-                "pictures": 0x0027,  # CSIDL_MYPICTURES
-                "videos": 0x000E,  # CSIDL_MYVIDEO
-                "music": 0x000D,  # CSIDL_MYMUSIC
-            }
-
-            # Parse path to find special folder names
-            # Normalize separators and split, handling ~ and %UserProfile% prefixes
-            normalized = path_str.replace("\\", "/")
-            # Remove leading ~ or %UserProfile% to focus on the actual path parts
-            if normalized.startswith("~/"):
-                normalized = normalized[2:]
-            elif normalized.startswith("~"):
-                normalized = normalized[1:]
-            # Expand %UserProfile% if present
-            if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
-                normalized = os.path.expandvars(normalized)
-                # Remove the user profile path prefix if it's at the start
-                userprofile = os.environ.get("USERPROFILE", "")
-                if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
-                    normalized = normalized[len(userprofile) :].lstrip("/\\")
-
-            parts = [p.lower() for p in normalized.split("/") if p]
-
-            # Check if first part matches a special folder name
-            if parts and parts[0] in csidl_map:
-                # Found a special folder, get its actual path using Shell API
-                special_path = self._get_windows_special_folder_path(csidl_map[parts[0]])
-                if special_path is not None:
-                    remaining_parts = parts[1:]
+            parts = normalize_path_parts_for_special_folder(path_str)
+            special_path, remaining_parts = try_resolve_windows_special_folder(
+                parts, self._get_windows_special_folder_path
+            )
 
         # Success path at the end - compute final path and return
         if special_path is not None:
-            # Use special folder path
             extra_parts: list[str] = remaining_parts if remaining_parts else []
             if extra_parts:
                 final_path = special_path / Path(*extra_parts)
             else:
                 final_path = special_path
         else:
-            # Expand environment variables first
             expanded_vars = os.path.expandvars(path_str)
-            # Expand tilde to home directory
             expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
             final_path = Path(expanded_user)
 
