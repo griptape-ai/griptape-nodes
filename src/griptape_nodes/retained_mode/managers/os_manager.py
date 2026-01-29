@@ -244,6 +244,16 @@ class OSManager:
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
 
+    # Argtypes for SHGetFolderPathW (Windows Shell API)
+    # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+    _SH_GET_FOLDER_PATH_ARGTYPES = (
+        wintypes.HWND,
+        ctypes.c_int,
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPCWSTR,
+    )
+
     def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
@@ -314,16 +324,8 @@ class OSManager:
             return None
 
         try:
-            # CSIDL constants for Windows special folders
-            # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
             sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW
-            sh_get_folder_path.argtypes = [
-                wintypes.HWND,
-                ctypes.c_int,
-                wintypes.HANDLE,
-                wintypes.DWORD,
-                wintypes.LPCWSTR,
-            ]
+            sh_get_folder_path.argtypes = self._SH_GET_FOLDER_PATH_ARGTYPES
 
             path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
             result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
