@@ -6,7 +6,7 @@ import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
-from threadpoolctl import threadpool_limits
+from threadpoolctl import threadpool_limits  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
