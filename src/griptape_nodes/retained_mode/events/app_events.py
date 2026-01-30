@@ -113,6 +113,7 @@ class AppInitializationComplete(AppPayload):
     libraries_to_register: list[str] = field(default_factory=list)
     workflows_to_register: list[str] = field(default_factory=list)
     models_to_download: list[str] = field(default_factory=list)
+    skip_library_loading: bool = False
 
 
 @dataclass
