@@ -254,6 +254,8 @@ class OSManager:
             return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
         special_path = self._get_windows_special_folder_path(csidl)
+        if special_path is None:
+            return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         remaining = parts[1:] if len(parts) > 1 else []
         return WindowsSpecialFolderResult(special_path=special_path, remaining_parts=remaining)
 
@@ -310,21 +312,25 @@ class OSManager:
         """Get the workspace path from config."""
         return GriptapeNodes.ConfigManager().workspace_path
 
-    def _get_windows_special_folder_path(self, csidl: int) -> Path:
+    def _get_windows_special_folder_path(self, csidl: int) -> Path | None:
         """Get Windows special folder path using Shell API.
 
         Source: https://stackoverflow.com/a/30924555
         Uses SHGetFolderPathW to get the actual location of special folders,
         handling OneDrive redirections and other Windows folder redirections.
+        Returns None on API failure so callers can fall back to expanduser.
+        We intentionally return None (and log) instead of raising on Shell API
+        failure so that _expand_path can fall back to expanduser; raising broke
+        ~/Downloads on Windows configs where SHGetFolderPathW returns an error.
 
         Args:
             csidl: CSIDL constant for the special folder (e.g., CSIDL_DESKTOP)
 
         Returns:
-            Path to the special folder.
+            Path to the special folder, or None if the Shell API fails.
 
         Raises:
-            RuntimeError: If not on Windows, or if the Shell API call fails or returns an error.
+            RuntimeError: If not on Windows (programming error).
         """
         if not self.is_windows():
             msg = "_get_windows_special_folder_path may only be called on Windows"
@@ -347,12 +353,16 @@ class OSManager:
             path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
             result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
             if result != 0:  # S_OK is 0; non-zero is an HRESULT error code
+                # Return None (not raise) so _expand_path can fall back to expanduser
                 msg = f"Windows Shell API SHGetFolderPathW failed for CSIDL {csidl}: HRESULT {result}"
-                raise RuntimeError(msg)  # noqa: TRY301
+                logger.warning(msg)
+                return None
             return Path(path_buf.value)
         except Exception as e:  # Broad catch: ctypes/Shell API can raise many types
+            # Return None (not raise) so _expand_path can fall back to expanduser
             msg = f"Windows Shell API SHGetFolderPathW failed for CSIDL {csidl}: {e}"
-            raise RuntimeError(msg) from e
+            logger.warning(msg)
+            return None
 
     def _expand_path(self, path_str: str) -> Path:
         """Expand a path string, handling tilde, environment variables, and special folders.

@@ -601,14 +601,14 @@ class TestTryResolveWindowsSpecialFolder:
     def test_get_folder_returns_none_returns_none(
         self, griptape_nodes: GriptapeNodes
     ) -> None:
-        """When _get_windows_special_folder_path returns None, result is (None, remaining)."""
+        """When _get_windows_special_folder_path returns None, result is (None, None)."""
         os_manager = griptape_nodes.OSManager()
         with patch.object(
             os_manager, "_get_windows_special_folder_path", return_value=None
         ):
             result = os_manager.try_resolve_windows_special_folder(["downloads"])
         assert result.special_path is None
-        assert result.remaining_parts == []
+        assert result.remaining_parts is None
 
 
 class TestExpandPath:
