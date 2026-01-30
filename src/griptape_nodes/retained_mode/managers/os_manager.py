@@ -320,7 +320,8 @@ class OSManager:
             Path to the special folder, or None if not available or not on Windows
         """
         if not self.is_windows():
-            return None
+            msg = "_get_windows_special_folder_path may only be called on Windows"
+            raise RuntimeError(msg)
 
         # Argtypes for SHGetFolderPathW (Windows Shell API)
         # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
