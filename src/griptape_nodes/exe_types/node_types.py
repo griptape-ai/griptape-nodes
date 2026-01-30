@@ -835,10 +835,11 @@ class BaseNode(ABC):
         """Set the node's UI size. Node authors can call this to give the node a default or custom size.
 
         Args:
-            width: Width in pixels. Defaults to 400 if not set.
-            height: Height in pixels. Defaults to 300 if not set.
+            width: Width in pixels.
+            height: Height in pixels.
         """
-        self.metadata["size"] = {"width": width, "height": height}
+        if "size" not in self.metadata:
+            self.metadata["size"] = {"width": width, "height": height}
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
