@@ -58,6 +58,10 @@ class LoadAudio(DataNode):
             config=self._tethering_config,
         )
 
+        # TODO: Replace this with a method once: https://github.com/griptape-ai/griptape-nodes/pull/3779 is merged
+        if "size" not in self.metadata:
+            self.metadata["size"] = {"width": 400, "height": 320}
+
     def after_incoming_connection(
         self,
         source_node: BaseNode,
