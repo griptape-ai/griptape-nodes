@@ -235,12 +235,6 @@ class ParameterNumber(Parameter):
             validate_min_max: Whether to validate min/max with error
         """
         # Validation rules
-        if min_val is not None and max_val is None:
-            msg = f"{name}: If min_val is provided, max_val must also be provided"
-            raise ValueError(msg)
-        if max_val is not None and min_val is None:
-            msg = f"{name}: If max_val is provided, min_val must also be provided"
-            raise ValueError(msg)
         if slider and (min_val is None or max_val is None):
             msg = f"{name}: If slider is True, both min_val and max_val must be provided"
             raise ValueError(msg)
@@ -259,7 +253,7 @@ class ParameterNumber(Parameter):
             traits.add(Slider(min_val=min_val, max_val=max_val))
         elif validate_min_max and min_val is not None and max_val is not None:
             traits.add(MinMax(min_val=min_val, max_val=max_val))
-        elif min_val is not None and max_val is not None:
+        elif min_val is not None or max_val is not None:
             traits.add(Clamp(min_val=min_val, max_val=max_val))
 
         # Store traits for later use
@@ -304,9 +298,6 @@ class ParameterNumber(Parameter):
     @min_val.setter
     def min_val(self, value: float | None) -> None:
         """Set minimum value and update constraint traits."""
-        if value is not None and self.max_val is None:
-            msg = f"{self.name}: Cannot set min_val without max_val"
-            raise ValueError(msg)
         self._min_val = value
         self._update_constraint_traits()
 
@@ -321,9 +312,6 @@ class ParameterNumber(Parameter):
     @max_val.setter
     def max_val(self, value: float | None) -> None:
         """Set maximum value and update constraint traits."""
-        if value is not None and self.min_val is None:
-            msg = f"{self.name}: Cannot set max_val without min_val"
-            raise ValueError(msg)
         self._max_val = value
         self._update_constraint_traits()
 
@@ -365,17 +353,35 @@ class ParameterNumber(Parameter):
         min_val = getattr(self, "_min_val", None)
         max_val = getattr(self, "_max_val", None)
 
-        if min_val is None or max_val is None:
+        if min_val is None and max_val is None:
             self._remove_constraint_traits()
             return
 
+        if self.slider and (min_val is None or max_val is None):
+            msg = f"{self.name}: Cannot enable slider without min_val and max_val"
+            raise ValueError(msg)
+
+        if self.validate_min_max and (min_val is None or max_val is None):
+            msg = f"{self.name}: Cannot enable validate_min_max without min_val and max_val"
+            raise ValueError(msg)
+
         # Determine which trait to use based on current state
         if self.slider:
+            # Checked above: both min_val and max_val are available when slider is enabled.
+            # Type narrowing: assign to variables after None check so type checker understands
+            min_val_float: float = min_val  # type: ignore[assignment]
+            max_val_float: float = max_val  # type: ignore[assignment]
+            # Python will naturally coerce int to float if needed (no precision loss for reasonable values)
             self._remove_constraint_traits()
-            self.add_trait(Slider(min_val=min_val, max_val=max_val))
+            self.add_trait(Slider(min_val=min_val_float, max_val=max_val_float))
         elif self.validate_min_max:
+            # Checked above: both min_val and max_val are available when validate_min_max is enabled.
+            # Type narrowing: assign to variables after None check so type checker understands
+            min_val_float: float = min_val  # type: ignore[assignment]
+            max_val_float: float = max_val  # type: ignore[assignment]
+            # Python will naturally coerce int to float if needed (no precision loss for reasonable values)
             self._remove_constraint_traits()
-            self.add_trait(MinMax(min_val=min_val, max_val=max_val))
+            self.add_trait(MinMax(min_val=min_val_float, max_val=max_val_float))
         else:
             self._remove_constraint_traits()
             self.add_trait(Clamp(min_val=min_val, max_val=max_val))
