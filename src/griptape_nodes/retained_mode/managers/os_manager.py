@@ -173,6 +173,19 @@ class CopyTreeStats:
     total_bytes_copied: int
 
 
+class WindowsSpecialFolderResult(NamedTuple):
+    """Result of resolving a Windows special folder from path parts.
+
+    Invariant: either both fields are None (not resolved), or both are set
+    (resolved). When resolved, special_path is the folder Path and
+    remaining_parts is the list of path components after the folder (may be
+    empty). We never return (None, list) or (Path, None).
+    """
+
+    special_path: Path | None
+    remaining_parts: list[str] | None
+
+
 class OSManager:
     """A class to manage OS-level scenarios.
 
@@ -231,27 +244,28 @@ class OSManager:
     def try_resolve_windows_special_folder(
         parts: list[str],
         get_folder_path: Callable[[int], Path | None],
-    ) -> tuple[Path | None, list[str] | None]:
+    ) -> WindowsSpecialFolderResult:
         """Resolve Windows special folder from path parts.
 
         If the first part matches a known special folder name, calls get_folder_path
-        with the corresponding CSIDL and returns (path, remaining_parts).
+        with the corresponding CSIDL and returns a result with path and remaining_parts.
 
         Args:
             parts: Lowercased path parts from normalize_path_parts_for_special_folder
             get_folder_path: Callback that takes CSIDL and returns Path or None
 
         Returns:
-            (special_path, remaining_parts) if resolved, else (None, None)
+            WindowsSpecialFolderResult: (special_path, remaining_parts) when resolved,
+            else (None, None). When resolved, remaining_parts is a list (possibly empty).
         """
         if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
-            return None, None
+            return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
         special_path = get_folder_path(csidl)
         if special_path is None:
-            return None, None
+            return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         remaining = parts[1:] if len(parts) > 1 else []
-        return special_path, remaining
+        return WindowsSpecialFolderResult(special_path=special_path, remaining_parts=remaining)
 
     def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
@@ -349,22 +363,20 @@ class OSManager:
         Returns:
             Expanded Path object
         """
-        special_path = None
-        remaining_parts = None
-
+        resolved = None
         if self.is_windows():
             parts = self.normalize_path_parts_for_special_folder(path_str)
-            special_path, remaining_parts = self.try_resolve_windows_special_folder(
+            resolved = self.try_resolve_windows_special_folder(
                 parts, self._get_windows_special_folder_path
             )
 
         # Success path at the end - compute final path and return
-        if special_path is not None:
-            extra_parts: list[str] = remaining_parts if remaining_parts else []
+        if resolved is not None and resolved.special_path is not None:
+            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
             if extra_parts:
-                final_path = special_path / Path(*extra_parts)
+                final_path = resolved.special_path / Path(*extra_parts)
             else:
-                final_path = special_path
+                final_path = resolved.special_path
         else:
             expanded_vars = os.path.expandvars(path_str)
             expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
