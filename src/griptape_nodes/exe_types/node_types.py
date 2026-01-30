@@ -831,7 +831,9 @@ class BaseNode(ABC):
                         emit_change=False,
                     )
 
-    def set_node_size(self, width: int = NODE_DEFAULT_SIZE["width"], height: int = NODE_DEFAULT_SIZE["height"]) -> None:
+    def set_initial_node_size(
+        self, width: int = NODE_DEFAULT_SIZE["width"], height: int = NODE_DEFAULT_SIZE["height"]
+    ) -> None:
         """Set the node's UI size. Node authors can call this to give the node a default or custom size.
 
         Args:
