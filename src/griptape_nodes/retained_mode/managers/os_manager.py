@@ -207,16 +207,18 @@ class OSManager:
     def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
         r"""Parse a path string into normalized parts for special folder detection.
 
-        Strips leading ~ or %UserProfile%, expands env vars, and returns lowercased
-        path parts. Used to detect Windows special folder names (e.g. ~/Downloads).
-        Also strips Windows long path prefix (\\?\ or \\?\UNC\) so that
-        prefixed paths are parsed correctly instead of producing "?" as the first part.
+        Strips leading ~ or ~/, or %UserProfile% / %USERPROFILE% (case-insensitive);
+        expands env vars when %UserProfile% is present; returns lowercased path
+        parts. Used to detect Windows special folder names (e.g. ~/Downloads,
+        %UserProfile%/Desktop). Also strips Windows long path prefix (\\?\ or
+        \\?\UNC\) so prefixed paths parse correctly instead of producing "?"
+        as the first part.
 
         Args:
-            path_str: Path string that may contain ~ or %UserProfile%
+            path_str: Path string that may contain ~ or %UserProfile% (case-insensitive).
 
         Returns:
-            List of lowercased path parts, e.g. ["downloads"] for "~/Downloads"
+            List of lowercased path parts, e.g. ["downloads"] for "~/Downloads".
         """
         normalized = path_str.replace("\\", "/")
         # Strip Windows long path prefix so we don't get "?" as first part
@@ -240,16 +242,18 @@ class OSManager:
     def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult:
         """Resolve Windows special folder from path parts.
 
-        If the first part matches a known special folder name, uses
-        _get_windows_special_folder_path to get the path and returns a result
-        with path and remaining_parts.
+        If the first part matches a known special folder name (e.g. "desktop",
+        "downloads"), calls _get_windows_special_folder_path and returns a
+        result with special_path and remaining_parts. Returns (None, None) if
+        parts are empty, the first part is unknown, or the Shell API returns None.
 
         Args:
-            parts: Lowercased path parts from normalize_path_parts_for_special_folder
+            parts: Lowercased path parts from normalize_path_parts_for_special_folder.
 
         Returns:
-            WindowsSpecialFolderResult: (special_path, remaining_parts) when resolved,
-            else (None, None). When resolved, remaining_parts is a list (possibly empty).
+            WindowsSpecialFolderResult: When resolved, special_path is the folder
+            Path and remaining_parts is the list of path components after the
+            folder (possibly empty). Otherwise both fields are None.
         """
         if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
             return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
