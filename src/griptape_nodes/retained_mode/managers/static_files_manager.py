@@ -154,6 +154,7 @@ class StaticFilesManager:
             url=response["url"],
             headers=response["headers"],
             method=response["method"],
+            file_url=self.storage_driver.get_asset_url(Path(response["file_path"])),
             result_details="Successfully created static file upload URL",
         )
 

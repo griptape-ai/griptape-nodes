@@ -80,6 +80,9 @@ class BaseNodeGroup(BaseNode):
             if node.name in self.nodes:
                 del self.nodes[node.name]
 
+        node_names_in_group = set(self.nodes.keys())
+        self.metadata["node_names_in_group"] = list(node_names_in_group)
+
     def _add_nodes_to_group_dict(self, nodes: list[BaseNode]) -> None:
         """Add nodes to the group's node dictionary."""
         for node in nodes:

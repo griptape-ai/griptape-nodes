@@ -256,20 +256,23 @@ def resolve_localhost_url_to_path(url: str) -> str:
     if not isinstance(url, str):
         return url
 
-    # Strip query parameters (cachebuster ?t=...)
-    if "?" in url:
-        url = url.split("?")[0]
+    # Check if it's a localhost URL (any port) FIRST, before stripping query params.
+    # External URLs may have required query parameters (e.g., Azure SAS tokens,
+    # AWS presigned URLs) that must be preserved for authentication.
+    if not url.startswith(("http://localhost:", "https://localhost:")):
+        return url
 
-    # Check if it's a localhost URL (any port)
-    if url.startswith(("http://localhost:", "https://localhost:")):
-        parsed = urlparse(url)
-        # Extract path after /workspace/
-        if "/workspace/" in parsed.path:
-            workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
-            return workspace_relative_path
+    # Only strip query parameters from localhost URLs (cachebuster ?t=...)
+    url_without_params = url.split("?")[0] if "?" in url else url
 
-    # Not a localhost workspace URL, return as-is
-    return url
+    parsed = urlparse(url_without_params)
+    # Extract path after /workspace/
+    if "/workspace/" in parsed.path:
+        workspace_relative_path = parsed.path.split("/workspace/", 1)[1]
+        return workspace_relative_path
+
+    # Localhost URL but not a workspace path, return without query params
+    return url_without_params
 
 
 def read_image_from_file_path(path_str: str, context_name: str = "image") -> str | None:
