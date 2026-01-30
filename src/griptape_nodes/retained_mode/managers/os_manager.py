@@ -240,19 +240,15 @@ class OSManager:
         parts = [p.lower() for p in normalized.split("/") if p]
         return parts
 
-    @staticmethod
-    def try_resolve_windows_special_folder(
-        parts: list[str],
-        get_folder_path: Callable[[int], Path | None],
-    ) -> WindowsSpecialFolderResult:
+    def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult:
         """Resolve Windows special folder from path parts.
 
-        If the first part matches a known special folder name, calls get_folder_path
-        with the corresponding CSIDL and returns a result with path and remaining_parts.
+        If the first part matches a known special folder name, uses
+        _get_windows_special_folder_path to get the path and returns a result
+        with path and remaining_parts.
 
         Args:
             parts: Lowercased path parts from normalize_path_parts_for_special_folder
-            get_folder_path: Callback that takes CSIDL and returns Path or None
 
         Returns:
             WindowsSpecialFolderResult: (special_path, remaining_parts) when resolved,
@@ -261,7 +257,7 @@ class OSManager:
         if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
             return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
-        special_path = get_folder_path(csidl)
+        special_path = self._get_windows_special_folder_path(csidl)
         if special_path is None:
             return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
         remaining = parts[1:] if len(parts) > 1 else []
@@ -366,9 +362,7 @@ class OSManager:
         resolved = None
         if self.is_windows():
             parts = self.normalize_path_parts_for_special_folder(path_str)
-            resolved = self.try_resolve_windows_special_folder(
-                parts, self._get_windows_special_folder_path
-            )
+            resolved = self.try_resolve_windows_special_folder(parts)
 
         # Success path at the end - compute final path and return
         if resolved is not None and resolved.special_path is not None:
