@@ -566,9 +566,7 @@ class TestTryResolveWindowsSpecialFolder:
         assert result.special_path is None
         assert result.remaining_parts is None
 
-    def test_downloads_resolved_returns_path_and_empty_remaining(
-        self, griptape_nodes: GriptapeNodes
-    ) -> None:
+    def test_downloads_resolved_returns_path_and_empty_remaining(self, griptape_nodes: GriptapeNodes) -> None:
         """Known folder with no remaining parts."""
         os_manager = griptape_nodes.OSManager()
         mock_path = Path("/mock/Downloads")
@@ -592,20 +590,14 @@ class TestTryResolveWindowsSpecialFolder:
             return mock_path
 
         with patch.object(os_manager, "_get_windows_special_folder_path", side_effect=mock_get):
-            result = os_manager.try_resolve_windows_special_folder(
-                ["desktop", "sub", "file.txt"]
-            )
+            result = os_manager.try_resolve_windows_special_folder(["desktop", "sub", "file.txt"])
         assert result.special_path == mock_path
         assert result.remaining_parts == ["sub", "file.txt"]
 
-    def test_get_folder_returns_none_returns_none(
-        self, griptape_nodes: GriptapeNodes
-    ) -> None:
+    def test_get_folder_returns_none_returns_none(self, griptape_nodes: GriptapeNodes) -> None:
         """When _get_windows_special_folder_path returns None, result is (None, None)."""
         os_manager = griptape_nodes.OSManager()
-        with patch.object(
-            os_manager, "_get_windows_special_folder_path", return_value=None
-        ):
+        with patch.object(os_manager, "_get_windows_special_folder_path", return_value=None):
             result = os_manager.try_resolve_windows_special_folder(["downloads"])
         assert result.special_path is None
         assert result.remaining_parts is None
