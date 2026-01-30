@@ -6,6 +6,7 @@ import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
+from threadpoolctl import threadpool_limits
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
@@ -309,8 +310,10 @@ class ExtractKeyColors(DataNode):
             pixels = image_array.reshape(-1, 3)
 
             # Perform KMeans clustering
+            # Limit OpenBLAS threads to prevent crashes on Windows systems with high core counts
             kmeans = KMeans(n_clusters=num_colors, random_state=42, n_init="auto")
-            kmeans.fit(pixels)
+            with threadpool_limits(limits=1, user_api="blas"):
+                kmeans.fit(pixels)
 
             # Get cluster centers (the dominant colors)
             centers = kmeans.cluster_centers_
