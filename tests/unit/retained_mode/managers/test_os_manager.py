@@ -592,9 +592,7 @@ class TestTryResolveWindowsSpecialFolder:
             assert csidl == OSManager.WINDOWS_CSIDL_MAP["desktop"]
             return mock_path
 
-        path, remaining = OSManager.try_resolve_windows_special_folder(
-            ["desktop", "sub", "file.txt"], mock_get
-        )
+        path, remaining = OSManager.try_resolve_windows_special_folder(["desktop", "sub", "file.txt"], mock_get)
         assert path == mock_path
         assert remaining == ["sub", "file.txt"]
 
