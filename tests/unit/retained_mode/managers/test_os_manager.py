@@ -1,3 +1,4 @@
+import os
 import platform
 import tempfile
 from collections.abc import Generator
@@ -547,6 +548,32 @@ class TestNormalizePathPartsForSpecialFolder:
         """Path parts are lowercased."""
         result = OSManager.normalize_path_parts_for_special_folder("~/DOCUMENTS/SubDir")
         assert result == ["documents", "subdir"]
+
+    def test_userprofile_desktop_normalizes_to_desktop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r"""%UserProfile%\Desktop -> ['desktop']; expandvars can return backslashes on Windows."""
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\jason")
+
+        def expandvars_windows_style(path: str) -> str:
+            if "%UserProfile%" in path or "%USERPROFILE%" in path:
+                return path.replace("%UserProfile%", "C:\\Users\\jason").replace("%USERPROFILE%", "C:\\Users\\jason")
+            return os.path.expandvars(path)
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.os.path.expandvars", expandvars_windows_style):
+            result = OSManager.normalize_path_parts_for_special_folder("%UserProfile%/Desktop")
+        assert result == ["desktop"]
+
+    def test_userprofile_downloads_with_subdir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r"""%UserProfile%\Downloads\sub -> ['downloads', 'sub']."""
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\jason")
+
+        def expandvars_windows_style(path: str) -> str:
+            if "%UserProfile%" in path or "%USERPROFILE%" in path:
+                return path.replace("%UserProfile%", "C:\\Users\\jason").replace("%USERPROFILE%", "C:\\Users\\jason")
+            return os.path.expandvars(path)
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.os.path.expandvars", expandvars_windows_style):
+            result = OSManager.normalize_path_parts_for_special_folder("%UserProfile%/Downloads/sub")
+        assert result == ["downloads", "sub"]
 
 
 class TestTryResolveWindowsSpecialFolder:

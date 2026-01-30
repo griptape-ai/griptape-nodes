@@ -228,8 +228,9 @@ class OSManager:
             normalized = normalized[2:]
         elif normalized.startswith("~"):
             normalized = normalized[1:]
-        if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
+        if "%USERPROFILE%" in normalized.upper():
             normalized = os.path.expandvars(normalized)
+            normalized = normalized.replace("\\", "/")  # expandvars can return backslashes on Windows
             userprofile = os.environ.get("USERPROFILE", "")
             if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
                 normalized = normalized[len(userprofile) :].lstrip("/\\")
