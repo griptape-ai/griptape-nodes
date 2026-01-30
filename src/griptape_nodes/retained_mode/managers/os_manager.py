@@ -12,7 +12,7 @@ from collections.abc import Callable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import aioshutil
 import portalocker
@@ -173,76 +173,23 @@ class CopyTreeStats:
     total_bytes_copied: int
 
 
-# Windows CSIDL constants for special folders (used by _expand_path)
-# https://learn.microsoft.com/en-us/windows/win32/shell/csidl
-WINDOWS_CSIDL_MAP: dict[str, int] = {
-    "desktop": 0x0000,  # CSIDL_DESKTOP
-    "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
-    "downloads": 0x0033,  # CSIDL_DOWNLOADS
-    "pictures": 0x0027,  # CSIDL_MYPICTURES
-    "videos": 0x000E,  # CSIDL_MYVIDEO
-    "music": 0x000D,  # CSIDL_MYMUSIC
-}
-
-
-def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
-    """Parse a path string into normalized parts for special folder detection.
-
-    Strips leading ~ or %UserProfile%, expands env vars, and returns lowercased
-    path parts. Used to detect Windows special folder names (e.g. ~/Downloads).
-
-    Args:
-        path_str: Path string that may contain ~ or %UserProfile%
-
-    Returns:
-        List of lowercased path parts, e.g. ["downloads"] for "~/Downloads"
-    """
-    normalized = path_str.replace("\\", "/")
-    if normalized.startswith("~/"):
-        normalized = normalized[2:]
-    elif normalized.startswith("~"):
-        normalized = normalized[1:]
-    if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
-        normalized = os.path.expandvars(normalized)
-        userprofile = os.environ.get("USERPROFILE", "")
-        if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
-            normalized = normalized[len(userprofile) :].lstrip("/\\")
-    parts = [p.lower() for p in normalized.split("/") if p]
-    return parts
-
-
-def try_resolve_windows_special_folder(
-    parts: list[str],
-    get_folder_path: Callable[[int], Path | None],
-) -> tuple[Path | None, list[str] | None]:
-    """Resolve Windows special folder from path parts.
-
-    If the first part matches a known special folder name, calls get_folder_path
-    with the corresponding CSIDL and returns (path, remaining_parts).
-
-    Args:
-        parts: Lowercased path parts from normalize_path_parts_for_special_folder
-        get_folder_path: Callback that takes CSIDL and returns Path or None
-
-    Returns:
-        (special_path, remaining_parts) if resolved, else (None, None)
-    """
-    if not parts or parts[0] not in WINDOWS_CSIDL_MAP:
-        return None, None
-    csidl = WINDOWS_CSIDL_MAP[parts[0]]
-    special_path = get_folder_path(csidl)
-    if special_path is None:
-        return None, None
-    remaining = parts[1:] if len(parts) > 1 else []
-    return special_path, remaining
-
-
 class OSManager:
     """A class to manage OS-level scenarios.
 
     Making its own class as some runtime environments and some customer requirements may dictate this as optional.
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
+
+    # Windows CSIDL constants for special folders (used by _expand_path)
+    # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+    WINDOWS_CSIDL_MAP: ClassVar[dict[str, int]] = {
+        "desktop": 0x0000,  # CSIDL_DESKTOP
+        "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
+        "downloads": 0x0033,  # CSIDL_DOWNLOADS
+        "pictures": 0x0027,  # CSIDL_MYPICTURES
+        "videos": 0x000E,  # CSIDL_MYVIDEO
+        "music": 0x000D,  # CSIDL_MYMUSIC
+    }
 
     # Argtypes for SHGetFolderPathW (Windows Shell API)
     # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
@@ -253,6 +200,58 @@ class OSManager:
         wintypes.DWORD,
         wintypes.LPCWSTR,
     )
+
+    @staticmethod
+    def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
+        """Parse a path string into normalized parts for special folder detection.
+
+        Strips leading ~ or %UserProfile%, expands env vars, and returns lowercased
+        path parts. Used to detect Windows special folder names (e.g. ~/Downloads).
+
+        Args:
+            path_str: Path string that may contain ~ or %UserProfile%
+
+        Returns:
+            List of lowercased path parts, e.g. ["downloads"] for "~/Downloads"
+        """
+        normalized = path_str.replace("\\", "/")
+        if normalized.startswith("~/"):
+            normalized = normalized[2:]
+        elif normalized.startswith("~"):
+            normalized = normalized[1:]
+        if "%UserProfile%" in normalized.upper() or "%USERPROFILE%" in normalized:
+            normalized = os.path.expandvars(normalized)
+            userprofile = os.environ.get("USERPROFILE", "")
+            if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
+                normalized = normalized[len(userprofile) :].lstrip("/\\")
+        parts = [p.lower() for p in normalized.split("/") if p]
+        return parts
+
+    @staticmethod
+    def try_resolve_windows_special_folder(
+        parts: list[str],
+        get_folder_path: Callable[[int], Path | None],
+    ) -> tuple[Path | None, list[str] | None]:
+        """Resolve Windows special folder from path parts.
+
+        If the first part matches a known special folder name, calls get_folder_path
+        with the corresponding CSIDL and returns (path, remaining_parts).
+
+        Args:
+            parts: Lowercased path parts from normalize_path_parts_for_special_folder
+            get_folder_path: Callback that takes CSIDL and returns Path or None
+
+        Returns:
+            (special_path, remaining_parts) if resolved, else (None, None)
+        """
+        if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
+            return None, None
+        csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
+        special_path = get_folder_path(csidl)
+        if special_path is None:
+            return None, None
+        remaining = parts[1:] if len(parts) > 1 else []
+        return special_path, remaining
 
     def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
@@ -354,8 +353,8 @@ class OSManager:
         remaining_parts = None
 
         if self.is_windows():
-            parts = normalize_path_parts_for_special_folder(path_str)
-            special_path, remaining_parts = try_resolve_windows_special_folder(
+            parts = self.normalize_path_parts_for_special_folder(path_str)
+            special_path, remaining_parts = self.try_resolve_windows_special_folder(
                 parts, self._get_windows_special_folder_path
             )
 

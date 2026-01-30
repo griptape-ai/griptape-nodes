@@ -33,11 +33,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.os_manager import (
-    WINDOWS_CSIDL_MAP,
-    normalize_path_parts_for_special_folder,
-    try_resolve_windows_special_folder,
-)
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 # Windows MAX_PATH constant for tests
 WINDOWS_MAX_PATH = 260
@@ -519,37 +515,37 @@ class TestNormalizePathPartsForSpecialFolder:
 
     def test_tilde_single_part(self) -> None:
         """~/Downloads -> ['downloads']."""
-        result = normalize_path_parts_for_special_folder("~/Downloads")
+        result = OSManager.normalize_path_parts_for_special_folder("~/Downloads")
         assert result == ["downloads"]
 
     def test_tilde_with_slash_single_part(self) -> None:
         """~/Desktop -> ['desktop']."""
-        result = normalize_path_parts_for_special_folder("~/Desktop")
+        result = OSManager.normalize_path_parts_for_special_folder("~/Desktop")
         assert result == ["desktop"]
 
     def test_tilde_multiple_parts(self) -> None:
         """~/Desktop/subfolder -> ['desktop', 'subfolder']."""
-        result = normalize_path_parts_for_special_folder("~/Desktop/subfolder")
+        result = OSManager.normalize_path_parts_for_special_folder("~/Desktop/subfolder")
         assert result == ["desktop", "subfolder"]
 
     def test_tilde_only(self) -> None:
         """~ -> [] (no path parts after stripping)."""
-        result = normalize_path_parts_for_special_folder("~")
+        result = OSManager.normalize_path_parts_for_special_folder("~")
         assert result == []
 
     def test_backslash_normalized_to_slash(self) -> None:
         r"""~\Downloads -> ['downloads']."""
-        result = normalize_path_parts_for_special_folder("~\\Downloads")
+        result = OSManager.normalize_path_parts_for_special_folder("~\\Downloads")
         assert result == ["downloads"]
 
     def test_empty_string(self) -> None:
         """Empty string -> []."""
-        result = normalize_path_parts_for_special_folder("")
+        result = OSManager.normalize_path_parts_for_special_folder("")
         assert result == []
 
     def test_parts_lowercased(self) -> None:
         """Path parts are lowercased."""
-        result = normalize_path_parts_for_special_folder("~/DOCUMENTS/SubDir")
+        result = OSManager.normalize_path_parts_for_special_folder("~/DOCUMENTS/SubDir")
         assert result == ["documents", "subdir"]
 
 
@@ -562,7 +558,7 @@ class TestTryResolveWindowsSpecialFolder:
         def mock_get(_: int) -> None:
             return None
 
-        path, remaining = try_resolve_windows_special_folder(["unknown", "sub"], mock_get)
+        path, remaining = OSManager.try_resolve_windows_special_folder(["unknown", "sub"], mock_get)
         assert path is None
         assert remaining is None
 
@@ -572,7 +568,7 @@ class TestTryResolveWindowsSpecialFolder:
         def mock_get(_: int) -> None:
             return None
 
-        path, remaining = try_resolve_windows_special_folder([], mock_get)
+        path, remaining = OSManager.try_resolve_windows_special_folder([], mock_get)
         assert path is None
         assert remaining is None
 
@@ -581,10 +577,10 @@ class TestTryResolveWindowsSpecialFolder:
         mock_path = Path("/mock/Downloads")
 
         def mock_get(csidl: int) -> Path | None:
-            assert csidl == WINDOWS_CSIDL_MAP["downloads"]
+            assert csidl == OSManager.WINDOWS_CSIDL_MAP["downloads"]
             return mock_path
 
-        path, remaining = try_resolve_windows_special_folder(["downloads"], mock_get)
+        path, remaining = OSManager.try_resolve_windows_special_folder(["downloads"], mock_get)
         assert path == mock_path
         assert remaining == []
 
@@ -593,10 +589,12 @@ class TestTryResolveWindowsSpecialFolder:
         mock_path = Path("/mock/Desktop")
 
         def mock_get(csidl: int) -> Path | None:
-            assert csidl == WINDOWS_CSIDL_MAP["desktop"]
+            assert csidl == OSManager.WINDOWS_CSIDL_MAP["desktop"]
             return mock_path
 
-        path, remaining = try_resolve_windows_special_folder(["desktop", "sub", "file.txt"], mock_get)
+        path, remaining = OSManager.try_resolve_windows_special_folder(
+            ["desktop", "sub", "file.txt"], mock_get
+        )
         assert path == mock_path
         assert remaining == ["sub", "file.txt"]
 
@@ -606,7 +604,7 @@ class TestTryResolveWindowsSpecialFolder:
         def mock_get(_: int) -> None:
             return None
 
-        path, remaining = try_resolve_windows_special_folder(["downloads"], mock_get)
+        path, remaining = OSManager.try_resolve_windows_special_folder(["downloads"], mock_get)
         assert path is None
         assert remaining is None
 
