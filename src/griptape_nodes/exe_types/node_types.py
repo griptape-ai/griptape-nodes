@@ -306,19 +306,19 @@ class BaseNode(ABC):
     @classmethod
     def allow_incoming_connection_by_class(
         cls,
-        source_node_class: str,  # noqa: ARG003
-        source_parameter_name: str,  # noqa: ARG003
+        source_node_class: type[BaseNode] | None,  # noqa: ARG003
+        source_parameter_name: str | None,  # noqa: ARG003
         target_parameter_name: str,  # noqa: ARG003
-    ) -> bool: 
+    ) -> bool:
         """Class-level validation for incoming connections (no instantiation required).
 
         This method is called during serialization when node instances don't exist yet.
         Override this method in subclasses to restrict connections based on node type.
 
         Args:
-            source_node_class: Class of the source node
-            source_parameter_name: Output type of the source parameter
-            target_parameter_name: Input type of the target parameter
+            source_node_class: Class of the source node (may be None if unknown)
+            source_parameter_name: Output name of the source parameter (may be None if unknown)
+            target_parameter_name: Input name of the target parameter
 
         Returns:
             True if the connection is allowed, False otherwise
@@ -328,19 +328,19 @@ class BaseNode(ABC):
     @classmethod
     def allow_outgoing_connection_by_class(
         cls,
-        target_node_class: str,  # noqa: ARG003
+        target_node_class: type[BaseNode],  # noqa: ARG003
         source_parameter_name: str,  # noqa: ARG003
-        target_parameter_name: str,  # noqa: ARG003
+        target_parameter_name: str | None,  # noqa: ARG003
     ) -> bool:
         """Class-level validation for outgoing connections (no instantiation required).
 
-        This method is called during serialization when ßnode instances don't exist yet.
+        This method is called during serialization when node instances don't exist yet.
         Override this method in subclasses to restrict connections based on node type.
 
         Args:
             target_node_class: Class of the target node
             source_parameter_name: Output name of the source parameter
-            target_parameter_name: Input name of the target parameter
+            target_parameter_name: Input name of the target parameter (may be None if unknown)
 
         Returns:
             True if the connection is allowed, False otherwise

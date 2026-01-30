@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
-from multiprocessing import connection
 from queue import Queue
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 from uuid import uuid4
@@ -1899,6 +1898,29 @@ class FlowManager:
                     msg = f"External control connection references parameter '{control_conn.source_parameter_name}' on node '{package_node.name}' which does not exist. This indicates a data consistency issue."
                     raise ValueError(msg)
 
+                # Get the EndFlow node class for validation
+                end_library = LibraryRegistry.get_library_for_node_type(
+                    request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                    request.end_node_library_name,
+                )
+                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+
+                # Validate from package node's perspective (we know source param name, not target)
+                valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
+                    end_node_class,
+                    source_param.name,  # source parameter name - we KNOW this
+                    None,  # target parameter name - we DON'T know this yet
+                )
+
+                # Only create the connection if validation passes
+                if not valid_connection:
+                    logger.warning(
+                        "Skipping control connection from %s.%s to EndFlow - connection not allowed by node validation rules",
+                        package_node.name,
+                        source_param.name,
+                    )
+                    continue
+
                 # Use comprehensive helper to process this control parameter
                 self._process_parameter_for_end_node(
                     request=request,
@@ -1948,8 +1970,20 @@ class FlowManager:
                 if package_param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
                     continue
 
-                # Check if we are allowed to make a connection here
-                valid_connection =package_node.allow_outgoing_connection_by_class(request.end_node_type, package_param.name, end_node)
+                # Get the EndFlow node class for validation
+                end_library = LibraryRegistry.get_library_for_node_type(
+                    request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                    request.end_node_library_name,
+                )
+                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+
+                # Validate from package node's perspective (we know source param name, not target)
+                valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
+                    end_node_class,
+                    package_param.name,  # source parameter name - we KNOW this
+                    None,  # target parameter name - we DON'T know this yet
+                )
+
                 # Use comprehensive helper to process this data parameter
                 if valid_connection:
                     self._process_parameter_for_end_node(
@@ -2432,21 +2466,13 @@ class FlowManager:
         # StartNode always has a control output parameter with name "exec_out"
         source_control_parameter_name = "exec_out"
 
-        # Validate that the control input connection is allowed
-        #TODO: How do I get start flow type here? 
-        connection_allowed =package_node.allow_incoming_connection_by_class(StartFlowNode,package_control_input_name, source_control_parameter_name)
-
-        if connection_allowed:
-            # Create the connection
-            control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
-                source_node_uuid=start_node_uuid,
-                source_parameter_name=source_control_parameter_name,
-                target_node_uuid=package_node_uuid,
-                target_parameter_name=package_control_input_name,
-            )
-        else:
-            details = f"Attempted to package node '{package_node.name}'. Failed because we were not allowed to create a control connection from the start node to the first node in the package."
-            return PackageNodesAsSerializedFlowResultFailure(result_details=details)
+        # Create the connection
+        control_connection = SerializedFlowCommands.IndirectConnectionSerialization(
+            source_node_uuid=start_node_uuid,
+            source_parameter_name=source_control_parameter_name,
+            target_node_uuid=package_node_uuid,
+            target_parameter_name=package_control_input_name,
+        )
         return control_connection
 
     def _collect_all_connections_for_multi_node_package(

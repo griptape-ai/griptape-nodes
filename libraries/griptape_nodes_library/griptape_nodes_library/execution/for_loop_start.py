@@ -167,12 +167,12 @@ class ForLoopStartNode(BaseIterativeStartNode):
         # Determine direction and calculate iterations
         if start <= end:  # ascending
             if end_inclusive:
-                return max(0, (end - start) // step + 1)
-            return max(0, (end - start + step - 1) // step)
+                return int(max(0, (end - start) // step + 1))
+            return int(max(0, (end - start + step - 1) // step))
         # descending
         if end_inclusive:
-            return max(0, (start - end) // step + 1)
-        return max(0, (start - end + step - 1) // step)
+            return int(max(0, (start - end) // step + 1))
+        return int(max(0, (start - end + step - 1) // step))
 
     def _get_current_iteration_count(self) -> int:
         """Return the current iteration count (0-based)."""

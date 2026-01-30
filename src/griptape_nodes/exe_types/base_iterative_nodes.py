@@ -358,10 +358,12 @@ class BaseIterativeStartNode(BaseNode):
     def allow_outgoing_connection_by_class(
         cls,
         target_node_class: type[BaseNode],
-        source_parameter_name: str,
-        target_parameter_name: str,  # noqa: ARG003
+        source_parameter_name: str,  # We always know OUR parameter name
+        target_parameter_name: str | None,  # noqa: ARG003 - May not know OTHER node's parameter
     ) -> bool:
-        if source_parameter_name == "loop" and cls is BaseIterativeStartNode:
+        """Class-level validation for outgoing connections from iterative start nodes."""
+        # Check if this is a loop tethering connection (by OUR parameter name)
+        if source_parameter_name == "loop":
             compatible_end_classes = cls._get_compatible_end_classes()
             compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
             target_class_name = target_node_class.__name__
@@ -373,12 +375,13 @@ class BaseIterativeStartNode(BaseNode):
     def allow_incoming_connection_by_class(
         cls,
         source_node_class: type[BaseNode],
-        source_parameter_name: str,  # noqa: ARG003
-        target_parameter_name: str,
+        source_parameter_name: str | None,  # noqa: ARG003 - May not know OTHER node's parameter
+        target_parameter_name: str,  # We always know OUR parameter name
     ) -> bool:
+        """Class-level validation for incoming connections to iterative start nodes."""
+        # Check signal connections (by OUR parameter name)
         if (
             target_parameter_name in ("trigger_next_iteration_signal", "break_loop_signal")
-            and cls is BaseIterativeStartNode
         ):
             compatible_end_classes = cls._get_compatible_end_classes()
             compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
@@ -796,10 +799,11 @@ class BaseIterativeEndNode(BaseNode):
     def allow_outgoing_connection_by_class(
         cls,
         target_node_class: type[BaseNode],
-        source_parameter_name: str,
-        target_parameter_name: str,  # noqa: ARG003
+        source_parameter_name: str,  # We always know OUR parameter name
+        target_parameter_name: str | None,  # noqa: ARG003 - May not know OTHER node's parameter
     ) -> bool:
         """Class-level validation for outgoing connections from iterative end nodes."""
+        # Check signal connections (by OUR parameter name)
         if source_parameter_name in ("trigger_next_iteration_signal_output", "break_loop_signal_output"):
             compatible_start_classes = cls._get_compatible_start_classes()
             compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
@@ -812,10 +816,11 @@ class BaseIterativeEndNode(BaseNode):
     def allow_incoming_connection_by_class(
         cls,
         source_node_class: type[BaseNode],
-        source_parameter_name: str,  # noqa: ARG003
-        target_parameter_name: str,
+        source_parameter_name: str | None,  # noqa: ARG003 - May not know OTHER node's parameter
+        target_parameter_name: str,  # We always know OUR parameter name
     ) -> bool:
         """Class-level validation for incoming connections to iterative end nodes."""
+        # Check loop tethering connection (by OUR parameter name)
         if target_parameter_name == "from_start":
             compatible_start_classes = cls._get_compatible_start_classes()
             compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
