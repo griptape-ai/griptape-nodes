@@ -2040,6 +2040,8 @@ class OSManager:
                 flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING,
             ) as fh:
                 fh.write(content)
+                fh.flush()
+                os.fsync(fh.fileno())
 
             # Calculate bytes written
             if isinstance(content, bytes):
