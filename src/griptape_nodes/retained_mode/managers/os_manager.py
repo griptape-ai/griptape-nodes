@@ -205,10 +205,12 @@ class OSManager:
 
     @staticmethod
     def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
-        """Parse a path string into normalized parts for special folder detection.
+        r"""Parse a path string into normalized parts for special folder detection.
 
         Strips leading ~ or %UserProfile%, expands env vars, and returns lowercased
         path parts. Used to detect Windows special folder names (e.g. ~/Downloads).
+        Also strips Windows long path prefix (\\?\ or \\?\UNC\) so that
+        prefixed paths are parsed correctly instead of producing "?" as the first part.
 
         Args:
             path_str: Path string that may contain ~ or %UserProfile%
@@ -217,6 +219,11 @@ class OSManager:
             List of lowercased path parts, e.g. ["downloads"] for "~/Downloads"
         """
         normalized = path_str.replace("\\", "/")
+        # Strip Windows long path prefix so we don't get "?" as first part
+        if normalized.upper().startswith("//?/UNC/"):
+            normalized = "//" + normalized[8:]  # Keep UNC as //server/share
+        elif normalized.startswith("//?/"):
+            normalized = normalized[4:]
         if normalized.startswith("~/"):
             normalized = normalized[2:]
         elif normalized.startswith("~"):
