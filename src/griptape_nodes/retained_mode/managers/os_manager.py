@@ -204,16 +204,6 @@ class OSManager:
         "music": 0x000D,  # CSIDL_MYMUSIC
     }
 
-    # Argtypes for SHGetFolderPathW (Windows Shell API)
-    # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
-    _SH_GET_FOLDER_PATH_ARGTYPES = (
-        wintypes.HWND,
-        ctypes.c_int,
-        wintypes.HANDLE,
-        wintypes.DWORD,
-        wintypes.LPCWSTR,
-    )
-
     @staticmethod
     def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
         """Parse a path string into normalized parts for special folder detection.
@@ -332,10 +322,19 @@ class OSManager:
         if not self.is_windows():
             return None
 
+        # Argtypes for SHGetFolderPathW (Windows Shell API)
+        # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+        sh_get_folder_path_argtypes = (
+            wintypes.HWND,
+            ctypes.c_int,
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPCWSTR,
+        )
         try:
             # windll is Windows-only; code path is guarded by is_windows()
             sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW  # pyright: ignore[reportAttributeAccessIssue]
-            sh_get_folder_path.argtypes = self._SH_GET_FOLDER_PATH_ARGTYPES
+            sh_get_folder_path.argtypes = sh_get_folder_path_argtypes
 
             path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
             result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
