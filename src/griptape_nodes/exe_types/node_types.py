@@ -36,6 +36,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.traits.component import Component
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils import async_utils
 
@@ -1043,12 +1044,12 @@ class BaseNode(ABC):
                 })
                 return deps
         """
+        # Lazy import to avoid circular dependency: library_registry imports BaseNode
         from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
-        from griptape_nodes.traits.component import Component
 
         component_libraries: set[LibraryNameAndVersion] = set()
 
-        logger.info("Getting dependencies for node: %s", self.name)
+        logger.debug("Getting dependencies for node: %s", self.name)
 
         for parameter in self.parameters:
             components = parameter.find_elements_by_type(Component)

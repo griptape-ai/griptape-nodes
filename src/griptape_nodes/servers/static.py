@@ -152,14 +152,13 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
     library_manager = GriptapeNodes.LibraryManager()
 
     # Find the library's directory by looking up its info
-    library_dir: Path | None = None
-    for lib_path, lib_info in library_manager._library_file_path_to_info.items():
-        if lib_info.library_name == library_name:
-            library_dir = Path(lib_path).parent
-            break
-
-    if library_dir is None:
-        raise HTTPException(status_code=404, detail=f"Library '{library_name}' not found")
+    library_info = library_manager.get_library_info_by_library_name(library_name)
+    if library_info is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Failed to load component '{file_path}': library '{library_name}' not found",
+        )
+    library_dir = Path(library_info.library_path).parent
 
     # Construct full path to the component file
     full_path = library_dir / file_path
@@ -169,17 +168,27 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
         resolved_path = full_path.resolve()
         resolved_library_dir = library_dir.resolve()
         if not resolved_path.is_relative_to(resolved_library_dir):
-            logger.warning("Path traversal attempt detected: %s", file_path)
+            logger.warning(
+                "Path traversal attempt detected while loading component from library '%s': %s",
+                library_name,
+                file_path,
+            )
             raise HTTPException(status_code=403, detail="Access denied")
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied") from None
 
     # Check if file exists
     if not resolved_path.exists():
-        raise HTTPException(status_code=404, detail=f"Component file not found: {file_path}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component file '{file_path}' not found in library '{library_name}'",
+        )
 
     if not resolved_path.is_file():
-        raise HTTPException(status_code=400, detail=f"Path is not a file: {file_path}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Component path '{file_path}' in library '{library_name}' is not a file",
+        )
 
     # Determine content type based on file extension
     content_type = "application/javascript"

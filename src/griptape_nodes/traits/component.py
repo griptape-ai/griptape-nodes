@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from griptape_nodes.exe_types.core_types import Trait
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, kw_only=True)
 class Component(Trait):
     """Associates a parameter with a UI component from a library.
 
@@ -11,8 +11,7 @@ class Component(Trait):
     The component must be registered in the library's components list.
     """
 
-    name: str = ""  # Component name (e.g., "AnglePicker")
-    library: str = ""  # Library that provides it (e.g., "example_nodes_template")
+    library: str  # Library that provides the component (e.g., "example_nodes_template")
     element_id: str = field(default_factory=lambda: "Component")
 
     def __init__(self, name: str, library: str) -> None:
