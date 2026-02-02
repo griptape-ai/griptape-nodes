@@ -1047,7 +1047,7 @@ class BaseNode(ABC):
         # Lazy import to avoid circular dependency: library_registry imports BaseNode
         from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 
-        component_libraries: set[LibraryNameAndVersion] = set()
+        ui_component_libraries: set[LibraryNameAndVersion] = set()
 
         logger.debug("Getting dependencies for node: %s", self.name)
 
@@ -1058,7 +1058,7 @@ class BaseNode(ABC):
                     try:
                         library = LibraryRegistry.get_library(component.library)
                         library_data = library.get_library_data()
-                        component_libraries.add(
+                        ui_component_libraries.add(
                             LibraryNameAndVersion(
                                 library_name=library_data.name,
                                 library_version=library_data.metadata.library_version,
@@ -1068,9 +1068,9 @@ class BaseNode(ABC):
                         # Library not found - skip (may be unregistered)
                         pass
 
-        if component_libraries:
-            logger.debug("Node '%s' has component library dependencies: %s", self.name, component_libraries)
-            return NodeDependencies(libraries=component_libraries)
+        if ui_component_libraries:
+            logger.debug("Node '%s' has component library dependencies: %s", self.name, ui_component_libraries)
+            return NodeDependencies(libraries=ui_component_libraries)
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
