@@ -272,8 +272,8 @@ class OSManager:
         csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
         try:
             special_path = self._get_windows_special_folder_path(csidl)
-        except WindowsSpecialFolderError as e:
-            logger.warning("%s", e)
+        except WindowsSpecialFolderError:
+            # No warning: Shell API failure is an expected fallback path; not useful to users.
             return None
         remaining = parts[1:] if len(parts) > 1 else []
         return WindowsSpecialFolderResult(special_path=special_path, remaining_parts=remaining)
