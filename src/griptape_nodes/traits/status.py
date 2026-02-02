@@ -147,12 +147,12 @@ class Status(Trait):
     def ui_options_for_trait(self) -> dict:
         """Generate UI options for the status trait."""
         # Use parent parameter's name so frontend can target the parameter directly
-        parameter_name = self._parent.name if self._parent else None
+        parameter_name = self._parent.name if self._parent else ""
         return {
             "status": {
                 "parameter_name": parameter_name,
                 "variant": self.variant,
-                "title": self.title,
+                "title": self.title if self.title is not None else "",
                 "message": self.message,
                 "display": self.display,
                 "show_clear_button": self.show_clear_button,

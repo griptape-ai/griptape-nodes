@@ -315,6 +315,9 @@ class BaseNodeElement:
         complete_dict = self.to_dict()
         if "ui_options" in complete_dict:
             self._changes["ui_options"] = complete_dict["ui_options"]
+        # Also handle trait_ui_options for traits
+        if "trait_ui_options" in complete_dict:
+            self._changes["trait_ui_options"] = complete_dict["trait_ui_options"]
 
         event_data.update(self._changes)
         # Publish the event
@@ -912,6 +915,7 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         self,
         name: str,
         ui_options: dict | None = None,
+        traits: set[Trait.__class__ | Trait] | None = None,
         *,
         collapsed: bool = False,
         user_defined: bool = False,
@@ -930,9 +934,24 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         self._ui_options = ui_options
         self.user_defined = user_defined
 
+        # Add traits as children
+        if traits:
+            for trait in traits:
+                if not isinstance(trait, Trait):
+                    created = trait()
+                else:
+                    created = trait
+                self.add_child(created)
+
     @property
     def ui_options(self) -> dict:
-        return self._ui_options
+        # Merge trait ui_options with our own (only direct children, not recursive)
+        ui_options = {}
+        traits = self.find_elements_by_type(Trait, find_recursively=False)
+        for trait in traits:
+            ui_options = ui_options | trait.ui_options_for_trait()
+        ui_options = ui_options | self._ui_options
+        return ui_options
 
     @ui_options.setter
     @BaseNodeElement.emits_update_on_write
