@@ -1,6 +1,7 @@
 import hashlib
 import io
 import logging
+from typing import Any
 
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -8,8 +9,8 @@ from PIL import Image
 from sklearn.cluster import KMeans  # type: ignore[import-untyped]
 from threadpoolctl import threadpool_limits  # type: ignore[import-untyped]
 
-from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.node_types import DataNode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -26,20 +27,24 @@ __all__ = ["ExtractKeyColors"]
 DEBUG_ID_LENGTH = 50  # Maximum length for debug image IDs
 
 
-class ExtractKeyColors(DataNode):
-    """A node that extracts dominant colors from images using Pylette's KMeans algorithm.
+class ExtractKeyColors(SuccessFailureNode):
+    """A node that extracts dominant colors from images using KMeans or Median Cut algorithms.
 
     This node analyzes an input image and extracts the most prominent colors,
-    creating dynamic color picker parameters for each extracted color. The colors
+    providing color picker parameters for each extracted color. The colors
     are provided in both RGB and hexadecimal formats for easy use in design workflows.
 
     Features:
     - Supports ImageArtifact and ImageUrlArtifact inputs
     - Configurable number of colors to extract (2-12)
-    - Dynamic color picker parameters for each extracted color
+    - Color picker parameters that show/hide based on num_colors setting
     - Pretty-printed color output for inspection
-    - Automatic parameter cleanup between runs
+    - Non-terminal failures via success/failure output pattern
     """
+
+    # Constants for color parameter management
+    MAX_COLOR_PARAMS = 12
+    DEFAULT_NUM_COLORS = 3
 
     def __init__(self, **kwargs) -> None:
         """Initialize the ExtractKeyColors node with input parameters.
@@ -47,14 +52,13 @@ class ExtractKeyColors(DataNode):
         Sets up the node with:
         - input_image: Parameter for the source image
         - num_colors: Parameter for the target number of colors to extract
-        - number_of_color_params: Internal counter for dynamic parameters
+        - algorithm: Parameter for selecting the color extraction algorithm
+        - color_1 through color_12: Output parameters for extracted colors
 
         Args:
-            **kwargs: Additional keyword arguments passed to the parent DataNode
+            **kwargs: Additional keyword arguments passed to the parent SuccessFailureNode
         """
         super().__init__(**kwargs)
-
-        self.number_of_color_params = 0  # Internal counter for dynamic parameters
 
         self.add_parameter(
             ParameterImage(
@@ -77,8 +81,8 @@ class ExtractKeyColors(DataNode):
             ParameterInt(
                 name="num_colors",
                 tooltip="Target number of colors to extract",
-                traits={Slider(min_val=2, max_val=12)},
-                default_value=3,
+                traits={Slider(min_val=2, max_val=self.MAX_COLOR_PARAMS)},
+                default_value=self.DEFAULT_NUM_COLORS,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Target Number of Colors"},
             )
@@ -96,6 +100,58 @@ class ExtractKeyColors(DataNode):
                 },
             )
         )
+
+        # Create all 12 color parameters upfront
+        # Show color_1 through color_3 by default (matching DEFAULT_NUM_COLORS)
+        # Hide color_4 through color_12
+        for i in range(1, self.MAX_COLOR_PARAMS + 1):
+            should_hide = i > self.DEFAULT_NUM_COLORS
+            self.add_parameter(
+                ParameterString(
+                    name=f"color_{i}",
+                    default_value="",
+                    allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
+                    tooltip=f"Extracted color {i} in hex format",
+                    traits={ColorPicker(format="hex")},
+                    settable=False,
+                    hide=should_hide,
+                )
+            )
+
+        # Add status parameters for success/failure reporting
+        self._create_status_parameters(
+            result_details_tooltip="Details about the color extraction result",
+            result_details_placeholder="Details on the color extraction will be presented here.",
+            parameter_group_initially_collapsed=True,
+        )
+
+    def after_value_set(self, parameter: Parameter, value: Any) -> None:
+        """Handle parameter value changes to show/hide color parameters.
+
+        When num_colors changes, update visibility of color parameters accordingly.
+
+        Args:
+            parameter: The parameter that was changed
+            value: The new value of the parameter
+        """
+        super().after_value_set(parameter, value)
+        if parameter.name == "num_colors" and value is not None:
+            self._update_color_parameter_visibility(value)
+
+    def _update_color_parameter_visibility(self, num_colors: int) -> None:
+        """Show/hide color parameters based on num_colors setting.
+
+        Shows color_1 through color_{num_colors} and hides the rest.
+
+        Args:
+            num_colors: The number of colors to show
+        """
+        for i in range(1, self.MAX_COLOR_PARAMS + 1):
+            param_name = f"color_{i}"
+            if i <= num_colors:
+                self.show_parameter_by_name(param_name)
+            else:
+                self.hide_parameter_by_name(param_name)
 
     def _image_to_bytes(self, image_artifact: ImageArtifact | ImageUrlArtifact | dict) -> bytes:
         """Convert ImageArtifact, ImageUrlArtifact, or dict representation to bytes.
@@ -374,60 +430,40 @@ class ExtractKeyColors(DataNode):
         msg = f"Unknown algorithm: {algorithm}"
         raise ValueError(msg)
 
-    def _clear_color_picker_parameters(self) -> None:
-        """Clear all dynamically created color picker parameters.
-
-        This method removes all previously created color parameters (color_1, color_2, etc.)
-        to prevent duplicate parameter errors when the node runs again with different
-        numbers of colors. It also resets the internal parameter counter.
-
-        The method safely checks for parameter existence before attempting removal
-        to avoid errors if parameters don't exist.
-        """
-        # Clear all color parameters that might exist (up to 15 since we extract max 15)
-        for i in range(1, 16):  # Clear up to color_15 to be safe
-            param_name = f"color_{i}"
-            if self.get_parameter_by_name(param_name) is not None:
-                logger.debug("Removing existing parameter: %s", param_name)
-                # Clear parameter values first
-                if param_name in self.parameter_values:
-                    del self.parameter_values[param_name]
-                if param_name in self.parameter_output_values:
-                    del self.parameter_output_values[param_name]
-                # Remove the parameter itself
-                self.remove_parameter_element_by_name(param_name)
-
-        self.number_of_color_params = 0
-
-    def process(self) -> None:
+    async def aprocess(self) -> None:
         """Main processing method that extracts colors from the input image.
 
         This method performs the following steps:
-        1. Clears any existing color parameters from previous runs
-        2. Retrieves the input image, target number of colors, and algorithm choice
-        3. Converts the image artifact to bytes for processing
-        4. Uses the selected algorithm (KMeans or Median Cut) to extract dominant colors
-        5. Colors are automatically ordered by prominence (most prominent first)
-        6. Creates dynamic color picker parameters for each extracted color
-        7. Logs color information for inspection
+        1. Retrieves the input image, target number of colors, and algorithm choice
+        2. Converts the image artifact to bytes for processing
+        3. Uses the selected algorithm (KMeans or Median Cut) to extract dominant colors
+        4. Colors are automatically ordered by prominence (most prominent first)
+        5. Updates the color output parameters with extracted values
+        6. Logs color information for inspection
 
         The supported algorithms are:
         - KMeans: Uses sklearn's KMeans clustering to identify dominant colors
         - Median Cut: Recursively divides color space to find representative colors
 
-        The selected colors are made available as dynamic output parameters
+        The selected colors are made available as output parameters
         named color_1, color_2, etc., each containing the hexadecimal color value
         and featuring a color picker UI component.
-
-        Raises:
-            ValueError: If image processing fails or no colors can be extracted
-            Exception: If color extraction encounters an error
         """
-        self._clear_color_picker_parameters()
+        # Reset execution state
+        self._clear_execution_status()
 
+        # Get input parameters
         input_image = self.get_parameter_value("input_image")
         num_colors = self.get_parameter_value("num_colors")
         algorithm = self.get_parameter_value("algorithm")
+
+        # Validate input image
+        if input_image is None:
+            error_msg = f"{self.name}: No input image provided"
+            logger.warning(error_msg)
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {error_msg}")
+            self._handle_failure_exception(ValueError(error_msg))
+            return
 
         # Debug: Log image artifact information to detect caching issues
         if hasattr(input_image, "value"):
@@ -441,36 +477,52 @@ class ExtractKeyColors(DataNode):
         else:
             logger.debug("Processing image of type: %s", type(input_image))
 
-        logger.debug("Extracting %d colors from input image using %s algorithm", num_colors, algorithm)
-        image_bytes = self._image_to_bytes(input_image)
+        try:
+            logger.debug("Extracting %d colors from input image using %s algorithm", num_colors, algorithm)
+            image_bytes = self._image_to_bytes(input_image)
 
-        # Debug: Create hash to detect if the same image data is being processed
-        # Note: MD5 is used here only for debug logging, not for security
-        image_hash = hashlib.md5(image_bytes, usedforsecurity=False).hexdigest()[:8]
-        logger.debug("Image data hash: %s (size: %d bytes)", image_hash, len(image_bytes))
+            # Debug: Create hash to detect if the same image data is being processed
+            # Note: MD5 is used here only for debug logging, not for security
+            image_hash = hashlib.md5(image_bytes, usedforsecurity=False).hexdigest()[:8]
+            logger.debug("Image data hash: %s (size: %d bytes)", image_hash, len(image_bytes))
 
-        # Extract colors ordered by actual prominence in the image
-        selected_colors = self._get_colors_by_prominence(image_bytes, num_colors, algorithm)
-        selected_count = len(selected_colors)
+            # Extract colors ordered by actual prominence in the image
+            selected_colors = self._get_colors_by_prominence(image_bytes, num_colors, algorithm)
+            selected_count = len(selected_colors)
 
-        logger.debug("Extracted %d colors ordered by prominence", selected_count)
-        self.number_of_color_params = selected_count
+            logger.debug("Extracted %d colors ordered by prominence", selected_count)
 
-        for i, color in enumerate(selected_colors, 1):
-            r, g, b = color
-            hex_color = f"#{r:02x}{g:02x}{b:02x}"
-            logger.debug("  Color %d: RGB(%3d, %3d, %3d) | Hex: %s", i, r, g, b, hex_color)
+            # Update existing color parameters with extracted values
+            for i, color in enumerate(selected_colors, 1):
+                r, g, b = color
+                hex_color = f"#{r:02x}{g:02x}{b:02x}"
+                logger.debug("  Color %d: RGB(%3d, %3d, %3d) | Hex: %s", i, r, g, b, hex_color)
 
-            param_name = f"color_{i}"
-            logger.debug("Creating parameter %s with value %s", param_name, hex_color)
+                param_name = f"color_{i}"
+                self.set_parameter_value(param_name, hex_color)
+                self.publish_update_to_parameter(param_name, hex_color)
 
-            self.add_parameter(
-                ParameterString(
-                    name=param_name,
-                    default_value=hex_color,
-                    allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
-                    tooltip="Hex color",
-                    traits={ColorPicker(format="hex")},
-                    settable=False,
-                )
+            # Clear any unused color parameters (in case fewer colors were extracted than requested)
+            for i in range(selected_count + 1, num_colors + 1):
+                param_name = f"color_{i}"
+                self.set_parameter_value(param_name, "")
+                self.publish_update_to_parameter(param_name, "")
+
+            # Build success details
+            color_summary = ", ".join(f"#{r:02x}{g:02x}{b:02x}" for r, g, b in selected_colors)
+            success_details = (
+                f"Successfully extracted {selected_count} colors\nAlgorithm: {algorithm}\nColors: {color_summary}"
             )
+            self._set_status_results(was_successful=True, result_details=f"SUCCESS: {success_details}")
+
+        except Exception as e:
+            error_message = str(e)
+            logger.error("%s: Color extraction failed: %s", self.name, error_message)
+
+            # Set failure status with detailed error information
+            failure_details = f"Color extraction failed\nError: {error_message}"
+            self._set_status_results(was_successful=False, result_details=f"FAILURE: {failure_details}")
+
+            # Handle failure based on whether failure output is connected
+            self._handle_failure_exception(ValueError(error_message))
+            raise
