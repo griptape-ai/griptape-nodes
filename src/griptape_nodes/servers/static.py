@@ -133,15 +133,15 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
-async def _serve_library_component(library_name: str, file_path: str) -> FileResponse:
-    """Serve a custom component bundle file from a library.
+async def _serve_library_widget(library_name: str, file_path: str) -> FileResponse:
+    """Serve a widget bundle file from a library.
 
-    Custom components are pre-built ES module bundles that libraries can provide
+    Widgets are pre-built ES module bundles that libraries can provide
     for custom parameter UI rendering in the frontend.
 
     Args:
-        library_name: Name of the library containing the component
-        file_path: Relative path to the component bundle within the library directory
+        library_name: Name of the library containing the widget
+        file_path: Relative path to the widget bundle within the library directory
 
     Returns:
         FileResponse containing the JavaScript bundle
@@ -156,11 +156,11 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
     if library_info is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Failed to load component '{file_path}': library '{library_name}' not found",
+            detail=f"Failed to load widget '{file_path}': library '{library_name}' not found",
         )
     library_dir = Path(library_info.library_path).parent
 
-    # Construct full path to the component file
+    # Construct full path to the widget file
     full_path = library_dir / file_path
 
     # Security: Ensure the resolved path is within the library directory
@@ -169,7 +169,7 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
         resolved_library_dir = library_dir.resolve()
         if not resolved_path.is_relative_to(resolved_library_dir):
             logger.warning(
-                "Path traversal attempt detected while loading component from library '%s': %s",
+                "Path traversal attempt detected while loading widget from library '%s': %s",
                 library_name,
                 file_path,
             )
@@ -181,13 +181,13 @@ async def _serve_library_component(library_name: str, file_path: str) -> FileRes
     if not resolved_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"Component file '{file_path}' not found in library '{library_name}'",
+            detail=f"Widget file '{file_path}' not found in library '{library_name}'",
         )
 
     if not resolved_path.is_file():
         raise HTTPException(
             status_code=400,
-            detail=f"Component path '{file_path}' in library '{library_name}' is not a file",
+            detail=f"Widget path '{file_path}' in library '{library_name}' is not a file",
         )
 
     # Determine content type based on file extension
@@ -247,11 +247,11 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/{file_path_prefix:path}", _list_static_files, methods=["GET"])
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
-    # Route for serving custom component bundles from libraries
-    # The file_path is relative to the library directory (e.g., "components/dist/MyComponent.js")
+    # Route for serving widget bundles from libraries
+    # The file_path is relative to the library directory (e.g., "widgets/dist/MyWidget.js")
     app.add_api_route(
-        "/api/libraries/{library_name}/assets/{file_path:path}",
-        _serve_library_component,
+        "/api/libraries/{library_name}/widgets/{file_path:path}",
+        _serve_library_widget,
         methods=["GET"],
     )
     app.add_api_route("/external/{file_path:path}", _serve_external_file, methods=["GET"])

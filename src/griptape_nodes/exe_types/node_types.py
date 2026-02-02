@@ -36,8 +36,8 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
-from griptape_nodes.traits.component import Component
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
@@ -1011,7 +1011,7 @@ class BaseNode(ABC):
     def get_node_dependencies(self) -> NodeDependencies | None:
         """Return the dependencies that this node has on external resources.
 
-        This base implementation collects library dependencies from Component traits
+        This base implementation collects library dependencies from Widget traits
         on parameters. Subclasses should call super().get_node_dependencies() and
         aggregate their own dependencies using NodeDependencies.aggregate_from().
 
@@ -1029,7 +1029,7 @@ class BaseNode(ABC):
 
         Example:
             def get_node_dependencies(self) -> NodeDependencies | None:
-                # Start with base class dependencies (Component traits)
+                # Start with base class dependencies (Widget traits)
                 deps = super().get_node_dependencies()
                 if deps is None:
                     deps = NodeDependencies()
@@ -1047,18 +1047,18 @@ class BaseNode(ABC):
         # Lazy import to avoid circular dependency: library_registry imports BaseNode
         from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 
-        ui_component_libraries: set[LibraryNameAndVersion] = set()
+        widget_libraries: set[LibraryNameAndVersion] = set()
 
         logger.debug("Getting dependencies for node: %s", self.name)
 
         for parameter in self.parameters:
-            components = parameter.find_elements_by_type(Component)
-            for component in components:
-                if component.library:
+            widgets = parameter.find_elements_by_type(Widget)
+            for widget in widgets:
+                if widget.library:
                     try:
-                        library = LibraryRegistry.get_library(component.library)
+                        library = LibraryRegistry.get_library(widget.library)
                         library_data = library.get_library_data()
-                        ui_component_libraries.add(
+                        widget_libraries.add(
                             LibraryNameAndVersion(
                                 library_name=library_data.name,
                                 library_version=library_data.metadata.library_version,
@@ -1068,9 +1068,9 @@ class BaseNode(ABC):
                         # Library not found - skip (may be unregistered)
                         pass
 
-        if ui_component_libraries:
-            logger.debug("Node '%s' has component library dependencies: %s", self.name, ui_component_libraries)
-            return NodeDependencies(libraries=ui_component_libraries)
+        if widget_libraries:
+            logger.debug("Node '%s' has widget library dependencies: %s", self.name, widget_libraries)
+            return NodeDependencies(libraries=widget_libraries)
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:

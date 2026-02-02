@@ -58,7 +58,6 @@ from griptape_nodes.retained_mode.events.library_events import (
     CheckLibraryUpdateRequest,
     CheckLibraryUpdateResultFailure,
     CheckLibraryUpdateResultSuccess,
-    CustomComponentInfo,
     DiscoveredLibrary,
     DiscoverLibrariesRequest,
     DiscoverLibrariesResultFailure,
@@ -130,6 +129,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     UpdateLibraryRequest,
     UpdateLibraryResultFailure,
     UpdateLibraryResultSuccess,
+    WidgetInfo,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
@@ -1954,33 +1954,33 @@ class LibraryManager:
             # Put it into the map.
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
-        # Build component info list if the library has components
-        components_info: list[CustomComponentInfo] | None = None
+        # Build widget info list if the library has widgets
+        widgets_info: list[WidgetInfo] | None = None
         library_data = library.get_library_data()
-        if library_data.components:
+        if library_data.widgets:
             logger.info(
-                "Library '%s' has %d component(s), building component info",
+                "Library '%s' has %d widget(s), building widget info",
                 request.library,
-                len(library_data.components),
+                len(library_data.widgets),
             )
             # Get the static server base URL for constructing absolute bundle URLs
             static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
-            components_info = []
-            for component_def in library_data.components:
-                # Construct the full URL for this component
-                # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/assets/{path}
-                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/assets/{component_def.path}"
+            widgets_info = []
+            for widget_def in library_data.widgets:
+                # Construct the full URL for this widget
+                # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/widgets/{path}
+                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
                 logger.debug(
-                    "Component '%s' from library '%s': bundle_url=%s",
-                    component_def.name,
+                    "Widget '%s' from library '%s': bundle_url=%s",
+                    widget_def.name,
                     request.library,
                     bundle_url,
                 )
-                components_info.append(
-                    CustomComponentInfo(
-                        name=component_def.name,
+                widgets_info.append(
+                    WidgetInfo(
+                        name=widget_def.name,
                         bundle_url=bundle_url,
-                        description=component_def.description,
+                        description=widget_def.description,
                     )
                 )
 
@@ -1989,7 +1989,7 @@ class LibraryManager:
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,
             node_type_name_to_node_metadata_details=node_type_name_to_node_metadata_details,
-            components=components_info,
+            widgets=widgets_info,
             result_details=details,
         )
         return result
@@ -2696,14 +2696,14 @@ class LibraryManager:
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
 
-        # Register components and check for duplicates
-        if library_data.components:
-            for component_def in library_data.components:
-                component_problem = LibraryRegistry.register_component_from_library(
-                    library_name=library_data.name, component_name=component_def.name
+        # Register widgets and check for duplicates
+        if library_data.widgets:
+            for widget_def in library_data.widgets:
+                widget_problem = LibraryRegistry.register_widget_from_library(
+                    library_name=library_data.name, widget_name=widget_def.name
                 )
-                if component_problem is not None:
-                    library_info.problems.append(component_problem)
+                if widget_problem is not None:
+                    library_info.problems.append(widget_problem)
 
         # Call the after_library_nodes_loaded callback if available
         if advanced_library:

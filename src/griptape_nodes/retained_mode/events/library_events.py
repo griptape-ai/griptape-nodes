@@ -467,15 +467,15 @@ class GetLibraryMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
 
 
 @dataclass
-class CustomComponentInfo:
-    """Information about a custom UI component for the frontend.
+class WidgetInfo:
+    """Information about a custom UI widget for the frontend.
 
     This is included in library info responses so the frontend can
-    dynamically load custom components from libraries.
+    dynamically load widgets from libraries.
     """
 
-    name: str  # Component name (e.g., "ColorGradientPicker")
-    bundle_url: str  # Full URL where the component bundle can be fetched
+    name: str  # Widget name (e.g., "ColorGradientPicker")
+    bundle_url: str  # Full URL where the widget bundle can be fetched
     description: str | None = None  # Optional description
 
 
@@ -503,13 +503,13 @@ class GetAllInfoForLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSu
         library_metadata_details: Library metadata and version information
         category_details: All categories available in the library
         node_type_name_to_node_metadata_details: Complete node metadata for each node type
-        components: Custom UI components provided by the library (if any)
+        widgets: Custom UI widgets provided by the library (if any)
     """
 
     library_metadata_details: GetLibraryMetadataResultSuccess
     category_details: ListCategoriesInLibraryResultSuccess
     node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
-    components: list[CustomComponentInfo] | None = None
+    widgets: list[WidgetInfo] | None = None
 
 
 @dataclass
