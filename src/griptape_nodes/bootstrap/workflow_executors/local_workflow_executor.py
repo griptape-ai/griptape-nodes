@@ -32,14 +32,23 @@ class LocalWorkflowExecutor(WorkflowExecutor):
     def __init__(
         self,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
+        *,
+        skip_library_loading: bool = False,
+        workflows_to_register: list[str] | None = None,
     ):
         super().__init__()
         self._set_storage_backend(storage_backend=storage_backend)
+        self._skip_library_loading = skip_library_loading
+        self._workflows_to_register = workflows_to_register or []
 
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
         GriptapeNodes.EventManager().initialize_queue()
-        await GriptapeNodes.EventManager().broadcast_app_event(AppInitializationComplete())
+        await GriptapeNodes.EventManager().broadcast_app_event(
+            AppInitializationComplete(
+                skip_library_loading=self._skip_library_loading, workflows_to_register=self._workflows_to_register
+            )
+        )
         return self
 
     async def __aexit__(
