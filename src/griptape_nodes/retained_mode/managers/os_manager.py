@@ -457,6 +457,13 @@ class OSManager:
         # This works consistently even for non-existent paths on Windows
         return Path(os.path.normpath(path))
 
+    def _path_needs_expansion(self, path_str: str) -> bool:
+        """Return True if path contains env vars, is absolute, or starts with ~ (needs _expand_path)."""
+        has_env_vars = "%" in path_str or "$" in path_str
+        is_absolute = Path(path_str).is_absolute()
+        starts_with_tilde = path_str.startswith("~")
+        return has_env_vars or is_absolute or starts_with_tilde
+
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
 
@@ -468,16 +475,8 @@ class OSManager:
             Resolved Path object
         """
         try:
-            # Check if path contains environment variables (Windows: %VAR%, Unix: $VAR or ${VAR})
-            # or starts with ~, or is already absolute
-            has_env_vars = "%" in path_str or "$" in path_str
-            is_absolute = Path(path_str).is_absolute()
-            starts_with_tilde = path_str.startswith("~")
-
-            if has_env_vars or is_absolute or starts_with_tilde:
-                # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
+            if self._path_needs_expansion(path_str):
                 return self._expand_path(path_str)
-            # Both workspace and system-wide modes resolve relative to current directory
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
             if workspace_only:
@@ -1377,20 +1376,10 @@ class OSManager:
             # Get the directory path to list
             if request.directory_path is None:
                 directory = self._get_workspace_path()
-            # Handle paths consistently - always resolve relative paths relative to current directory
+            elif self._path_needs_expansion(request.directory_path):
+                directory = self._expand_path(request.directory_path)
             else:
-                # Check if path contains environment variables (Windows: %VAR%, Unix: $VAR or ${VAR})
-                # or starts with ~, or is already absolute
-                has_env_vars = "%" in request.directory_path or "$" in request.directory_path
-                is_absolute = Path(request.directory_path).is_absolute()
-                starts_with_tilde = request.directory_path.startswith("~")
-
-                if has_env_vars or is_absolute or starts_with_tilde:
-                    # Expand tilde and environment variables for paths with env vars, absolute paths, or paths starting with ~
-                    directory = self._expand_path(request.directory_path)
-                else:
-                    # Both workspace and system-wide modes resolve relative to current directory
-                    directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
+                directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
 
             # Check if directory exists
             if not directory.exists():
