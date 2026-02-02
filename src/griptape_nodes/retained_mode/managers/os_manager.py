@@ -251,31 +251,30 @@ class OSManager:
         parts = [p.lower() for p in normalized.split("/") if p]
         return parts
 
-    def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult:
+    def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult | None:
         """Resolve Windows special folder from path parts.
 
         If the first part matches a known special folder name (e.g. "desktop",
         "downloads"), calls _get_windows_special_folder_path and returns a
-        result with special_path and remaining_parts. Returns (None, None) if
-        parts are empty, the first part is unknown, or the Shell API raises
+        result with special_path and remaining_parts. Returns None if parts are
+        empty, the first part is unknown, or the Shell API raises
         WindowsSpecialFolderError (caller catches and falls back).
 
         Args:
             parts: Lowercased path parts from normalize_path_parts_for_special_folder.
 
         Returns:
-            WindowsSpecialFolderResult: When resolved, special_path is the folder
-            Path and remaining_parts is the list of path components after the
-            folder (possibly empty). Otherwise both fields are None.
+            WindowsSpecialFolderResult when resolved (special_path and remaining_parts),
+            or None when no special folder could be resolved.
         """
         if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
-            return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
+            return None
         csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
         try:
             special_path = self._get_windows_special_folder_path(csidl)
         except WindowsSpecialFolderError as e:
             logger.warning("%s", e)
-            return WindowsSpecialFolderResult(special_path=None, remaining_parts=None)
+            return None
         remaining = parts[1:] if len(parts) > 1 else []
         return WindowsSpecialFolderResult(special_path=special_path, remaining_parts=remaining)
 
