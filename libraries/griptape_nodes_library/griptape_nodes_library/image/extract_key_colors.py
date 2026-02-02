@@ -117,6 +117,18 @@ class ExtractKeyColors(SuccessFailureNode):
                 )
             )
 
+        # Add list output parameter for programmatic use
+        self.add_parameter(
+            Parameter(
+                name="colors",
+                tooltip="List of extracted colors in hex format",
+                type="list",
+                output_type="list",
+                allowed_modes={ParameterMode.OUTPUT},
+                default_value=[],
+            )
+        )
+
         # Add status parameters for success/failure reporting
         self._create_status_parameters(
             result_details_tooltip="Details about the color extraction result",
@@ -490,10 +502,12 @@ class ExtractKeyColors(SuccessFailureNode):
 
             logger.debug("Extracted %d colors ordered by prominence", selected_count)
 
-            # Update existing color parameters with extracted values
+            # Build list of hex colors and update individual color parameters
+            hex_colors = []
             for i, color in enumerate(selected_colors, 1):
                 r, g, b = color
                 hex_color = f"#{r:02x}{g:02x}{b:02x}"
+                hex_colors.append(hex_color)
                 logger.debug("  Color %d: RGB(%3d, %3d, %3d) | Hex: %s", i, r, g, b, hex_color)
 
                 param_name = f"color_{i}"
@@ -505,6 +519,10 @@ class ExtractKeyColors(SuccessFailureNode):
                 param_name = f"color_{i}"
                 self.set_parameter_value(param_name, "")
                 self.publish_update_to_parameter(param_name, "")
+
+            # Set the colors list output
+            self.set_parameter_value("colors", hex_colors)
+            self.publish_update_to_parameter("colors", hex_colors)
 
             # Build success details
             color_summary = ", ".join(f"#{r:02x}{g:02x}{b:02x}" for r, g, b in selected_colors)
