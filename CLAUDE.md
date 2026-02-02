@@ -25,6 +25,7 @@ When developing, follow this iteration loop:
 ## Following Instructions
 
 **CRITICAL: Do EXACTLY what is requested - NOTHING MORE**
+
 - MANDATORY: If asked for a stub, create ONLY the minimal stub with NO additional fields, parameters, or methods
 - MANDATORY: If asked to investigate, ONLY investigate - do NOT implement, design, or plan unless explicitly requested
 - MANDATORY: If asked to add one thing, add ONLY that one thing - no "helpful" extras, no "related" additions, no "improvements"
@@ -34,6 +35,7 @@ When developing, follow this iteration loop:
 - When in doubt, do LESS - it's better to be told to add more than to overstep
 
 **Examples of OVERSTEPPING (DO NOT DO):**
+
 - User: "Add a name field" -> You add name, validation, and a helper method (WRONG)
 - User: "Investigate the macro system" -> You investigate AND create an implementation plan (WRONG)
 - User: "Create a stub for GetPreviewRequest" -> You add parameters like max_width, quality, format (WRONG)
