@@ -22,6 +22,24 @@ When developing, follow this iteration loop:
 1. **Fix issues**: resolve all issues from previous step
 1. **Continue working**: continue to the next change
 
+## Following Instructions
+
+**CRITICAL: Do EXACTLY what is requested - NOTHING MORE**
+- MANDATORY: If asked for a stub, create ONLY the minimal stub with NO additional fields, parameters, or methods
+- MANDATORY: If asked to investigate, ONLY investigate - do NOT implement, design, or plan unless explicitly requested
+- MANDATORY: If asked to add one thing, add ONLY that one thing - no "helpful" extras, no "related" additions, no "improvements"
+- NEVER add parameters, validation, error handling, or features that weren't explicitly requested
+- NEVER anticipate next steps or predict what might be needed
+- If the user says "create X", create exactly X - not X plus Y and Z that might be useful
+- When in doubt, do LESS - it's better to be told to add more than to overstep
+
+**Examples of OVERSTEPPING (DO NOT DO):**
+- User: "Add a name field" -> You add name, validation, and a helper method (WRONG)
+- User: "Investigate the macro system" -> You investigate AND create an implementation plan (WRONG)
+- User: "Create a stub for GetPreviewRequest" -> You add parameters like max_width, quality, format (WRONG)
+
+**The user will tell you what they want. Wait for them to ask.**
+
 ## Code Style Preferences
 
 **Avoid Tuples For Return Values** - Tuples should be a last resort. When unavoidable, use NamedTuples for clarity. Prefer separate variables, class instances, or other data structures.
