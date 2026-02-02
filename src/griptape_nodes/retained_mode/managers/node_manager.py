@@ -3145,6 +3145,7 @@ class NodeManager:
                     # We need to somehow get connections here.
 
             else:
+                # Not a group, regular node.
                 # Check to make sure it hasn't been child serialized
                 if node_name in node_name_to_uuid:
                     # We've already serialized this node as a child.
