@@ -1,4 +1,3 @@
-import hashlib
 import io
 import logging
 from typing import Any
@@ -431,6 +430,10 @@ class ExtractKeyColors(SuccessFailureNode):
         raise ValueError(msg)
 
     async def aprocess(self) -> None:
+        """Async processing entry point."""
+        await self._process()
+
+    async def _process(self) -> None:
         """Main processing method that extracts colors from the input image.
 
         This method performs the following steps:
@@ -480,11 +483,6 @@ class ExtractKeyColors(SuccessFailureNode):
         try:
             logger.debug("Extracting %d colors from input image using %s algorithm", num_colors, algorithm)
             image_bytes = self._image_to_bytes(input_image)
-
-            # Debug: Create hash to detect if the same image data is being processed
-            # Note: MD5 is used here only for debug logging, not for security
-            image_hash = hashlib.md5(image_bytes, usedforsecurity=False).hexdigest()[:8]
-            logger.debug("Image data hash: %s (size: %d bytes)", image_hash, len(image_bytes))
 
             # Extract colors ordered by actual prominence in the image
             selected_colors = self._get_colors_by_prominence(image_bytes, num_colors, algorithm)
