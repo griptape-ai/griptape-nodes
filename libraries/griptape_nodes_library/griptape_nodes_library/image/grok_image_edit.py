@@ -34,7 +34,6 @@ class GrokImageEdit(GriptapeProxyNode):
     Inputs:
         - model (str): Grok image model to use
         - image (ImageUrlArtifact): Input image to edit (required)
-        - mask (ImageUrlArtifact): Optional mask image
         - prompt (str): Editing prompt
         - n (int): Number of images to generate (1-10)
         - quality (str): Output quality (low, medium, high)
@@ -51,7 +50,6 @@ class GrokImageEdit(GriptapeProxyNode):
 
     MODEL_NAME_MAP: ClassVar[dict[str, str]] = {
         "Grok Imagine Image": "grok-imagine-image",
-        "Grok 2 Image": "grok-2-image-1212",
     }
 
     MIN_IMAGES: ClassVar[int] = 1
@@ -71,7 +69,7 @@ class GrokImageEdit(GriptapeProxyNode):
                 default_value="Grok Imagine Image",
                 tooltip="Select the Grok image model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["Grok Imagine Image", "Grok 2 Image"])},
+                traits={Options(choices=["Grok Imagine Image"])},
             )
         )
 
@@ -93,16 +91,6 @@ class GrokImageEdit(GriptapeProxyNode):
                 tooltip="Input image to edit",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"display_name": "Image"},
-            )
-        )
-
-        self.add_parameter(
-            ParameterImage(
-                name="mask",
-                default_value="",
-                tooltip="Optional mask image",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"display_name": "Mask"},
             )
         )
 
@@ -299,7 +287,6 @@ class GrokImageEdit(GriptapeProxyNode):
         resolution = self.get_parameter_value("resolution") or "1k"
         api_model_id = self._get_payload_model_id()
         image_data_uri = await self._prepare_image_data_uri(self.get_parameter_value("image"))
-        mask_data_uri = await self._prepare_image_data_uri(self.get_parameter_value("mask"))
 
         payload: dict[str, Any] = {
             "model": api_model_id,
@@ -313,9 +300,6 @@ class GrokImageEdit(GriptapeProxyNode):
 
         if image_data_uri:
             payload["image"] = {"url": image_data_uri}
-
-        if mask_data_uri:
-            payload["mask"] = {"url": mask_data_uri}
 
         return payload
 
