@@ -2696,6 +2696,15 @@ class LibraryManager:
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
 
+        # Register components and check for duplicates
+        if library_data.components:
+            for component_def in library_data.components:
+                component_problem = LibraryRegistry.register_component_from_library(
+                    library_name=library_data.name, component_name=component_def.name
+                )
+                if component_problem is not None:
+                    library_info.problems.append(component_problem)
+
         # Call the after_library_nodes_loaded callback if available
         if advanced_library:
             try:

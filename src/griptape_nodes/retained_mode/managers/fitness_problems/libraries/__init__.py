@@ -6,6 +6,7 @@ from .before_library_callback_problem import BeforeLibraryCallbackProblem
 from .create_config_category_problem import CreateConfigCategoryProblem
 from .dependency_installation_failed_problem import DependencyInstallationFailedProblem
 from .deprecated_node_warning_problem import DeprecatedNodeWarningProblem
+from .duplicate_component_registration_problem import DuplicateComponentRegistrationProblem
 from .duplicate_library_problem import DuplicateLibraryProblem
 from .duplicate_node_registration_problem import DuplicateNodeRegistrationProblem
 from .engine_version_error_problem import EngineVersionErrorProblem
@@ -37,6 +38,7 @@ __all__ = [
     "CreateConfigCategoryProblem",
     "DependencyInstallationFailedProblem",
     "DeprecatedNodeWarningProblem",
+    "DuplicateComponentRegistrationProblem",
     "DuplicateLibraryProblem",
     "DuplicateNodeRegistrationProblem",
     "EngineVersionErrorProblem",
