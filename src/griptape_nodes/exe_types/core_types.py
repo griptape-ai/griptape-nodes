@@ -358,7 +358,7 @@ class BaseNodeElement:
         if self._status is None:
             return
         self._status.hide = True
-        self._changes["status"] = self.get_status().to_dict()
+        self._changes["status"] = self._status.to_dict()
         # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
         # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
@@ -444,11 +444,12 @@ class BaseNodeElement:
               ]
             }
         """
+        status = self.get_status()
         return {
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
             "parent_group_name": self.parent_group_name,
-            "status": self.get_status().to_dict() if self.get_status() is not None else None,
+            "status": status.to_dict() if status is not None else None,
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -576,7 +577,7 @@ class BaseNodeElement:
             self._status.hide = data["hide"]
         if "hide_clear_button" in data:
             self._status.hide_clear_button = data["hide_clear_button"]
-        self._changes["status"] = self.get_status().to_dict()
+        self._changes["status"] = self._status.to_dict()
         # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
         # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
@@ -597,7 +598,8 @@ class BaseNodeElement:
                     altered_workflow_state=False,
                 )
             case "get_status":
-                status_dict = self.get_status().to_dict() if self.get_status() is not None else None
+                status = self.get_status()
+                status_dict = status.to_dict() if status is not None else None
                 return NodeMessageResult(
                     success=True,
                     details="Status retrieved",
@@ -607,7 +609,8 @@ class BaseNodeElement:
             case "set_status":
                 if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
                     self._apply_status_from_message_data(message.data)
-                status_dict = self.get_status().to_dict() if self.get_status() is not None else None
+                status = self.get_status()
+                status_dict = status.to_dict() if status is not None else None
                 return NodeMessageResult(
                     success=True,
                     details="Status updated",
