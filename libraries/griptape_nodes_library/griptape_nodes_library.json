@@ -733,6 +733,28 @@
       }
     },
     {
+      "class_name": "GrokVideoGeneration",
+      "file_path": "griptape_nodes_library/video/grok_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos using Grok models via Griptape model proxy",
+        "display_name": "Grok Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "GrokVideoEdit",
+      "file_path": "griptape_nodes_library/video/grok_video_edit.py",
+      "metadata": {
+        "category": "video",
+        "description": "Edit videos using Grok models via Griptape model proxy",
+        "display_name": "Grok Video Edit",
+        "icon": "Sparkles",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "OmnihumanSubjectRecognition",
       "file_path": "griptape_nodes_library/video/omnihuman_subject_recognition.py",
       "metadata": {
@@ -1567,6 +1589,28 @@
         "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
         "display_name": "Seedream Image Generation",
         "group": "create",
+        "icon": "Sparkles"
+      }
+    },
+    {
+      "class_name": "GrokImageGeneration",
+      "file_path": "griptape_nodes_library/image/grok_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Grok models via Griptape model proxy",
+        "display_name": "Grok Image Generation",
+        "group": "create",
+        "icon": "Sparkles"
+      }
+    },
+    {
+      "class_name": "GrokImageEdit",
+      "file_path": "griptape_nodes_library/image/grok_image_edit.py",
+      "metadata": {
+        "category": "image",
+        "description": "Edit images using Grok models via Griptape model proxy",
+        "display_name": "Grok Image Edit",
+        "group": "edit",
         "icon": "Sparkles"
       }
     },
