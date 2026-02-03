@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import send2trash
 
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
@@ -14,6 +15,8 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     DeleteFileResultFailure,
     DeleteFileResultSuccess,
+    DeletionBehavior,
+    DeletionOutcome,
     ExistingFilePolicy,
     FileIOFailureReason,
     GetFileInfoRequest,
@@ -687,11 +690,271 @@ class TestDeleteFileRequest:
         file_path.write_text("test content")
 
         with patch.object(Path, "unlink", side_effect=PermissionError("Access denied")):
-            request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PERMANENTLY_DELETE,
+            )
             result = await os_manager.on_delete_file_request(request)
 
         assert isinstance(result, DeleteFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
+
+    @pytest.mark.asyncio
+    async def test_delete_file_behavior_permanently_delete(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test default PERMANENTLY_DELETE behavior for files."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+        request = DeleteFileRequest(
+            path=str(file_path),
+            workspace_only=False,
+            deletion_behavior=DeletionBehavior.PERMANENTLY_DELETE,
+        )
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.PERMANENTLY_DELETED
+        assert not file_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_behavior_permanently_delete(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test default PERMANENTLY_DELETE behavior for directories."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+        request = DeleteFileRequest(
+            path=str(dir_path),
+            workspace_only=False,
+            deletion_behavior=DeletionBehavior.PERMANENTLY_DELETE,
+        )
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.PERMANENTLY_DELETED
+        assert result.was_directory is True
+        assert not dir_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_file_behavior_recycle_bin_only_success(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test RECYCLE_BIN_ONLY behavior successfully sends file to recycle bin."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.return_value = None
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.RECYCLE_BIN_ONLY,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
+        mock_send2trash.send2trash.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_behavior_recycle_bin_only_success(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test RECYCLE_BIN_ONLY behavior successfully sends directory to recycle bin."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.return_value = None
+            request = DeleteFileRequest(
+                path=str(dir_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.RECYCLE_BIN_ONLY,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
+        assert result.was_directory is True
+        mock_send2trash.send2trash.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_file_behavior_recycle_bin_only_failure(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test RECYCLE_BIN_ONLY behavior returns failure when recycle bin unavailable."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.side_effect = OSError("I/O error")
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.RECYCLE_BIN_ONLY,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.IO_ERROR
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_behavior_recycle_bin_only_failure(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test RECYCLE_BIN_ONLY behavior returns failure for directories when I/O error occurs."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.side_effect = OSError("I/O error")
+            request = DeleteFileRequest(
+                path=str(dir_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.RECYCLE_BIN_ONLY,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultFailure)
+        assert result.failure_reason == FileIOFailureReason.IO_ERROR
+
+    @pytest.mark.asyncio
+    async def test_delete_file_behavior_prefer_recycle_bin_uses_trash(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test PREFER_RECYCLE_BIN behavior uses recycle bin when available."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.return_value = None
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PREFER_RECYCLE_BIN,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
+        mock_send2trash.send2trash.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_behavior_prefer_recycle_bin_uses_trash(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test PREFER_RECYCLE_BIN behavior uses recycle bin for directories when available."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.return_value = None
+            request = DeleteFileRequest(
+                path=str(dir_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PREFER_RECYCLE_BIN,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
+        assert result.was_directory is True
+        mock_send2trash.send2trash.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_file_behavior_prefer_recycle_bin_falls_back(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test PREFER_RECYCLE_BIN behavior falls back to permanent deletion when trash fails."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.side_effect = OSError("Recycle bin unavailable")
+            request = DeleteFileRequest(
+                path=str(file_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PREFER_RECYCLE_BIN,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.PERMANENTLY_DELETED
+        assert not file_path.exists()
+        # Verify result_details is WARNING level
+        assert isinstance(result.result_details, ResultDetails)
+
+    @pytest.mark.asyncio
+    async def test_delete_directory_behavior_prefer_recycle_bin_falls_back(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test PREFER_RECYCLE_BIN behavior falls back to permanent deletion for directories when trash fails."""
+        os_manager = griptape_nodes.OSManager()
+        dir_path = temp_dir / "testdir"
+        dir_path.mkdir()
+        (dir_path / "file1.txt").write_text("content1")
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.send2trash") as mock_send2trash:
+            mock_send2trash.TrashPermissionError = send2trash.TrashPermissionError
+            mock_send2trash.send2trash.side_effect = OSError("Recycle bin unavailable")
+            request = DeleteFileRequest(
+                path=str(dir_path),
+                workspace_only=False,
+                deletion_behavior=DeletionBehavior.PREFER_RECYCLE_BIN,
+            )
+
+            result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.PERMANENTLY_DELETED
+        assert result.was_directory is True
+        assert not dir_path.exists()
+        # Verify result_details is WARNING level
+        assert isinstance(result.result_details, ResultDetails)
+
+    @pytest.mark.asyncio
+    async def test_delete_outcome_default_is_sent_to_recycle_bin(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test that default deletion (no behavior specified) reports SENT_TO_RECYCLE_BIN outcome."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "test.txt"
+        file_path.write_text("test content")
+        request = DeleteFileRequest(path=str(file_path), workspace_only=False)
+
+        result = await os_manager.on_delete_file_request(request)
+
+        assert isinstance(result, DeleteFileResultSuccess)
+        assert result.outcome == DeletionOutcome.SENT_TO_RECYCLE_BIN
 
 
 class TestGetFileInfoRequest:

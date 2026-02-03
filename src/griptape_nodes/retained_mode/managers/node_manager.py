@@ -3551,6 +3551,7 @@ class NodeManager:
         create_node_request: CreateNodeRequest,
         *,
         use_pickling: bool = False,
+        serialize_all_parameter_values: bool = False,
     ) -> list[SerializedNodeCommands.IndirectSetParameterValueCommand] | None:
         """Generates code to save a parameter value for a node in a Griptape workflow.
 
@@ -3569,6 +3570,7 @@ class NodeManager:
             serialized_parameter_value_tracker (SerializedParameterValueTracker): Object mapping maintaining value hashes to unique value UUIDs, and non-serializable values
             create_node_request (CreateNodeRequest): The node creation request that will be modified if serialization fails
             use_pickling (bool): If True, use pickle-based serialization; if False, use deep copy
+            serialize_all_parameter_values (bool): If True, save all parameter values regardless of whether they were explicitly set or match defaults
 
         Returns:
             None (if no value to be serialized) or an IndirectSetParameterValueCommand linking the value to the unique value map
@@ -3589,8 +3591,11 @@ class NodeManager:
         # Save the value if it was explicitly set OR if it equals the default value.
         # The latter ensures the default is preserved when loading workflows,
         # even if the code's default value changes later.
-        if parameter.name in node.parameter_values or (
-            parameter.default_value is not None and effective_value == parameter.default_value
+        # If serialize_all_parameter_values is True, save all parameter values regardless.
+        if (
+            serialize_all_parameter_values
+            or parameter.name in node.parameter_values
+            or (parameter.default_value is not None and effective_value == parameter.default_value)
         ):
             internal_value = effective_value
         # We have a value. Attempt to get a hash for it to see if it matches one

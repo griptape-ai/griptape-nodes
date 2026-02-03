@@ -123,6 +123,7 @@ async def _delete_static_file(file_path: str) -> dict:
         raise HTTPException(status_code=400, detail=msg)
 
     try:
+        # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
         file_full_path.unlink()
     except (OSError, PermissionError) as e:
         msg = f"Failed to delete file {file_path}: {e}"

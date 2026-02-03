@@ -78,11 +78,13 @@ class CreateStaticFileUploadUrlResultSuccess(WorkflowNotAlteredMixin, ResultPayl
         url: Presigned URL for uploading the file
         headers: HTTP headers required for the upload request
         method: HTTP method to use for upload (typically PUT)
+        file_url: File URI (file://) for the absolute path where the file will be accessible after upload
     """
 
     url: str
     headers: dict = field(default_factory=dict)
     method: str = "PUT"
+    file_url: str = ""
 
 
 @dataclass
