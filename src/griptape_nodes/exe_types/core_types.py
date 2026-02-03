@@ -311,9 +311,9 @@ class BaseNodeElement:
     # --- Status (discoverable by all subclasses) ---
     # Message types for frontend: clear_status, get_status, set_status, clear_status_display
 
-    def get_status(self) -> dict[str, Any]:
-        """Return current status as a serializable dict (variant, title, message, hide, hide_clear_button)."""
-        return self._status.to_dict()
+    def get_status(self) -> StatusData:
+        """Return current status; use .to_dict() when a serializable dict is needed."""
+        return self._status
 
     def set_status(
         self,
@@ -335,21 +335,21 @@ class BaseNodeElement:
             self._status.hide = hide
         if hide_clear_button is not None:
             self._status.hide_clear_button = hide_clear_button
-        self._changes["status"] = self.get_status()
+        self._changes["status"] = self.get_status().to_dict()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
     def clear_status(self) -> None:
         """Reset status to defaults (variant=none, no title/message, hide=False, hide_clear_button=True)."""
         self._status = StatusData()
-        self._changes["status"] = self.get_status()
+        self._changes["status"] = self.get_status().to_dict()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
     def dismiss_status(self) -> None:
         """Hide the status indicator (hide=True). Frontend can send clear_status_display to trigger this."""
         self._status.hide = True
-        self._changes["status"] = self.get_status()
+        self._changes["status"] = self.get_status().to_dict()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
@@ -435,7 +435,7 @@ class BaseNodeElement:
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
             "parent_group_name": self.parent_group_name,
-            "status": self.get_status(),
+            "status": self.get_status().to_dict(),
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -555,7 +555,7 @@ class BaseNodeElement:
             self._status.hide = data["hide"]
         if "hide_clear_button" in data:
             self._status.hide_clear_button = data["hide_clear_button"]
-        self._changes["status"] = self.get_status()
+        self._changes["status"] = self.get_status().to_dict()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
@@ -576,7 +576,7 @@ class BaseNodeElement:
             return NodeMessageResult(
                 success=True,
                 details="Status retrieved",
-                response=NodeMessagePayload(data=self.get_status()),
+                response=NodeMessagePayload(data=self.get_status().to_dict()),
                 altered_workflow_state=False,
             )
         if msg_lower == "set_status":
@@ -585,7 +585,7 @@ class BaseNodeElement:
             return NodeMessageResult(
                 success=True,
                 details="Status updated",
-                response=NodeMessagePayload(data=self.get_status()),
+                response=NodeMessagePayload(data=self.get_status().to_dict()),
                 altered_workflow_state=False,
             )
         if msg_lower == "clear_status_display":
