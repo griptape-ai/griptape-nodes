@@ -274,7 +274,7 @@ class BaseNodeElement:
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
     _node_context: BaseNode | None = field(default=None)
-    _status: StatusData = field(default_factory=StatusData)
+    _status: StatusData | None = field(default_factory=StatusData)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -312,8 +312,8 @@ class BaseNodeElement:
     # --- Status (discoverable by all subclasses) ---
     # Message types for frontend: clear_status, get_status, set_status, clear_status_display
 
-    def get_status(self) -> StatusData:
-        """Return current status; use .to_dict() when a serializable dict is needed."""
+    def get_status(self) -> StatusData | None:
+        """Return current status, or None if cleared; use .to_dict() when a serializable dict is needed."""
         return self._status
 
     def set_status(
@@ -326,6 +326,8 @@ class BaseNodeElement:
         hide_clear_button: bool | None = None,
     ) -> None:
         """Set status fields; only provided arguments are updated. No kwargs so status is discoverable."""
+        if self._status is None:
+            self._status = StatusData()
         if variant is not None:
             self._status.variant = variant
         if title is not None:
@@ -336,16 +338,16 @@ class BaseNodeElement:
             self._status.hide = hide
         if hide_clear_button is not None:
             self._status.hide_clear_button = hide_clear_button
-        self._changes["status"] = self.get_status().to_dict()
+        self._changes["status"] = self._status.to_dict()
         # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
         # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
     def clear_status(self) -> None:
-        """Reset status to defaults (variant=none, no title/message, hide=False, hide_clear_button=True)."""
-        self._status = StatusData()
-        self._changes["status"] = self.get_status().to_dict()
+        """Set status to None (cleared)."""
+        self._status = None
+        self._changes["status"] = None
         # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
         # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
@@ -353,6 +355,8 @@ class BaseNodeElement:
 
     def dismiss_status(self) -> None:
         """Hide the status indicator (hide=True). Frontend can send clear_status_display to trigger this."""
+        if self._status is None:
+            return
         self._status.hide = True
         self._changes["status"] = self.get_status().to_dict()
         # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
@@ -444,7 +448,7 @@ class BaseNodeElement:
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
             "parent_group_name": self.parent_group_name,
-            "status": self.get_status().to_dict(),
+            "status": self.get_status().to_dict() if self.get_status() is not None else None,
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -554,6 +558,8 @@ class BaseNodeElement:
 
     def _apply_status_from_message_data(self, data: dict) -> None:
         """Apply status fields from a message data dict and track change."""
+        if self._status is None:
+            self._status = StatusData()
         if "variant" in data:
             val = data["variant"]
             if val in VALID_STATUS_VARIANTS:
@@ -591,19 +597,21 @@ class BaseNodeElement:
                     altered_workflow_state=False,
                 )
             case "get_status":
+                status_dict = self.get_status().to_dict() if self.get_status() is not None else None
                 return NodeMessageResult(
                     success=True,
                     details="Status retrieved",
-                    response=NodeMessagePayload(data=self.get_status().to_dict()),
+                    response=NodeMessagePayload(data=status_dict),
                     altered_workflow_state=False,
                 )
             case "set_status":
                 if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
                     self._apply_status_from_message_data(message.data)
+                status_dict = self.get_status().to_dict() if self.get_status() is not None else None
                 return NodeMessageResult(
                     success=True,
                     details="Status updated",
-                    response=NodeMessagePayload(data=self.get_status().to_dict()),
+                    response=NodeMessagePayload(data=status_dict),
                     altered_workflow_state=False,
                 )
             case "clear_status_display":
