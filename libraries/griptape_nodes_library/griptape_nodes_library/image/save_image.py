@@ -208,6 +208,9 @@ class SaveImage(SuccessFailureNode):
             self._handle_error_with_graceful_exit(error_details, e, input_info, output_file)
             return
 
+        # Update output path with full saved path
+        self.parameter_output_values["output_path"] = saved_path
+
         # Success case with path method info
         path_method = "filesystem" if output_path.is_absolute() else "static storage"
         success_details = f"Image saved successfully via {path_method}"

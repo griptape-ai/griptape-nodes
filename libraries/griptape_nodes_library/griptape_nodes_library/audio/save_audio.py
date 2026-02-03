@@ -397,7 +397,10 @@ class SaveAudio(SuccessFailureNode):
             # Step 4: Save audio bytes
             saved_path = self._save_audio_bytes(audio_input.data, audio_input.format_hint)
 
-            # Step 5: Report success
+            # Step 5: Update output path with full saved path
+            self.parameter_output_values["output_path"] = saved_path
+
+            # Step 6: Report success
             self._report_success(saved_path, audio_input.source_url)
 
         except Exception as e:
@@ -427,7 +430,10 @@ class SaveAudio(SuccessFailureNode):
             # Step 4: Save audio bytes
             saved_path = self._save_audio_bytes(audio_input.data, audio_input.format_hint)
 
-            # Step 5: Report success
+            # Step 5: Update output path with full saved path
+            self.parameter_output_values["output_path"] = saved_path
+
+            # Step 6: Report success
             self._report_success(saved_path, None)
 
         except Exception as e:
