@@ -19,13 +19,13 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 # into the library's own virtual environment, but not available during type checking
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     sanitize_filename,
     seconds_to_ts,
     smpte_to_seconds,
     to_video_artifact,
-    validate_url,
 )
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
@@ -526,7 +526,7 @@ If no title is provided, just use "Segment X:" format.
         """Split video using static_ffmpeg and ffmpeg."""
 
         def _validate_and_raise_if_invalid(url: str) -> None:
-            if not validate_url(url):
+            if not is_url_or_path(url):
                 msg = f"{self.name}: Invalid or unsafe URL provided: {url}"
                 raise ValueError(msg)
 

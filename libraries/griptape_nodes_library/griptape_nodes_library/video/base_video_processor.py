@@ -14,12 +14,12 @@ from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     dict_to_video_url_artifact,
     to_video_artifact,
-    validate_url,
 )
 
 
@@ -281,7 +281,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
 
     def _validate_url_safety(self, url: str) -> None:
         """Validate that the URL is safe for ffmpeg processing."""
-        if not validate_url(url):
+        if not is_url_or_path(url):
             msg = f"{self.name}: Invalid or unsafe URL provided: {url}"
             raise ValueError(msg)
 

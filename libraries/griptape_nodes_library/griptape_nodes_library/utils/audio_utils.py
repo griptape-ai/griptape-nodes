@@ -5,7 +5,6 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
@@ -157,15 +156,6 @@ def extract_url_from_audio_object(obj: Any) -> str | None:
     return None
 
 
-def validate_url(url: str) -> bool:
-    """Validate that the URL is safe for audio processing."""
-    try:
-        parsed = urlparse(url)
-        return bool(parsed.scheme in ("http", "https", "file") and parsed.netloc)
-    except Exception:
-        return False
-
-
 @dataclass
 class AudioDownloadResult:
     """Result of audio download operation."""
@@ -186,8 +176,8 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
     Raises:
         ValueError: If URL is invalid or download fails
     """
-    # Validate URL first using existing function
-    if not validate_url(url):
+    # Validate URL format
+    if not is_url_or_path(url):
         error_details = f"Invalid or unsafe URL: {url}"
         raise ValueError(error_details)
 

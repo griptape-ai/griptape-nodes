@@ -20,10 +20,10 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.video_utils import (
     detect_video_format,
     to_video_artifact,
-    validate_url,
 )
 
 
@@ -351,7 +351,7 @@ class ResizeVideo(ControlNode):
         """Resize video using imageio_ffmpeg and ffmpeg."""
 
         def _validate_and_raise_if_invalid(url: str) -> None:
-            if not validate_url(url):
+            if not is_url_or_path(url):
                 msg = f"{self.name}: Invalid or unsafe URL provided: {url}"
                 raise ValueError(msg)
 
