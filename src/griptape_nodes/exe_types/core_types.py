@@ -1076,7 +1076,7 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
 
     @property
     def ui_options(self) -> dict:
-        return self._ui_options.copy()
+        return self._ui_options
 
     @ui_options.setter
     @BaseNodeElement.emits_update_on_write
