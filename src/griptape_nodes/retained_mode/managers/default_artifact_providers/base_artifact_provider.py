@@ -8,11 +8,13 @@ class BaseArtifactProvider(ABC):
 
     Providers define how to handle specific artifact types (images, video, audio)
     including supported formats and preview generation capabilities.
+
+    Metadata is defined as class methods for zero-cost introspection without instantiation.
     """
 
-    @property
+    @classmethod
     @abstractmethod
-    def friendly_name(self) -> str:
+    def get_friendly_name(cls) -> str:
         """Human-readable name for this artifact type.
 
         Returns:
@@ -20,9 +22,9 @@ class BaseArtifactProvider(ABC):
         """
         ...
 
-    @property
+    @classmethod
     @abstractmethod
-    def supported_formats(self) -> set[str]:
+    def get_supported_formats(cls) -> set[str]:
         """File extensions this provider handles.
 
         Returns:
@@ -30,9 +32,9 @@ class BaseArtifactProvider(ABC):
         """
         ...
 
-    @property
+    @classmethod
     @abstractmethod
-    def preview_formats(self) -> set[str]:
+    def get_preview_formats(cls) -> set[str]:
         """Preview formats this provider can generate.
 
         Returns:
