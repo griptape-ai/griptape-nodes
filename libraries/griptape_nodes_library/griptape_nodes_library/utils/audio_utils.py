@@ -14,7 +14,6 @@ from griptape_nodes.utils.url_utils import is_url_or_path
 logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
-DOWNLOAD_CHUNK_SIZE = 8192
 
 # Supported audio file extensions (with leading dots)
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus", ".webm"}
@@ -186,13 +185,12 @@ async def download_audio_to_temp_file(url: str) -> AudioDownloadResult:
         temp_path = Path(temp_file.name)
 
     try:
-        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client, client.stream("GET", url) as response:
+        async with httpx.AsyncClient(timeout=DEFAULT_DOWNLOAD_TIMEOUT) as client:
+            response = await client.get(url)
             response.raise_for_status()
 
-            # Use sync file operations for writing chunks - this is appropriate for streaming
-            with temp_path.open("wb") as f:  # noqa: ASYNC230
-                async for chunk in response.aiter_bytes(chunk_size=DOWNLOAD_CHUNK_SIZE):
-                    f.write(chunk)
+            # Write content to temp file
+            temp_path.write_bytes(response.content)
 
         # Detect format from URL or use default
         detected_format = detect_audio_format({"value": url})
