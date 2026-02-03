@@ -54,8 +54,8 @@ type ElementMessageCallback = Callable[[str, "NodeMessagePayload | None"], "Node
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
 
-# Badge variant type for element badge (aligned with ParameterMessage.VariantType)
-BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+# Badge variant type for element badge (aligned with ParameterMessage.VariantType, excluding "none")
+BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note"]
 VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 
 
@@ -76,7 +76,7 @@ class BadgeData:
             the button is shown so the user can dismiss the badge (e.g. via clear_badge_display).
     """
 
-    variant: BadgeVariantType = "none"
+    variant: BadgeVariantType = "info"
     title: str | None = None
     message: str = ""
     hide: bool = False

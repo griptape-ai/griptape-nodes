@@ -10,7 +10,7 @@ _DEFAULT_BADGE = {
     "hide_clear_button": True,
     "message": "",
     "title": None,
-    "variant": "none",
+    "variant": "info",
 }
 
 
