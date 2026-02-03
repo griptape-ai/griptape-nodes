@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
@@ -219,9 +220,11 @@ class GrokVideoGeneration(GriptapeProxyNode):
         if not image_value:
             return None
 
-        if image_value.startswith("data:image/"):
+        # If it's not a URL or path, assume it's inline data (data URI)
+        if not is_url_or_path(image_value):
             return image_value
 
+        # Handle HTTP/HTTPS URLs - download and convert
         if image_value.startswith(("http://", "https://")):
             image_bytes = await self._download_bytes_from_url(image_value)
             if not image_bytes:
@@ -230,6 +233,7 @@ class GrokVideoGeneration(GriptapeProxyNode):
             b64_string = base64.b64encode(image_bytes).decode("utf-8")
             return f"data:{mime_type};base64,{b64_string}"
 
+        # Handle local file paths
         return convert_image_value_to_base64_data_uri(image_value, self.name)
 
     def _get_api_model_id(self) -> str:
