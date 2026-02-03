@@ -41,7 +41,6 @@ class ArtifactManager:
         Args:
             event_manager: Optional event manager for handling artifact events
         """
-
         # The list of classes we have registered
         self._provider_classes: list[type[BaseArtifactProvider]] = []
 
