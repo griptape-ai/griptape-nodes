@@ -336,6 +336,8 @@ class BaseNodeElement:
         if hide_clear_button is not None:
             self._status.hide_clear_button = hide_clear_button
         self._changes["status"] = self.get_status().to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
@@ -343,6 +345,8 @@ class BaseNodeElement:
         """Reset status to defaults (variant=none, no title/message, hide=False, hide_clear_button=True)."""
         self._status = StatusData()
         self._changes["status"] = self.get_status().to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
@@ -350,6 +354,8 @@ class BaseNodeElement:
         """Hide the status indicator (hide=True). Frontend can send clear_status_display to trigger this."""
         self._status.hide = True
         self._changes["status"] = self.get_status().to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
@@ -366,6 +372,8 @@ class BaseNodeElement:
                 # Track change if different
                 if old_value != new_value:
                     self._changes[func.__name__] = new_value
+                    # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+                    # Only when attached to a node and not already in the list (avoids duplicate events).
                     if self._node_context is not None and self not in self._node_context._tracked_parameters:
                         self._node_context._tracked_parameters.append(self)
                 return result
@@ -556,6 +564,8 @@ class BaseNodeElement:
         if "hide_clear_button" in data:
             self._status.hide_clear_button = data["hide_clear_button"]
         self._changes["status"] = self.get_status().to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
