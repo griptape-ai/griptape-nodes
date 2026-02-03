@@ -120,3 +120,56 @@ class RegisterArtifactProviderResultSuccess(WorkflowNotAlteredMixin, ResultPaylo
 @PayloadRegistry.register
 class RegisterArtifactProviderResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failed to register artifact provider."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListArtifactProvidersRequest(RequestPayload):
+    """List all registered artifact providers.
+
+    Results: ListArtifactProvidersResultSuccess | ListArtifactProvidersResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ListArtifactProvidersResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successfully listed artifact providers."""
+
+    friendly_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListArtifactProvidersResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to list artifact providers."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactProviderDetailsRequest(RequestPayload):
+    """Get details for a specific artifact provider by friendly name.
+
+    Args:
+        friendly_name: The friendly name of the provider (case-insensitive)
+
+    Results: GetArtifactProviderDetailsResultSuccess | GetArtifactProviderDetailsResultFailure
+    """
+
+    friendly_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactProviderDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successfully retrieved provider details."""
+
+    friendly_name: str
+    supported_formats: set[str]
+    preview_formats: set[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactProviderDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to get provider details."""
