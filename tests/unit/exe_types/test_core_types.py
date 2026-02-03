@@ -6,9 +6,9 @@ from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, Para
 
 # Default status dict from BaseNodeElement.get_status() / StatusData.to_dict()
 _DEFAULT_STATUS = {
-    "display": True,
+    "hide": False,
+    "hide_clear_button": True,
     "message": "",
-    "show_clear_button": False,
     "title": None,
     "variant": "none",
 }

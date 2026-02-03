@@ -70,8 +70,8 @@ class StatusData:
     variant: StatusVariantType = "none"
     title: str | None = None
     message: str = ""
-    display: bool = True
-    show_clear_button: bool = False
+    hide: bool = False
+    hide_clear_button: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         """Return a serializable dictionary suitable for events and element serialization."""
@@ -79,8 +79,8 @@ class StatusData:
             "variant": self.variant,
             "title": self.title,
             "message": self.message,
-            "display": self.display,
-            "show_clear_button": self.show_clear_button,
+            "hide": self.hide,
+            "hide_clear_button": self.hide_clear_button,
         }
 
 
@@ -304,7 +304,7 @@ class BaseNodeElement:
     # Message types for frontend: clear_status, get_status, set_status, clear_status_display
 
     def get_status(self) -> dict[str, Any]:
-        """Return current status as a serializable dict (variant, title, message, display, show_clear_button)."""
+        """Return current status as a serializable dict (variant, title, message, hide, hide_clear_button)."""
         return self._status.to_dict()
 
     def set_status(
@@ -313,8 +313,8 @@ class BaseNodeElement:
         title: str | None = None,
         message: str | None = None,
         *,
-        display: bool | None = None,
-        show_clear_button: bool | None = None,
+        hide: bool | None = None,
+        hide_clear_button: bool | None = None,
     ) -> None:
         """Set status fields; only provided arguments are updated. No kwargs so status is discoverable."""
         if variant is not None:
@@ -323,24 +323,24 @@ class BaseNodeElement:
             self._status.title = title
         if message is not None:
             self._status.message = message
-        if display is not None:
-            self._status.display = display
-        if show_clear_button is not None:
-            self._status.show_clear_button = show_clear_button
+        if hide is not None:
+            self._status.hide = hide
+        if hide_clear_button is not None:
+            self._status.hide_clear_button = hide_clear_button
         self._changes["status"] = self.get_status()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
     def clear_status(self) -> None:
-        """Reset status to defaults (variant=none, no title/message, display=True, no clear button)."""
+        """Reset status to defaults (variant=none, no title/message, hide=False, hide_clear_button=True)."""
         self._status = StatusData()
         self._changes["status"] = self.get_status()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
 
     def dismiss_status(self) -> None:
-        """Hide the status indicator (display=False). Frontend can send clear_status_display to trigger this."""
-        self._status.display = False
+        """Hide the status indicator (hide=True). Frontend can send clear_status_display to trigger this."""
+        self._status.hide = True
         self._changes["status"] = self.get_status()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
@@ -543,10 +543,10 @@ class BaseNodeElement:
             self._status.title = data["title"]
         if "message" in data:
             self._status.message = data["message"]
-        if "display" in data:
-            self._status.display = data["display"]
-        if "show_clear_button" in data:
-            self._status.show_clear_button = data["show_clear_button"]
+        if "hide" in data:
+            self._status.hide = data["hide"]
+        if "hide_clear_button" in data:
+            self._status.hide_clear_button = data["hide_clear_button"]
         self._changes["status"] = self.get_status()
         if self._node_context is not None and self not in self._node_context._tracked_parameters:
             self._node_context._tracked_parameters.append(self)
@@ -1071,8 +1071,8 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
                 variant=status.variant,
                 title=status.title,
                 message=status.message,
-                display=status.display,
-                show_clear_button=status.show_clear_button,
+                hide=status.hide,
+                hide_clear_button=status.hide_clear_button,
             )
 
     @property
@@ -1486,8 +1486,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 variant=status.variant,
                 title=status.title,
                 message=status.message,
-                display=status.display,
-                show_clear_button=status.show_clear_button,
+                hide=status.hide,
+                hide_clear_button=status.hide_clear_button,
             )
         self.type = type
         self.input_types = input_types
