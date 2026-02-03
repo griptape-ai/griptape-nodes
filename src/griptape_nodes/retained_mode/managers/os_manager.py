@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import ctypes
 import logging
 import mimetypes
 import os
@@ -8,9 +9,10 @@ import shutil
 import stat
 import subprocess
 import sys
+from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import aioshutil
 import portalocker
@@ -143,6 +145,14 @@ class FilenameParts(NamedTuple):
     extension: str
 
 
+class WindowsSpecialFolderError(OSError):
+    """Raised when Windows Shell API (SHGetFolderPathW) fails for a special folder.
+
+    Callers (e.g. try_resolve_windows_special_folder) catch this to fall back
+    to expanduser or other resolution.
+    """
+
+
 class FilePathValidationError(Exception):
     """Raised when file path validation fails before write operation.
 
@@ -174,12 +184,99 @@ class CopyTreeStats:
     total_bytes_copied: int
 
 
+class WindowsSpecialFolderResult(NamedTuple):
+    """Result of resolving a Windows special folder from path parts.
+
+    Invariant: either both fields are None (not resolved), or both are set
+    (resolved). When resolved, special_path is the folder Path and
+    remaining_parts is the list of path components after the folder (may be
+    empty). We never return (None, list) or (Path, None).
+    """
+
+    special_path: Path | None
+    remaining_parts: list[str] | None
+
+
 class OSManager:
     """A class to manage OS-level scenarios.
 
     Making its own class as some runtime environments and some customer requirements may dictate this as optional.
     This lays the groundwork to exclude specific functionality on a configuration basis.
     """
+
+    # Windows CSIDL constants for special folders (used by _expand_path)
+    # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+    WINDOWS_CSIDL_MAP: ClassVar[dict[str, int]] = {
+        "desktop": 0x0000,  # CSIDL_DESKTOP
+        "documents": 0x0005,  # CSIDL_PERSONAL (My Documents)
+        "downloads": 0x0033,  # CSIDL_DOWNLOADS
+        "pictures": 0x0027,  # CSIDL_MYPICTURES
+        "videos": 0x000E,  # CSIDL_MYVIDEO
+        "music": 0x000D,  # CSIDL_MYMUSIC
+    }
+
+    @staticmethod
+    def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
+        r"""Parse a path string into normalized parts for special folder detection.
+
+        Strips leading ~ or ~/, or %UserProfile% / %USERPROFILE% (case-insensitive);
+        expands env vars when %UserProfile% is present; returns lowercased path
+        parts. Used to detect Windows special folder names (e.g. ~/Downloads,
+        %UserProfile%/Desktop). Also strips Windows long path prefix (\\?\ or
+        \\?\UNC\) so prefixed paths parse correctly instead of producing "?"
+        as the first part.
+
+        Args:
+            path_str: Path string that may contain ~ or %UserProfile% (case-insensitive).
+
+        Returns:
+            List of lowercased path parts, e.g. ["downloads"] for "~/Downloads".
+        """
+        normalized = path_str.replace("\\", "/")
+        # Strip Windows long path prefix so we don't get "?" as first part
+        if normalized.upper().startswith("//?/UNC/"):
+            normalized = "//" + normalized[8:]  # Keep UNC as //server/share
+        elif normalized.startswith("//?/"):
+            normalized = normalized[4:]
+        if normalized.startswith("~/"):
+            normalized = normalized[2:]
+        elif normalized.startswith("~"):
+            normalized = normalized[1:]
+        if "%USERPROFILE%" in normalized.upper():
+            normalized = os.path.expandvars(normalized)
+            normalized = normalized.replace("\\", "/")  # expandvars can return backslashes on Windows
+            userprofile = os.environ.get("USERPROFILE", "")
+            if userprofile and normalized.lower().startswith(userprofile.lower().replace("\\", "/")):
+                normalized = normalized[len(userprofile) :].lstrip("/\\")
+        parts = [p.lower() for p in normalized.split("/") if p]
+        return parts
+
+    def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult | None:
+        """Resolve Windows special folder from path parts.
+
+        If the first part matches a known special folder name (e.g. "desktop",
+        "downloads"), calls _get_windows_special_folder_path and returns a
+        result with special_path and remaining_parts. Returns None if parts are
+        empty, the first part is unknown, or the Shell API raises
+        WindowsSpecialFolderError (caller catches and falls back).
+
+        Args:
+            parts: Lowercased path parts from normalize_path_parts_for_special_folder.
+
+        Returns:
+            WindowsSpecialFolderResult when resolved (special_path and remaining_parts),
+            or None when no special folder could be resolved.
+        """
+        if not parts or parts[0] not in OSManager.WINDOWS_CSIDL_MAP:
+            return None
+        csidl = OSManager.WINDOWS_CSIDL_MAP[parts[0]]
+        try:
+            special_path = self._get_windows_special_folder_path(csidl)
+        except WindowsSpecialFolderError:
+            # No warning: Shell API failure is an expected fallback path; not useful to users.
+            return None
+        remaining = parts[1:] if len(parts) > 1 else []
+        return WindowsSpecialFolderResult(special_path=special_path, remaining_parts=remaining)
 
     def __init__(self, event_manager: EventManager | None = None):
         if event_manager is not None:
@@ -234,18 +331,89 @@ class OSManager:
         """Get the workspace path from config."""
         return GriptapeNodes.ConfigManager().workspace_path
 
-    def _expand_path(self, path_str: str) -> Path:
-        """Expand a path string, handling tilde and environment variables.
+    def _get_windows_special_folder_path(self, csidl: int) -> Path:
+        """Get Windows special folder path using Shell API.
+
+        Source: https://stackoverflow.com/a/30924555
+        Uses SHGetFolderPathW to get the actual location of special folders,
+        handling OneDrive redirections and other Windows folder redirections.
+        Callers (e.g. try_resolve_windows_special_folder) should catch
+        WindowsSpecialFolderError and fall back to expanduser.
 
         Args:
-            path_str: Path string that may contain ~ or environment variables
+            csidl: CSIDL constant for the special folder (e.g., CSIDL_DESKTOP)
+
+        Returns:
+            Path to the special folder.
+
+        Raises:
+            RuntimeError: If not on Windows (programming error).
+            WindowsSpecialFolderError: If the Shell API fails (HRESULT or ctypes exception).
+        """
+        if not self.is_windows():
+            msg = "_get_windows_special_folder_path may only be called on Windows"
+            raise RuntimeError(msg)
+
+        # Argtypes for SHGetFolderPathW (Windows Shell API)
+        # https://learn.microsoft.com/en-us/windows/win32/shell/csidl
+        sh_get_folder_path_argtypes = (
+            wintypes.HWND,
+            ctypes.c_int,
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPCWSTR,
+        )
+
+        def _call_shell_api() -> Path:
+            # windll is Windows-only; code path is guarded by is_windows()
+            sh_get_folder_path = ctypes.windll.shell32.SHGetFolderPathW  # pyright: ignore[reportAttributeAccessIssue]
+            sh_get_folder_path.argtypes = sh_get_folder_path_argtypes
+
+            path_buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            result = sh_get_folder_path(0, csidl, 0, 0, path_buf)
+            if result != 0:  # S_OK is 0; non-zero is an HRESULT error code
+                msg = f"Windows Shell API SHGetFolderPathW failed for CSIDL {csidl}: HRESULT {result}"
+                raise WindowsSpecialFolderError(msg)
+            return Path(path_buf.value)
+
+        try:
+            return _call_shell_api()
+        except WindowsSpecialFolderError:
+            raise
+        except Exception as e:  # Broad catch: ctypes/Shell API can raise many types
+            msg = f"Windows Shell API SHGetFolderPathW failed for CSIDL {csidl}: {e}"
+            raise WindowsSpecialFolderError(msg) from e
+
+    def _expand_path(self, path_str: str) -> Path:
+        """Expand a path string, handling tilde, environment variables, and special folders.
+
+        Handles Windows special folders (like Desktop) that may be redirected to OneDrive
+        by using Windows Shell API (SHGetFolderPathW) to get the actual system paths.
+
+        Args:
+            path_str: Path string that may contain ~, environment variables, or special folder names
 
         Returns:
             Expanded Path object
         """
-        # Expand environment variables first, then tilde
-        expanded_vars = os.path.expandvars(path_str)
-        return self.resolve_path_safely(Path(expanded_vars).expanduser())
+        resolved = None
+        if self.is_windows():
+            parts = self.normalize_path_parts_for_special_folder(path_str)
+            resolved = self.try_resolve_windows_special_folder(parts)
+
+        # Success path at the end - compute final path and return
+        if resolved is not None and resolved.special_path is not None:
+            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
+            if extra_parts:
+                final_path = resolved.special_path / Path(*extra_parts)
+            else:
+                final_path = resolved.special_path
+        else:
+            expanded_vars = os.path.expandvars(path_str)
+            expanded_user = os.path.expanduser(expanded_vars)  # noqa: PTH111
+            final_path = Path(expanded_user)
+
+        return self.resolve_path_safely(final_path)
 
     def resolve_path_safely(self, path: Path) -> Path:
         """Resolve a path consistently across platforms.
@@ -289,6 +457,13 @@ class OSManager:
         # This works consistently even for non-existent paths on Windows
         return Path(os.path.normpath(path))
 
+    def _path_needs_expansion(self, path_str: str) -> bool:
+        """Return True if path contains env vars, is absolute, or starts with ~ (needs _expand_path)."""
+        has_env_vars = "%" in path_str or "$" in path_str
+        is_absolute = Path(path_str).is_absolute()
+        starts_with_tilde = path_str.startswith("~")
+        return has_env_vars or is_absolute or starts_with_tilde
+
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
 
@@ -300,10 +475,8 @@ class OSManager:
             Resolved Path object
         """
         try:
-            if Path(path_str).is_absolute() or path_str.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
+            if self._path_needs_expansion(path_str):
                 return self._expand_path(path_str)
-            # Both workspace and system-wide modes resolve relative to current directory
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
             if workspace_only:
@@ -1203,12 +1376,9 @@ class OSManager:
             # Get the directory path to list
             if request.directory_path is None:
                 directory = self._get_workspace_path()
-            # Handle paths consistently - always resolve relative paths relative to current directory
-            elif Path(request.directory_path).is_absolute() or request.directory_path.startswith("~"):
-                # Expand tilde and environment variables for absolute paths or paths starting with ~
+            elif self._path_needs_expansion(request.directory_path):
                 directory = self._expand_path(request.directory_path)
             else:
-                # Both workspace and system-wide modes resolve relative to current directory
                 directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
 
             # Check if directory exists
