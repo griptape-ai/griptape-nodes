@@ -1819,6 +1819,28 @@
       }
     },
     {
+      "class_name": "WriteImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/write_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Write custom key-value metadata to PNG images using PNG text chunks",
+        "display_name": "Write Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "ReadImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/read_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Read custom metadata from images (EXIF for JPEG/TIFF/MPO, PNG chunks for PNG)",
+        "display_name": "Read Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
       "class_name": "Webcam",
       "file_path": "griptape_nodes_library/image/webcam.py",
       "metadata": {
