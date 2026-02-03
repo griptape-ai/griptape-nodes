@@ -344,9 +344,6 @@ def convert_image_value_to_base64_data_uri(image_value: str, context_name: str =
     if image_value.startswith("data:image/"):
         return image_value
 
-    # If it's a URL, return None (caller should handle async download)
-    if is_url_or_path(image_value):
-        return None
 
     # Try to read as file path first (works cross-platform)
     file_path = read_image_from_file_path(image_value, context_name)
