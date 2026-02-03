@@ -167,9 +167,99 @@ class GetArtifactProviderDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPay
     friendly_name: str
     supported_formats: set[str]
     preview_formats: set[str]
+    registered_preview_generators: list[str]
 
 
 @dataclass
 @PayloadRegistry.register
 class GetArtifactProviderDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failed to get provider details."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterPreviewGeneratorRequest(RequestPayload):
+    """Register a preview generator with a provider.
+
+    Args:
+        provider_friendly_name: The friendly name of the provider
+        preview_generator_class: The preview generator class to register
+
+    Results: RegisterPreviewGeneratorResultSuccess | RegisterPreviewGeneratorResultFailure
+    """
+
+    provider_friendly_name: str
+    preview_generator_class: type
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterPreviewGeneratorResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Preview generator registered successfully."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RegisterPreviewGeneratorResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to register preview generator."""
+
+
+@dataclass
+@PayloadRegistry.register
+class ListPreviewGeneratorsRequest(RequestPayload):
+    """List all registered preview generators for a provider.
+
+    Args:
+        provider_friendly_name: The friendly name of the provider
+
+    Results: ListPreviewGeneratorsResultSuccess | ListPreviewGeneratorsResultFailure
+    """
+
+    provider_friendly_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ListPreviewGeneratorsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successfully listed preview generators."""
+
+    preview_generator_names: list[str]
+
+
+@dataclass
+@PayloadRegistry.register
+class ListPreviewGeneratorsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to list preview generators."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPreviewGeneratorDetailsRequest(RequestPayload):
+    """Get details for a specific preview generator by friendly name.
+
+    Args:
+        provider_friendly_name: The friendly name of the provider
+        preview_generator_friendly_name: The friendly name of the preview generator (case-insensitive)
+
+    Results: GetPreviewGeneratorDetailsResultSuccess | GetPreviewGeneratorDetailsResultFailure
+    """
+
+    provider_friendly_name: str
+    preview_generator_friendly_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPreviewGeneratorDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successfully retrieved preview generator details."""
+
+    friendly_name: str
+    supported_source_formats: set[str]
+    supported_preview_formats: set[str]
+    parameters: dict[str, tuple[object, bool]]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetPreviewGeneratorDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to get preview generator details."""
