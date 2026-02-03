@@ -268,8 +268,8 @@ def _patched_httpx_request(method: str, url: str | httpx.URL, **kwargs: Any) -> 
     # Convert httpx.URL to string for checking
     url_str = str(url)
 
-    # Detect and convert cloud asset URLs to signed download URLs
-    if GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
+    # Detect and convert cloud asset URLs to signed download URLs (GET only)
+    if method.upper() == "GET" and GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
         signed_url = GriptapeCloudStorageDriver.create_signed_download_url_from_asset_url(
             url_str, httpx_request_func=_original_httpx_request
         )
@@ -382,8 +382,8 @@ def _patched_client_request(
 
     url_str = str(url)
 
-    # Cloud asset URL conversion
-    if GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
+    # Cloud asset URL conversion (GET only)
+    if method.upper() == "GET" and GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
         signed_url = GriptapeCloudStorageDriver.create_signed_download_url_from_asset_url(
             url_str, httpx_request_func=_original_httpx_request
         )
@@ -456,8 +456,8 @@ async def _patched_async_client_request(
 
     url_str = str(url)
 
-    # Cloud asset URL conversion
-    if GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
+    # Cloud asset URL conversion (GET only)
+    if method.upper() == "GET" and GriptapeCloudStorageDriver.is_cloud_asset_url(url_str):
         signed_url = GriptapeCloudStorageDriver.create_signed_download_url_from_asset_url(
             url_str, httpx_request_func=_original_httpx_request
         )
