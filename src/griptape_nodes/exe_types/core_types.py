@@ -8,7 +8,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar, get_args
 
 from pydantic import BaseModel
 
@@ -56,6 +56,7 @@ N = TypeVar("N", bound="BaseNodeElement")
 
 # Status variant type for element status (aligned with ParameterMessage.VariantType)
 StatusVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+VALID_STATUS_VARIANTS: frozenset[str] = frozenset(get_args(StatusVariantType))
 
 
 @dataclass
@@ -554,7 +555,13 @@ class BaseNodeElement:
     def _apply_status_from_message_data(self, data: dict) -> None:
         """Apply status fields from a message data dict and track change."""
         if "variant" in data:
-            self._status.variant = data["variant"]
+            val = data["variant"]
+            if val in VALID_STATUS_VARIANTS:
+                self._status.variant = val
+            else:
+                msg = f"{self.__class__.__name__} received invalid status variant {val}; using 'info'. Valid: {sorted(VALID_STATUS_VARIANTS)}"
+                logger.warning(msg)
+                self._status.variant = "info"
         if "title" in data:
             self._status.title = data["title"]
         if "message" in data:
