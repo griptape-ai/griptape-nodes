@@ -233,13 +233,13 @@ class SerializedGroupResult:
         child_uuids: List of child node UUIDs for UUID-to-name remapping during deserialization
     """
 
-    group_command: "SerializedNodeCommands | None"
-    group_parameter_commands: list["SerializedNodeCommands.IndirectSetParameterValueCommand"]
-    child_commands: list["SerializedNodeCommands"]
+    group_command: SerializedNodeCommands | None
+    group_parameter_commands: list[SerializedNodeCommands.IndirectSetParameterValueCommand]
+    child_commands: list[SerializedNodeCommands]
     child_parameter_commands: dict[
-        "SerializedNodeCommands.NodeUUID", list["SerializedNodeCommands.IndirectSetParameterValueCommand"]
+        SerializedNodeCommands.NodeUUID, list[SerializedNodeCommands.IndirectSetParameterValueCommand]
     ]
-    child_uuids: list["SerializedNodeCommands.NodeUUID"]
+    child_uuids: list[SerializedNodeCommands.NodeUUID]
 
 
 class NodeManager:
@@ -370,7 +370,7 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -548,7 +548,7 @@ class NodeManager:
                     f"Attempted to set subflow_name '{request.subflow_name}' on Node '{node.name}'. "
                     f"Failed because node is not a BaseNodeGroup."
                 )
-                logger.warning(warning_details)
+                return CreateNodeResultFailure(result_details=warning_details)
 
         # Handle node_names_to_add for BaseNodeGroup nodes
         if request.node_names_to_add:
@@ -1129,7 +1129,7 @@ class NodeManager:
             result_details=f"Successfully updated metadata for {len(updated_nodes)} nodes.",
         )
 
-    def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:
+    def on_list_connections_for_node_request(self, request: ListConnectionsForNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912 Removed list comprehension
         node_name = request.node_name
         node = None
         if node_name is None:
@@ -1166,33 +1166,32 @@ class NodeManager:
         # get outgoing connections
         outgoing_connections_list = []
         if node_name in connection_mgr.outgoing_index:
-            outgoing_connections_list = [
-                OutgoingConnection(
-                    source_parameter_name=connection.source_parameter.name,
-                    target_node_name=connection.target_node.name,
-                    target_parameter_name=connection.target_parameter.name,
-                )
-                for connection_lists in connection_mgr.outgoing_index[node_name].values()
-                for connection_id in connection_lists
-                for connection in [connection_mgr.connections[connection_id]]
-                if request.include_internal or not connection.is_node_group_internal
-            ]
+            for connection_lists in connection_mgr.outgoing_index[node_name].values():
+                for connection_id in connection_lists:
+                    connection = connection_mgr.connections[connection_id]
+                    if request.include_internal or not connection.is_node_group_internal:
+                        outgoing_connections_list.append(
+                            OutgoingConnection(
+                                source_parameter_name=connection.source_parameter.name,
+                                target_node_name=connection.target_node.name,
+                                target_parameter_name=connection.target_parameter.name,
+                            )
+                        )
+
         # get incoming connections
         incoming_connections_list = []
         if node_name in connection_mgr.incoming_index:
-            incoming_connections_list = [
-                IncomingConnection(
-                    source_node_name=connection.source_node.name,
-                    source_parameter_name=connection.source_parameter.name,
-                    target_parameter_name=connection.target_parameter.name,
-                )
-                for connection_lists in connection_mgr.incoming_index[node_name].values()
-                for connection_id in connection_lists
-                for connection in [
-                    connection_mgr.connections[connection_id]
-                ]  # This creates a temporary one-item list with the connection
-                if request.include_internal or not connection.is_node_group_internal
-            ]
+            for connection_lists in connection_mgr.incoming_index[node_name].values():
+                for connection_id in connection_lists:
+                    connection = connection_mgr.connections[connection_id]
+                    if request.include_internal or not connection.is_node_group_internal:
+                        incoming_connections_list.append(
+                            IncomingConnection(
+                                source_node_name=connection.source_node.name,
+                                source_parameter_name=connection.source_parameter.name,
+                                target_parameter_name=connection.target_parameter.name,
+                            )
+                        )
 
         details = f"Successfully listed all Connections to and from Node '{node_name}'."
         result = ListConnectionsForNodeResultSuccess(
@@ -2663,8 +2662,9 @@ class NodeManager:
 
             if not isinstance(child_result, SerializeNodeToCommandsResultSuccess):
                 # Failed to serialize child - log warning and skip
-                logger.warning("%s failed to serialize child node '%s'", group_name, child_name)
-                continue
+                logger.error("%s failed to serialize child node '%s'", group_name, child_name)
+                msg = f"Failed to serialize child node '{child_name}'"
+                raise RuntimeError(msg)  # noqa: TRY004 Type Error doesn't make sense here, this is a runtime error.
 
             # Store child's serialized command, parameter commands, and UUID
             child_commands.append(child_result.serialized_node_commands)
@@ -2778,7 +2778,7 @@ class NodeManager:
 
                 # Remove subflow_name for copy/paste operations (so pasted groups create fresh subflows)
                 # Keep it for workflow file generation (so it can be extracted and used as a variable reference)
-                if not request.include_subflow:
+                if not request.include_existing_subflow_in_group:
                     metadata_copy.pop("subflow_name", None)
 
                 # Note: Child serialization is handled in _serialize_group_with_children()
@@ -3147,7 +3147,8 @@ class NodeManager:
                 for child_command in group_result.child_commands:
                     child_name = child_command.create_node_command.node_name
                     if not child_name:
-                        continue
+                        details = f"Attempted to serialize group node '{node.name}'. Failed because child node command has no name."
+                        return SerializeNodeToCommandsResultFailure(result_details=details)
                     if child_name in explicitly_selected and child_name in node_commands:
                         # We need to remove the explicitly selected name from the commands that already exist
                         node_commands.pop(child_name)

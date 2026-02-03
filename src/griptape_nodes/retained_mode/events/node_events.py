@@ -569,8 +569,8 @@ class SerializeNodeToCommandsRequest(RequestPayload):
     )
     use_pickling: bool = False
     serialize_all_parameter_values: bool = False
-    # If True, keep subflow_name in metadata for workflow file generation (defaults to False for copy/paste)
-    include_subflow: bool = False
+    # If True, keep subflow_name in group metadata for workflow file generation (defaults to False for copy/paste)
+    include_existing_subflow_in_group: bool = False
 
 
 @dataclass
