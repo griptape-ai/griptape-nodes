@@ -3207,6 +3207,7 @@ class FlowManager:
                 if node is None:
                     details = f"Attempted to serialize Flow '{flow_name}'. Failed while attempting to serialize Node '{node_name}' within the Flow."
                     return SerializeFlowToCommandsResultFailure(result_details=details)
+
                 with GriptapeNodes.ContextManager().node(node):
                     # Note: the parameter value stuff is pass-by-reference, and we expect the values to be modified in place.
                     # This might be dangerous if done over the wire.

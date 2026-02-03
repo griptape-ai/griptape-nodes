@@ -536,6 +536,20 @@ class NodeManager:
                         node.end_node = end_node
                         end_node.start_node = node
 
+        # Handle subflow_name for BaseNodeGroup nodes
+        if request.subflow_name:
+            if isinstance(node, BaseNodeGroup):
+                # Set the subflow_name in metadata - the group will use this when creating/referencing its subflow
+                if node.metadata is None:
+                    node.metadata = {}
+                node.metadata["subflow_name"] = request.subflow_name
+            else:
+                warning_details = (
+                    f"Attempted to set subflow_name '{request.subflow_name}' on Node '{node.name}'. "
+                    f"Failed because node is not a BaseNodeGroup."
+                )
+                logger.warning(warning_details)
+
         # Handle node_names_to_add for BaseNodeGroup nodes
         if request.node_names_to_add:
             if isinstance(node, BaseNodeGroup):
@@ -1161,6 +1175,7 @@ class NodeManager:
                 for connection_lists in connection_mgr.outgoing_index[node_name].values()
                 for connection_id in connection_lists
                 for connection in [connection_mgr.connections[connection_id]]
+                if request.include_internal or not connection.is_node_group_internal
             ]
         # get incoming connections
         incoming_connections_list = []
@@ -1176,6 +1191,7 @@ class NodeManager:
                 for connection in [
                     connection_mgr.connections[connection_id]
                 ]  # This creates a temporary one-item list with the connection
+                if request.include_internal or not connection.is_node_group_internal
             ]
 
         details = f"Successfully listed all Connections to and from Node '{node_name}'."
@@ -2757,10 +2773,10 @@ class NodeManager:
                     return SerializeNodeToCommandsResultFailure(result_details=details)
 
                 # Remove node_names_in_group from metadata - it's redundant and will be regenerated
-                # Remove subflow_name so deserialized groups create fresh subflows
+                # Keep subflow_name in metadata so workflow file generation can extract it
+                # (it won't be used during deserialization unless explicitly passed as CreateNodeRequest parameter)
                 metadata_copy = copy.deepcopy(node.metadata)
                 metadata_copy.pop("node_names_in_group", None)
-                metadata_copy.pop("subflow_name", None)
 
                 # Note: Child serialization is handled in _serialize_group_with_children()
                 # which is called from on_serialize_selected_nodes_to_commands()
@@ -2984,8 +3000,10 @@ class NodeManager:
         """
         # Since it is a duplicate, it makes sense to remake all the old incoming connections the original had
         for old_node_name, new_node_name in zip(old_node_names, new_node_names, strict=True):
-            # List the old incoming connections
-            list_connections_for_node_request = ListConnectionsForNodeRequest(old_node_name)
+            # List the old incoming connections (excluding internal node group connections)
+            list_connections_for_node_request = ListConnectionsForNodeRequest(
+                node_name=old_node_name, include_internal=False
+            )
             list_connections_for_node_response = GriptapeNodes.handle_request(list_connections_for_node_request)
 
             # Only get incoming/outgoing connections if it returns the proper type
