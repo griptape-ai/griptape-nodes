@@ -94,11 +94,11 @@ class GriptapeCloudWorkflowBuilder:
         for i, lib in enumerate(libraries):
             if lib.endswith(".json"):
                 script += f"""
-    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path="{lib}"))
+    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromFileRequest(file_path={lib!r}))
 """
             else:
                 script += f"""
-    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier="{lib}"))
+    request_{i!s} = GriptapeNodes.handle_request(RegisterLibraryFromRequirementSpecifierRequest(requirement_specifier={lib!r}))
 """
         return script
 

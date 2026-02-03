@@ -2429,7 +2429,18 @@ class LibraryManager:
         # Collect results
         return dict(task.result() for task in tasks)
 
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+        if payload.skip_library_loading:
+            # Register all secrets even in headless mode
+            GriptapeNodes.SecretsManager().register_all_secrets()
+
+            # Still need to tell WorkflowManager to register workflows
+            # Pass the specific workflows if provided, otherwise it will scan workspace
+            GriptapeNodes.WorkflowManager().on_libraries_initialization_complete(
+                workflows_to_register=payload.workflows_to_register
+            )
+            return
+
         # Automatically migrate old XDG library paths from config
         # TODO: Remove https://github.com/griptape-ai/griptape-nodes/issues/3348
         self._migrate_old_xdg_library_paths()
@@ -2984,7 +2995,38 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
-    def discover_libraries_request(  # noqa: C901
+    def _create_library_info_entry(self, file_path_str: str, *, is_sandbox: bool) -> None:
+        """Create a LibraryInfo entry for a discovered library.
+
+        Loads metadata if possible and creates the entry in the appropriate lifecycle state.
+        Only creates the entry if it doesn't already exist in tracking.
+        """
+        if file_path_str in self._library_file_path_to_info:
+            return
+
+        metadata_result = self.load_library_metadata_from_file_request(
+            LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
+        )
+
+        library_name = None
+        library_version = None
+        lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
+
+        if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            library_name = metadata_result.library_schema.name
+            library_version = metadata_result.library_schema.metadata.library_version
+            lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
+
+        self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+            lifecycle_state=lifecycle_state,
+            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+            library_path=file_path_str,
+            is_sandbox=is_sandbox,
+            library_name=library_name,
+            library_version=library_version,
+        )
+
+    def discover_libraries_request(
         self,
         request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
@@ -3035,16 +3077,8 @@ class LibraryManager:
                         seen_libraries.add(sandbox_json_path)
                         discovered_libraries.append(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
-                    # Create minimal LibraryInfo entry in discovered state if not already tracked
-                    if sandbox_json_path_str not in self._library_file_path_to_info:
-                        self._library_file_path_to_info[sandbox_json_path_str] = LibraryManager.LibraryInfo(
-                            lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
-                            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                            library_path=sandbox_json_path_str,
-                            is_sandbox=True,
-                            library_name=None,
-                            library_version=None,
-                        )
+                    # Create LibraryInfo entry for the sandbox library
+                    self._create_library_info_entry(sandbox_json_path_str, is_sandbox=True)
 
         # Add all regular libraries from config
         for file_path in config_library_paths:
@@ -3055,19 +3089,8 @@ class LibraryManager:
                 seen_libraries.add(file_path)
                 discovered_libraries.append(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
-            # Skip if already tracked
-            if file_path_str in self._library_file_path_to_info:
-                continue
-
-            # Create minimal LibraryInfo entry in discovered state
-            self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
-                fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                library_path=file_path_str,
-                is_sandbox=False,
-                library_name=None,
-                library_version=None,
-            )
+            # Create LibraryInfo entry for the library
+            self._create_library_info_entry(file_path_str, is_sandbox=False)
 
         # Success path at the end
         return DiscoverLibrariesResultSuccess(

@@ -48,6 +48,7 @@ logger = logging.getLogger("griptape_nodes")
 T = TypeVar("T")
 
 NODE_GROUP_FLOW = "NodeGroupFlow"
+NODE_DEFAULT_SIZE = {"width": 400, "height": 320}
 
 
 class TransformedParameterValue(NamedTuple):
@@ -873,6 +874,18 @@ class BaseNode(ABC):
                         initial_setup=initial_setup,
                         emit_change=False,
                     )
+
+    def set_initial_node_size(
+        self, width: int = NODE_DEFAULT_SIZE["width"], height: int = NODE_DEFAULT_SIZE["height"]
+    ) -> None:
+        """Set the node's UI size. Node authors can call this to give the node a default or custom size.
+
+        Args:
+            width: Width in pixels.
+            height: Height in pixels.
+        """
+        if "size" not in self.metadata:
+            self.metadata["size"] = {"width": width, "height": height}
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes

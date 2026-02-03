@@ -396,7 +396,7 @@ class WorkflowManager:
         """
         return self._referenced_workflow_stack[-1]
 
-    def on_libraries_initialization_complete(self) -> None:
+    def on_libraries_initialization_complete(self, workflows_to_register: list[str] | None = None) -> None:
         # All of the libraries have loaded, and any workflows they came with have been registered.
         # Discover workflows from both config and workspace.
         self._workflows_loading_complete.clear()
@@ -405,15 +405,16 @@ class WorkflowManager:
             default_workflow_section = "app_events.on_app_initialization_complete.workflows_to_register"
             config_mgr = GriptapeNodes.ConfigManager()
 
-            workflows_to_register = []
+            if workflows_to_register is None:
+                workflows_to_register = []
 
-            # Add from config
-            config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
-            workflows_to_register.extend(config_workflows)
+                # Add from config
+                config_workflows = config_mgr.get_config_value(default_workflow_section, default=[])
+                workflows_to_register.extend(config_workflows)
 
-            # Add from workspace (avoiding duplicates)
-            workspace_path = config_mgr.workspace_path
-            workflows_to_register.extend([workspace_path])
+                # Add from workspace (avoiding duplicates)
+                workspace_path = config_mgr.workspace_path
+                workflows_to_register.extend([str(workspace_path)])
 
             # Register all discovered workflows at once if any were found
             self._process_workflows_for_registration(workflows_to_register)
@@ -1833,8 +1834,11 @@ class WorkflowManager:
 
         ast_container = ASTContainer()
 
+        # Extract library names from workflow metadata
+        library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
+
         prereq_code = self._generate_workflow_run_prerequisite_code(
-            workflow_name=workflow_metadata.name, import_recorder=import_recorder
+            workflow_name=workflow_metadata.name, import_recorder=import_recorder, library_names=library_names
         )
         for node in prereq_code:
             ast_container.add_node(node)
@@ -2152,7 +2156,8 @@ class WorkflowManager:
             ),
         )
 
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum)
+        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum, skip_library_loading=True, workflows_to_register=[__file__])
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
             value=ast.BoolOp(
@@ -2165,6 +2170,11 @@ class WorkflowManager:
                         keywords=[
                             ast.keyword(
                                 arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
+                            ),
+                            ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
+                            ast.keyword(
+                                arg="workflows_to_register",
+                                value=ast.List(elts=[ast.Name(id="__file__", ctx=ast.Load())], ctx=ast.Load()),
                             ),
                         ],
                     ),
@@ -2757,32 +2767,44 @@ class WorkflowManager:
         self,
         workflow_name: str,
         import_recorder: ImportRecorder,
+        library_names: list[str],
     ) -> list[ast.AST]:
-        import_recorder.add_from_import("griptape_nodes.retained_mode.events.library_events", "LoadLibrariesRequest")
+        import_recorder.add_from_import(
+            "griptape_nodes.retained_mode.events.library_events", "RegisterLibraryFromFileRequest"
+        )
 
         code_blocks: list[ast.AST] = []
 
-        # Generate load libraries request call
-        # TODO (https://github.com/griptape-ai/griptape-nodes/issues/1615): Generate requests to load ONLY the libraries used in this workflow
-        load_call = ast.Expr(
-            value=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
-                    attr="handle_request",
-                    ctx=ast.Load(),
-                ),
-                args=[
-                    ast.Call(
-                        func=ast.Name(id="LoadLibrariesRequest", ctx=ast.Load()),
-                        args=[],
-                        keywords=[],
-                    )
-                ],
-                keywords=[],
+        # Generate one RegisterLibraryFromFileRequest call per library
+        for library_name in library_names:
+            register_call = ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="GriptapeNodes", ctx=ast.Load()),
+                        attr="handle_request",
+                        ctx=ast.Load(),
+                    ),
+                    args=[
+                        ast.Call(
+                            func=ast.Name(id="RegisterLibraryFromFileRequest", ctx=ast.Load()),
+                            args=[],
+                            keywords=[
+                                ast.keyword(
+                                    arg="library_name",
+                                    value=ast.Constant(value=library_name),
+                                ),
+                                ast.keyword(
+                                    arg="perform_discovery_if_not_found",
+                                    value=ast.Constant(value=True),
+                                ),
+                            ],
+                        )
+                    ],
+                    keywords=[],
+                )
             )
-        )
-        ast.fix_missing_locations(load_call)
-        code_blocks.append(load_call)
+            ast.fix_missing_locations(register_call)
+            code_blocks.append(register_call)
 
         # Generate context manager assignment
         assign_context_manager = ast.Assign(
