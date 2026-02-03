@@ -24,6 +24,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.utils.url_utils import is_url_or_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -492,7 +493,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             return frame_url
 
         # If it's an external URL, download and convert to data URL
-        if frame_url.startswith(("http://", "https://")):
+        if is_url_or_path(frame_url):
             return await self._inline_external_url_async(frame_url)
 
         return frame_url
@@ -691,7 +692,7 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             try:
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 filename = f"minimax_hailuo_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.info("%s saved video to static storage as %s", self.name, filename)
                 self._set_status_results(
@@ -754,13 +755,13 @@ class MinimaxHailuoVideoGeneration(SuccessFailureNode):
             v = val.strip()
             if not v:
                 return None
-            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
+            return v if is_url_or_path(v) or v.startswith("data:image/") else f"data:image/png;base64,{v}"
 
         # Artifact-like objects
         try:
             # ImageUrlArtifact: .value holds URL string
             v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
+            if isinstance(v, str) and (is_url_or_path(v) or v.startswith("data:image/")):
                 return v
             # ImageArtifact: .base64 holds raw or data-URI
             b64 = getattr(val, "base64", None)

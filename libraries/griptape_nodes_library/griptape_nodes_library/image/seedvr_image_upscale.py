@@ -432,7 +432,7 @@ class SeedVRImageUpscale(SuccessFailureNode):
                     else f"seedvr_image_upscale_{int(time())}.{self.get_parameter_value('output_format')}"
                 )
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["image"] = ImageUrlArtifact(value=saved_url, name=filename)
                 msg = f"Saved image to static storage as {filename}"
                 logger.info(msg)

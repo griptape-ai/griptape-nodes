@@ -326,7 +326,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
             suffix="_generated",
             extension="png",
         )
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), filename)
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            agent.output.to_bytes(), filename, use_direct_save=True
+        )
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

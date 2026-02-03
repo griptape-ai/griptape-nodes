@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.utils.url_utils import is_url_or_path
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
 logger = logging.getLogger("griptape_nodes")
@@ -206,7 +207,9 @@ def dict_to_image_url_artifact(image_dict: dict, image_format: str | None = None
         else:
             image_format = "png"
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, f"{uuid.uuid4()}.{image_format}")
+    url = GriptapeNodes.StaticFilesManager().save_static_file(
+        image_bytes, f"{uuid.uuid4()}.{image_format}", use_direct_save=True
+    )
     return ImageUrlArtifact(url)
 
 
@@ -220,7 +223,7 @@ def save_pil_image_to_static_file(image: Image.Image, image_format: str = "PNG")
     image_bytes = buffer.getvalue()
 
     filename = f"{uuid.uuid4()}.{image_format.lower()}"
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename, use_direct_save=True)
 
     return ImageUrlArtifact(url)
 
@@ -236,7 +239,7 @@ def save_pil_image_with_named_filename(
     image.save(buffer, format=image_format)
     image_bytes = buffer.getvalue()
 
-    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
+    url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename, use_direct_save=True)
 
     return ImageUrlArtifact(url)
 
@@ -341,9 +344,6 @@ def convert_image_value_to_base64_data_uri(image_value: str, context_name: str =
     if image_value.startswith("data:image/"):
         return image_value
 
-    # If it's a URL, return None (caller should handle async download)
-    if image_value.startswith(("http://", "https://")):
-        return None
 
     # Try to read as file path first (works cross-platform)
     file_path = read_image_from_file_path(image_value, context_name)

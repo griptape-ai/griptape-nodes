@@ -384,7 +384,7 @@ class CombineAudio(SuccessFailureNode):
         try:
             # Use the simple static file manager pattern like other audio nodes
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(audio_data, filename)
+            saved_url = static_files_manager.save_static_file(audio_data, filename, use_direct_save=True)
         except Exception as e:
             error_msg = f"{self.name}: Failed to save mixed audio to static storage: {e}"
             raise RuntimeError(error_msg) from e

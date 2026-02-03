@@ -539,7 +539,7 @@ class SoraVideoGeneration(SuccessFailureNode):
         try:
             filename = f"sora_video_{int(time.time())}.mp4"
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
             self._log(f"Saved video to static storage as {filename}")
             self._set_status_results(

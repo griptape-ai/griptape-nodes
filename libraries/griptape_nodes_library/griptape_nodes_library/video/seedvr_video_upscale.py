@@ -427,7 +427,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                     else f"seedvr_video_upscale_{int(time())}.mp4"
                 )
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
                 msg = f"Saved video to static storage as {filename}"
                 logger.info(msg)
