@@ -377,6 +377,46 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 
 @dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandRequest(RequestPayload):
+    """Get a command-line string to run a workflow using the engine's Python.
+
+    Use when: Showing users how to run a workflow from a terminal, copying a run command,
+    scripting workflow execution from the command line.
+
+    Provide workflow_name (from registry), file_path (path to workflow file), or neither to use
+    the workflow in the current context.
+
+    Args:
+        workflow_name: Name of the workflow in the registry (optional if file_path or current context)
+        file_path: Path to the workflow file, relative to workspace or absolute (optional if workflow_name or current context)
+
+    Results: GetWorkflowRunCommandResultSuccess (with run_command) | GetWorkflowRunCommandResultFailure
+    """
+
+    workflow_name: str | None = None
+    file_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Workflow run command retrieved successfully.
+
+    Args:
+        run_command: Full command string: python_executable_path workflow_file_path
+    """
+
+    run_command: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow run command retrieval failed. Common causes: neither workflow_name nor file_path provided, workflow not found, file not found."""
+
+
+@dataclass
 class PublishWorkflowRegisteredEventData:
     """Data specific to registering a PublishWorkflowRequest event handler."""
 

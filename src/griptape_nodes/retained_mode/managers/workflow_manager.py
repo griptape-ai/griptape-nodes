@@ -5,6 +5,7 @@ import asyncio
 import logging
 import pickle
 import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
@@ -81,6 +82,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     GetWorkflowMetadataRequest,
     GetWorkflowMetadataResultFailure,
     GetWorkflowMetadataResultSuccess,
+    GetWorkflowRunCommandRequest,
+    GetWorkflowRunCommandResultFailure,
+    GetWorkflowRunCommandResultSuccess,
     ImportWorkflowAsReferencedSubFlowRequest,
     ImportWorkflowAsReferencedSubFlowResultFailure,
     ImportWorkflowAsReferencedSubFlowResultSuccess,
@@ -354,6 +358,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             GetWorkflowMetadataRequest,
             self.on_get_workflow_metadata_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            GetWorkflowRunCommandRequest,
+            self.on_get_workflow_run_command_request,
         )
         event_manager.assign_manager_to_request_type(
             ImportWorkflowAsReferencedSubFlowRequest,
@@ -888,6 +896,47 @@ class WorkflowManager:
         return GetWorkflowMetadataResultSuccess(
             workflow_metadata=workflow.metadata,
             result_details="Successfully retrieved workflow metadata.",
+        )
+
+    def on_get_workflow_run_command_request(self, request: GetWorkflowRunCommandRequest) -> ResultPayload:
+        workflow_name = request.workflow_name
+        file_path = request.file_path
+
+        if workflow_name is None and file_path is None:
+            context_manager = GriptapeNodes.ContextManager()
+            if context_manager.has_current_workflow():
+                workflow_name = context_manager.get_current_workflow_name()
+            else:
+                return GetWorkflowRunCommandResultFailure(
+                    result_details="Provide workflow_name or file_path, or have a workflow loaded in the current context."
+                )
+
+        if workflow_name is not None and file_path is not None:
+            return GetWorkflowRunCommandResultFailure(result_details="Provide only one of workflow_name or file_path.")
+
+        if workflow_name is not None:
+            try:
+                workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+            except KeyError:
+                return GetWorkflowRunCommandResultFailure(result_details=f"Workflow '{workflow_name}' not found.")
+            relative_file_path = workflow.file_path
+        else:
+            relative_file_path = file_path
+
+        if relative_file_path is None:
+            return GetWorkflowRunCommandResultFailure(result_details="Provide either workflow_name or file_path.")
+
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
+        file_path_obj = Path(complete_file_path)
+        if not file_path_obj.is_file():
+            return GetWorkflowRunCommandResultFailure(
+                result_details=f"Workflow file not found at '{complete_file_path}'."
+            )
+
+        run_command = f"{sys.executable} {complete_file_path}"
+        return GetWorkflowRunCommandResultSuccess(
+            run_command=run_command,
+            result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 
     class WorkflowPathResolution(NamedTuple):
