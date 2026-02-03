@@ -307,7 +307,7 @@ class GrokImageGeneration(GriptapeProxyNode):
                 else f"grok_image_{int(time.time())}_{index}.jpg"
             )
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(image_bytes, filename, use_direct_save=True)
             return ImageUrlArtifact(value=saved_url, name=filename)
         except Exception as e:
             with suppress(Exception):

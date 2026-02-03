@@ -656,7 +656,7 @@ class WanReferenceToVideoGeneration(SuccessFailureNode):
             try:
                 filename = f"wan_r2v_{generation_id}.mp4" if generation_id else f"wan_r2v_{int(time.time())}.mp4"
                 static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
                 logger.debug("Saved video to static storage as %s", filename)
                 self._set_status_results(

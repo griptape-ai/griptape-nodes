@@ -214,7 +214,9 @@ class WriteImageMetadataNode(SuccessFailureNode):
 
             # Skip metadata injection since image bytes already contain the metadata we just wrote.
             # This prevents circular injection of workflow metadata on top of user-specified metadata.
-            saved_url = static_files_manager.save_static_file(image_bytes, filename, skip_metadata_injection=True)
+            saved_url = static_files_manager.save_static_file(
+                image_bytes, filename, skip_metadata_injection=True, use_direct_save=True
+            )
 
             return ImageUrlArtifact(value=saved_url, name=filename)
         except Exception as e:

@@ -190,7 +190,7 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         try:
             filename = f"eleven_sound_{generation_id}.mp3"
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(audio_bytes, filename)
+            saved_url = static_files_manager.save_static_file(audio_bytes, filename, use_direct_save=True)
             self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
             self._log(f"Saved audio to static storage as {filename}")
         except Exception as e:

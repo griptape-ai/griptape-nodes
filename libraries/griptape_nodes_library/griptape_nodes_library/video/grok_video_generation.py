@@ -302,7 +302,7 @@ class GrokVideoGeneration(GriptapeProxyNode):
             try:
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 filename = f"grok_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                saved_url = static_files_manager.save_static_file(video_bytes, filename, use_direct_save=True)
             except (OSError, PermissionError) as e:
                 with suppress(Exception):
                     logger.warning("%s failed to save video: %s", self.name, e)
