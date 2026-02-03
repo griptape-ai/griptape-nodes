@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import asyncio
-import json as _json
+import json
 import logging
-import os
-from contextlib import suppress
-from time import monotonic
 from typing import Any, ClassVar
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -21,13 +15,11 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["LTXTextToVideoGeneration"]
-
-# Constants
-HTTP_CLIENT_ERROR_STATUS = 400
 
 # Model mapping from display names to API model IDs
 MODEL_MAPPING = {
@@ -47,7 +39,7 @@ CAMERA_MOTION_OPTIONS = [
 ]
 
 
-class LTXTextToVideoGeneration(SuccessFailureNode):
+class LTXTextToVideoGeneration(GriptapeProxyNode):
     """Generate a video from text using LTX AI models via Griptape Cloud model proxy.
 
     Inputs:
@@ -69,6 +61,7 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
+    DEFAULT_MAX_ATTEMPTS = 240
 
     # Model capability definitions
     MODEL_CAPABILITIES: ClassVar[dict[str, Any]] = {
@@ -102,12 +95,6 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -258,73 +245,34 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
             if current_duration not in available_durations:
                 self.set_parameter_value("duration", available_durations[0])
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Clear execution status at the start
+    async def _process_generation(self) -> None:
         self._clear_execution_status()
         logger.info("%s starting video generation", self.name)
 
-        # Validate API key
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            logger.error("%s API key validation failed: %s", self.name, e)
+            self._handle_api_key_validation_error(e)
             return
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-        # Get parameters and validate
-        params = self._get_parameters()
-        logger.debug(
-            "%s parameters: model=%s, prompt_length=%d, resolution=%s, duration=%s, fps=%s",
-            self.name,
-            params["model"],
-            len(params["prompt"]),
-            params["resolution"],
-            params["duration"],
-            params["fps"],
-        )
-
-        # Validate prompt is provided
-        if not params["prompt"].strip():
-            self._set_safe_defaults()
-            error_msg = f"{self.name} requires a prompt to generate video."
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            logger.error("%s validation failed: empty prompt", self.name)
+        result = await self._submit_and_poll(headers)
+        if not result:
             return
 
-        # Validate model-resolution-fps-duration combination
-        validation_error = self._validate_model_params(params)
-        if validation_error:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=validation_error)
-            logger.error("%s validation failed: %s", self.name, validation_error)
-            return
+        generation_id, status_response = result
+        self.parameter_output_values["provider_response"] = status_response
 
-        # Build payload
-        payload = self._build_payload(params)
-
-        # Submit request
-        try:
-            generation_id = await self._submit_request_async(params["model"], payload, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
+        async with httpx.AsyncClient() as client:
+            result_json = await self._fetch_generation_result(generation_id, headers, client)
+            if not result_json:
                 return
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
 
-        # Poll for result
-        await self._poll_for_result_async(generation_id, headers)
+            try:
+                await self._parse_result(result_json, generation_id)
+            except Exception as e:
+                self._handle_result_parsing_error(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
@@ -339,12 +287,10 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
             else True,
         }
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
+    def _get_api_model_id(self) -> str:
+        model_name = self.get_parameter_value("model") or "LTX 2 Fast"
+        model_id = MODEL_MAPPING.get(model_name, "ltx-2-fast")
+        return f"{model_id}:text-to-video"
 
     def _validate_model_params(self, params: dict[str, Any]) -> str | None:
         """Validate that the model-resolution-fps-duration combination is supported."""
@@ -384,58 +330,17 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
 
         return None
 
-    async def _submit_request_async(self, model_name: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
-        # Map display name to model ID and append :text-to-video modality
-        model_id = MODEL_MAPPING.get(model_name, "ltx-2-fast")
-        model_id_with_modality = f"{model_id}:text-to-video"
-        post_url = urljoin(self._proxy_base, f"models/{model_id_with_modality}")
-
-        logger.info("Submitting request to proxy model=%s", model_id_with_modality)
-        self._log_request(post_url, headers, payload)
-
-        async with httpx.AsyncClient() as client:
-            try:
-                post_resp = await client.post(post_url, json=payload, headers=headers, timeout=60)
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                self._set_safe_defaults()
-                msg = f"{self.name} failed to submit request: {e}"
-                raise RuntimeError(msg) from e
-
-            if post_resp.status_code >= HTTP_CLIENT_ERROR_STATUS:
-                self._set_safe_defaults()
-                logger.error(
-                    "Proxy POST error status=%d headers=%s body=%s",
-                    post_resp.status_code,
-                    dict(post_resp.headers),
-                    post_resp.text,
-                )
-                try:
-                    error_json = post_resp.json()
-                    error_details = self._extract_error_from_initial_response(error_json)
-                    msg = f"{self.name} request failed: {error_details}"
-                except (ValueError, _json.JSONDecodeError):
-                    msg = f"{self.name} request failed: HTTP {post_resp.status_code} - {post_resp.text}"
-                raise RuntimeError(msg)
-
-            try:
-                post_json = post_resp.json()
-            except (ValueError, _json.JSONDecodeError) as e:
-                self._set_safe_defaults()
-                msg = f"{self.name} received invalid JSON response: {e}"
-                raise RuntimeError(msg) from e
-
-            generation_id = str(post_json.get("generation_id") or "")
-
-            if generation_id:
-                logger.info("Submitted. generation_id=%s", generation_id)
-                self.parameter_output_values["generation_id"] = generation_id
-            else:
-                logger.error("No generation_id returned from POST response")
-
-            return generation_id
-
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _build_payload(self) -> dict[str, Any]:
         """Build the request payload for LTX API."""
+        params = self._get_parameters()
+
+        if not params["prompt"].strip():
+            raise ValueError(f"{self.name} requires a prompt to generate video.")
+
+        validation_error = self._validate_model_params(params)
+        if validation_error:
+            raise ValueError(validation_error)
+
         # Map display name to model ID (without modality)
         model_id = MODEL_MAPPING.get(params["model"], "ltx-2-fast")
 
@@ -451,141 +356,12 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
 
         return payload
 
-    def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
-        dbg_headers = {**headers, "Authorization": "Bearer ***"}
-        with suppress(Exception):
-            logger.debug("POST %s\nheaders=%s\nbody=%s", url, dbg_headers, _json.dumps(payload, indent=2))
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        video_bytes = result_json.get("audio_bytes")
+        if not isinstance(video_bytes, (bytes, bytearray)):
+            raise RuntimeError(f"{self.name} generation completed but no video data received.")
 
-    async def _poll_for_result_async(self, generation_id: str, headers: dict[str, str]) -> None:
-        status_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = monotonic()
-        attempt = 0
-        poll_interval_s = 5.0
-        timeout_s = 1200.0
-
-        async with httpx.AsyncClient() as client:
-            while True:
-                if monotonic() - start_time > timeout_s:
-                    self._handle_polling_timeout()
-                    return
-
-                try:
-                    status_resp = await client.get(status_url, headers=headers, timeout=60)
-                    status_resp.raise_for_status()
-                except (httpx.HTTPError, httpx.TimeoutException) as exc:
-                    self._handle_polling_error(exc)
-                    return
-
-                try:
-                    status_json = status_resp.json()
-                except (ValueError, _json.JSONDecodeError) as exc:
-                    error_msg = f"Invalid JSON response during polling: {exc}"
-                    self._set_status_results(was_successful=False, result_details=error_msg)
-                    self._handle_failure_exception(RuntimeError(error_msg))
-                    return
-
-                self.parameter_output_values["provider_response"] = status_json
-
-                with suppress(Exception):
-                    logger.debug("GET status attempt #%d: %s", attempt + 1, _json.dumps(status_json, indent=2))
-
-                attempt += 1
-
-                # Check status field for generation state
-                status = status_json.get("status", "").upper()
-                logger.info("%s polling attempt #%d status=%s", self.name, attempt, status)
-
-                # Handle terminal states
-                if status == "COMPLETED":
-                    await self._fetch_and_handle_result(client, generation_id, headers)
-                    return
-
-                if status in ("FAILED", "ERRORED"):
-                    self._handle_generation_failure(status_json, status)
-                    return
-
-                # Continue polling for in-progress states (QUEUED, RUNNING)
-                if status in ("QUEUED", "RUNNING"):
-                    await asyncio.sleep(poll_interval_s)
-                    continue
-
-                # Unknown status - log and continue polling
-                logger.warning("%s unknown status '%s', continuing to poll", self.name, status)
-                await asyncio.sleep(poll_interval_s)
-
-    def _handle_polling_timeout(self) -> None:
-        self.parameter_output_values["video_url"] = None
-        logger.error("%s polling timed out waiting for result", self.name)
-        self._set_status_results(
-            was_successful=False,
-            result_details="Video generation timed out after 1200 seconds waiting for result.",
-        )
-
-    def _handle_polling_error(self, exc: Exception) -> None:
-        logger.error("%s GET generation status failed: %s", self.name, exc)
-        error_msg = f"Failed to poll generation status: {exc}"
-        self._set_status_results(was_successful=False, result_details=error_msg)
-        self._handle_failure_exception(RuntimeError(error_msg))
-
-    async def _fetch_and_handle_result(
-        self, client: httpx.AsyncClient, generation_id: str, headers: dict[str, str]
-    ) -> None:
-        logger.info("%s generation completed, fetching result", self.name)
-        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
-
-        try:
-            result_resp = await client.get(result_url, headers=headers, timeout=120)
-            result_resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as exc:
-            logger.error("%s failed to fetch result: %s", self.name, exc)
-            error_msg = f"Generation completed but failed to fetch result: {exc}"
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(RuntimeError(error_msg))
-            return
-
-        # The /result endpoint returns raw binary MP4 data (application/octet-stream)
-        video_bytes = result_resp.content
-        logger.info("%s received video data: %d bytes", self.name, len(video_bytes))
-        await self._handle_completion_async(video_bytes, generation_id)
-
-    def _handle_generation_failure(self, status_json: dict[str, Any], status: str) -> None:
-        # Extract error details from status_detail
-        status_detail = status_json.get("status_detail", {})
-        if isinstance(status_detail, dict):
-            error = status_detail.get("error", "")
-            details = status_detail.get("details", "")
-
-            # If details is a JSON string, try to parse it and extract clean error message
-            if details and isinstance(details, str):
-                try:
-                    details_obj = _json.loads(details)
-                    if isinstance(details_obj, dict):
-                        # Try to extract .error.message from parsed JSON
-                        error_obj = details_obj.get("error")
-                        if isinstance(error_obj, dict):
-                            clean_message = error_obj.get("message")
-                            if clean_message:
-                                details = clean_message
-
-                except (ValueError, _json.JSONDecodeError):
-                    pass
-
-            if error and details:
-                message = f"{error}: {details}"
-            elif error:
-                message = error
-            elif details:
-                message = details
-            else:
-                message = f"Generation {status.lower()} with no details provided"
-        else:
-            message = f"Generation {status.lower()} with no details provided"
-
-        logger.error("%s generation %s: %s", self.name, status.lower(), message)
-        self.parameter_output_values["video_url"] = None
-        self._set_status_results(
-            was_successful=False, result_details=f"{self.name} generation {status.lower()}: {message}"
-        )
+        await self._handle_completion_async(bytes(video_bytes), generation_id)
 
     async def _handle_completion_async(self, video_bytes: bytes, generation_id: str) -> None:
         """Handle successful completion by saving the video to static storage.
@@ -619,41 +395,61 @@ class LTXTextToVideoGeneration(SuccessFailureNode):
                 result_details=f"Video generated but failed to save to storage: {e}",
             )
 
-    def _extract_error_from_initial_response(self, response_json: dict[str, Any]) -> str:
-        """Extract error details from initial POST response.
-
-        Expected error shape from API:
-        {
-            "type": "error",
-            "error": {
-                "type": "invalid_request_error",
-                "message": "Prompt exceeds 5000 characters limit"
-            }
-        }
-        """
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
         if not response_json:
-            return "No error details provided by API."
+            return f"{self.name} generation failed with no error details provided by API."
 
-        # Try to extract .error.message
+        status = str(response_json.get("status") or "").lower()
+        status_detail = response_json.get("status_detail")
+        if isinstance(status_detail, dict):
+            error = status_detail.get("error", "")
+            details = status_detail.get("details", "")
+
+            if details and isinstance(details, str):
+                try:
+                    details_obj = json.loads(details)
+                    if isinstance(details_obj, dict):
+                        error_obj = details_obj.get("error")
+                        if isinstance(error_obj, dict):
+                            clean_message = error_obj.get("message")
+                            if clean_message:
+                                details = clean_message
+                except (ValueError, json.JSONDecodeError):
+                    pass
+
+            if error and details:
+                message = f"{error}: {details}"
+            elif error:
+                message = error
+            elif details:
+                message = details
+            else:
+                message = f"Generation {status or 'failed'} with no details provided"
+
+            return f"{self.name} generation {status or 'failed'}: {message}"
+
         error = response_json.get("error")
         if error:
             if isinstance(error, dict):
-                # Try to get the message field
-                message = error.get("message")
-                if message:
-                    return str(message)
-
-                # If no message but there's a type, include it
-                error_type = error.get("type")
-                if error_type:
-                    return f"API error: {error_type}"
-
-            # If error is just a string
+                message = error.get("message") or error.get("type") or str(error)
+                return f"{self.name} request failed: {message}"
             if isinstance(error, str):
-                return error
+                return f"{self.name} request failed: {error}"
 
-        # Fallback: return full JSON response
-        return f"Request failed: {_json.dumps(response_json)}"
+        return f"{self.name} generation failed.\n\nFull API response:\n{response_json}"
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        logger.error("%s API key validation failed: %s", self.name, e)
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
