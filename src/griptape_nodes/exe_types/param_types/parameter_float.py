@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, StatusData, Trait
+from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.param_types.parameter_number import ParameterNumber
 
 
@@ -60,7 +60,7 @@ class ParameterFloat(ParameterNumber):
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
-        status: StatusData | None = None,
+        badge: BadgeData | None = None,
     ) -> None:
         """Initialize a float parameter with step validation.
 
@@ -95,7 +95,7 @@ class ParameterFloat(ParameterNumber):
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
-            status: Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
+            badge: Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
         """
         # Call parent with float-specific settings
         super().__init__(
@@ -132,7 +132,7 @@ class ParameterFloat(ParameterNumber):
             element_id=element_id,
             element_type=element_type,
             parent_container_name=parent_container_name,
-            status=status,
+            badge=badge,
         )
 
     def _convert_to_number(self, value: Any) -> float:  # noqa: PLR0911

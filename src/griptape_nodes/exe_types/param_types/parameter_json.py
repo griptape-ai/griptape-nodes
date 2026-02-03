@@ -5,7 +5,7 @@ from typing import Any
 
 from json_repair import repair_json
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, StatusData, Trait
+from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
 
 class ParameterJson(Parameter):
@@ -62,7 +62,7 @@ class ParameterJson(Parameter):
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
-        status: StatusData | None = None,
+        badge: BadgeData | None = None,
     ) -> None:
         """Initialize a JSON parameter with enhanced UI options.
 
@@ -98,7 +98,7 @@ class ParameterJson(Parameter):
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
-            status: Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
+            badge: Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
@@ -156,7 +156,7 @@ class ParameterJson(Parameter):
             element_id=element_id,
             element_type=element_type,
             parent_container_name=parent_container_name,
-            status=status,
+            badge=badge,
         )
 
     def _convert_to_json(self, value: Any) -> dict | list | str | int | float | bool | None:
