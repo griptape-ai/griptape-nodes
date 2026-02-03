@@ -94,11 +94,11 @@ class PublicArtifactUrlParameter:
 
     def add_input_parameters(self) -> None:
         self._node.add_parameter(self._parameter)
-        self._parameter.set_status(
+        self._parameter.set_badge(
             variant="warning",
             title="Media Upload",
             message=self.get_help_message(),
-            show_clear_button=True,
+            hide_clear_button=False,
         )
 
     def get_help_message(self) -> str:
