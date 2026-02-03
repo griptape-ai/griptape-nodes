@@ -464,13 +464,15 @@ class BaseNode(ABC):
         Returns:
             NodeMessageResult: Result containing success status, details, and optional response
         """
-        # If optional_element_name is provided, delegate to the specific element
+        # If optional_element_name is provided, delegate to the specific element (may be element_id or name)
         if optional_element_name is not None:
-            element = self.root_ui_element.find_element_by_name(optional_element_name)
+            element = self.root_ui_element.find_element_by_id(optional_element_name)
+            if element is None:
+                element = self.root_ui_element.find_element_by_name(optional_element_name)
             if element is None:
                 return NodeMessageResult(
                     success=False,
-                    details=f"Node '{self.name}' received message for element '{optional_element_name}' but no element with that name was found",
+                    details=f"Node '{self.name}' received message for element '{optional_element_name}' but no element with that name or id was found",
                     response=None,
                 )
             # Delegate to the element's message handler

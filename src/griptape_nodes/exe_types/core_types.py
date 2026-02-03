@@ -54,6 +54,35 @@ type ElementMessageCallback = Callable[[str, "NodeMessagePayload | None"], "Node
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
 
+# Status variant type for element status (aligned with ParameterMessage.VariantType)
+StatusVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+
+
+@dataclass
+class StatusData:
+    """Serializable status data for BaseNodeElement.
+
+    Used to display status indicators (info, warning, error, success, etc.) on
+    parameters and groups. All subclasses of BaseNodeElement inherit status
+    and can use get_status(), set_status(), clear_status(), and dismiss_status().
+    """
+
+    variant: StatusVariantType = "none"
+    title: str | None = None
+    message: str = ""
+    display: bool = True
+    show_clear_button: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a serializable dictionary suitable for events and element serialization."""
+        return {
+            "variant": self.variant,
+            "title": self.title,
+            "message": self.message,
+            "display": self.display,
+            "show_clear_button": self.show_clear_button,
+        }
+
 
 # Types of Modes provided for Parameters
 class ParameterMode(Enum):
@@ -236,6 +265,7 @@ class BaseNodeElement:
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
     _node_context: BaseNode | None = field(default=None)
+    _status: StatusData = field(default_factory=StatusData)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -269,6 +299,51 @@ class BaseNodeElement:
 
     def get_changes(self) -> dict[str, Any]:
         return self._changes
+
+    # --- Status (discoverable by all subclasses) ---
+    # Message types for frontend: clear_status, get_status, set_status, clear_status_display
+
+    def get_status(self) -> dict[str, Any]:
+        """Return current status as a serializable dict (variant, title, message, display, show_clear_button)."""
+        return self._status.to_dict()
+
+    def set_status(
+        self,
+        variant: StatusVariantType | None = None,
+        title: str | None = None,
+        message: str | None = None,
+        *,
+        display: bool | None = None,
+        show_clear_button: bool | None = None,
+    ) -> None:
+        """Set status fields; only provided arguments are updated. No kwargs so status is discoverable."""
+        if variant is not None:
+            self._status.variant = variant
+        if title is not None:
+            self._status.title = title
+        if message is not None:
+            self._status.message = message
+        if display is not None:
+            self._status.display = display
+        if show_clear_button is not None:
+            self._status.show_clear_button = show_clear_button
+        self._changes["status"] = self.get_status()
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def clear_status(self) -> None:
+        """Reset status to defaults (variant=none, no title/message, display=True, no clear button)."""
+        self._status = StatusData()
+        self._changes["status"] = self.get_status()
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def dismiss_status(self) -> None:
+        """Hide the status indicator (display=False). Frontend can send clear_status_display to trigger this."""
+        self._status.display = False
+        self._changes["status"] = self.get_status()
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
 
     @staticmethod
     def emits_update_on_write(func: Callable) -> Callable:
@@ -318,6 +393,8 @@ class BaseNodeElement:
         # Also handle trait_ui_options for traits
         if "trait_ui_options" in complete_dict:
             self._changes["trait_ui_options"] = complete_dict["trait_ui_options"]
+        if "status" in complete_dict:
+            self._changes["status"] = complete_dict["status"]
 
         event_data.update(self._changes)
         # Publish the event
@@ -350,6 +427,7 @@ class BaseNodeElement:
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
             "parent_group_name": self.parent_group_name,
+            "status": self.get_status(),
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -457,12 +535,67 @@ class BaseNodeElement:
         }
         return event_data
 
+    def _apply_status_from_message_data(self, data: dict) -> None:
+        """Apply status fields from a message data dict and track change."""
+        if "variant" in data:
+            self._status.variant = data["variant"]
+        if "title" in data:
+            self._status.title = data["title"]
+        if "message" in data:
+            self._status.message = data["message"]
+        if "display" in data:
+            self._status.display = data["display"]
+        if "show_clear_button" in data:
+            self._status.show_clear_button = data["show_clear_button"]
+        self._changes["status"] = self.get_status()
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def _on_status_message_received(
+        self, message_type: str, message: NodeMessagePayload | None
+    ) -> NodeMessageResult | None:
+        """Handle status-related messages; return result if handled, None otherwise."""
+        msg_lower = message_type.lower()
+        if msg_lower == "clear_status":
+            self.clear_status()
+            return NodeMessageResult(
+                success=True,
+                details="Status cleared",
+                response=None,
+                altered_workflow_state=False,
+            )
+        if msg_lower == "get_status":
+            return NodeMessageResult(
+                success=True,
+                details="Status retrieved",
+                response=NodeMessagePayload(data=self.get_status()),
+                altered_workflow_state=False,
+            )
+        if msg_lower == "set_status":
+            if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
+                self._apply_status_from_message_data(message.data)
+            return NodeMessageResult(
+                success=True,
+                details="Status updated",
+                response=NodeMessagePayload(data=self.get_status()),
+                altered_workflow_state=False,
+            )
+        if msg_lower == "clear_status_display":
+            self.dismiss_status()
+            return NodeMessageResult(
+                success=True,
+                details="Status dismissed",
+                response=None,
+                altered_workflow_state=False,
+            )
+        return None
+
     def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
         """Virtual method for handling messages sent to this element.
 
-        Attempts to delegate to child elements first. If any child handles the message
-        (returns non-None), that result is returned immediately. Otherwise, falls back
-        to default behavior (return None).
+        Handles status messages (clear_status, get_status, set_status, clear_status_display)
+        on this element. Then attempts to delegate to child elements. If any child handles
+        the message (returns non-None), that result is returned immediately.
 
         Args:
             message_type: String indicating the message type for parsing
@@ -471,15 +604,13 @@ class BaseNodeElement:
         Returns:
             NodeMessageResult | None: Result if handled, None if no handler available
         """
-        # Try to delegate to all children first
-        # NOTE: This returns immediately on the first child that accepts the message (returns non-None).
-        # In the future, we may need to expand this to handle multiple children processing the same message.
+        status_result = self._on_status_message_received(message_type, message)
+        if status_result is not None:
+            return status_result
         for child in self._children:
             result = child.on_message_received(message_type, message)
             if result is not None:
                 return result
-
-        # No child handled it, return None (indicating no handler)
         return None
 
     def get_node(self) -> BaseNode | None:
@@ -911,14 +1042,19 @@ class DeprecationMessage(ParameterMessage):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         ui_options: dict | None = None,
-        traits: set[Trait.__class__ | Trait] | None = None,
         *,
         collapsed: bool = False,
         user_defined: bool = False,
+        status: StatusData | None = None,
+        status_variant: StatusVariantType | None = None,
+        status_title: str | None = None,
+        status_message: str | None = None,
+        status_display: bool | None = None,
+        status_show_clear_button: bool | None = None,
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
@@ -934,24 +1070,32 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         self._ui_options = ui_options
         self.user_defined = user_defined
 
-        # Add traits as children
-        if traits:
-            for trait in traits:
-                if not isinstance(trait, Trait):
-                    created = trait()
-                else:
-                    created = trait
-                self.add_child(created)
+        if status is not None:
+            self.set_status(
+                variant=status.variant,
+                title=status.title,
+                message=status.message,
+                display=status.display,
+                show_clear_button=status.show_clear_button,
+            )
+        elif (
+            status_variant is not None
+            or status_title is not None
+            or status_message is not None
+            or status_display is not None
+            or status_show_clear_button is not None
+        ):
+            self.set_status(
+                variant=status_variant,
+                title=status_title,
+                message=status_message,
+                display=status_display,
+                show_clear_button=status_show_clear_button,
+            )
 
     @property
     def ui_options(self) -> dict:
-        # Merge trait ui_options with our own (only direct children, not recursive)
-        ui_options = {}
-        traits = self.find_elements_by_type(Trait, find_recursively=False)
-        for trait in traits:
-            ui_options = ui_options | trait.ui_options_for_trait()
-        ui_options = ui_options | self._ui_options
-        return ui_options
+        return self._ui_options.copy()
 
     @ui_options.setter
     @BaseNodeElement.emits_update_on_write
@@ -1256,6 +1400,12 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         parent_element_name: str | None = None,
+        status: StatusData | None = None,
+        status_variant: StatusVariantType | None = None,
+        status_title: str | None = None,
+        status_message: str | None = None,
+        status_display: bool | None = None,
+        status_show_clear_button: bool | None = None,
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -1353,6 +1503,28 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 # Add a trait as a child
                 # UI options are now traits! sorry!
                 self.add_child(created)
+        if status is not None:
+            self.set_status(
+                variant=status.variant,
+                title=status.title,
+                message=status.message,
+                display=status.display,
+                show_clear_button=status.show_clear_button,
+            )
+        elif (
+            status_variant is not None
+            or status_title is not None
+            or status_message is not None
+            or status_display is not None
+            or status_show_clear_button is not None
+        ):
+            self.set_status(
+                variant=status_variant,
+                title=status_title,
+                message=status_message,
+                display=status_display,
+                show_clear_button=status_show_clear_button,
+            )
         self.type = type
         self.input_types = input_types
         self.output_type = output_type

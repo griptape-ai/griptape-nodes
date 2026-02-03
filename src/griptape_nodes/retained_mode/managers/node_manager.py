@@ -3704,9 +3704,11 @@ class NodeManager:
                 details = f"Attempted to send message to Node '{node_name}', but no such Node was found."
                 return SendNodeMessageResultFailure(result_details=details)
 
-        # Validate optional_element_name if specified
+        # Validate optional_element_name if specified (may be element_id or element name)
         if request.optional_element_name is not None:
-            element = node.root_ui_element.find_element_by_name(request.optional_element_name)
+            element = node.root_ui_element.find_element_by_id(request.optional_element_name)
+            if element is None:
+                element = node.root_ui_element.find_element_by_name(request.optional_element_name)
             if element is None:
                 details = f"Attempted to send message to Node '{node_name}' with element '{request.optional_element_name}', but no such element was found."
                 return SendNodeMessageResultFailure(result_details=details, altered_workflow_state=False)
