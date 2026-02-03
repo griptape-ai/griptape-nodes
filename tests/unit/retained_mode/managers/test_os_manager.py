@@ -1,3 +1,4 @@
+import os
 import platform
 import tempfile
 from collections.abc import Generator
@@ -36,6 +37,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.os_manager import OSManager, WindowsSpecialFolderError
 
 # Windows MAX_PATH constant for tests
 WINDOWS_MAX_PATH = 260
@@ -510,6 +512,191 @@ class TestListDirectoryRequest:
 
         assert isinstance(result, ListDirectoryResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
+
+
+class TestNormalizePathPartsForSpecialFolder:
+    """Test normalize_path_parts_for_special_folder helper."""
+
+    def test_tilde_single_part(self) -> None:
+        """~/Downloads -> ['downloads']."""
+        result = OSManager.normalize_path_parts_for_special_folder("~/Downloads")
+        assert result == ["downloads"]
+
+    def test_tilde_with_slash_single_part(self) -> None:
+        """~/Desktop -> ['desktop']."""
+        result = OSManager.normalize_path_parts_for_special_folder("~/Desktop")
+        assert result == ["desktop"]
+
+    def test_tilde_multiple_parts(self) -> None:
+        """~/Desktop/subfolder -> ['desktop', 'subfolder']."""
+        result = OSManager.normalize_path_parts_for_special_folder("~/Desktop/subfolder")
+        assert result == ["desktop", "subfolder"]
+
+    def test_tilde_only(self) -> None:
+        """~ -> [] (no path parts after stripping)."""
+        result = OSManager.normalize_path_parts_for_special_folder("~")
+        assert result == []
+
+    def test_backslash_normalized_to_slash(self) -> None:
+        r"""~\Downloads -> ['downloads']."""
+        result = OSManager.normalize_path_parts_for_special_folder("~\\Downloads")
+        assert result == ["downloads"]
+
+    def test_empty_string(self) -> None:
+        """Empty string -> []."""
+        result = OSManager.normalize_path_parts_for_special_folder("")
+        assert result == []
+
+    def test_parts_lowercased(self) -> None:
+        """Path parts are lowercased."""
+        result = OSManager.normalize_path_parts_for_special_folder("~/DOCUMENTS/SubDir")
+        assert result == ["documents", "subdir"]
+
+    def test_userprofile_desktop_normalizes_to_desktop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r"""%UserProfile%\Desktop -> ['desktop']; expandvars can return backslashes on Windows."""
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\jason")
+
+        def expandvars_windows_style(path: str) -> str:
+            if "%UserProfile%" in path or "%USERPROFILE%" in path:
+                return path.replace("%UserProfile%", "C:\\Users\\jason").replace("%USERPROFILE%", "C:\\Users\\jason")
+            return os.path.expandvars(path)
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.os.path.expandvars", expandvars_windows_style):
+            result = OSManager.normalize_path_parts_for_special_folder("%UserProfile%/Desktop")
+        assert result == ["desktop"]
+
+    def test_userprofile_downloads_with_subdir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        r"""%UserProfile%\Downloads\sub -> ['downloads', 'sub']."""
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\jason")
+
+        def expandvars_windows_style(path: str) -> str:
+            if "%UserProfile%" in path or "%USERPROFILE%" in path:
+                return path.replace("%UserProfile%", "C:\\Users\\jason").replace("%USERPROFILE%", "C:\\Users\\jason")
+            return os.path.expandvars(path)
+
+        with patch("griptape_nodes.retained_mode.managers.os_manager.os.path.expandvars", expandvars_windows_style):
+            result = OSManager.normalize_path_parts_for_special_folder("%UserProfile%/Downloads/sub")
+        assert result == ["downloads", "sub"]
+
+
+class TestTryResolveWindowsSpecialFolder:
+    """Test try_resolve_windows_special_folder helper."""
+
+    def test_unknown_folder_returns_none(self, griptape_nodes: GriptapeNodes) -> None:
+        """Unknown first part returns None."""
+        os_manager = griptape_nodes.OSManager()
+        result = os_manager.try_resolve_windows_special_folder(["unknown", "sub"])
+        assert result is None
+
+    def test_empty_parts_returns_none(self, griptape_nodes: GriptapeNodes) -> None:
+        """Empty parts returns None."""
+        os_manager = griptape_nodes.OSManager()
+        result = os_manager.try_resolve_windows_special_folder([])
+        assert result is None
+
+    def test_downloads_resolved_returns_path_and_empty_remaining(self, griptape_nodes: GriptapeNodes) -> None:
+        """Known folder with no remaining parts."""
+        os_manager = griptape_nodes.OSManager()
+        mock_path = Path("/mock/Downloads")
+
+        def mock_get(csidl: int) -> Path:
+            assert csidl == OSManager.WINDOWS_CSIDL_MAP["downloads"]
+            return mock_path
+
+        with patch.object(os_manager, "_get_windows_special_folder_path", side_effect=mock_get):
+            result = os_manager.try_resolve_windows_special_folder(["downloads"])
+        assert result is not None
+        assert result.special_path == mock_path
+        assert result.remaining_parts == []
+
+    def test_desktop_with_remaining_parts(self, griptape_nodes: GriptapeNodes) -> None:
+        """Known folder with remaining parts."""
+        os_manager = griptape_nodes.OSManager()
+        mock_path = Path("/mock/Desktop")
+
+        def mock_get(csidl: int) -> Path:
+            assert csidl == OSManager.WINDOWS_CSIDL_MAP["desktop"]
+            return mock_path
+
+        with patch.object(os_manager, "_get_windows_special_folder_path", side_effect=mock_get):
+            result = os_manager.try_resolve_windows_special_folder(["desktop", "sub", "file.txt"])
+        assert result is not None
+        assert result.special_path == mock_path
+        assert result.remaining_parts == ["sub", "file.txt"]
+
+    def test_get_folder_raises_returns_none(self, griptape_nodes: GriptapeNodes) -> None:
+        """When _get_windows_special_folder_path raises WindowsSpecialFolderError, result is None."""
+        os_manager = griptape_nodes.OSManager()
+        with patch.object(
+            os_manager, "_get_windows_special_folder_path", side_effect=WindowsSpecialFolderError("mock")
+        ):
+            result = os_manager.try_resolve_windows_special_folder(["downloads"])
+        assert result is None
+
+
+class TestExpandPath:
+    """Test OSManager._expand_path integration."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Set workspace to temp_dir for tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_expand_path_relative_resolved_against_cwd(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
+        """Relative path is resolved against current working directory."""
+        os_manager = griptape_nodes.OSManager()
+        result = os_manager._expand_path("subdir")
+        # resolve_path_safely resolves relative paths against Path.cwd()
+        assert result.is_absolute()
+        assert result.name == "subdir"
+
+    def test_expand_path_expands_vars_and_tilde(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Expandvars and expanduser are applied when not a Windows special folder."""
+        os_manager = griptape_nodes.OSManager()
+        # Use a path that won't match Windows special folder logic on this platform
+        result = os_manager._expand_path(str(temp_dir))
+        assert result == temp_dir or result.resolve() == temp_dir.resolve()
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific special folder test")
+    def test_expand_path_windows_special_folder_mocked(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
+        """On Windows, special folder is resolved via Shell API when path is ~/Downloads."""
+        os_manager = griptape_nodes.OSManager()
+        mock_downloads = Path("C:/mock/Downloads")
+
+        with patch.object(os_manager, "_get_windows_special_folder_path", return_value=mock_downloads) as mock_get:
+            result = os_manager._expand_path("~/Downloads")
+            mock_get.assert_called_once()
+            assert result == os_manager.resolve_path_safely(mock_downloads)
+
+    def test_expand_path_non_windows_uses_expanduser(
+        self,
+        griptape_nodes: GriptapeNodes,
+        temp_dir: Path,  # noqa: ARG002
+    ) -> None:
+        """On non-Windows, ~/path uses expanduser (no special folder logic)."""
+        if platform.system() == "Windows":
+            pytest.skip("Non-Windows test")
+        os_manager = griptape_nodes.OSManager()
+        result = os_manager._expand_path("~/Downloads")
+        expected = os_manager.resolve_path_safely(Path.home() / "Downloads")
+        assert result == expected
 
 
 class TestWindowsLongPathHandling:
