@@ -24,7 +24,7 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
     This class provides common functionality for nodes that:
     1. Submit generation requests to POST /api/proxy/v2/models/{model_id}
     2. Poll generation status via GET /api/proxy/v2/generations/{generation_id}
-    3. Handle terminal states (COMPLETED, FAILED, ERRORED)
+    3. Handle terminal states (COMPLETED, FAILED, ERRORED, CANCELLED)
     4. Fetch final results from GET /api/proxy/v2/generations/{generation_id}/result
 
     Subclasses must implement:
@@ -227,6 +227,45 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
             error_message = self._extract_error_message(error_json)
             return f"{self.name}: {error_message}"
 
+    def _handle_terminal_status(self, status: str, result_json: dict[str, Any]) -> tuple[bool, dict[str, Any] | None]:
+        """Handle terminal generation statuses.
+
+        Returns:
+            tuple: (is_terminal, result_json_or_none)
+        """
+        if status == "COMPLETED":
+            return True, result_json
+
+        if status in ["FAILED", "ERRORED"]:
+            logger.error("%s: Generation failed with status: %s", self.name, status)
+            logger.error("%s: Error response: %s", self.name, result_json)
+            self._set_safe_defaults()
+            error_message = self._extract_error_message(result_json)
+            logger.error("%s: Extracted error message: %s", self.name, error_message)
+            if not error_message:
+                error_message = (
+                    f"{self.name} generation failed with status {status} but no error details were provided."
+                )
+            self._set_status_results(was_successful=False, result_details=error_message)
+            return True, None
+
+        if status == "CANCELLED":
+            logger.info("%s: Generation cancelled.", self.name)
+            self._set_safe_defaults()
+            status_detail = result_json.get("status_detail", {})
+            details = ""
+            if isinstance(status_detail, dict):
+                details = status_detail.get("details") or ""
+            cancel_message = (
+                f"{self.name} generation was cancelled."
+                if not details
+                else f"{self.name} generation was cancelled: {details}"
+            )
+            self._set_status_results(was_successful=False, result_details=cancel_message)
+            return True, None
+
+        return False, None
+
     async def _poll_generation_status(self, generation_id: str, headers: dict[str, str]) -> dict[str, Any] | None:
         """Poll generation status until terminal state is reached.
 
@@ -253,19 +292,9 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
                     status = result_json.get("status", "unknown")
                     self._log(f"Status: {status}")
 
-                    if status == "COMPLETED":
-                        return result_json
-
-                    if status in ["FAILED", "ERRORED"]:
-                        logger.error("%s: Generation failed with status: %s", self.name, status)
-                        logger.error("%s: Error response: %s", self.name, result_json)
-                        self._set_safe_defaults()
-                        error_message = self._extract_error_message(result_json)
-                        logger.error("%s: Extracted error message: %s", self.name, error_message)
-                        if not error_message:
-                            error_message = f"{self.name} generation failed with status {status} but no error details were provided."
-                        self._set_status_results(was_successful=False, result_details=error_message)
-                        return None
+                    is_terminal, terminal_result = self._handle_terminal_status(status, result_json)
+                    if is_terminal:
+                        return terminal_result
 
                     # Still processing (QUEUED or RUNNING), wait before next poll
                     if attempt < max_attempts - 1:
