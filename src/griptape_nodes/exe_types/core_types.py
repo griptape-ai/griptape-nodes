@@ -581,39 +581,46 @@ class BaseNodeElement:
     ) -> NodeMessageResult | None:
         """Handle status-related messages; return result if handled, None otherwise."""
         msg_lower = message_type.lower()
-        if msg_lower == "clear_status":
-            self.clear_status()
-            return NodeMessageResult(
-                success=True,
-                details="Status cleared",
-                response=None,
-                altered_workflow_state=False,
-            )
-        if msg_lower == "get_status":
-            return NodeMessageResult(
-                success=True,
-                details="Status retrieved",
-                response=NodeMessagePayload(data=self.get_status().to_dict()),
-                altered_workflow_state=False,
-            )
-        if msg_lower == "set_status":
-            if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
-                self._apply_status_from_message_data(message.data)
-            return NodeMessageResult(
-                success=True,
-                details="Status updated",
-                response=NodeMessagePayload(data=self.get_status().to_dict()),
-                altered_workflow_state=False,
-            )
-        if msg_lower == "clear_status_display":
-            self.dismiss_status()
-            return NodeMessageResult(
-                success=True,
-                details="Status dismissed",
-                response=None,
-                altered_workflow_state=False,
-            )
-        return None
+        match msg_lower:
+            case "clear_status":
+                self.clear_status()
+                return NodeMessageResult(
+                    success=True,
+                    details="Status cleared",
+                    response=None,
+                    altered_workflow_state=False,
+                )
+            case "get_status":
+                return NodeMessageResult(
+                    success=True,
+                    details="Status retrieved",
+                    response=NodeMessagePayload(data=self.get_status().to_dict()),
+                    altered_workflow_state=False,
+                )
+            case "set_status":
+                if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
+                    self._apply_status_from_message_data(message.data)
+                return NodeMessageResult(
+                    success=True,
+                    details="Status updated",
+                    response=NodeMessagePayload(data=self.get_status().to_dict()),
+                    altered_workflow_state=False,
+                )
+            case "clear_status_display":
+                self.dismiss_status()
+                return NodeMessageResult(
+                    success=True,
+                    details="Status dismissed",
+                    response=None,
+                    altered_workflow_state=False,
+                )
+            case _:
+                logger.warning(
+                    "%s received unknown status message type %r",
+                    self.__class__.__name__,
+                    message_type,
+                )
+                return None
 
     def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
         """Virtual method for handling messages sent to this element.
