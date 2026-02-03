@@ -3233,7 +3233,7 @@ class WorkflowManager:
             current_index += 1
         return node_creation_asts, current_index
 
-    def _generate_node_creation_code(  # noqa: C901, PLR0912
+    def _generate_node_creation_code(  # noqa: C901, PLR0912, PLR0915
         self,
         serialized_node_command: SerializedNodeCommands,
         node_index: int,

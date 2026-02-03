@@ -1529,6 +1529,7 @@ class FlowManager:
                 node_name=node.name,
                 unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,
                 serialized_parameter_value_tracker=serialized_parameter_value_tracker,
+                include_subflow=True,
             )
             serialize_result = GriptapeNodes.NodeManager().on_serialize_node_to_commands(serialize_request)
 
@@ -3225,9 +3226,12 @@ class FlowManager:
                 with GriptapeNodes.ContextManager().node(node):
                     # Note: the parameter value stuff is pass-by-reference, and we expect the values to be modified in place.
                     # This might be dangerous if done over the wire.
+
+                    # We set include_subflow to true here, because we're serializing a whole flow, which means the subflows are being serialized
                     serialize_node_request = SerializeNodeToCommandsRequest(
                         unique_parameter_uuid_to_values=unique_parameter_uuid_to_values,  # Unique values
-                        serialized_parameter_value_tracker=serialized_parameter_value_tracker,  # Mapping values to UUIDs
+                        serialized_parameter_value_tracker=serialized_parameter_value_tracker,  # Mapping values to UUIDs,
+                        include_subflow=True,
                     )
                     serialize_node_result = GriptapeNodes.handle_request(serialize_node_request)
                     if not isinstance(serialize_node_result, SerializeNodeToCommandsResultSuccess):

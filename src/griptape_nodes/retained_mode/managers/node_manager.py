@@ -2773,10 +2773,13 @@ class NodeManager:
                     return SerializeNodeToCommandsResultFailure(result_details=details)
 
                 # Remove node_names_in_group from metadata - it's redundant and will be regenerated
-                # Keep subflow_name in metadata so workflow file generation can extract it
-                # (it won't be used during deserialization unless explicitly passed as CreateNodeRequest parameter)
                 metadata_copy = copy.deepcopy(node.metadata)
                 metadata_copy.pop("node_names_in_group", None)
+
+                # Remove subflow_name for copy/paste operations (so pasted groups create fresh subflows)
+                # Keep it for workflow file generation (so it can be extracted and used as a variable reference)
+                if not request.include_subflow:
+                    metadata_copy.pop("subflow_name", None)
 
                 # Note: Child serialization is handled in _serialize_group_with_children()
                 # which is called from on_serialize_selected_nodes_to_commands()
