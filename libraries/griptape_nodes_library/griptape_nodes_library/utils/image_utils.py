@@ -411,6 +411,37 @@ def load_pil_from_url(url: str) -> Image.Image:
         raise ValueError(msg) from e
 
 
+def load_pil_image_from_artifact(image: ImageUrlArtifact | ImageArtifact | str, context_name: str) -> Image.Image:
+    """Load PIL Image from various artifact types.
+
+    Args:
+        image: ImageUrlArtifact, ImageArtifact, or str URL
+        context_name: Name for error messages (e.g., node name)
+
+    Returns:
+        PIL Image object
+
+    Raises:
+        TypeError: If image type is unsupported
+        ValueError: If image loading fails
+    """
+    if not isinstance(image, ImageUrlArtifact | ImageArtifact | str):
+        error_msg = f"{context_name}: Unsupported image type: {type(image).__name__}"
+        logger.warning(error_msg)
+        raise TypeError(error_msg)
+
+    try:
+        if isinstance(image, ImageUrlArtifact):
+            return load_pil_from_url(image.value)
+        if isinstance(image, ImageArtifact):
+            return Image.open(BytesIO(image.value))
+        return load_pil_from_url(image)
+    except Exception as e:
+        error_msg = f"{context_name}: Failed to load image: {e}"
+        logger.warning(error_msg)
+        raise ValueError(error_msg) from e
+
+
 def create_alpha_mask(image: Image.Image) -> Image.Image:
     """Create a mask from an image's alpha channel.
 

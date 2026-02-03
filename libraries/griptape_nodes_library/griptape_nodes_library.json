@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.60.4",
+    "library_version": "0.60.5",
     "engine_version": "0.71.0",
     "tags": [
       "Griptape",
@@ -1815,6 +1815,28 @@
         "description": "Save an image to a file",
         "display_name": "Save Image",
         "icon": "image-down",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "WriteImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/write_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Write custom key-value metadata to PNG images using PNG text chunks",
+        "display_name": "Write Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "ReadImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/read_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Read custom metadata from images (EXIF for JPEG/TIFF/MPO, PNG chunks for PNG)",
+        "display_name": "Read Image Metadata",
+        "icon": "tag",
         "group": "Input/Output"
       }
     },
