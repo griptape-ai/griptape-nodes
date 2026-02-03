@@ -1065,8 +1065,11 @@ class BaseNode(ABC):
                             )
                         )
                     except KeyError:
-                        # Library not found - skip (may be unregistered)
-                        pass
+                        logger.warning(
+                            "Library '%s' not found for Widget '%s'",
+                            widget.library,
+                            widget,
+                        )
 
         if widget_libraries:
             logger.debug("Node '%s' has widget library dependencies: %s", self.name, widget_libraries)
