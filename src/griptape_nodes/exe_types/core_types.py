@@ -65,6 +65,14 @@ class StatusData:
     Used to display status indicators (info, warning, error, success, etc.) on
     parameters and groups. All subclasses of BaseNodeElement inherit status
     and can use get_status(), set_status(), clear_status(), and dismiss_status().
+
+    Attributes:
+        variant: Status style (e.g. info, warning, error, success).
+        title: Optional short title for the status.
+        message: Status message body.
+        hide: When True, the status indicator is hidden in the UI.
+        hide_clear_button: When True, the clear/dismiss button is hidden; when False,
+            the button is shown so the user can dismiss the status (e.g. via clear_status_display).
     """
 
     variant: StatusVariantType = "none"
