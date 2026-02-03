@@ -560,7 +560,7 @@ class BaseNodeElement:
                 self._status.variant = val
             else:
                 msg = f"{self.__class__.__name__} received invalid status variant {val}; using 'info'. Valid: {sorted(VALID_STATUS_VARIANTS)}"
-                logger.warning(msg)
+                logger.error(msg)
                 self._status.variant = "info"
         if "title" in data:
             self._status.title = data["title"]
