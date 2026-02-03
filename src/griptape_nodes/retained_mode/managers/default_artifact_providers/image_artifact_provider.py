@@ -8,14 +8,14 @@ from griptape_nodes.retained_mode.managers.default_artifact_providers.base_artif
 class ImageArtifactProvider(BaseArtifactProvider):
     """Provider for image artifacts."""
 
-    @property
-    def friendly_name(self) -> str:
+    @classmethod
+    def get_friendly_name(cls) -> str:
         return "Image"
 
-    @property
-    def supported_formats(self) -> set[str]:
+    @classmethod
+    def get_supported_formats(cls) -> set[str]:
         return {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
 
-    @property
-    def preview_formats(self) -> set[str]:
+    @classmethod
+    def get_preview_formats(cls) -> set[str]:
         return {"webp", "jpg", "png"}
