@@ -1042,7 +1042,7 @@ class DeprecationMessage(ParameterMessage):
 class ParameterGroup(BaseNodeElement, UIOptionsMixin):
     """UI element for a group of parameters."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         name: str,
         ui_options: dict | None = None,
@@ -1050,11 +1050,6 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         collapsed: bool = False,
         user_defined: bool = False,
         status: StatusData | None = None,
-        status_variant: StatusVariantType | None = None,
-        status_title: str | None = None,
-        status_message: str | None = None,
-        status_display: bool | None = None,
-        status_show_clear_button: bool | None = None,
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
@@ -1077,20 +1072,6 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
                 message=status.message,
                 display=status.display,
                 show_clear_button=status.show_clear_button,
-            )
-        elif (
-            status_variant is not None
-            or status_title is not None
-            or status_message is not None
-            or status_display is not None
-            or status_show_clear_button is not None
-        ):
-            self.set_status(
-                variant=status_variant,
-                title=status_title,
-                message=status_message,
-                display=status_display,
-                show_clear_button=status_show_clear_button,
             )
 
     @property
@@ -1401,11 +1382,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         parent_container_name: str | None = None,
         parent_element_name: str | None = None,
         status: StatusData | None = None,
-        status_variant: StatusVariantType | None = None,
-        status_title: str | None = None,
-        status_message: str | None = None,
-        status_display: bool | None = None,
-        status_show_clear_button: bool | None = None,
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -1510,20 +1486,6 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 message=status.message,
                 display=status.display,
                 show_clear_button=status.show_clear_button,
-            )
-        elif (
-            status_variant is not None
-            or status_title is not None
-            or status_message is not None
-            or status_display is not None
-            or status_show_clear_button is not None
-        ):
-            self.set_status(
-                variant=status_variant,
-                title=status_title,
-                message=status_message,
-                display=status_display,
-                show_clear_button=status_show_clear_button,
             )
         self.type = type
         self.input_types = input_types

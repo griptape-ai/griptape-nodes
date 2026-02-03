@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, StatusData, StatusVariantType, Trait
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, StatusData, Trait
 from griptape_nodes.utils.dict_utils import to_dict
 
 
@@ -54,11 +54,6 @@ class ParameterDict(Parameter):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         status: StatusData | None = None,
-        status_variant: StatusVariantType | None = None,
-        status_title: str | None = None,
-        status_message: str | None = None,
-        status_display: bool | None = None,
-        status_show_clear_button: bool | None = None,
     ) -> None:
         """Initialize a dictionary parameter with enhanced UI options.
 
@@ -92,11 +87,6 @@ class ParameterDict(Parameter):
             element_type: Element type
             parent_container_name: Name of parent container
             status: Optional StatusData for initial status
-            status_variant: Status variant type (e.g. info, warning)
-            status_title: Optional title for the status
-            status_message: Message text for the status
-            status_display: Whether to show the status
-            status_show_clear_button: Whether to show a clear/dismiss button
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
@@ -147,11 +137,6 @@ class ParameterDict(Parameter):
             element_type=element_type,
             parent_container_name=parent_container_name,
             status=status,
-            status_variant=status_variant,
-            status_title=status_title,
-            status_message=status_message,
-            status_display=status_display,
-            status_show_clear_button=status_show_clear_button,
         )
 
     def _convert_to_dict(self, value: Any) -> dict:
