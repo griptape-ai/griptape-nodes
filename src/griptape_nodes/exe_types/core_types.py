@@ -1049,7 +1049,8 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         *,
         collapsed: bool = False,
         user_defined: bool = False,
-        status: StatusData | None = None,
+        status: StatusData
+        | None = None,  # Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
@@ -1381,7 +1382,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         parent_element_name: str | None = None,
-        status: StatusData | None = None,
+        status: StatusData
+        | None = None,  # Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)

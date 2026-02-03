@@ -95,7 +95,7 @@ class ParameterInt(ParameterNumber):
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
-            status: Optional StatusData for initial status
+            status: Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
         """
         # Call parent with integer-specific settings
         super().__init__(

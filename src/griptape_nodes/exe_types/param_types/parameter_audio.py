@@ -97,7 +97,7 @@ class ParameterAudio(Parameter):
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
-            status: Optional StatusData for initial status
+            status: Optional StatusData for initial status (title, message, variant, and whether to show a clear button).
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
