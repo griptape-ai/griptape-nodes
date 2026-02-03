@@ -12,12 +12,21 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     GetPreviewForArtifactRequest,
     GetPreviewForArtifactResultFailure,
     GetPreviewForArtifactResultSuccess,
+    GetPreviewGeneratorDetailsRequest,
+    GetPreviewGeneratorDetailsResultFailure,
+    GetPreviewGeneratorDetailsResultSuccess,
     ListArtifactProvidersRequest,
     ListArtifactProvidersResultFailure,
     ListArtifactProvidersResultSuccess,
+    ListPreviewGeneratorsRequest,
+    ListPreviewGeneratorsResultFailure,
+    ListPreviewGeneratorsResultSuccess,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
+    RegisterPreviewGeneratorRequest,
+    RegisterPreviewGeneratorResultFailure,
+    RegisterPreviewGeneratorResultSuccess,
 )
 from griptape_nodes.retained_mode.managers.default_artifact_providers import (
     BaseArtifactProvider,
@@ -68,6 +77,15 @@ class ArtifactManager:
             )
             event_manager.assign_manager_to_request_type(
                 GetArtifactProviderDetailsRequest, self.on_handle_get_artifact_provider_details_request
+            )
+            event_manager.assign_manager_to_request_type(
+                RegisterPreviewGeneratorRequest, self.on_handle_register_preview_generator_request
+            )
+            event_manager.assign_manager_to_request_type(
+                ListPreviewGeneratorsRequest, self.on_handle_list_preview_generators_request
+            )
+            event_manager.assign_manager_to_request_type(
+                GetPreviewGeneratorDetailsRequest, self.on_handle_get_preview_generator_details_request
             )
 
         # Register default providers (order matters: Image, Video, Audio)
@@ -122,12 +140,22 @@ class ArtifactManager:
                 f"Failed due to: provider not found"
             )
 
-        # SUCCESS PATH: Return provider details
+        # FAILURE CASE: Provider instantiation failed
+        try:
+            provider_instance = self._get_or_create_provider_instance(provider_class)
+        except Exception as e:
+            return GetArtifactProviderDetailsResultFailure(
+                result_details=f"Attempted to get artifact provider details for '{request.friendly_name}'. "
+                f"Failed due to: provider instantiation error - {e}"
+            )
+
+        # SUCCESS PATH: Return provider details with registered generators
         return GetArtifactProviderDetailsResultSuccess(
             result_details="Successfully retrieved artifact provider details",
             friendly_name=provider_class.get_friendly_name(),
             supported_formats=provider_class.get_supported_formats(),
             preview_formats=provider_class.get_preview_formats(),
+            registered_preview_generators=provider_instance.get_registered_preview_generators(),
         )
 
     def on_handle_register_artifact_provider_request(
@@ -174,6 +202,139 @@ class ArtifactManager:
         self._friendly_name_to_provider_class[friendly_name_lower] = provider_class
 
         return RegisterArtifactProviderResultSuccess(result_details="Artifact provider registered successfully")
+
+    def on_handle_register_preview_generator_request(
+        self, request: RegisterPreviewGeneratorRequest
+    ) -> RegisterPreviewGeneratorResultSuccess | RegisterPreviewGeneratorResultFailure:
+        """Handle preview generator registration request.
+
+        Args:
+            request: The registration request containing provider and generator info
+
+        Returns:
+            Success or failure result
+        """
+        # FAILURE CASE: Provider not found
+        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        if provider_class is None:
+            return RegisterPreviewGeneratorResultFailure(
+                result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider not found"
+            )
+
+        # FAILURE CASE: Provider instantiation failed
+        try:
+            provider_instance = self._get_or_create_provider_instance(provider_class)
+        except Exception as e:
+            return RegisterPreviewGeneratorResultFailure(
+                result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider instantiation error - {e}"
+            )
+
+        # FAILURE CASE: Generator registration failed
+        result = provider_instance.register_preview_generator(request.preview_generator_class)
+        if not result.success:
+            return RegisterPreviewGeneratorResultFailure(
+                result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
+                f"Failed due to: {result.message}"
+            )
+
+        # SUCCESS PATH: Generator registered
+        return RegisterPreviewGeneratorResultSuccess(result_details=result.message)
+
+    def on_handle_list_preview_generators_request(
+        self, request: ListPreviewGeneratorsRequest
+    ) -> ListPreviewGeneratorsResultSuccess | ListPreviewGeneratorsResultFailure:
+        """Handle list preview generators request.
+
+        Args:
+            request: The request containing the provider friendly name
+
+        Returns:
+            Success or failure result
+        """
+        # FAILURE CASE: Provider not found
+        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        if provider_class is None:
+            return ListPreviewGeneratorsResultFailure(
+                result_details=f"Attempted to list preview generators for provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider not found"
+            )
+
+        # FAILURE CASE: Provider instantiation failed
+        try:
+            provider_instance = self._get_or_create_provider_instance(provider_class)
+        except Exception as e:
+            return ListPreviewGeneratorsResultFailure(
+                result_details=f"Attempted to list preview generators for provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider instantiation error - {e}"
+            )
+
+        # SUCCESS PATH: Return generator list
+        return ListPreviewGeneratorsResultSuccess(
+            result_details="Successfully listed preview generators",
+            preview_generator_names=provider_instance.get_registered_preview_generators(),
+        )
+
+    def on_handle_get_preview_generator_details_request(
+        self, request: GetPreviewGeneratorDetailsRequest
+    ) -> GetPreviewGeneratorDetailsResultSuccess | GetPreviewGeneratorDetailsResultFailure:
+        """Handle get preview generator details request.
+
+        Args:
+            request: The request containing provider and generator friendly names
+
+        Returns:
+            Success or failure result
+        """
+        # FAILURE CASE: Provider not found
+        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        if provider_class is None:
+            return GetPreviewGeneratorDetailsResultFailure(
+                result_details=f"Attempted to get preview generator details for provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider not found"
+            )
+
+        # FAILURE CASE: Provider instantiation failed
+        try:
+            provider_instance = self._get_or_create_provider_instance(provider_class)
+        except Exception as e:
+            return GetPreviewGeneratorDetailsResultFailure(
+                result_details=f"Attempted to get preview generator details for provider '{request.provider_friendly_name}'. "
+                f"Failed due to: provider instantiation error - {e}"
+            )
+
+        # FAILURE CASE: Generator not found
+        generator_class = provider_instance._get_preview_generator_by_name(request.preview_generator_friendly_name)
+        if generator_class is None:
+            return GetPreviewGeneratorDetailsResultFailure(
+                result_details=f"Attempted to get preview generator details for '{request.preview_generator_friendly_name}' "
+                f"in provider '{request.provider_friendly_name}'. Failed due to: generator not found"
+            )
+
+        # FAILURE CASE: Generator metadata access failed
+        try:
+            friendly_name = generator_class.get_friendly_name()
+            source_formats = generator_class.get_supported_source_formats()
+            preview_formats = generator_class.get_supported_preview_formats()
+            parameters = generator_class.get_parameters()
+        except Exception as e:
+            return GetPreviewGeneratorDetailsResultFailure(
+                result_details=f"Attempted to get preview generator details for '{request.preview_generator_friendly_name}' "
+                f"in provider '{request.provider_friendly_name}'. Failed due to: metadata access error - {e}"
+            )
+
+        # Convert ProviderValue to tuple for serialization
+        parameters_dict = {name: (pv.default_value, pv.required) for name, pv in parameters.items()}
+
+        # SUCCESS PATH: Return generator details
+        return GetPreviewGeneratorDetailsResultSuccess(
+            result_details="Successfully retrieved preview generator details",
+            friendly_name=friendly_name,
+            supported_source_formats=source_formats,
+            supported_preview_formats=preview_formats,
+            parameters=parameters_dict,
+        )
 
     def _get_provider_class_by_friendly_name(self, friendly_name: str) -> type[BaseArtifactProvider] | None:
         """Get provider class by friendly name (case-insensitive).
