@@ -274,7 +274,7 @@ class BaseNodeElement:
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
     _node_context: BaseNode | None = field(default=None)
-    _badge: BadgeData | None = field(default_factory=BadgeData)
+    _badge: BadgeData | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
