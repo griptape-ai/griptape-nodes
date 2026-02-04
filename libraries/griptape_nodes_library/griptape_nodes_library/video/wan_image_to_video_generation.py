@@ -1,17 +1,15 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
-import os
 import time
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -25,6 +23,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -90,7 +89,7 @@ STATUS_REQUEST_MODERATED = "Request Moderated"
 STATUS_CONTENT_MODERATED = "Content Moderated"
 
 
-class WanImageToVideoGeneration(SuccessFailureNode):
+class WanImageToVideoGeneration(GriptapeProxyNode):
     """Generate videos from images using WAN models via Griptape model proxy.
 
     Documentation: https://www.alibabacloud.com/help/en/model-studio/image-to-video-api-reference
@@ -137,12 +136,6 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate videos from images using WAN models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model selection
         self.add_parameter(
@@ -393,57 +386,14 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             self.show_message_by_name("artifact_url_parameter_message_input_audio")
 
     async def aprocess(self) -> None:
-        await self._process()
+        await self._process_generation()
 
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        # Preprocess seed parameter
+    async def _process_generation(self) -> None:
         self._seed_parameter.preprocess()
-
         try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        model = params["model"]
-        logger.info("Generating video from image with %s", model)
-
-        # Submit request and get synchronous response
-        try:
-            response = await self._submit_request(params, headers)
-            if not response:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No response returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Handle synchronous response
-        await self._handle_response(response)
-
-        # Cleanup uploaded artifacts
-        self._public_audio_url_parameter.delete_uploaded_artifact()
+            await super()._process_generation()
+        finally:
+            self._public_audio_url_parameter.delete_uploaded_artifact()
 
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
@@ -475,12 +425,12 @@ class WanImageToVideoGeneration(SuccessFailureNode):
         if model_config.get("supports_audio", False):
             audio = self.get_parameter_value("audio")
 
-        # Get audio URL if provided and model supports it
-        audio_url = None
+        # Capture audio input if provided and model supports it
+        audio_input = None
         if model_config.get("supports_audio", False):
             input_audio_value = self.get_parameter_value("input_audio")
             if input_audio_value:
-                audio_url = self._public_audio_url_parameter.get_public_url_for_parameter()
+                audio_input = input_audio_value
 
         # Get shot_type parameter (only for models that support it)
         # For models that don't support shot_type, set to None so it won't be sent
@@ -496,7 +446,7 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "resolution": resolution,
             "duration": duration,
             "audio": audio,
-            "audio_url": audio_url,
+            "audio_input": audio_input,
             "shot_type": shot_type,
             "seed": self._seed_parameter.get_seed(),
             "prompt_extend": self.get_parameter_value("prompt_extend"),
@@ -511,43 +461,21 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
-        payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model") or ""
 
-        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=None)
-                response.raise_for_status()
-                response_json = response.json()
-                logger.info("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_msg = error_json.get("error", "")
-                provider_response = error_json.get("provider_response", "")
-                msg_parts = [p for p in [error_msg, provider_response] if p]
-                msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            logger.error("Request failed: %s", e)
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        return response_json
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Process input image to base64 data URI
         img_url = await self._process_input_image(params["input_image"])
         if not img_url:
             msg = "Failed to process input image"
             raise ValueError(msg)
+
+        audio_url = None
+        if params.get("audio_input"):
+            audio_url = await self._prepare_audio_data_url_async(params["audio_input"])
 
         # Build flattened payload (all params at top level)
         payload = {
@@ -575,8 +503,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             payload["audio"] = params["audio"]
 
         # Add audio_url if provided (for models that support it)
-        if model_config.get("supports_audio", False) and params.get("audio_url"):
-            payload["audio_url"] = params["audio_url"]
+        if model_config.get("supports_audio", False) and audio_url:
+            payload["audio_url"] = audio_url
 
         # Add shot_type parameter (for models that support it, only effective when prompt_extend=true)
         if model_config.get("supports_shot_type", False) and params.get("shot_type") is not None:
@@ -644,8 +572,8 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             logger.error("Failed to download image from URL %s: %s", url, e)
         return None
 
-    async def _handle_response(self, response: dict[str, Any]) -> None:
-        """Handle WAN synchronous response and extract video.
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        """Handle WAN response and extract video.
 
         Response shape:
         {
@@ -658,24 +586,22 @@ class WanImageToVideoGeneration(SuccessFailureNode):
             "orig_prompt": "..."
         }
         """
-        self.parameter_output_values["provider_response"] = response
-
         # Extract task_id for generation_id
-        task_id = response.get("task_id", "")
+        task_id = result_json.get("task_id", "")
         self.parameter_output_values["generation_id"] = str(task_id)
 
         # Extract task status and video URL from top-level fields
-        task_status = response.get("task_status")
+        task_status = result_json.get("task_status")
 
         # Check task status
         if task_status != "SUCCEEDED":
             logger.error("Generation failed with task_status: %s", task_status)
             self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
+            error_details = self._extract_error_message(result_json)
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
-        video_url = response.get("video_url")
+        video_url = result_json.get("video_url")
         if video_url:
             await self._save_video_from_url(video_url)
         else:
@@ -714,7 +640,62 @@ class WanImageToVideoGeneration(SuccessFailureNode):
                 result_details=f"Video generation completed but could not save to static storage: {e}",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    async def _prepare_audio_data_url_async(self, audio_input: Any) -> str | None:
+        if not audio_input:
+            return None
+
+        audio_url = self._coerce_audio_url_or_data_uri(audio_input)
+        if not audio_url:
+            return None
+
+        if audio_url.startswith("data:audio/"):
+            return audio_url
+
+        if audio_url.startswith(("http://", "https://")):
+            return await self._inline_external_url_async(audio_url, "audio/mpeg")
+
+        return audio_url
+
+    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=20)
+                resp.raise_for_status()
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            logger.debug("%s failed to inline URL: %s", self.name, e)
+            return None
+        else:
+            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
+            if not content_type.startswith("audio/"):
+                content_type = default_content_type
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            logger.debug("URL converted to base64 data URI for proxy")
+            return f"data:{content_type};base64,{b64}"
+
+    @staticmethod
+    def _coerce_audio_url_or_data_uri(val: Any) -> str | None:
+        if val is None:
+            return None
+
+        if isinstance(val, str):
+            v = val.strip()
+            if not v:
+                return None
+            return v if v.startswith(("http://", "https://", "data:audio/")) else f"data:audio/mpeg;base64,{v}"
+
+        try:
+            v = getattr(val, "value", None)
+            if isinstance(v, str) and v.startswith(("http://", "https://", "data:audio/")):
+                return v
+            b64 = getattr(val, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64 if b64.startswith("data:audio/") else f"data:audio/mpeg;base64,{b64}"
+        except AttributeError:
+            pass
+
+        return None
+
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
 
         Args:
