@@ -6,11 +6,13 @@ import json
 import logging
 import time
 from contextlib import suppress
+from io import BytesIO
 from typing import Any
 from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
@@ -559,8 +561,9 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             image_bytes = await self._get_image_bytes(image_input)
             if image_bytes:
-                # All images use the same field name "images" for multipart
-                files.append(("images", (f"image_{idx}.png", image_bytes, "image/png")))
+                mime_type = self._detect_image_mime(image_bytes)
+                extension = mime_type.split("/", 1)[1]
+                files.append(("images", (f"image_{idx}.{extension}", image_bytes, mime_type)))
 
         return files
 
@@ -577,8 +580,9 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             image_bytes = await self._get_image_bytes(image_input)
             if image_bytes:
+                mime_type = self._detect_image_mime(image_bytes)
                 b64 = base64.b64encode(image_bytes).decode("utf-8")
-                images.append(f"data:image/png;base64,{b64}")
+                images.append(f"data:{mime_type};base64,{b64}")
 
         return images
 
@@ -617,6 +621,25 @@ class Rodin23DGeneration(GriptapeProxyNode):
             return await self._string_to_bytes(image_value)
 
         return None
+
+    @staticmethod
+    def _detect_image_mime(image_bytes: bytes) -> str:
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                image_format = (image.format or "").upper()
+        except Exception:
+            return "image/png"
+
+        mime_map = {
+            "JPEG": "image/jpeg",
+            "JPG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+            "BMP": "image/bmp",
+            "GIF": "image/gif",
+            "TIFF": "image/tiff",
+        }
+        return mime_map.get(image_format, "image/png")
 
     async def _string_to_bytes(self, value: str) -> bytes | None:
         """Convert a string (URL or base64) to raw bytes."""
