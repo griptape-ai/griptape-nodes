@@ -217,15 +217,6 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
         )
 
         self.add_parameter(
-            ParameterDict(
-                name="provider_response",
-                tooltip="Verbatim response from Griptape model proxy",
-                allowed_modes={ParameterMode.OUTPUT},
-                hide_property=True,
-            )
-        )
-
-        self.add_parameter(
             ParameterAudio(
                 name="audio_url",
                 tooltip="Generated speech audio as URL artifact",
@@ -333,19 +324,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
         if voice_settings:
             params["voice_settings"] = voice_settings
 
-        # Log request
-        self._log_request(params)
-
         return params
-
-    def _log_request(self, payload: dict[str, Any]) -> None:
-        with suppress(Exception):
-            sanitized_payload = payload.copy()
-            for key in ["text"]:
-                if key in sanitized_payload:
-                    text_value = sanitized_payload[key]
-                    if isinstance(text_value, str) and len(text_value) > PROMPT_TRUNCATE_LENGTH:
-                        sanitized_payload[key] = text_value[:PROMPT_TRUNCATE_LENGTH] + "..."
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the Eleven Labs TTS result and set output parameters."""
@@ -426,7 +405,6 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
     def _set_safe_defaults(self) -> None:
         """Set safe default values for outputs."""
         self.parameter_output_values["generation_id"] = ""
-        self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["audio_url"] = None
         self.parameter_output_values["alignment"] = None
         self.parameter_output_values["normalized_alignment"] = None

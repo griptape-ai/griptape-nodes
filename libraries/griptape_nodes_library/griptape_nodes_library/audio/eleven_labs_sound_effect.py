@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json as _json
 import logging
 from contextlib import suppress
 from typing import Any
@@ -139,21 +138,7 @@ class ElevenLabsSoundEffectGeneration(GriptapeProxyNode):
         if prompt_influence is not None:
             params["prompt_influence"] = prompt_influence
 
-        # Log request
-        self._log_request(params)
-
         return params
-
-    def _log_request(self, payload: dict[str, Any]) -> None:
-        with suppress(Exception):
-            sanitized_payload = payload.copy()
-            for key in ["text"]:
-                if key in sanitized_payload:
-                    text_value = sanitized_payload[key]
-                    if isinstance(text_value, str) and len(text_value) > PROMPT_TRUNCATE_LENGTH:
-                        sanitized_payload[key] = text_value[:PROMPT_TRUNCATE_LENGTH] + "..."
-
-            self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the Eleven Labs sound effect result and set output parameters."""

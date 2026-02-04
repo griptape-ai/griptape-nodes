@@ -20,8 +20,6 @@ from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
     DownloadAndSaveRequest,
     DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
