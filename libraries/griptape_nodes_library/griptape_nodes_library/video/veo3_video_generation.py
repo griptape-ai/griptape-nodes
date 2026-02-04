@@ -846,4 +846,3 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         if not obj or not isinstance(obj, dict):
             return None
         return obj.get("status") if isinstance(obj.get("status"), str) else None
-import json

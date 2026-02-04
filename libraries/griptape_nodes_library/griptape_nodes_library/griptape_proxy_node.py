@@ -236,7 +236,7 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         async with httpx.AsyncClient() as client:
             for attempt in range(max_attempts):
                 try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
+                    self._log(f"[GriptapeProxyNode] Polling attempt #{attempt + 1} for generation {generation_id}")
 
                     response = await client.get(get_url, headers=headers, timeout=60)
                     response.raise_for_status()

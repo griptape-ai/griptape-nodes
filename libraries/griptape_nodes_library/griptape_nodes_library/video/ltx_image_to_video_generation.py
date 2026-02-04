@@ -415,10 +415,12 @@ class LTXImageToVideoGeneration(GriptapeProxyNode):
         params = await self._get_parameters_async()
 
         if not params["image_uri"]:
-            raise ValueError(f"{self.name} requires an input image for video generation.")
+            msg = f"{self.name} requires an input image for video generation."
+            raise ValueError(msg)
 
         if not params["prompt"].strip():
-            raise ValueError(f"{self.name} requires a prompt to generate video.")
+            msg = f"{self.name} requires a prompt to generate video."
+            raise ValueError(msg)
 
         validation_error = self._validate_model_params(params)
         if validation_error:
@@ -443,7 +445,8 @@ class LTXImageToVideoGeneration(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         video_bytes = result_json.get("audio_bytes")
         if not isinstance(video_bytes, (bytes, bytearray)):
-            raise RuntimeError(f"{self.name} generation completed but no video data received.")
+            msg = f"{self.name} generation completed but no video data received."
+            raise TypeError(msg)
 
         await self._handle_completion_async(bytes(video_bytes), generation_id)
 
@@ -479,7 +482,7 @@ class LTXImageToVideoGeneration(GriptapeProxyNode):
                 result_details=f"Video generated but failed to save to storage: {e}",
             )
 
-    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0912
         if not response_json:
             return f"{self.name} generation failed with no error details provided by API."
 

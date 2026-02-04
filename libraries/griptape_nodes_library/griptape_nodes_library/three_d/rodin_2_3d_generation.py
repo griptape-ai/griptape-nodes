@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json as _json
+import base64
+import json
 import logging
-import os
 import time
 from contextlib import suppress
 from typing import Any
@@ -13,7 +13,6 @@ import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -24,6 +23,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDUrlArtifact
 
 logger = logging.getLogger("griptape_nodes")
@@ -60,7 +60,7 @@ STATUS_DONE = "Done"
 STATUS_FAILED = "Failed"
 
 
-class Rodin23DGeneration(SuccessFailureNode):
+class Rodin23DGeneration(GriptapeProxyNode):
     """Generate 3D models using Rodin Gen-2 via Griptape model proxy.
 
     Inputs:
@@ -90,12 +90,6 @@ class Rodin23DGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate 3D models using Rodin Gen-2 via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Core parameters - prompt
         self.add_parameter(
@@ -347,63 +341,36 @@ class Rodin23DGeneration(SuccessFailureNode):
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Preprocess to handle seed randomization
+    async def _process_generation(self) -> None:
         self.preprocess()
-
-        # Clear execution status at the start
         self._clear_execution_status()
-
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Validate that we have either images or a prompt
-        has_images = bool(params.get("input_images"))
-        has_prompt = bool(params.get("prompt", "").strip())
-        if not has_images and not has_prompt:
-            self._set_safe_defaults()
-            error_msg = "Either images or a prompt must be provided for 3D generation."
-            self._set_status_results(was_successful=False, result_details=error_msg)
-            self._handle_failure_exception(ValueError(error_msg))
-            return
 
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+            self._handle_api_key_validation_error(e)
             return
 
         headers = {"Authorization": f"Bearer {api_key}"}
 
         self._log("Generating 3D model with Rodin Gen-2")
 
-        # Submit request to get generation ID
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+        result = await self._submit_and_poll(headers)
+        if not result:
             return
 
-        # Poll for result
-        await self._poll_for_result(generation_id, headers, params)
+        generation_id, _status_response = result
+
+        async with httpx.AsyncClient() as client:
+            result_json = await self._fetch_generation_result(generation_id, headers, client)
+            if not result_json:
+                return
+
+            self.parameter_output_values["provider_response"] = result_json
+            try:
+                await self._parse_result(result_json, generation_id)
+            except Exception as e:
+                self._handle_result_parsing_error(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         # Get input_images and normalize string paths to ImageUrlArtifact
@@ -436,6 +403,37 @@ class Rodin23DGeneration(SuccessFailureNode):
             msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
             raise ValueError(msg)
         return api_key
+
+    def _get_api_model_id(self) -> str:
+        return "rodin-gen2"
+
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
+
+        has_images = bool(params.get("input_images"))
+        has_prompt = bool(params.get("prompt", "").strip())
+        if not has_images and not has_prompt:
+            msg = "Either images or a prompt must be provided for 3D generation."
+            raise ValueError(msg)
+
+        payload: dict[str, Any] = {
+            "tier": "Gen-2",
+            "geometry_file_format": params["geometry_file_format"],
+            "material": params["material"],
+            "quality": params["quality"],
+            "mesh_mode": params["mesh_mode"],
+        }
+
+        self._add_optional_params(payload, params)
+        self._add_advanced_params(payload, params)
+
+        images = await self._process_images_for_payload(params)
+        if images:
+            payload["images"] = images
+            if len(images) > 1:
+                payload["condition_mode"] = params["condition_mode"]
+
+        return payload
 
     async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
         form_data, files = await self._build_form_data(params)
@@ -544,7 +542,7 @@ class Rodin23DGeneration(SuccessFailureNode):
             bbox_dimensions = 3
             if len(values) == bbox_dimensions:
                 # Send as JSON array string for form data
-                form_data["bbox_condition"] = _json.dumps(values)
+                form_data["bbox_condition"] = json.dumps(values)
         except ValueError:
             self._log(f"Invalid bbox_condition format: {bbox_condition}")
 
@@ -565,6 +563,24 @@ class Rodin23DGeneration(SuccessFailureNode):
                 files.append(("images", (f"image_{idx}.png", image_bytes, "image/png")))
 
         return files
+
+    async def _process_images_for_payload(self, params: dict[str, Any]) -> list[str]:
+        """Process input images into base64 data URIs for JSON payload."""
+        input_images_list = params.get("input_images", [])
+        if not isinstance(input_images_list, list):
+            input_images_list = [input_images_list] if input_images_list else []
+
+        images: list[str] = []
+        for image_input in input_images_list:
+            if len(images) >= MAX_INPUT_IMAGES:
+                break
+
+            image_bytes = await self._get_image_bytes(image_input)
+            if image_bytes:
+                b64 = base64.b64encode(image_bytes).decode("utf-8")
+                images.append(f"data:image/png;base64,{b64}")
+
+        return images
 
     async def _get_image_bytes(self, image_input: Any) -> bytes | None:
         """Get raw bytes from an image input."""
@@ -630,8 +646,12 @@ class Rodin23DGeneration(SuccessFailureNode):
     def _log_form_data(self, form_data: dict[str, Any], num_files: int) -> None:
         """Log form data for debugging (without sensitive data)."""
         with suppress(Exception):
-            self._log(f"Form data: {_json.dumps(form_data, indent=2)}")
+            self._log(f"Form data: {json.dumps(form_data, indent=2)}")
             self._log(f"Number of image files: {num_files}")
+
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        params = self._get_parameters()
+        await self._handle_success(result_json, params)
 
     async def _poll_for_result(self, generation_id: str, headers: dict[str, str], params: dict[str, Any]) -> None:
         """Poll the generations endpoint until ready."""
@@ -793,6 +813,9 @@ class Rodin23DGeneration(SuccessFailureNode):
 
         return error_msg or f"Generation failed.\n\nFull API response:\n{response_json}"
 
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
+        return self._extract_error_details(response_json)
+
     def _get_error_from_result(self, response_json: dict[str, Any]) -> str | None:
         """Extract error from result field."""
         result = response_json.get("result", {})
@@ -829,7 +852,7 @@ class Rodin23DGeneration(SuccessFailureNode):
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                return _json.loads(provider_response)
+                return json.loads(provider_response)
             except Exception:
                 return None
         if isinstance(provider_response, dict):
@@ -842,6 +865,20 @@ class Rodin23DGeneration(SuccessFailureNode):
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["model_url"] = None
         self.parameter_output_values["all_files"] = []
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        self._handle_failure_exception(e)
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:

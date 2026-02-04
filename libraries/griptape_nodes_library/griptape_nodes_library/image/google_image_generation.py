@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import base64
-import json as _json
+import json
 import logging
-import os
 from time import time
 from typing import Any, ClassVar
 from urllib.parse import urljoin
@@ -13,14 +12,15 @@ from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
+from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
     read_image_from_file_path,
@@ -42,7 +42,7 @@ MAX_HUMAN_IMAGES = 5
 MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
 
 
-class GoogleImageGeneration(SuccessFailureNode):
+class GoogleImageGeneration(GriptapeProxyNode):
     """Generate images using Google Gemini models via Griptape Cloud model proxy."""
 
     SERVICE_NAME = "Griptape"
@@ -62,11 +62,6 @@ class GoogleImageGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate images using Google Gemini models via Griptape Cloud model proxy"
-
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model ID
         self.add_parameter(
@@ -197,6 +192,25 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         # OUTPUTS
         self.add_parameter(
+            ParameterString(
+                name="generation_id",
+                tooltip="Griptape Cloud generation ID",
+                allowed_modes={ParameterMode.OUTPUT},
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
+            ParameterDict(
+                name="provider_response",
+                tooltip="Verbatim response from API (final result)",
+                allowed_modes={ParameterMode.OUTPUT},
+                hide_property=True,
+                hide=True,
+            )
+        )
+
+        self.add_parameter(
             ParameterImage(
                 name="image",
                 tooltip="First generated image as artifact",
@@ -266,31 +280,33 @@ class GoogleImageGeneration(SuccessFailureNode):
 
         return exceptions if exceptions else None
 
-    async def aprocess(self) -> None:
+    async def _process_generation(self) -> None:
         self._clear_execution_status()
 
-        # Validate API key
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            params = await self._get_parameters()
-        except ValueError as e:
-            self._handle_failure_exception(e)
+            self._handle_api_key_validation_error(e)
             return
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        try:
-            await self._submit_request_and_process(params, headers)
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+
+        result = await self._submit_and_poll(headers)
+        if not result:
             return
+
+        generation_id, _status_response = result
+
+        async with httpx.AsyncClient() as client:
+            result_json = await self._fetch_generation_result(generation_id, headers, client)
+            if not result_json:
+                return
+
+            self.parameter_output_values["provider_response"] = result_json
+            try:
+                await self._parse_result(result_json, generation_id)
+            except Exception as e:
+                self._handle_result_parsing_error(e)
 
     async def _get_parameters(self) -> dict[str, Any]:
         """Build the request payload matching Gemini API structure."""
@@ -348,6 +364,16 @@ class GoogleImageGeneration(SuccessFailureNode):
             payload["tools"] = [{"google_search": {}}]
 
         return payload
+
+    def _get_api_model_id(self) -> str:
+        model = self.get_parameter_value("model")
+        return self.ALL_MODELS_TO_API_MODELS.get(model) or ""
+
+    async def _build_payload(self) -> dict[str, Any]:
+        return await self._get_parameters()
+
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        await self._handle_response(result_json)
 
     def _validate_api_key(self) -> str:
         api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
@@ -516,11 +542,14 @@ class GoogleImageGeneration(SuccessFailureNode):
         status = self._extract_status(response_json) or "unknown"
         return f"{self.name} generation failed with status '{status}'.\n\nFull API response:\n{response_json}"
 
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
+        return self._extract_error_details(response_json)
+
     def _parse_provider_response(self, provider_response: Any) -> dict[str, Any] | None:
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                return _json.loads(provider_response)
+                return json.loads(provider_response)
             except Exception:
                 return None
         if isinstance(provider_response, dict):
@@ -566,6 +595,20 @@ class GoogleImageGeneration(SuccessFailureNode):
         self.parameter_output_values["image"] = None
         self.parameter_output_values["all_images"] = []
         self.parameter_output_values["text"] = ""
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        self._handle_failure_exception(e)
 
     async def _process_input_image(self, image_input: Any, *, auto_image_resize: bool = True) -> tuple[str, str] | None:
         """Process input image and convert to base64 with mime type.

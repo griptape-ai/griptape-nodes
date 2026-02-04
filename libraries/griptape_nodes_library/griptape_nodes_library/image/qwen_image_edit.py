@@ -2,19 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from contextlib import suppress
 from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -23,6 +20,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
     read_image_from_file_path,
@@ -53,7 +51,7 @@ STATUS_CONTENT_MODERATED = "Content Moderated"
 MAX_IMAGES = 6
 
 
-class QwenImageEdit(SuccessFailureNode):
+class QwenImageEdit(GriptapeProxyNode):
     """Edit images using Qwen image editing models via Griptape model proxy.
 
     Supports editing 1-6 input images with text instructions.
@@ -92,12 +90,6 @@ class QwenImageEdit(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Edit images using Qwen image editing models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model selection
         self.add_parameter(
@@ -213,55 +205,37 @@ class QwenImageEdit(SuccessFailureNode):
             if updated_list != value:
                 self.set_parameter_value("images", updated_list)
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Clear execution status at the start
+    async def _process_generation(self) -> None:
         self._clear_execution_status()
-
-        # Preprocess seed parameter
         self._seed_parameter.preprocess()
-
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
 
         try:
             api_key = self._validate_api_key()
         except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+            self._handle_api_key_validation_error(e)
             return
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-        model = params["model"]
+        model = self.get_parameter_value("model")
         logger.info("Editing images with %s", model)
 
-        # Submit request and get synchronous response
-        try:
-            response = await self._submit_request(params, headers)
-            if not response:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No response returned from API. Cannot proceed with editing.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
+        result = await self._submit_and_poll(headers)
+        if not result:
             return
 
-        # Handle synchronous response
-        await self._handle_response(response)
+        generation_id, _status_response = result
+
+        async with httpx.AsyncClient() as client:
+            result_json = await self._fetch_generation_result(generation_id, headers, client)
+            if not result_json:
+                return
+
+            self.parameter_output_values["provider_response"] = result_json
+            try:
+                await self._parse_result(result_json, generation_id)
+            except Exception as e:
+                self._handle_result_parsing_error(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         model = self.get_parameter_value("model")
@@ -309,37 +283,12 @@ class QwenImageEdit(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> dict[str, Any] | None:
-        payload = await self._build_payload(params)
-        proxy_url = urljoin(self._proxy_base, f"models/{params['model']}")
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model") or ""
 
-        logger.info("Submitting request to Griptape model proxy with %s", params["model"])
-        self._log_request(payload)
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_json = response.json()
-                logger.info("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            logger.error("HTTP error: %s - %s", e.response.status_code, e.response.text)
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            logger.error("Request failed: %s", e)
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        return response_json
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build content array with images first, then text instruction
         content = []
 
@@ -458,7 +407,7 @@ class QwenImageEdit(SuccessFailureNode):
 
             logger.info("Request payload: %s", json.dumps(sanitized_payload, indent=2))
 
-    async def _handle_response(self, response: dict[str, Any]) -> None:
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         """Handle Qwen synchronous response and extract image.
 
         Response shape:
@@ -479,23 +428,21 @@ class QwenImageEdit(SuccessFailureNode):
             }
         }
         """
-        self.parameter_output_values["provider_response"] = response
-
         # Extract request_id for generation_id
-        request_id = response.get("request_id", response.get("id", ""))
+        request_id = result_json.get("request_id", result_json.get("id", ""))
         self.parameter_output_values["generation_id"] = str(request_id)
 
         # Check status_code
-        status_code = response.get("status_code")
+        status_code = result_json.get("status_code")
         if status_code and status_code != HTTPStatus.OK:
             logger.error("Editing failed with status_code: %s", status_code)
             self._set_safe_defaults()
-            error_details = self._extract_error_details(response)
+            error_details = self._extract_error_message(result_json)
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
         try:
-            choices = response.get("choices", [])
+            choices = result_json.get("choices", [])
             choice = choices[0]
             message = choice.get("message", {})
             content = message.get("content", [])
@@ -550,7 +497,7 @@ class QwenImageEdit(SuccessFailureNode):
                 result_details=f"Image edited successfully. Using provider URL (could not save to static storage: {e}).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
 
         Args:
@@ -655,6 +602,20 @@ class QwenImageEdit(SuccessFailureNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["image_url"] = None
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        self._handle_failure_exception(e)
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:

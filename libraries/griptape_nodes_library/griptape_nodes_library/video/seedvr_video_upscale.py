@@ -1,18 +1,15 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
-import os
-from contextlib import suppress
-from time import monotonic, sleep, time
+from time import time
 from typing import Any
-from urllib.parse import urljoin
 
-import requests
+import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -24,13 +21,14 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SeedVRVideoUpscale"]
 
 
-class SeedVRVideoUpscale(SuccessFailureNode):
+class SeedVRVideoUpscale(GriptapeProxyNode):
     """Upscale a video using the SeedVR model via Griptape Cloud model proxy."""
 
     SERVICE_NAME = "Griptape"
@@ -41,12 +39,6 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate video via Seedance through Griptape Cloud model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -177,7 +169,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
         self.add_parameter(
             ParameterDict(
                 name="provider_response",
-                tooltip="Verbatim response from API (initial POST)",
+                tooltip="Verbatim response from API (final result)",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
                 hide=True,
@@ -227,54 +219,22 @@ class SeedVRVideoUpscale(SuccessFailureNode):
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
 
-    def process(self) -> AsyncResult[None]:
-        yield lambda: self._process()
-
-    def _process(self) -> None:
+    async def _process_generation(self) -> None:
         self.preprocess()
-        self._clear_execution_status()
-
-        # Get parameters and validate API key
+        timeout_s = float(self.get_parameter_value("timeout") or 0)
+        if timeout_s > 0:
+            poll_interval = self.DEFAULT_POLL_INTERVAL
+            self.DEFAULT_MAX_ATTEMPTS = max(1, int((timeout_s + poll_interval - 1) // poll_interval))
 
         try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        params = self._get_parameters()
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        # Build and submit request
-        try:
-            generation_id = self._submit_request(params, headers)
-            if not generation_id:
-                self.parameter_output_values["result"] = None
-                self.parameter_output_values["video"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        self._poll_for_result(generation_id, headers)
-
-        # Cleanup
-        self._public_video_url_parameter.delete_uploaded_artifact()
+            await super()._process_generation()
+        finally:
+            self._public_video_url_parameter.delete_uploaded_artifact()
 
     def _get_parameters(self) -> dict[str, Any]:
         parameters = {
             "model_id": self.get_parameter_value("model_id"),
-            "video_url": self._public_video_url_parameter.get_public_url_for_parameter(),
+            "video_input": self.get_parameter_value("video_url"),
             "upscale_mode": self.get_parameter_value("upscale_mode"),
             "noise_scale": self.get_parameter_value("noise_scale"),
             "target_resolution": self.get_parameter_value("target_resolution"),
@@ -298,110 +258,134 @@ class SeedVRVideoUpscale(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
-        post_url = urljoin(self._proxy_base, f"models/{params['model_id']}")
-        payload = params
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model_id") or ""
 
-        msg = f"Submitting request to proxy model={params['model_id']}"
-        logger.info(msg)
-        self._log_request(post_url, headers, payload)
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
 
-        post_resp = requests.post(post_url, json=payload, headers=headers, timeout=60)
-        if post_resp.status_code >= 400:  # noqa: PLR2004
-            self._set_safe_defaults()
-            msg = f"Proxy POST error status={post_resp.status_code} headers={dict(post_resp.headers)} body={post_resp.text}"
+        video_url = await self._prepare_video_data_url_async(params["video_input"])
+        if not video_url:
+            msg = "Failed to process input video"
+            raise ValueError(msg)
+
+        payload: dict[str, Any] = {
+            "model_id": params["model_id"],
+            "video_url": video_url,
+            "upscale_mode": params["upscale_mode"],
+            "noise_scale": params["noise_scale"],
+            "output_format": params["output_format"],
+            "output_write_mode": params["output_write_mode"],
+            "output_quality": params["output_quality"],
+            "seed": params["seed"],
+        }
+
+        if "target_resolution" in params:
+            payload["target_resolution"] = params["target_resolution"]
+        if "upscale_factor" in params:
+            payload["upscale_factor"] = params["upscale_factor"]
+
+        return payload
+
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        if "audio_bytes" in result_json:
+            await self._handle_video_bytes(result_json["audio_bytes"], generation_id)
+            return
+
+        video_url = self._extract_video_url(result_json)
+        if video_url:
+            await self._handle_completion(result_json, generation_id)
+            return
+
+        status = self._extract_status(result_json) or "unknown"
+        error_details = self._extract_error_message(result_json)
+        self.parameter_output_values["video"] = None
+        self._set_status_results(was_successful=False, result_details=error_details or status)
+
+    async def _handle_video_bytes(self, video_bytes: bytes, generation_id: str | None) -> None:
+        if not video_bytes:
+            self.parameter_output_values["video"] = None
+            self._set_status_results(was_successful=False, result_details="Received empty video data from API.")
+            return
+
+        try:
+            filename = (
+                f"seedvr_video_upscale_{generation_id}.mp4"
+                if generation_id
+                else f"seedvr_video_upscale_{int(time())}.mp4"
+            )
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
+            msg = f"Saved video to static storage as {filename}"
             logger.info(msg)
-            # Try to parse error response body
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
+        except Exception as e:
+            msg = f"Failed to save to static storage: {e}"
+            logger.info(msg)
+            self.parameter_output_values["video"] = None
+            self._set_status_results(
+                was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
+            )
+
+    async def _prepare_video_data_url_async(self, video_input: Any) -> str | None:
+        if not video_input:
+            return None
+
+        video_url = self._coerce_video_url_or_data_uri(video_input)
+        if not video_url:
+            return None
+
+        if video_url.startswith("data:video/"):
+            return video_url
+
+        if video_url.startswith(("http://", "https://")):
+            return await self._inline_external_url_async(video_url, "video/mp4")
+
+        return video_url
+
+    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
+        async with httpx.AsyncClient() as client:
             try:
-                error_json = post_resp.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
-            raise RuntimeError(msg)
+                resp = await client.get(url, timeout=20)
+                resp.raise_for_status()
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                logger.debug("%s failed to inline URL: %s", self.name, e)
+                return None
+            else:
+                content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
+                if not content_type.startswith("video/"):
+                    content_type = default_content_type
+                b64 = base64.b64encode(resp.content).decode("utf-8")
+                logger.debug("URL converted to base64 data URI for proxy")
+                return f"data:{content_type};base64,{b64}"
 
-        post_json = post_resp.json()
-        generation_id = str(post_json.get("generation_id") or "")
-        provider_response = post_json.get("provider_response")
+    @staticmethod
+    def _coerce_video_url_or_data_uri(val: Any) -> str | None:
+        if val is None:
+            return None
 
-        self.parameter_output_values["generation_id"] = generation_id
-        self.parameter_output_values["provider_response"] = provider_response
+        if isinstance(val, str):
+            v = val.strip()
+            if not v:
+                return None
+            return v if v.startswith(("http://", "https://", "data:video/")) else f"data:video/mp4;base64,{v}"
 
-        if generation_id:
-            msg = f"Submitted. generation_id={generation_id}"
-            logger.info(msg)
-        else:
-            logger.info("No generation_id returned from POST response")
+        try:
+            v = getattr(val, "value", None)
+            if isinstance(v, str) and v.startswith(("http://", "https://", "data:video/")):
+                return v
+            b64 = getattr(val, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64 if b64.startswith("data:video/") else f"data:video/mp4;base64,{b64}"
+        except AttributeError:
+            pass
 
-        return generation_id
+        return None
 
-    def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
-        dbg_headers = {**headers, "Authorization": "Bearer ***"}
-        with suppress(Exception):
-            msg = f"POST {url}\nheaders={dbg_headers}\nbody={_json.dumps(payload, indent=2)}"
-            logger.info(msg)
-
-    def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = monotonic()
-        last_json = None
-        attempt = 0
-        poll_interval_s = 5.0
-        timeout_s = float(self.get_parameter_value("timeout"))
-
-        while True:
-            # Check timeout (skip if timeout_s is 0, meaning no timeout)
-            if timeout_s > 0 and monotonic() - start_time > timeout_s:
-                self.parameter_output_values["video_url"] = self._extract_video_url(last_json)
-                logger.info("Polling timed out waiting for result")
-                self._set_status_results(
-                    was_successful=False,
-                    result_details=f"Video generation timed out after {int(timeout_s)} seconds waiting for result.",
-                )
-                return
-
-            try:
-                get_resp = requests.get(get_url, headers=headers, timeout=60)
-                get_resp.raise_for_status()
-                last_json = get_resp.json()
-                # Update provider_response with latest polling data
-                self.parameter_output_values["provider_response"] = last_json
-            except Exception as exc:
-                msg = f"GET generation failed: {exc}"
-                logger.info(msg)
-                error_msg = f"Failed to poll generation status: {exc}"
-                self._set_status_results(was_successful=False, result_details=error_msg)
-                self._handle_failure_exception(RuntimeError(error_msg))
-                return
-
-            with suppress(Exception):
-                msg = f"GET payload attempt #{attempt + 1}: {_json.dumps(last_json, indent=2)}"
-                logger.info(msg)
-                self.append_value_to_parameter("result_details", f"{msg}\n")
-
-            attempt += 1
-            status = self._extract_status(last_json) or "IN_PROGRESS"
-            msg = f"Polling attempt #{attempt} status={status}"
-            logger.info(msg)
-
-            # Check for explicit failure statuses
-            if status.lower() in {"failed", "error"}:
-                msg = f"Generation failed with status: {status}"
-                logger.info(msg)
-                self.parameter_output_values["video_url"] = None
-                error_details = self._extract_error_details(last_json)
-                self._set_status_results(was_successful=False, result_details=error_details)
-                return
-
-            # Check if we have the video - if so, we're done
-            video_url = self._extract_video_url(last_json)
-            if video_url:
-                self._handle_completion(last_json, generation_id)
-                return
-
-            sleep(poll_interval_s)
-
-    def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)
         if not extracted_url:
             self.parameter_output_values["video"] = None
@@ -413,7 +397,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
 
         try:
             logger.info("Downloading video bytes from provider URL")
-            video_bytes = self._download_bytes_from_url(extracted_url)
+            video_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             msg = f"Failed to download video: {e}"
             logger.info(msg)
@@ -449,7 +433,7 @@ class SeedVRVideoUpscale(SuccessFailureNode):
                 result_details="Video generated successfully. Using provider URL (could not download video bytes).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
 
         Args:
@@ -525,25 +509,8 @@ class SeedVRVideoUpscale(SuccessFailureNode):
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
-        self.parameter_output_values["result"] = None
-        self.parameter_output_values["status"] = "error"
+        self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video"] = None
-
-    @staticmethod
-    def _download_bytes_from_url(url: str) -> bytes | None:
-        try:
-            import requests
-        except Exception as exc:  # pragma: no cover
-            msg = "Missing optional dependency 'requests'. Add it to library dependencies."
-            raise ImportError(msg) from exc
-
-        try:
-            resp = requests.get(url, timeout=120)
-            resp.raise_for_status()
-        except Exception:  # pragma: no cover
-            return None
-        else:
-            return resp.content
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:

@@ -17,8 +17,8 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -506,10 +506,12 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
         params = await self._get_parameters_async()
 
         if not params["audio_uri"]:
-            raise ValueError(f"{self.name} requires an input audio for video generation.")
+            msg = f"{self.name} requires an input audio for video generation."
+            raise ValueError(msg)
 
         if not params["prompt"].strip():
-            raise ValueError(f"{self.name} requires a prompt to generate video.")
+            msg = f"{self.name} requires a prompt to generate video."
+            raise ValueError(msg)
 
         model_id = MODEL_MAPPING.get(params["model"], "ltx-2-pro")
         payload: dict[str, Any] = {
@@ -528,7 +530,8 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         video_bytes = result_json.get("audio_bytes")
         if not isinstance(video_bytes, (bytes, bytearray)):
-            raise RuntimeError(f"{self.name} generation completed but no video data received.")
+            msg = f"{self.name} generation completed but no video data received."
+            raise TypeError(msg)
 
         await self._handle_completion_async(bytes(video_bytes), generation_id)
 
@@ -564,7 +567,7 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
                 result_details=f"Video generated but failed to save to storage: {e}",
             )
 
-    def _extract_error_message(self, response_json: dict[str, Any]) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0912
         if not response_json:
             return f"{self.name} generation failed with no error details provided by API."
 

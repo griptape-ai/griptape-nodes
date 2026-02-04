@@ -328,26 +328,27 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
         raw_model_id = self.get_parameter_value("model_id") or "Hailuo 2.3 (TTV & ITV)"
         return self._get_provider_model_id(raw_model_id)
 
-    async def _build_payload(self) -> dict[str, Any]:
+    async def _build_payload(self) -> dict[str, Any]:  # noqa: C901
         """Build the request payload for MiniMax Hailuo API."""
         params = self._get_parameters()
 
         if not params["prompt"].strip():
-            raise ValueError(f"{self.name} requires a prompt to generate video.")
+            msg = f"{self.name} requires a prompt to generate video."
+            raise ValueError(msg)
 
         if params["model_id"] == "MiniMax-Hailuo-2.3-Fast" and not params["first_frame_image"]:
-            raise ValueError(
-                f"{self.name} requires a first frame image for Hailuo 2.3 Fast model (image-to-video only)."
-            )
+            msg = f"{self.name} requires a first frame image for Hailuo 2.3 Fast model (image-to-video only)."
+            raise ValueError(msg)
 
         capabilities = self.MODEL_CAPABILITIES.get(params["model_id"], {})
         valid_resolutions = capabilities.get("resolutions", {}).get(str(params["duration"]), [])
         if valid_resolutions and params["resolution"] not in valid_resolutions:
-            raise ValueError(
+            msg = (
                 f"{self.name}: Model {params['model_id']} does not support the combination of "
                 f"duration {params['duration']}s and resolution {params['resolution']}. "
                 f"Valid resolutions for {params['duration']}s: {', '.join(valid_resolutions)}"
             )
+            raise ValueError(msg)
 
         model_id = params["model_id"]
         payload: dict[str, Any] = {
@@ -438,9 +439,7 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
                 return red
 
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
-        logger.debug(
-            "POST %s\nheaders=%s\nbody=%s", url, dbg_headers, json.dumps(_sanitize_body(payload), indent=2)
-        )
+        logger.debug("POST %s\nheaders=%s\nbody=%s", url, dbg_headers, json.dumps(_sanitize_body(payload), indent=2))
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         self.parameter_output_values["provider_response"] = result_json
@@ -583,4 +582,3 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
                 return None
             else:
                 return resp.content
-import json

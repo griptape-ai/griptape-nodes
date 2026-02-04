@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import io
 import logging
-import os
 import time
 from contextlib import suppress
-from time import monotonic
 from typing import Any
-from urllib.parse import urljoin
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -23,14 +18,12 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
 
 logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["SoraVideoGeneration"]
-
-# HTTP error status code threshold
-HTTP_ERROR_STATUS = 400
 
 # Size options for different models
 SIZE_OPTIONS = {
@@ -39,7 +32,7 @@ SIZE_OPTIONS = {
 }
 
 
-class SoraVideoGeneration(SuccessFailureNode):
+class SoraVideoGeneration(GriptapeProxyNode):
     """Generate a video using Sora 2 models via Griptape Cloud model proxy.
 
     Inputs:
@@ -68,12 +61,6 @@ class SoraVideoGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate video via Sora 2 through Griptape Cloud model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -150,7 +137,7 @@ class SoraVideoGeneration(SuccessFailureNode):
         self.add_parameter(
             ParameterDict(
                 name="provider_response",
-                tooltip="Verbatim response from API (initial POST)",
+                tooltip="Verbatim response from API (final result)",
                 allowed_modes={ParameterMode.OUTPUT},
                 hide_property=True,
                 hide=True,
@@ -201,15 +188,9 @@ class SoraVideoGeneration(SuccessFailureNode):
     def _auto_update_size_from_image(self, image_value: Any) -> None:
         """Automatically update the size parameter to match the image dimensions if supported."""
         try:
-            # Convert to ImageUrlArtifact if needed
-            if isinstance(image_value, dict):
-                image_value = dict_to_image_url_artifact(image_value)
-
-            if not hasattr(image_value, "value") or not image_value.value:
+            pil_image = self._load_pil_from_input(image_value)
+            if not pil_image:
                 return
-
-            # Load PIL image to get dimensions
-            pil_image = load_pil_from_url(image_value.value)
             image_size = f"{pil_image.width}x{pil_image.height}"
 
             # Get available size options for current model
@@ -228,43 +209,7 @@ class SoraVideoGeneration(SuccessFailureNode):
             self._log(f"Could not auto-update size from image: {e}")
 
     async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        # Get parameters and validate API key
-        params = self._get_parameters()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}"}
-
-        # Build and submit request
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self.parameter_output_values["video_url"] = None
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except (RuntimeError, ValueError) as e:
-            # HTTP error or validation error (e.g., start frame dimensions) during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
+        await self._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         seconds_value = self.get_parameter_value("seconds")
@@ -279,13 +224,61 @@ class SoraVideoGeneration(SuccessFailureNode):
             "start_frame": self.get_parameter_value("start_frame"),
         }
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model") or "sora-2"
+
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
+
+        # Build JSON payload
+        json_data: dict[str, Any] = {
+            "prompt": params["prompt"],
+            "model": params["model"],
+            "size": params["size"],
+        }
+
+        if params["seconds"]:
+            json_data["seconds"] = str(params["seconds"])
+
+        # Process and add start_frame if provided
+        if params["start_frame"]:
+            base64_image = self._process_start_frame(params["start_frame"], params["size"])
+            if base64_image:
+                json_data["input_reference"] = base64_image
+
+        self._log(f"Submitting request to proxy model={params['model']}")
+        self._log(f"JSON payload keys: {list(json_data.keys())}")
+        if "input_reference" in json_data:
+            self._log("Including start_frame as input_reference")
+
+        return json_data
+
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        # Handle binary response from proxy if returned
+        if "audio_bytes" in result_json:
+            self._handle_video_completion(result_json["audio_bytes"])
+            return
+
+        # Check for video URL in response
+        video_url = result_json.get("video_url") or result_json.get("url")
+        if isinstance(video_url, str) and video_url:
+            await self._handle_video_url_completion(video_url)
+            return
+
+        # Check for error status
+        status = result_json.get("status")
+        if isinstance(status, str) and status.lower() in {"failed", "error"}:
+            error_details = self._extract_error_message(result_json)
+            self.parameter_output_values["video_url"] = None
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
+
+        # Final fallback
+        self.parameter_output_values["video_url"] = None
+        self._set_status_results(
+            was_successful=False,
+            result_details="Generation completed but no video data was found in the response.",
+        )
 
     def _process_start_frame(self, start_frame: Any, expected_size: str) -> str | None:
         """Process start_frame image: validate dimensions and encode to base64.
@@ -303,15 +296,9 @@ class SoraVideoGeneration(SuccessFailureNode):
         if not start_frame:
             return None
 
-        # Convert to ImageUrlArtifact if needed
-        if isinstance(start_frame, dict):
-            start_frame = dict_to_image_url_artifact(start_frame)
-
-        if not hasattr(start_frame, "value") or not start_frame.value:
+        pil_image = self._load_pil_from_input(start_frame)
+        if not pil_image:
             return None
-
-        # Load PIL image
-        pil_image = load_pil_from_url(start_frame.value)
 
         # Parse expected dimensions
         expected_width, expected_height = map(int, expected_size.split("x"))
@@ -331,129 +318,7 @@ class SoraVideoGeneration(SuccessFailureNode):
 
         return base64_string
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
-        post_url = urljoin(self._proxy_base, f"models/{params['model']}")
-
-        # Build JSON payload
-        json_data = {
-            "prompt": params["prompt"],
-            "model": params["model"],
-            "size": params["size"],
-        }
-
-        if params["seconds"]:
-            json_data["seconds"] = str(params["seconds"])
-
-        # Process and add start_frame if provided
-        if params["start_frame"]:
-            base64_image = self._process_start_frame(params["start_frame"], params["size"])
-            if base64_image:
-                json_data["input_reference"] = base64_image
-
-        self._log(f"Submitting request to proxy model={params['model']}")
-        self._log(f"POST {post_url}")
-        self._log(f"JSON payload keys: {list(json_data.keys())}")
-        if "input_reference" in json_data:
-            self._log("Including start_frame as input_reference")
-        self._log(
-            f"JSON payload types: {[(k, type(v).__name__, len(v) if k == 'input_reference' else v) for k, v in json_data.items()]}"
-        )
-
-        # Make request with JSON data
-        async with httpx.AsyncClient() as client:
-            post_resp = await client.post(post_url, json=json_data, headers=headers, timeout=60)
-
-        if post_resp.status_code >= HTTP_ERROR_STATUS:
-            self._set_safe_defaults()
-            self._log(f"Proxy POST error status={post_resp.status_code} body={post_resp.text}")
-            # Try to parse error response body
-            try:
-                error_json = post_resp.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
-            raise RuntimeError(msg)
-
-        post_json = post_resp.json()
-        generation_id = str(post_json.get("generation_id") or "")
-        provider_response = post_json.get("provider_response")
-
-        self.parameter_output_values["generation_id"] = generation_id
-        self.parameter_output_values["provider_response"] = provider_response
-
-        if generation_id:
-            self._log(f"Submitted. generation_id={generation_id}")
-        else:
-            self._log("No generation_id returned from POST response")
-
-        return generation_id
-
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        start_time = monotonic()
-        last_json = None
-        attempt = 0
-        poll_interval_s = 5.0
-        timeout_s = 600.0
-
-        async with httpx.AsyncClient() as client:
-            while True:
-                if monotonic() - start_time > timeout_s:
-                    self.parameter_output_values["video_url"] = None
-                    self._log("Polling timed out waiting for result")
-                    self._set_status_results(
-                        was_successful=False,
-                        result_details=f"Video generation timed out after {timeout_s} seconds waiting for result.",
-                    )
-                    return
-
-                try:
-                    get_resp = await client.get(get_url, headers=headers, timeout=60)
-                    get_resp.raise_for_status()
-
-                    content_type = get_resp.headers.get("content-type", "").lower()
-
-                    # Check if we got the binary video data
-                    if "application/octet-stream" in content_type:
-                        self._log("Received video data")
-                        self._handle_video_completion(get_resp.content)
-                        return
-
-                    # Otherwise, parse JSON status response
-                    last_json = get_resp.json()
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = last_json
-                except Exception as exc:
-                    self._log(f"GET generation failed: {exc}")
-                    error_msg = f"Failed to poll generation status: {exc}"
-                    self._set_status_results(was_successful=False, result_details=error_msg)
-                    self._handle_failure_exception(RuntimeError(error_msg))
-                    return
-
-                try:
-                    status = last_json.get("status", "running") if last_json else "running"
-                except Exception:
-                    status = "running"
-
-                attempt += 1
-                self._log(f"Polling attempt #{attempt} status={status}")
-
-                # Check if status indicates completion or failure
-                if status and isinstance(status, str):
-                    status_lower = status.lower()
-                    if status_lower in {"failed", "error"}:
-                        self._log(f"Generation failed with status: {status}")
-                        self.parameter_output_values["video_url"] = None
-
-                        # Extract error details from the response (last_json already set in provider_response)
-                        error_details = self._extract_error_details(last_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                await asyncio.sleep(poll_interval_s)
-
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
 
         Args:
@@ -551,6 +416,59 @@ class SoraVideoGeneration(SuccessFailureNode):
             self._set_status_results(
                 was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
             )
+
+    async def _handle_video_url_completion(self, video_url: str) -> None:
+        """Handle completion when a video URL is received."""
+        try:
+            video_bytes = await self._download_bytes_from_url(video_url)
+        except Exception as e:
+            self._log(f"Failed to download video: {e}")
+            video_bytes = None
+
+        if video_bytes:
+            self._handle_video_completion(video_bytes)
+        else:
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+            )
+
+    def _load_pil_from_input(self, image_value: Any) -> Image.Image | None:
+        if isinstance(image_value, dict):
+            image_value = dict_to_image_url_artifact(image_value)
+
+        if hasattr(image_value, "value"):
+            image_value = image_value.value
+        elif hasattr(image_value, "base64"):
+            image_value = image_value.base64
+
+        if not isinstance(image_value, str) or not image_value:
+            return None
+
+        if image_value.startswith("data:image/"):
+            image_bytes = self._decode_base64_data(image_value)
+            if not image_bytes:
+                return None
+            return Image.open(io.BytesIO(image_bytes))
+
+        if image_value.startswith(("http://", "https://")):
+            return load_pil_from_url(image_value)
+
+        image_bytes = self._decode_base64_data(image_value)
+        if image_bytes:
+            return Image.open(io.BytesIO(image_bytes))
+
+        return None
+
+    @staticmethod
+    def _decode_base64_data(data: str) -> bytes | None:
+        try:
+            if "base64," in data:
+                data = data.split("base64,", 1)[1]
+            return base64.b64decode(data)
+        except Exception:
+            return None
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["generation_id"] = ""
