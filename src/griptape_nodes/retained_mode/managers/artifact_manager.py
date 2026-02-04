@@ -1,6 +1,8 @@
 """Manager for artifact operations."""
 
+import json
 import logging
+from dataclasses import asdict
 from pathlib import Path
 
 from griptape_nodes.retained_mode.events.artifact_events import (
@@ -22,6 +24,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     ListPreviewGeneratorsRequest,
     ListPreviewGeneratorsResultFailure,
     ListPreviewGeneratorsResultSuccess,
+    PreviewMetadata,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
@@ -30,10 +33,13 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterPreviewGeneratorResultSuccess,
 )
 from griptape_nodes.retained_mode.events.os_events import (
+    DeleteFileRequest,
     GetFileInfoRequest,
     GetFileInfoResultSuccess,
     ResolveMacroPathRequest,
     ResolveMacroPathResultSuccess,
+    WriteFileRequest,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.default_artifact_providers import (
@@ -114,7 +120,7 @@ class ArtifactManager:
             )
             raise RuntimeError(error_message)
 
-    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
+    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912, PLR0915
         self, request: GeneratePreviewRequest
     ) -> GeneratePreviewResultSuccess | GeneratePreviewResultFailure:
         """Handle generate preview request.
@@ -218,9 +224,9 @@ class ArtifactManager:
         # Calculate destination path using nodes_previews pattern
         source_path_obj = Path(source_path)
         destination_dir = source_path_obj.parent / "nodes_previews"
-        destination_path = str(destination_dir / source_path_obj.name)
-        # Apply preview format extension to destination filename (keeps full source filename)
-        destination_preview_file_path = f"{destination_path}.{preview_format}"
+        # Build preview filename once, then construct full path
+        preview_file_name = f"{source_path_obj.name}.{preview_format}"
+        destination_preview_file_path = str(destination_dir / preview_file_name)
 
         # FAILURE CASE: Call provider.generate_preview()
         try:
@@ -236,8 +242,58 @@ class ArtifactManager:
                 result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {e}"
             )
 
-        # SUCCESS PATH: Return success
-        return GeneratePreviewResultSuccess(result_details="Preview generated successfully")
+        # OPTIONAL: Generate metadata if requested
+        metadata_path = None
+        if request.generate_preview_metadata_json:
+            # Helper to clean up preview file on metadata failure
+            def fail_with_cleanup(error_details: str) -> GeneratePreviewResultFailure:
+                delete_request = DeleteFileRequest(path=destination_preview_file_path, workspace_only=False)
+                delete_result = GriptapeNodes.handle_request(delete_request)
+
+                if delete_result.failed():
+                    error_details += f". Additionally, failed to delete preview file: {delete_result.result_details}"
+
+                return GeneratePreviewResultFailure(result_details=error_details)
+
+            # Step 1: Create metadata object
+            metadata = PreviewMetadata(
+                version=PreviewMetadata.LATEST_SCHEMA_VERSION,
+                source_macro_path=request.macro_path.parsed_macro.template,
+                source_file_size=file_info_result.file_entry.size,
+                source_file_mtime=file_info_result.file_entry.modified_time,
+                preview_file_name=preview_file_name,
+            )
+
+            # Step 2: Serialize to JSON
+            try:
+                metadata_content = json.dumps(asdict(metadata), indent=2)
+            except Exception as e:
+                return fail_with_cleanup(
+                    f"Attempted to generate preview for '{source_path}'. "
+                    f"Preview created but metadata serialization failed: {e}"
+                )
+
+            # Step 3: Write metadata file (named after source file, not preview)
+            metadata_path = str(destination_dir / f"{source_path_obj.name}.json")
+            metadata_write_request = WriteFileRequest(
+                file_path=metadata_path,
+                content=metadata_content,
+                create_parents=False,
+            )
+            metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
+
+            if not isinstance(metadata_write_result, WriteFileResultSuccess):
+                return fail_with_cleanup(
+                    f"Attempted to generate preview for '{source_path}'. "
+                    f"Preview created but metadata write failed: {metadata_write_result.result_details}"
+                )
+
+        # SUCCESS PATH: Build result message
+        result_message = f"Successfully generated preview of {source_path}. Preview at {destination_preview_file_path}"
+        if metadata_path is not None:
+            result_message += f". Metadata at {metadata_path}"
+
+        return GeneratePreviewResultSuccess(result_details=result_message)
 
     def on_handle_get_preview_for_artifact_request(
         self, _request: GetPreviewForArtifactRequest
