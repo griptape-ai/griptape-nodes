@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 from contextlib import suppress
@@ -17,6 +16,12 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -430,30 +435,25 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             return
 
         # Download and save the image using generation_id in filename
-        try:
-            self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(sample_url)
-            if image_bytes:
-                filename = f"flux_image_{generation_id}.jpg"
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved image to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            else:
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=sample_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
-                )
-        except Exception as e:
-            self._log(f"Failed to save image from URL: {e}")
+        filename = f"flux_image_{generation_id}.jpg"
+        request = DownloadAndSaveRequest(
+            url=sample_url,
+            filename=filename,
+            artifact_type=ImageUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["image_url"] = result.artifact
+            self._log(f"Saved image to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+            )
+        else:
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=sample_url)
             self._set_status_results(
                 was_successful=True,
-                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
+                result_details="Image generated successfully. Using provider URL (could not download image bytes).",
             )
 
     async def _process_input_image(self, image_input: Any) -> str | None:
@@ -512,14 +512,16 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            self._log(f"Failed to download image from URL {url}: {e}")
-        return None
+        request = LoadAsBase64DataUriRequest(
+            artifact_or_url=url,
+            context_name=f"{self.name}.input_image",
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+        if not isinstance(result, LoadAsBase64DataUriResultSuccess):
+            self._log(f"Failed to download image from URL {url}")
+            return None
+
+        return result.data_uri
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):

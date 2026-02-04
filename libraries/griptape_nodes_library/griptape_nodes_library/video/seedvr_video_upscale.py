@@ -17,6 +17,12 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -338,39 +344,27 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
             )
             return
 
-        try:
-            logger.info("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
-        except Exception as e:
-            msg = f"Failed to download video: {e}"
-            logger.info(msg)
-            video_bytes = None
+        filename = (
+            f"seedvr_video_upscale_{generation_id}.mp4" if generation_id else f"seedvr_video_upscale_{int(time())}.mp4"
+        )
 
-        if video_bytes:
-            try:
-                filename = (
-                    f"seedvr_video_upscale_{generation_id}.mp4"
-                    if generation_id
-                    else f"seedvr_video_upscale_{int(time())}.mp4"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                msg = f"Saved video to static storage as {filename}"
-                logger.info(msg)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                msg = f"Failed to save to static storage: {e}, using provider URL"
-                logger.info(msg)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        request = DownloadAndSaveRequest(
+            url=extracted_url,
+            filename=filename,
+            artifact_type=VideoUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video"] = result.artifact
+            msg = f"Saved video to static storage as {filename}"
+            logger.info(msg)
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
+            logger.info("Failed to download/save video: %s", result.result_details)
             self._set_status_results(
                 was_successful=True,
                 result_details="Video generated successfully. Using provider URL (could not download video bytes).",

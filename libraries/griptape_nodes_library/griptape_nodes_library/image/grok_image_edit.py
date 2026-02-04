@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import time
 from contextlib import suppress
@@ -15,6 +14,12 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -238,12 +243,14 @@ class GrokImageEdit(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            image_bytes = await self._download_bytes_from_url(image_value)
-            if not image_bytes:
+            request = LoadAsBase64DataUriRequest(
+                artifact_or_url=image_value,
+                context_name=f"{self.name}.input_image",
+            )
+            result = await GriptapeNodes.ahandle_request(request)
+            if not isinstance(result, LoadAsBase64DataUriResultSuccess):
                 return None
-            mime_type = self._guess_image_mime_type(image_value)
-            b64_string = base64.b64encode(image_bytes).decode("utf-8")
-            return f"data:{mime_type};base64,{b64_string}"
+            return result.data_uri
 
         return convert_image_value_to_base64_data_uri(image_value, self.name)
 
@@ -352,21 +359,22 @@ class GrokImageEdit(GriptapeProxyNode):
 
     async def _save_single_image_from_url(
         self, image_url: str, generation_id: str | None = None, index: int = 0
-    ) -> ImageUrlArtifact | None:
-        try:
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if not image_bytes:
-                return ImageUrlArtifact(value=image_url)
+    ) -> ImageUrlArtifact:
+        filename = (
+            f"grok_image_edit_{generation_id}_{index}.jpg"
+            if generation_id
+            else f"grok_image_edit_{int(time.time())}_{index}.jpg"
+        )
 
-            filename = (
-                f"grok_image_edit_{generation_id}_{index}.jpg"
-                if generation_id
-                else f"grok_image_edit_{int(time.time())}_{index}.jpg"
-            )
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
-            return ImageUrlArtifact(value=saved_url, name=filename)
-        except Exception as e:
-            with suppress(Exception):
-                logger.warning("%s failed to save image %s: %s", self.name, index, e)
-            return ImageUrlArtifact(value=image_url)
+        request = DownloadAndSaveRequest(
+            url=image_url,
+            filename=filename,
+            artifact_type=ImageUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            return result.artifact
+        with suppress(Exception):
+            logger.warning("%s failed to save image %s: %s", self.name, index, result.result_details)
+        return ImageUrlArtifact(value=image_url)

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import base64
 import logging
-from contextlib import suppress
-from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -15,6 +11,12 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -197,20 +199,6 @@ class GrokVideoGeneration(GriptapeProxyNode):
 
         return None
 
-    def _guess_image_mime_type(self, image_url: str) -> str:
-        ext = Path(urlparse(image_url).path).suffix.lower()
-        mime_map = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-            ".gif": "image/gif",
-            ".tif": "image/tiff",
-            ".tiff": "image/tiff",
-            ".bmp": "image/bmp",
-        }
-        return mime_map.get(ext, "image/png")
-
     async def _prepare_image_data_uri(self, image_input: Any) -> str | None:
         if not image_input:
             return None
@@ -223,12 +211,14 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            image_bytes = await self._download_bytes_from_url(image_value)
-            if not image_bytes:
-                return None
-            mime_type = self._guess_image_mime_type(image_value)
-            b64_string = base64.b64encode(image_bytes).decode("utf-8")
-            return f"data:{mime_type};base64,{b64_string}"
+            request = LoadAsBase64DataUriRequest(
+                artifact_or_url=image_value,
+                context_name=f"{self.name}.input_image",
+            )
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+                return result.data_uri
+            return None
 
         return convert_image_value_to_base64_data_uri(image_value, self.name)
 
@@ -291,28 +281,21 @@ class GrokVideoGeneration(GriptapeProxyNode):
             )
             return
 
-        try:
-            video_bytes = await self._download_bytes_from_url(video_url)
-        except Exception as e:
-            with suppress(Exception):
-                logger.warning("%s failed to download video: %s", self.name, e)
-            video_bytes = None
+        filename = f"grok_video_{generation_id}.mp4"
+        request = DownloadAndSaveRequest(
+            url=video_url,
+            filename=filename,
+            artifact_type=VideoUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
 
-        if video_bytes:
-            try:
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"grok_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-            except (OSError, PermissionError) as e:
-                with suppress(Exception):
-                    logger.warning("%s failed to save video: %s", self.name, e)
-            else:
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully and saved as {filename}.",
-                )
-                return
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video_url"] = result.artifact
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Video generated successfully and saved as {filename}.",
+            )
+            return
 
         self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
         self._set_status_results(

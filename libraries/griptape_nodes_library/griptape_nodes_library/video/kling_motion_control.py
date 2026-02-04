@@ -14,6 +14,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -255,35 +259,21 @@ class KlingMotionControl(GriptapeProxyNode):
             logger.info("Video ID: %s", video_id)
 
         # Download and save video
-        try:
-            logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url(download_url)
-        except Exception as e:
-            logger.warning("%s failed to download video: %s", self.name, e)
-            video_bytes = None
+        filename = f"kling_motion_control_{generation_id}.mp4"
+        request = DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+        result = await GriptapeNodes.ahandle_request(request)
 
-        if video_bytes:
-            try:
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"kling_motion_control_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("%s saved video to static storage as %s", self.name, filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except (OSError, PermissionError) as e:
-                logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video_url"] = result.artifact
+            logger.info("%s saved video to static storage as %s", self.name, filename)
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
             self._set_status_results(
                 was_successful=True,
-                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+                result_details="Video generated successfully. Using provider URL (could not download or save video).",
             )
 
     def _set_safe_defaults(self) -> None:

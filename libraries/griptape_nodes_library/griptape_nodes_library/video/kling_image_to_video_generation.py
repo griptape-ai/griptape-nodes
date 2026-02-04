@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from contextlib import suppress
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -16,6 +14,12 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -410,17 +414,12 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str) -> str | None:
         """Download external image URL and convert to data URL."""
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                logger.debug("%s failed to inline image URL: %s", self.name, e)
-                return None
-            else:
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                logger.debug("Image URL converted to data URI for proxy")
-                return b64
+        request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
+        result = await GriptapeNodes.ahandle_request(request)
+        if isinstance(result, LoadAsBase64DataUriResultSuccess):
+            logger.debug("Image URL converted to data URI for proxy")
+            return result.data_uri
+        return None
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the result and set output parameters.
@@ -457,30 +456,20 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
             logger.info("Video ID: %s", video_id)
 
         # Download and save video
-        try:
-            logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url(download_url)
-        except Exception as e:
-            logger.warning("%s failed to download video: %s", self.name, e)
-            video_bytes = None
+        filename = f"kling_image_to_video_{generation_id}.mp4"
+        request = DownloadAndSaveRequest(
+            url=download_url,
+            filename=filename,
+            artifact_type=VideoUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
 
-        if video_bytes:
-            try:
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"kling_image_to_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("%s saved video to static storage as %s", self.name, filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except (OSError, PermissionError) as e:
-                logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video_url"] = result.artifact
+            logger.info("%s saved video to static storage as %s", self.name, filename)
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
             self._set_status_results(

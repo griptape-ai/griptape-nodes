@@ -16,6 +16,10 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -418,16 +422,31 @@ class SoraVideoGeneration(GriptapeProxyNode):
             )
 
     async def _handle_video_url_completion(self, video_url: str) -> None:
-        """Handle completion when a video URL is received."""
-        try:
-            video_bytes = await self._download_bytes_from_url(video_url)
-        except Exception as e:
-            self._log(f"Failed to download video: {e}")
-            video_bytes = None
+        """Handle completion when a video URL is received.
 
-        if video_bytes:
-            self._handle_video_completion(video_bytes)
+        Attempts to download and save the video. Falls back to using the provider URL
+        directly if download/save fails.
+        """
+        filename = f"sora_video_{int(time.time())}.mp4"
+
+        # Attempt download and save using the new pattern
+        request = DownloadAndSaveRequest(
+            url=video_url,
+            filename=filename,
+            artifact_type=VideoUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            # Success: use the saved artifact
+            self.parameter_output_values["video_url"] = result.artifact
+            self._log(f"Saved video to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
+            # Fallback: use provider URL directly (still success!)
+            self._log(f"Failed to download/save video: {result.result_details}")
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
             self._set_status_results(
                 was_successful=True,

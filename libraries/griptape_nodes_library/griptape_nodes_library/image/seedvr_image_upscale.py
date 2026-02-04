@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from contextlib import suppress
 from time import time
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
@@ -21,6 +19,12 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
@@ -292,42 +296,32 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             )
             return
 
-        try:
-            logger.info("Downloading image bytes from provider URL")
-            image_bytes = await self._download_bytes_from_url_async(extracted_url)
-        except Exception as e:
-            msg = f"Failed to download image: {e}"
-            logger.info(msg)
-            image_bytes = None
+        filename = (
+            f"seedvr_image_upscale_{generation_id}.{self.get_parameter_value('output_format')}"
+            if generation_id
+            else f"seedvr_image_upscale_{int(time())}.{self.get_parameter_value('output_format')}"
+        )
 
-        if image_bytes:
-            try:
-                filename = (
-                    f"seedvr_image_upscale_{generation_id}.{self.get_parameter_value('output_format')}"
-                    if generation_id
-                    else f"seedvr_image_upscale_{int(time())}.{self.get_parameter_value('output_format')}"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image"] = ImageUrlArtifact(value=saved_url, name=filename)
-                msg = f"Saved image to static storage as {filename}"
-                logger.info(msg)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                msg = f"Failed to save to static storage: {e}, using provider URL"
-                logger.info(msg)
-                self.parameter_output_values["image"] = ImageUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        logger.info("Downloading image from provider URL and saving to static storage")
+        request = DownloadAndSaveRequest(
+            url=extracted_url,
+            filename=filename,
+            artifact_type=ImageUrlArtifact,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["image"] = result.artifact
+            msg = f"Saved image to static storage as {filename}"
+            logger.info(msg)
+            self._set_status_results(
+                was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["image"] = ImageUrlArtifact(value=extracted_url)
             self._set_status_results(
                 was_successful=True,
-                result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+                result_details="Image generated successfully. Using provider URL (could not download and save image).",
             )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
@@ -425,10 +419,14 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            image_bytes = await self._download_bytes_from_url_async(image_value)
-            if not image_bytes:
+            request = LoadAsBase64DataUriRequest(
+                artifact_or_url=image_value,
+                context_name=f"{self.name}.input_image",
+            )
+            result = await GriptapeNodes.ahandle_request(request)
+            if not isinstance(result, LoadAsBase64DataUriResultSuccess):
                 return None
-            return f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+            return result.data_uri
 
         file_data = read_image_from_file_path(image_value, self.name)
         if file_data:
@@ -451,16 +449,6 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             return None
 
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url_async(url: str) -> bytes | None:
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
 
     def _handle_payload_build_error(self, e: Exception) -> None:
         if isinstance(e, ValueError):

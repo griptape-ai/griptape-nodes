@@ -8,7 +8,6 @@ from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -17,6 +16,10 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -290,14 +293,17 @@ class QwenImageGeneration(GriptapeProxyNode):
         """Download and save the image from the provided URL."""
         try:
             logger.info("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if image_bytes:
-                filename = f"qwen_image_{int(time.time())}.jpg"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
+            filename = f"qwen_image_{int(time.time())}.jpg"
 
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+            request = DownloadAndSaveRequest(
+                url=image_url,
+                filename=filename,
+                artifact_type=ImageUrlArtifact,
+            )
+            result = await GriptapeNodes.ahandle_request(request)
+
+            if isinstance(result, DownloadAndSaveResultSuccess):
+                self.parameter_output_values["image_url"] = result.artifact
                 logger.info("Saved image to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
@@ -435,14 +441,3 @@ class QwenImageGeneration(GriptapeProxyNode):
         self._set_safe_defaults()
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
