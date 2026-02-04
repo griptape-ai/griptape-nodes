@@ -11,10 +11,7 @@ import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
-    ApiKeyProviderParameter,
-    ApiKeyValidationResult,
-)
+from griptape_nodes.exe_types.param_components.api_key_provider_parameter import ApiKeyProviderParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -234,42 +231,7 @@ class FluxImageGeneration(GriptapeProxyNode):
 
     async def _process_generation(self) -> None:
         self.preprocess()
-        self._clear_execution_status()
-
-        try:
-            validation_result = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {
-            "Authorization": f"Bearer {validation_result.proxy_api_key}",
-            "Content-Type": "application/json",
-        }
-        if validation_result.user_api_key:
-            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
-
-        model = self.get_parameter_value("model") or "flux-kontext-pro"
-        if validation_result.user_api_key:
-            self._log(f"Generating image with {model} using Griptape model proxy with user-provided API key")
-        else:
-            self._log(f"Generating image with {model} using Griptape model proxy")
-
-        result = await self._submit_and_poll(headers)
-        if not result:
-            return
-
-        generation_id, _status_response = result
-
-        result_json = await self._fetch_generation_result(generation_id)
-        if not result_json:
-            return
-
-        self.parameter_output_values["provider_response"] = result_json
-        try:
-            await self._parse_result(result_json, generation_id)
-        except Exception as e:
-            self._handle_result_parsing_error(e)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         input_image = self.get_parameter_value("input_image")
@@ -315,14 +277,6 @@ class FluxImageGeneration(GriptapeProxyNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
-    def _validate_api_key(self) -> ApiKeyValidationResult:
-        """Validate and return API key and whether to use user API.
-
-        Returns:
-            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
-        """
-        return self._api_key_provider.validate_api_key()
-
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         self._api_key_provider.after_value_set(parameter, value)
@@ -336,6 +290,9 @@ class FluxImageGeneration(GriptapeProxyNode):
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
+        validation_result = self._api_key_provider.validate_api_key()
+        if validation_result.user_api_key:
+            self.register_user_auth_info(validation_result.user_api_key)
 
     def _get_api_model_id(self) -> str:
         return self.get_parameter_value("model") or "flux-kontext-pro"

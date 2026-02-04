@@ -50,6 +50,11 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         base_slash = base if base.endswith("/") else base + "/"
         api_base = urljoin(base_slash, "api/")
         self._proxy_base = urljoin(api_base, "proxy/v2/")
+        self._user_auth_info: str | None = None
+
+    def register_user_auth_info(self, user_auth_info: str | None) -> None:
+        """Register optional user auth info to send with generation submissions."""
+        self._user_auth_info = user_auth_info
 
     @abstractmethod
     async def _build_payload(self) -> dict[str, Any]:
@@ -181,7 +186,10 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
+                request_headers = headers.copy()
+                if self._user_auth_info:
+                    request_headers["X-GTC-PROXY-AUTH-INFO"] = self._user_auth_info
+                response = await client.post(proxy_url, json=payload, headers=request_headers, timeout=60)
                 response.raise_for_status()
                 response_json = response.json()
                 self._log("Request submitted successfully")
@@ -306,7 +314,6 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
             return None
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(result_url, headers=headers, timeout=300)
