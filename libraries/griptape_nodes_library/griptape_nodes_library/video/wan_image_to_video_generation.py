@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import time
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -21,6 +19,12 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -562,12 +566,10 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
-
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
+            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+                return result.data_uri
         except Exception as e:
             logger.error("Failed to download image from URL %s: %s", url, e)
         return None
@@ -616,25 +618,27 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         """Download and save the video from the provided URL."""
         try:
             logger.info("Downloading video from URL")
-            video_bytes = await self._download_bytes_from_url(video_url)
-            if video_bytes:
-                filename = f"wan_i2v_{int(time.time())}.mp4"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("Saved video to static storage as %s", filename)
+            filename = f"wan_i2v_{int(time.time())}.mp4"
+            request = DownloadAndSaveRequest(url=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, DownloadAndSaveResultSuccess):
+                artifact = result.artifact
+                self.parameter_output_values["video"] = artifact
+                logger.info("Saved video to static storage as %s", artifact.name)
                 self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                    was_successful=True, result_details=f"Video generated successfully and saved as {artifact.name}."
                 )
             else:
+                artifact = VideoUrlArtifact(value=video_url)
+                self.parameter_output_values["video"] = artifact
                 self._set_status_results(
                     was_successful=False,
                     result_details="Video generation completed but could not download video bytes from URL.",
                 )
         except Exception as e:
             logger.error("Failed to save video from URL: %s", e)
+            artifact = VideoUrlArtifact(value=video_url)
+            self.parameter_output_values["video"] = artifact
             self._set_status_results(
                 was_successful=False,
                 result_details=f"Video generation completed but could not save to static storage: {e}",
@@ -658,19 +662,15 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            context_name = f"{self.name}.input_audio" if "audio" in default_content_type else f"{self.name}.media"
+            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+                logger.debug("URL converted to base64 data URI for proxy")
+                return result.data_uri
+        except Exception as e:
             logger.debug("%s failed to inline URL: %s", self.name, e)
-            return None
-        else:
-            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-            if not content_type.startswith("audio/"):
-                content_type = default_content_type
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
+        return None
 
     @staticmethod
     def _coerce_audio_url_or_data_uri(val: Any) -> str | None:
@@ -800,14 +800,3 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video"] = None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

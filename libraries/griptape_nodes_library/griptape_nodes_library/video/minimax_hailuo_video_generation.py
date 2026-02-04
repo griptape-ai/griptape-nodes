@@ -16,6 +16,10 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -439,30 +443,16 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
             )
             return
 
-        try:
-            logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url_async(download_url)
-        except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
-            logger.warning("%s failed to download video: %s", self.name, e)
-            video_bytes = None
+        logger.info("%s downloading video from provider URL", self.name)
+        filename = f"minimax_hailuo_video_{generation_id}.mp4"
+        request = DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+        result = await GriptapeNodes.ahandle_request(request)
 
-        if video_bytes:
-            try:
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"minimax_hailuo_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("%s saved video to static storage as %s", self.name, filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except (OSError, PermissionError) as e:
-                logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video_url"] = result.artifact
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
             self._set_status_results(
@@ -544,15 +534,3 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
             pass
 
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url_async(url: str) -> bytes | None:
-        """Download file from URL and return bytes."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=300)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException):
-            return None
-        else:
-            return resp.content

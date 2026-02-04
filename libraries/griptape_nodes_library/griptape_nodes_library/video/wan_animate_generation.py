@@ -18,6 +18,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -368,32 +372,15 @@ class WanAnimateGeneration(GriptapeProxyNode):
             )
             return
 
-        try:
-            logger.debug("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
-        except Exception as e:
-            logger.debug("Failed to download video: %s", e)
-            video_bytes = None
-
-        if video_bytes:
-            try:
-                filename = (
-                    f"wan_animate_{generation_id}.mp4" if generation_id else f"wan_animate_{int(time.time())}.mp4"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.debug("Saved video to static storage as %s", filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                logger.debug("Failed to save to static storage: %s, using provider URL", e)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        filename = f"wan_animate_{generation_id}.mp4" if generation_id else f"wan_animate_{int(time.time())}.mp4"
+        request = DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
+        result = await GriptapeNodes.ahandle_request(request)
+        if isinstance(result, DownloadAndSaveResultSuccess):
+            self.parameter_output_values["video"] = result.artifact
+            logger.debug("Saved video to static storage as %s", filename)
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
             self._set_status_results(
@@ -490,13 +477,3 @@ class WanAnimateGeneration(GriptapeProxyNode):
             if isinstance(video_url, str) and video_url.startswith("http"):
                 return video_url
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import time
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -20,6 +18,12 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    DownloadAndSaveRequest,
+    DownloadAndSaveResultSuccess,
+    LoadAsBase64DataUriRequest,
+    LoadAsBase64DataUriResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -484,7 +488,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         return payload
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         status = self._extract_status(result_json) or STATUS_UNKNOWN
         if status in {STATUS_FAILED, STATUS_CANCELED}:
             self.parameter_output_values["video"] = None
@@ -492,7 +496,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
             self._set_status_results(was_successful=False, result_details=error_details)
             return
 
-        await self._handle_completion(result_json, generation_id)
+        await self._handle_completion(result_json)
 
     async def _prepare_video_data_url_async(self, video_input: Any) -> str | None:
         if not video_input:
@@ -528,19 +532,21 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            if "audio" in default_content_type:
+                context_name = f"{self.name}.input_audio"
+            elif "video" in default_content_type:
+                context_name = f"{self.name}.reference_video"
+            else:
+                context_name = f"{self.name}.media"
+
+            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+                logger.debug("URL converted to base64 data URI for proxy")
+                return result.data_uri
+        except Exception as e:
             logger.debug("%s failed to inline URL: %s", self.name, e)
-            return None
-        else:
-            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-            if not content_type.startswith(("audio/", "video/")):
-                content_type = default_content_type
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
+        return None
 
     @staticmethod
     def _coerce_video_url_or_data_uri(val: Any) -> str | None:
@@ -588,7 +594,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         return None
 
-    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+    async def _handle_completion(self, last_json: dict[str, Any] | None) -> None:
         """Handle successful generation completion."""
         extracted_url = self._extract_result_video_url(last_json)
         if not extracted_url:
@@ -601,33 +607,30 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.debug("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
-        except Exception as e:
-            logger.debug("Failed to download video: %s", e)
-            video_bytes = None
-
-        if video_bytes:
-            try:
-                filename = f"wan_r2v_{generation_id}.mp4" if generation_id else f"wan_r2v_{int(time.time())}.mp4"
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.debug("Saved video to static storage as %s", filename)
+            filename = f"wan_r2v_{int(time.time())}.mp4"
+            request = DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
+            result = await GriptapeNodes.ahandle_request(request)
+            if isinstance(result, DownloadAndSaveResultSuccess):
+                artifact = result.artifact
+                self.parameter_output_values["video"] = artifact
+                logger.debug("Saved video to static storage as %s", artifact.name)
                 self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                    was_successful=True, result_details=f"Video generated successfully and saved as {artifact.name}."
                 )
-            except Exception as e:
-                logger.debug("Failed to save to static storage: %s, using provider URL", e)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
+            else:
+                artifact = VideoUrlArtifact(value=extracted_url)
+                self.parameter_output_values["video"] = artifact
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                    result_details="Video generated successfully. Using provider URL (could not download video bytes).",
                 )
-        else:
-            self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
+        except Exception as e:
+            logger.debug("Failed to download video: %s", e)
+            artifact = VideoUrlArtifact(value=extracted_url)
+            self.parameter_output_values["video"] = artifact
             self._set_status_results(
                 was_successful=True,
-                result_details="Video generated successfully. Using provider URL (could not download video bytes).",
+                result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
             )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
@@ -719,14 +722,3 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
         if isinstance(video_url, str) and video_url.startswith("http"):
             return video_url
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
