@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -81,40 +81,19 @@ class GeneratePreviewResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 
 @dataclass
-class PreviewMetadata:
-    """Metadata for a generated preview artifact.
-
-    Attributes:
-        version: Metadata format version (semver)
-        source_macro_path: Macro template string for source artifact
-        source_file_size: Source file size in bytes
-        source_file_mtime: Source file modification timestamp (Unix time)
-        preview_file_name: Name of the preview file (without path)
-    """
-
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
-
-    version: str
-    source_macro_path: str
-    source_file_size: int
-    source_file_mtime: float
-    preview_file_name: str
-
-
-@dataclass
 @PayloadRegistry.register
 class GetPreviewForArtifactRequest(RequestPayload):
     """Get preview for an artifact.
 
     Args:
         macro_path: MacroPath with parsed macro and variables
-        format: Desired format for the preview (None for requesting the project default)
+        generate_preview_if_necessary: Whether to auto-generate if preview missing/stale (future feature)
 
     Results: GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure
     """
 
     macro_path: MacroPath
-    format: str | None = None
+    generate_preview_if_necessary: bool = True
 
 
 @dataclass
@@ -122,7 +101,7 @@ class GetPreviewForArtifactRequest(RequestPayload):
 class GetPreviewForArtifactResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Preview retrieved successfully."""
 
-    preview_path: MacroPath
+    path_to_preview: str
 
 
 @dataclass

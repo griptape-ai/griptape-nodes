@@ -2,8 +2,10 @@
 
 import json
 import logging
-from dataclasses import asdict
 from pathlib import Path
+from typing import ClassVar
+
+from pydantic import BaseModel, ValidationError
 
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewRequest,
@@ -24,7 +26,6 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     ListPreviewGeneratorsRequest,
     ListPreviewGeneratorsResultFailure,
     ListPreviewGeneratorsResultSuccess,
-    PreviewMetadata,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
@@ -36,6 +37,8 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     GetFileInfoRequest,
     GetFileInfoResultSuccess,
+    ReadFileRequest,
+    ReadFileResultSuccess,
     ResolveMacroPathRequest,
     ResolveMacroPathResultSuccess,
     WriteFileRequest,
@@ -49,6 +52,26 @@ from griptape_nodes.retained_mode.managers.default_artifact_providers import (
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class PreviewMetadata(BaseModel):
+    """Metadata for a generated preview artifact.
+
+    Attributes:
+        version: Metadata format version (semver)
+        source_macro_path: Macro template string for source artifact
+        source_file_size: Source file size in bytes
+        source_file_mtime: Source file modification timestamp (Unix time)
+        preview_file_name: Name of the preview file (without path)
+    """
+
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+
+    version: str
+    source_macro_path: str
+    source_file_size: int
+    source_file_mtime: float
+    preview_file_name: str
 
 
 class ArtifactManager:
@@ -266,7 +289,7 @@ class ArtifactManager:
 
             # Step 2: Serialize to JSON
             try:
-                metadata_content = json.dumps(asdict(metadata), indent=2)
+                metadata_content = json.dumps(metadata.model_dump(), indent=2)
             except Exception as e:
                 return fail_with_cleanup(
                     f"Attempted to generate preview for '{source_path}'. "
@@ -295,11 +318,108 @@ class ArtifactManager:
 
         return GeneratePreviewResultSuccess(result_details=result_message)
 
-    def on_handle_get_preview_for_artifact_request(
-        self, _request: GetPreviewForArtifactRequest
+    def on_handle_get_preview_for_artifact_request(  # noqa: PLR0911
+        self, request: GetPreviewForArtifactRequest
     ) -> GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure:
-        """Handle get preview for artifact request."""
-        return GetPreviewForArtifactResultFailure(result_details="Not implemented yet")
+        """Handle get preview for artifact request.
+
+        Args:
+            request: Contains macro_path and generate_preview_if_necessary flag
+
+        Returns:
+            Success with path_to_preview string, or failure with details
+        """
+        # FAILURE CASE: Resolve source path from MacroPath
+        resolve_request = ResolveMacroPathRequest(macro_path=request.macro_path)
+        resolve_result = GriptapeNodes.handle_request(resolve_request)
+
+        if not isinstance(resolve_result, ResolveMacroPathResultSuccess):
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to resolve source macro path. Failed due to: {resolve_result.result_details}"
+            )
+
+        source_path = resolve_result.resolved_path
+
+        # FAILURE CASE: Verify source file exists and get its metadata
+        file_info_request = GetFileInfoRequest(path=source_path, workspace_only=False)
+        file_info_result = GriptapeNodes.handle_request(file_info_request)
+
+        if not isinstance(file_info_result, GetFileInfoResultSuccess):
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get file info for '{source_path}'. Failed due to: {file_info_result.result_details}"
+            )
+
+        if file_info_result.file_entry is None:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: source file not found"
+            )
+
+        # Calculate metadata path
+        source_path_obj = Path(source_path)
+        destination_dir = source_path_obj.parent / "nodes_previews"
+        metadata_path = str(destination_dir / f"{source_path_obj.name}.json")
+
+        # FAILURE CASE: Check if metadata file exists
+        metadata_info_request = GetFileInfoRequest(path=metadata_path, workspace_only=False)
+        metadata_info_result = GriptapeNodes.handle_request(metadata_info_request)
+
+        if not isinstance(metadata_info_result, GetFileInfoResultSuccess) or metadata_info_result.file_entry is None:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: metadata file not found at '{metadata_path}'"
+            )
+
+        # FAILURE CASE: Read metadata file
+        read_metadata_request = ReadFileRequest(file_path=metadata_path, workspace_only=False)
+        read_metadata_result = GriptapeNodes.handle_request(read_metadata_request)
+
+        if not isinstance(read_metadata_result, ReadFileResultSuccess):
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: could not read metadata file at '{metadata_path}'"
+            )
+
+        # FAILURE CASE: Parse and validate metadata using Pydantic
+        try:
+            metadata_dict = json.loads(read_metadata_result.content)
+            metadata = PreviewMetadata.model_validate(metadata_dict)
+        except json.JSONDecodeError as e:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: malformed metadata JSON - {e}"
+            )
+        except ValidationError as e:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: invalid metadata - {e}"
+            )
+
+        # FAILURE CASE: Validate preview is fresh (source hasn't changed)
+        source_size = file_info_result.file_entry.size
+        source_mtime = file_info_result.file_entry.modified_time
+
+        if metadata.source_file_size != source_size or metadata.source_file_mtime != source_mtime:
+            return GetPreviewForArtifactResultFailure(
+                result_details=(
+                    f"Attempted to get preview for '{source_path}'. "
+                    f"Preview metadata exists but is stale (source file modified since preview generation). "
+                    f"Please regenerate the preview."
+                )
+            )
+
+        # Construct preview path from metadata
+        preview_file_path = str(destination_dir / metadata.preview_file_name)
+
+        # FAILURE CASE: Verify preview file actually exists
+        preview_info_request = GetFileInfoRequest(path=preview_file_path, workspace_only=False)
+        preview_info_result = GriptapeNodes.handle_request(preview_info_request)
+
+        if not isinstance(preview_info_result, GetFileInfoResultSuccess) or preview_info_result.file_entry is None:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Metadata indicates preview at '{preview_file_path}' but file not found"
+            )
+
+        # SUCCESS PATH: Return absolute path to preview
+        return GetPreviewForArtifactResultSuccess(
+            result_details=f"Found preview for '{source_path}' at '{preview_file_path}'",
+            path_to_preview=preview_file_path,
+        )
 
     def on_handle_list_artifact_providers_request(
         self, _request: ListArtifactProvidersRequest
