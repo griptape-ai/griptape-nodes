@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, ClassVar
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -50,6 +50,7 @@ class GeneratePreviewRequest(RequestPayload):
         specific_artifact_provider_name: Specific provider to use (None = auto-select if only one exists)
         optional_preview_generator_name: Preview generator to use (None for provider default)
         preview_generator_parameters: Parameters for the preview generator (e.g., max_width, max_height)
+        generate_preview_metadata_json: Whether to generate metadata JSON file alongside preview
 
     Results: GeneratePreviewResultSuccess | GeneratePreviewResultFailure
     """
@@ -59,6 +60,7 @@ class GeneratePreviewRequest(RequestPayload):
     specific_artifact_provider_name: str | None = None
     optional_preview_generator_name: str | None = None
     preview_generator_parameters: dict[str, Any] = None  # type: ignore[assignment]
+    generate_preview_metadata_json: bool = False
 
     def __post_init__(self) -> None:
         """Initialize mutable default."""
@@ -76,6 +78,27 @@ class GeneratePreviewResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess
 @PayloadRegistry.register
 class GeneratePreviewResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Preview generation failed."""
+
+
+@dataclass
+class PreviewMetadata:
+    """Metadata for a generated preview artifact.
+
+    Attributes:
+        version: Metadata format version (semver)
+        source_macro_path: Macro template string for source artifact
+        source_file_size: Source file size in bytes
+        source_file_mtime: Source file modification timestamp (Unix time)
+        preview_file_name: Name of the preview file (without path)
+    """
+
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
+
+    version: str
+    source_macro_path: str
+    source_file_size: int
+    source_file_mtime: float
+    preview_file_name: str
 
 
 @dataclass
