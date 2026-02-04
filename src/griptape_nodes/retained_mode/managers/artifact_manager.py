@@ -35,6 +35,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
 )
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
+    ExistingFilePolicy,
     GetFileInfoRequest,
     GetFileInfoResultSuccess,
     ReadFileRequest,
@@ -301,7 +302,8 @@ class ArtifactManager:
             metadata_write_request = WriteFileRequest(
                 file_path=metadata_path,
                 content=metadata_content,
-                create_parents=False,
+                create_parents=True,
+                existing_file_policy=ExistingFilePolicy.OVERWRITE,
             )
             metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
 
@@ -369,7 +371,11 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Read metadata file
-        read_metadata_request = ReadFileRequest(file_path=metadata_path, workspace_only=False)
+        read_metadata_request = ReadFileRequest(
+            file_path=metadata_path,
+            workspace_only=False,
+            should_transform_image_content_to_thumbnail=False,
+        )
         read_metadata_result = GriptapeNodes.handle_request(read_metadata_request)
 
         if not isinstance(read_metadata_result, ReadFileResultSuccess):
