@@ -255,6 +255,13 @@ class EventManager:
             for field in fields(request):
                 if field.metadata.get("omit_from_result", False):
                     setattr(request, field.name, None)
+
+            # Some result payloads have fields marked as "omit_from_serialization" which should be removed before serialization
+            if hasattr(callback_result, "__dataclass_fields__"):
+                for field in fields(callback_result):
+                    if field.metadata.get("omit_from_serialization", False):
+                        setattr(callback_result, field.name, None)
+
             if callback_result.succeeded():
                 result_event = EventResultSuccess(
                     request=request,

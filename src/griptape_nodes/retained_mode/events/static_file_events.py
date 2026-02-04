@@ -204,10 +204,10 @@ class LoadArtifactBytesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess)
     """Successfully loaded artifact content as bytes.
 
     Args:
-        content: Raw bytes loaded from artifact/URL/path
+        content: Raw bytes loaded from artifact/URL/path (omitted from websocket for size)
     """
 
-    content: bytes
+    content: bytes = field(metadata={"omit_from_serialization": True})
 
 
 @dataclass
@@ -262,10 +262,10 @@ class LoadAsBase64DataUriResultSuccess(WorkflowAlteredMixin, ResultPayloadSucces
     """Successfully loaded artifact as base64 data URI.
 
     Args:
-        data_uri: Base64 data URI string (e.g., "data:image/png;base64,iVBORw0K...")
+        data_uri: Base64 data URI string (e.g., "data:image/png;base64,iVBORw0K...") (omitted from websocket for size)
     """
 
-    data_uri: str
+    data_uri: str = field(metadata={"omit_from_serialization": True})
 
 
 @dataclass
