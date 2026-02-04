@@ -288,8 +288,8 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
         return payload
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
-        if "audio_bytes" in result_json:
-            await self._handle_video_bytes(result_json["audio_bytes"], generation_id)
+        if "raw_bytes" in result_json:
+            await self._handle_video_bytes(result_json["raw_bytes"], generation_id)
             return
 
         video_url = self._extract_video_url(result_json)

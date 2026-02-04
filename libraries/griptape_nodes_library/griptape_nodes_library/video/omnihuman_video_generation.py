@@ -465,8 +465,8 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
 
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         # Handle binary response if returned
-        if "audio_bytes" in result_json:
-            await self._handle_video_bytes(result_json["audio_bytes"])
+        if "raw_bytes" in result_json:
+            await self._handle_video_bytes(result_json["raw_bytes"])
             return
 
         provider_response = result_json.get("provider_response", result_json)

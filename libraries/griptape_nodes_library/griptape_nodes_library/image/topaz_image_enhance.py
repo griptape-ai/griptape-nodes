@@ -1011,7 +1011,7 @@ class TopazImageEnhance(GriptapeProxyNode):
             self._log(f"Request payload: {json.dumps(sanitized_payload, indent=2)}")
 
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
-        image_bytes = result_json.get("audio_bytes")
+        image_bytes = result_json.get("raw_bytes")
         if isinstance(image_bytes, (bytes, bytearray)):
             await self._handle_binary_image_response(bytes(image_bytes))
             return

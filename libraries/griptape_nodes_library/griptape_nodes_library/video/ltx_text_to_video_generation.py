@@ -358,7 +358,7 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
         return payload
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
-        video_bytes = result_json.get("audio_bytes")
+        video_bytes = result_json.get("raw_bytes")
         if not isinstance(video_bytes, (bytes, bytearray)):
             msg = f"{self.name} generation completed but no video data received."
             raise TypeError(msg)

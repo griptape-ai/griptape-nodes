@@ -255,8 +255,8 @@ class SoraVideoGeneration(GriptapeProxyNode):
 
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         # Handle binary response from proxy if returned
-        if "audio_bytes" in result_json:
-            self._handle_video_completion(result_json["audio_bytes"])
+        if "raw_bytes" in result_json:
+            self._handle_video_completion(result_json["raw_bytes"])
             return
 
         # Check for video URL in response

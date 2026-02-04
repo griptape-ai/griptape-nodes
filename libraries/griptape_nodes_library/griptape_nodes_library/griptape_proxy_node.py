@@ -329,7 +329,7 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
 
             # Handle binary responses (raw audio, video, etc.)
             self._log(f"Result fetched successfully (binary, content-type: {content_type})")
-            return {"audio_bytes": response.content}
+            return {"raw_bytes": response.content}
 
     def _handle_api_key_validation_error(self, e: ValueError) -> None:
         """Handle API key validation errors."""
