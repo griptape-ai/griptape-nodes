@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
+from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 
 
 class ParameterBool(Parameter):
@@ -55,6 +55,7 @@ class ParameterBool(Parameter):
         element_id: str | None = None,
         element_type: str | None = None,
         parent_container_name: str | None = None,
+        badge: BadgeData | None = None,
     ) -> None:
         """Initialize a boolean parameter with enhanced UI options.
 
@@ -87,6 +88,7 @@ class ParameterBool(Parameter):
             element_id: Element ID
             element_type: Element type
             parent_container_name: Name of parent container
+            badge: Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
@@ -142,6 +144,7 @@ class ParameterBool(Parameter):
             element_id=element_id,
             element_type=element_type,
             parent_container_name=parent_container_name,
+            badge=badge,
         )
 
     def _convert_to_bool(self, value: Any) -> bool:
