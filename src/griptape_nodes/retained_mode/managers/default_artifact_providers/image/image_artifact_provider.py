@@ -35,3 +35,11 @@ class ImageArtifactProvider(BaseArtifactProvider):
     @classmethod
     def get_preview_formats(cls) -> set[str]:
         return {"webp", "jpg", "png"}
+
+    @classmethod
+    def get_default_preview_generator(cls) -> str:
+        return "Default Image Preview"
+
+    @classmethod
+    def get_default_preview_format(cls) -> str:
+        return "png"
