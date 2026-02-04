@@ -348,12 +348,13 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
             f"seedvr_video_upscale_{generation_id}.mp4" if generation_id else f"seedvr_video_upscale_{int(time())}.mp4"
         )
 
-        request = DownloadAndSaveRequest(
-            url=extracted_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=extracted_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video"] = result.artifact

@@ -295,12 +295,13 @@ class QwenImageGeneration(GriptapeProxyNode):
             logger.info("Downloading image from URL")
             filename = f"qwen_image_{int(time.time())}.jpg"
 
-            request = DownloadAndSaveRequest(
-                url=image_url,
-                filename=filename,
-                artifact_type=ImageUrlArtifact,
+            result = await GriptapeNodes.ahandle_request(
+                DownloadAndSaveRequest(
+                    url=image_url,
+                    filename=filename,
+                    artifact_type=ImageUrlArtifact,
+                )
             )
-            result = await GriptapeNodes.ahandle_request(request)
 
             if isinstance(result, DownloadAndSaveResultSuccess):
                 self.parameter_output_values["image_url"] = result.artifact

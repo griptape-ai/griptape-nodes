@@ -304,12 +304,13 @@ class GrokImageGeneration(GriptapeProxyNode):
             f"grok_image_{generation_id}_{index}.jpg" if generation_id else f"grok_image_{int(time.time())}_{index}.jpg"
         )
 
-        request = DownloadAndSaveRequest(
-            url=image_url,
-            filename=filename,
-            artifact_type=ImageUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=image_url,
+                filename=filename,
+                artifact_type=ImageUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             return result.artifact

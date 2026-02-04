@@ -414,8 +414,9 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str) -> str | None:
         """Download external image URL and convert to data URL."""
-        request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
-        result = await GriptapeNodes.ahandle_request(request)
+        result = await GriptapeNodes.ahandle_request(
+            LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
+        )
         if isinstance(result, LoadAsBase64DataUriResultSuccess):
             logger.debug("Image URL converted to data URI for proxy")
             return result.data_uri
@@ -457,12 +458,13 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
 
         # Download and save video
         filename = f"kling_image_to_video_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(
-            url=download_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=download_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact

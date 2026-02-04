@@ -373,8 +373,9 @@ class WanAnimateGeneration(GriptapeProxyNode):
             return
 
         filename = f"wan_animate_{generation_id}.mp4" if generation_id else f"wan_animate_{int(time.time())}.mp4"
-        request = DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
-        result = await GriptapeNodes.ahandle_request(request)
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
+        )
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video"] = result.artifact
             logger.debug("Saved video to static storage as %s", filename)

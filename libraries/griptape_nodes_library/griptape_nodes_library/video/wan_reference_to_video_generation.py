@@ -539,8 +539,9 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
             else:
                 context_name = f"{self.name}.media"
 
-            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
+            )
             if isinstance(result, LoadAsBase64DataUriResultSuccess):
                 logger.debug("URL converted to base64 data URI for proxy")
                 return result.data_uri
@@ -608,8 +609,9 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
         try:
             logger.debug("Downloading video bytes from provider URL")
             filename = f"wan_r2v_{int(time.time())}.mp4"
-            request = DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                DownloadAndSaveRequest(url=extracted_url, filename=filename, artifact_type=VideoUrlArtifact)
+            )
             if isinstance(result, DownloadAndSaveResultSuccess):
                 artifact = result.artifact
                 self.parameter_output_values["video"] = artifact

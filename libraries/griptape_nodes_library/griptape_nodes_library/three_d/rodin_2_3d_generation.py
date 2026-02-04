@@ -535,8 +535,9 @@ class Rodin23DGeneration(GriptapeProxyNode):
         """Convert a string (URL or base64) to raw bytes."""
         # If it's a URL, download the image and get as data URI, then decode
         if value.startswith(("http://", "https://")):
-            request = LoadAsBase64DataUriRequest(artifact_or_url=value, context_name=f"{self.name}.input_image")
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                LoadAsBase64DataUriRequest(artifact_or_url=value, context_name=f"{self.name}.input_image")
+            )
             if isinstance(result, LoadAsBase64DataUriResultSuccess):
                 # Extract bytes from the data URI
                 data_uri = result.data_uri
@@ -623,13 +624,14 @@ class Rodin23DGeneration(GriptapeProxyNode):
                 static_filename = f"rodin2_3d_{timestamp}_{idx}_{base_name}.{extension}"
 
                 # Download and save using event request pattern
-                request = DownloadAndSaveRequest(
-                    url=file_url,
-                    filename=static_filename,
-                    artifact_type=TextArtifact,
-                    existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+                result = await GriptapeNodes.ahandle_request(
+                    DownloadAndSaveRequest(
+                        url=file_url,
+                        filename=static_filename,
+                        artifact_type=TextArtifact,
+                        existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+                    )
                 )
-                result = await GriptapeNodes.ahandle_request(request)
 
                 if isinstance(result, DownloadAndSaveResultSuccess):
                     artifact = result.artifact

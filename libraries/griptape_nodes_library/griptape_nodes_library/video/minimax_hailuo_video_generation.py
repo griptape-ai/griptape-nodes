@@ -445,8 +445,9 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
 
         logger.info("%s downloading video from provider URL", self.name)
         filename = f"minimax_hailuo_video_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
-        result = await GriptapeNodes.ahandle_request(request)
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+        )
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact

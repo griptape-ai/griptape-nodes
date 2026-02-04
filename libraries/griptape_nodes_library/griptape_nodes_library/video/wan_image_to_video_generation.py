@@ -566,8 +566,9 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
+            )
             if isinstance(result, LoadAsBase64DataUriResultSuccess):
                 return result.data_uri
         except Exception as e:
@@ -619,8 +620,9 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         try:
             logger.info("Downloading video from URL")
             filename = f"wan_i2v_{int(time.time())}.mp4"
-            request = DownloadAndSaveRequest(url=video_url, filename=filename, artifact_type=VideoUrlArtifact)
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                DownloadAndSaveRequest(url=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+            )
             if isinstance(result, DownloadAndSaveResultSuccess):
                 artifact = result.artifact
                 self.parameter_output_values["video"] = artifact
@@ -663,8 +665,9 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
     async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         try:
             context_name = f"{self.name}.input_audio" if "audio" in default_content_type else f"{self.name}.media"
-            request = LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
-            result = await GriptapeNodes.ahandle_request(request)
+            result = await GriptapeNodes.ahandle_request(
+                LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
+            )
             if isinstance(result, LoadAsBase64DataUriResultSuccess):
                 logger.debug("URL converted to base64 data URI for proxy")
                 return result.data_uri

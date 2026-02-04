@@ -260,8 +260,9 @@ class KlingMotionControl(GriptapeProxyNode):
 
         # Download and save video
         filename = f"kling_motion_control_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
-        result = await GriptapeNodes.ahandle_request(request)
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+        )
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact

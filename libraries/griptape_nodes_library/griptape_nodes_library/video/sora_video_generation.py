@@ -430,12 +430,13 @@ class SoraVideoGeneration(GriptapeProxyNode):
         filename = f"sora_video_{int(time.time())}.mp4"
 
         # Attempt download and save using the new pattern
-        request = DownloadAndSaveRequest(
-            url=video_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=video_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             # Success: use the saved artifact

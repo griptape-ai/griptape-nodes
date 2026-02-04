@@ -155,12 +155,13 @@ class GrokVideoEdit(GriptapeProxyNode):
         if video_value.startswith("data:"):
             return video_value
 
-        request = LoadAsBase64DataUriRequest(
-            artifact_or_url=video_value,
-            context_name=f"{self.name}.input_video",
-            media_type="video/mp4",
+        result = await GriptapeNodes.ahandle_request(
+            LoadAsBase64DataUriRequest(
+                artifact_or_url=video_value,
+                context_name=f"{self.name}.input_video",
+                media_type="video/mp4",
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
         if isinstance(result, LoadAsBase64DataUriResultSuccess):
             return result.data_uri
 
@@ -220,12 +221,13 @@ class GrokVideoEdit(GriptapeProxyNode):
             return
 
         filename = f"grok_video_edit_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(
-            url=video_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=video_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact

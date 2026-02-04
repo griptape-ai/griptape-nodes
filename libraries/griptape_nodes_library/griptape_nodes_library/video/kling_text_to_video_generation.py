@@ -348,12 +348,13 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
 
         # Download and save video
         filename = f"kling_text_to_video_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(
-            url=download_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=download_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact

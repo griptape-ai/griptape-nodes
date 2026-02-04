@@ -211,11 +211,12 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            request = LoadAsBase64DataUriRequest(
-                artifact_or_url=image_value,
-                context_name=f"{self.name}.input_image",
+            result = await GriptapeNodes.ahandle_request(
+                LoadAsBase64DataUriRequest(
+                    artifact_or_url=image_value,
+                    context_name=f"{self.name}.input_image",
+                )
             )
-            result = await GriptapeNodes.ahandle_request(request)
             if isinstance(result, LoadAsBase64DataUriResultSuccess):
                 return result.data_uri
             return None
@@ -282,12 +283,13 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return
 
         filename = f"grok_video_{generation_id}.mp4"
-        request = DownloadAndSaveRequest(
-            url=video_url,
-            filename=filename,
-            artifact_type=VideoUrlArtifact,
+        result = await GriptapeNodes.ahandle_request(
+            DownloadAndSaveRequest(
+                url=video_url,
+                filename=filename,
+                artifact_type=VideoUrlArtifact,
+            )
         )
-        result = await GriptapeNodes.ahandle_request(request)
 
         if isinstance(result, DownloadAndSaveResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
