@@ -8,6 +8,7 @@ from typing import Any
 from PIL import Image
 
 from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
     ReadFileRequest,
     ReadFileResultSuccess,
     WriteFileRequest,
@@ -114,7 +115,10 @@ class DefaultImagePreviewGenerator(BaseArtifactPreviewGenerator):
 
         # Write the preview file
         write_request = WriteFileRequest(
-            file_path=self.destination_preview_file_location, content=output_bytes, create_parents=True
+            file_path=self.destination_preview_file_location,
+            content=output_bytes,
+            create_parents=True,
+            existing_file_policy=ExistingFilePolicy.OVERWRITE,
         )
         write_result = GriptapeNodes.handle_request(write_request)
 
