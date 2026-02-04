@@ -61,7 +61,7 @@ class PreviewMetadata(BaseModel):
         version: Metadata format version (semver)
         source_macro_path: Macro template string for source artifact
         source_file_size: Source file size in bytes
-        source_file_mtime: Source file modification timestamp (Unix time)
+        source_file_modified_time: Source file modification timestamp (Unix time)
         preview_file_name: Name of the preview file (without path)
     """
 
@@ -70,7 +70,7 @@ class PreviewMetadata(BaseModel):
     version: str
     source_macro_path: str
     source_file_size: int
-    source_file_mtime: float
+    source_file_modified_time: float
     preview_file_name: str
 
 
@@ -283,7 +283,7 @@ class ArtifactManager:
                 version=PreviewMetadata.LATEST_SCHEMA_VERSION,
                 source_macro_path=request.macro_path.parsed_macro.template,
                 source_file_size=file_info_result.file_entry.size,
-                source_file_mtime=file_info_result.file_entry.modified_time,
+                source_file_modified_time=file_info_result.file_entry.modified_time,
                 preview_file_name=preview_file_name,
             )
 
@@ -394,7 +394,7 @@ class ArtifactManager:
         source_size = file_info_result.file_entry.size
         source_mtime = file_info_result.file_entry.modified_time
 
-        if metadata.source_file_size != source_size or metadata.source_file_mtime != source_mtime:
+        if metadata.source_file_size != source_size or metadata.source_file_modified_time != source_mtime:
             return GetPreviewForArtifactResultFailure(
                 result_details=(
                     f"Attempted to get preview for '{source_path}'. "
