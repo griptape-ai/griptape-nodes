@@ -687,3 +687,44 @@ class GetFileInfoResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """
 
     failure_reason: FileIOFailureReason
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveMacroPathRequest(RequestPayload):
+    """Resolve a MacroPath to an absolute path string.
+
+    Use when: Need to convert a MacroPath with variables to a concrete file path.
+
+    Args:
+        macro_path: MacroPath with parsed macro and variables
+
+    Results: ResolveMacroPathResultSuccess | ResolveMacroPathResultFailure
+    """
+
+    macro_path: MacroPath
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveMacroPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """MacroPath resolved successfully.
+
+    Attributes:
+        resolved_path: The resolved absolute path string
+    """
+
+    resolved_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ResolveMacroPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to resolve MacroPath.
+
+    Attributes:
+        missing_variables: Set of variable names that were required but not provided
+        result_details: Human-readable error message (inherited from ResultPayloadFailure)
+    """
+
+    missing_variables: set[str] | None = None
