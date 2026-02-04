@@ -17,10 +17,10 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -374,10 +374,10 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         # Download and save video
         filename = f"kling_omni_video_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=download_url, filename=filename, artifact_type=VideoUrlArtifact)
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
             logger.info("%s saved video to static storage as %s", self.name, filename)
             self._set_status_results(
@@ -518,11 +518,9 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str) -> str | None:
         """Download external image URL and convert to data URL."""
-        result = await GriptapeNodes.ahandle_request(
-            LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.image_input")
-        )
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
 
-        if isinstance(result, LoadAsBase64DataUriResultSuccess):
+        if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             logger.debug("Image URL converted to data URI for proxy")
             return result.data_uri
 

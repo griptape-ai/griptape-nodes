@@ -18,8 +18,8 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -347,14 +347,14 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
         )
 
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=extracted_url,
+            LoadAndSaveFromLocationRequest(
+                location=extracted_url,
                 filename=filename,
                 artifact_type=VideoUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video"] = result.artifact
             msg = f"Saved video to static storage as {filename}"
             logger.info(msg)

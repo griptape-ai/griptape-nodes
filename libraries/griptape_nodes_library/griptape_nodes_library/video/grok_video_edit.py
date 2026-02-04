@@ -10,10 +10,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -156,13 +156,9 @@ class GrokVideoEdit(GriptapeProxyNode):
             return video_value
 
         result = await GriptapeNodes.ahandle_request(
-            LoadAsBase64DataUriRequest(
-                artifact_or_url=video_value,
-                context_name=f"{self.name}.input_video",
-                media_type="video/mp4",
-            )
+            LoadBase64DataUriFromLocationRequest(artifact_or_url=video_value, media_type="video/mp4")
         )
-        if isinstance(result, LoadAsBase64DataUriResultSuccess):
+        if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             return result.data_uri
 
         if video_value.startswith(("http://", "https://")):
@@ -222,14 +218,14 @@ class GrokVideoEdit(GriptapeProxyNode):
 
         filename = f"grok_video_edit_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=video_url,
+            LoadAndSaveFromLocationRequest(
+                location=video_url,
                 filename=filename,
                 artifact_type=VideoUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
             self._set_status_results(
                 was_successful=True,

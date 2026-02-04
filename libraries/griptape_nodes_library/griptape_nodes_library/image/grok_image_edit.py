@@ -15,10 +15,10 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -244,12 +244,9 @@ class GrokImageEdit(GriptapeProxyNode):
 
         if image_value.startswith(("http://", "https://")):
             result = await GriptapeNodes.ahandle_request(
-                LoadAsBase64DataUriRequest(
-                    artifact_or_url=image_value,
-                    context_name=f"{self.name}.input_image",
-                )
+                LoadBase64DataUriFromLocationRequest(artifact_or_url=image_value)
             )
-            if not isinstance(result, LoadAsBase64DataUriResultSuccess):
+            if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return None
             return result.data_uri
 
@@ -368,14 +365,14 @@ class GrokImageEdit(GriptapeProxyNode):
         )
 
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=image_url,
+            LoadAndSaveFromLocationRequest(
+                location=image_url,
                 filename=filename,
                 artifact_type=ImageUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             return result.artifact
         with suppress(Exception):
             logger.warning("%s failed to save image %s: %s", self.name, index, result.result_details)

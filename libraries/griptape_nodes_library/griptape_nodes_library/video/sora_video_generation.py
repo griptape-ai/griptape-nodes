@@ -17,8 +17,8 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -431,14 +431,14 @@ class SoraVideoGeneration(GriptapeProxyNode):
 
         # Attempt download and save using the new pattern
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=video_url,
+            LoadAndSaveFromLocationRequest(
+                location=video_url,
                 filename=filename,
                 artifact_type=VideoUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             # Success: use the saved artifact
             self.parameter_output_values["video_url"] = result.artifact
             self._log(f"Saved video to static storage as {filename}")

@@ -20,10 +20,10 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -566,10 +566,8 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            result = await GriptapeNodes.ahandle_request(
-                LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=f"{self.name}.input_image")
-            )
-            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return result.data_uri
         except Exception as e:
             logger.error("Failed to download image from URL %s: %s", url, e)
@@ -621,9 +619,9 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
             logger.info("Downloading video from URL")
             filename = f"wan_i2v_{int(time.time())}.mp4"
             result = await GriptapeNodes.ahandle_request(
-                DownloadAndSaveRequest(url=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+                LoadAndSaveFromLocationRequest(location=video_url, filename=filename, artifact_type=VideoUrlArtifact)
             )
-            if isinstance(result, DownloadAndSaveResultSuccess):
+            if isinstance(result, LoadAndSaveFromLocationResultSuccess):
                 artifact = result.artifact
                 self.parameter_output_values["video"] = artifact
                 logger.info("Saved video to static storage as %s", artifact.name)
@@ -662,13 +660,10 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
 
         return audio_url
 
-    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
+    async def _inline_external_url_async(self, url: str, _default_content_type: str) -> str | None:
         try:
-            context_name = f"{self.name}.input_audio" if "audio" in default_content_type else f"{self.name}.media"
-            result = await GriptapeNodes.ahandle_request(
-                LoadAsBase64DataUriRequest(artifact_or_url=url, context_name=context_name)
-            )
-            if isinstance(result, LoadAsBase64DataUriResultSuccess):
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 logger.debug("URL converted to base64 data URI for proxy")
                 return result.data_uri
         except Exception as e:

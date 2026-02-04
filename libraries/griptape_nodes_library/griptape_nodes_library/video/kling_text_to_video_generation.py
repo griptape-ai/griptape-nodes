@@ -12,8 +12,8 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -349,14 +349,14 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
         # Download and save video
         filename = f"kling_text_to_video_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=download_url,
+            LoadAndSaveFromLocationRequest(
+                location=download_url,
                 filename=filename,
                 artifact_type=VideoUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
             logger.info("%s saved video to static storage as %s", self.name, filename)
             self._set_status_results(

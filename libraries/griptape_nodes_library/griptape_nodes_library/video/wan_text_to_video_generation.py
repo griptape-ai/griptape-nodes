@@ -21,8 +21,8 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -502,9 +502,9 @@ class WanTextToVideoGeneration(GriptapeProxyNode):
         """Download and save the video from the provided URL."""
         filename = f"wan_video_{int(time.time())}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(url=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=video_url, filename=filename, artifact_type=VideoUrlArtifact)
         )
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video"] = result.artifact
             logger.info("Saved video to static storage as %s", filename)
             self._set_status_results(

@@ -11,8 +11,8 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -201,10 +201,10 @@ class KlingVideoExtension(GriptapeProxyNode):
         # Download and save video
         filename = f"kling_video_extension_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=download_url, filename=filename, artifact_type=VideoUrlArtifact)
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
             logger.info("%s saved video to static storage as %s", self.name, filename)
             self._set_status_results(

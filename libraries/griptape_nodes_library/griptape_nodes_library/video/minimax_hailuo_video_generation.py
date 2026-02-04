@@ -17,8 +17,8 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -446,10 +446,10 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
         logger.info("%s downloading video from provider URL", self.name)
         filename = f"minimax_hailuo_video_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(url=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=download_url, filename=filename, artifact_type=VideoUrlArtifact)
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["video_url"] = result.artifact
             self._set_status_results(
                 was_successful=True, result_details=f"Video generated successfully and saved as {filename}."

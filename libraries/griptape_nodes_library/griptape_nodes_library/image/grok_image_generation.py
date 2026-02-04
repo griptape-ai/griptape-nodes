@@ -13,8 +13,8 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -305,14 +305,14 @@ class GrokImageGeneration(GriptapeProxyNode):
         )
 
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=image_url,
+            LoadAndSaveFromLocationRequest(
+                location=image_url,
                 filename=filename,
                 artifact_type=ImageUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             return result.artifact
         with suppress(Exception):
             logger.warning("%s failed to save image %s: %s", self.name, index, result.result_details)

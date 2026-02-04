@@ -17,10 +17,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.static_file_events import (
-    DownloadAndSaveRequest,
-    DownloadAndSaveResultSuccess,
-    LoadAsBase64DataUriRequest,
-    LoadAsBase64DataUriResultSuccess,
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -378,13 +378,8 @@ class FluxImageGeneration(GriptapeProxyNode):
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
-        result = await GriptapeNodes.ahandle_request(
-            LoadAsBase64DataUriRequest(
-                artifact_or_url=url,
-                context_name=f"{self.name}.input_image",
-            )
-        )
-        if not isinstance(result, LoadAsBase64DataUriResultSuccess):
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+        if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             self._log(f"Failed to download image from URL {url}")
             return None
 
@@ -425,14 +420,14 @@ class FluxImageGeneration(GriptapeProxyNode):
         """Download and save the image from the provided URL."""
         filename = f"flux_image_{int(time.time())}.jpg"
         result = await GriptapeNodes.ahandle_request(
-            DownloadAndSaveRequest(
-                url=image_url,
+            LoadAndSaveFromLocationRequest(
+                location=image_url,
                 filename=filename,
                 artifact_type=ImageUrlArtifact,
             )
         )
 
-        if isinstance(result, DownloadAndSaveResultSuccess):
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             self.parameter_output_values["image_url"] = result.artifact
             self._log(f"Saved image to static storage as {filename}")
             self._set_status_results(
