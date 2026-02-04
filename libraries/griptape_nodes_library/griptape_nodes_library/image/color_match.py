@@ -12,7 +12,7 @@ import numpy as np
 from color_matcher import ColorMatcher  # type: ignore[reportMissingImports]
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -133,54 +133,6 @@ class ColorMatch(SuccessFailureNode):
             result_details_placeholder="Details on the color matching will be presented here.",
             parameter_group_initially_collapsed=True,
         )
-
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        """Process image automatically when inputs or parameters change."""
-        if parameter.name in ["target_image", "reference_image"] and value is not None:
-            # Check if both images are available
-            target_image = self.get_parameter_value("target_image")
-            ref_image = self.get_parameter_value("reference_image")
-            if target_image is not None and ref_image is not None:
-                self._process_images_immediately(target_image, ref_image)
-        elif parameter.name in ["method", "strength"]:
-            # Process when color match parameters change (for live preview)
-            target_image = self.get_parameter_value("target_image")
-            ref_image = self.get_parameter_value("reference_image")
-            if target_image is not None and ref_image is not None:
-                self._process_images_immediately(target_image, ref_image)
-        return super().after_value_set(parameter, value)
-
-    def _process_images_immediately(self, target_value: Any, ref_value: Any) -> None:
-        """Process images immediately for live preview."""
-        try:
-            # Convert to ImageUrlArtifact if needed
-            if isinstance(target_value, dict):
-                target_artifact = dict_to_image_url_artifact(target_value)
-            else:
-                target_artifact = target_value
-
-            if isinstance(ref_value, dict):
-                ref_artifact = dict_to_image_url_artifact(ref_value)
-            else:
-                ref_artifact = ref_value
-
-            # Load PIL images
-            target_pil = load_pil_from_url(target_artifact.value)
-            ref_pil = load_pil_from_url(ref_artifact.value)
-
-            # Process with current settings
-            processed_image = self._process_images(target_pil, ref_pil)
-
-            # Save and set output with proper filename
-            filename = self._generate_filename("_colormatch", "png")
-            output_artifact = save_pil_image_with_named_filename(processed_image, filename, "PNG")
-
-            self.set_parameter_value("output", output_artifact)
-            self.publish_update_to_parameter("output", output_artifact)
-
-        except Exception as e:
-            # Log error but don't fail the node
-            logger.warning(f"{self.name}: Live preview failed: {e}")
 
     def _process_images(self, target_pil: Image.Image, ref_pil: Image.Image) -> Image.Image:
         """Process the PIL images by applying color transfer.
