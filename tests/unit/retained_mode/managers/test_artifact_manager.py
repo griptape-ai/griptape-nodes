@@ -1,14 +1,31 @@
+import json
+import os
+import tempfile
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.artifact_events import (
+    GeneratePreviewRequest,
+    GeneratePreviewResultFailure,
+    GeneratePreviewResultSuccess,
     GetArtifactProviderDetailsRequest,
     GetArtifactProviderDetailsResultFailure,
     GetArtifactProviderDetailsResultSuccess,
+    GetPreviewForArtifactRequest,
+    GetPreviewForArtifactResultFailure,
+    GetPreviewForArtifactResultSuccess,
     ListArtifactProvidersRequest,
     ListArtifactProvidersResultSuccess,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
 )
-from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
+from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager, PreviewMetadata
 from griptape_nodes.retained_mode.managers.default_artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
@@ -230,3 +247,495 @@ class TestArtifactManager:
         assert isinstance(result, GetArtifactProviderDetailsResultFailure)
         assert "provider not found" in str(result.result_details)
         assert "Video" in str(result.result_details)
+
+
+class TestGeneratePreview:
+    """Tests for preview generation functionality."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create temporary directory for test files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def test_image_path(self, temp_dir: Path) -> Path:
+        """Create a real test image file for preview generation.
+
+        Returns:
+            Path to a 100x100 JPEG test image with known properties
+        """
+        image_path = temp_dir / "test_source.jpg"
+
+        # Create a simple test image (100x100 red square)
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(str(image_path), format="JPEG")
+
+        return image_path
+
+    @pytest.fixture
+    def test_macro_path(self, test_image_path: Path) -> MacroPath:
+        """Create MacroPath for test image."""
+        parsed_macro = ParsedMacro(str(test_image_path))
+        return MacroPath(parsed_macro=parsed_macro, variables={})
+
+    @pytest.fixture
+    def artifact_manager(self) -> ArtifactManager:
+        """Create ArtifactManager instance with ImageArtifactProvider registered."""
+        manager = ArtifactManager()
+        # ImageArtifactProvider is already registered in constructor
+        return manager
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_without_metadata_success(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test generating preview without metadata."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            generate_preview_metadata_json=False,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Verify preview file exists
+        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_path = preview_dir / f"{test_image_path.name}.png"
+        assert preview_path.exists()
+
+        # Verify preview dimensions
+        with Image.open(str(preview_path)) as preview_img:
+            assert preview_img.width <= 50  # noqa: PLR2004
+            assert preview_img.height <= 50  # noqa: PLR2004
+
+        # Verify no metadata file
+        metadata_path = Path(str(preview_path) + ".json")
+        assert not metadata_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_with_metadata_success(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test generating preview with metadata."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Verify preview file exists
+        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_path = preview_dir / f"{test_image_path.name}.png"
+        assert preview_path.exists()
+
+        # Verify metadata file exists (named after source file, not preview)
+        metadata_path = preview_dir / f"{test_image_path.name}.json"
+        assert metadata_path.exists()
+
+        # Verify metadata contents
+        with metadata_path.open() as f:
+            metadata_dict = json.load(f)
+
+        assert "version" in metadata_dict
+        assert "source_macro_path" in metadata_dict
+        assert "source_file_size" in metadata_dict
+        assert "source_file_modified_time" in metadata_dict
+        assert "preview_file_name" in metadata_dict
+
+        # Verify metadata values match source file
+        source_stat = test_image_path.stat()
+        assert metadata_dict["source_file_size"] == source_stat.st_size
+        assert metadata_dict["source_file_modified_time"] == source_stat.st_mtime
+        assert metadata_dict["preview_file_name"] == f"{test_image_path.name}.png"
+        assert metadata_dict["version"] == PreviewMetadata.LATEST_SCHEMA_VERSION
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_source_file_not_found(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test generating preview for non-existent file."""
+        nonexistent_path = temp_dir / "nonexistent.jpg"
+        parsed_macro = ParsedMacro(str(nonexistent_path))
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        request = GeneratePreviewRequest(
+            macro_path=macro_path,
+            format=None,
+            generate_preview_metadata_json=False,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultFailure)
+        assert "file not found" in str(result.result_details).lower()
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_unsupported_format(self, artifact_manager: ArtifactManager, temp_dir: Path) -> None:
+        """Test generating preview for unsupported format."""
+        # Create a .txt file
+        txt_path = temp_dir / "test.txt"
+        txt_path.write_text("This is not an image")
+
+        parsed_macro = ParsedMacro(str(txt_path))
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        request = GeneratePreviewRequest(
+            macro_path=macro_path,
+            format=None,
+            generate_preview_metadata_json=False,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultFailure)
+        assert "provider" in str(result.result_details).lower() or "format" in str(result.result_details).lower()
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_custom_dimensions(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test generating preview with custom dimensions."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            generate_preview_metadata_json=False,
+            preview_generator_parameters={"max_width": 30, "max_height": 40},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Verify preview dimensions respect constraints
+        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_path = preview_dir / f"{test_image_path.name}.png"
+
+        with Image.open(str(preview_path)) as preview_img:
+            assert preview_img.width <= 30  # noqa: PLR2004
+            assert preview_img.height <= 40  # noqa: PLR2004
+            # Verify aspect ratio preserved (source is 100x100, so should be square)
+            assert preview_img.width == preview_img.height
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_specific_format(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test generating preview with specific format."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format="webp",
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Verify preview file has correct extension
+        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_path = preview_dir / f"{test_image_path.name}.webp"
+        assert preview_path.exists()
+
+        # Verify metadata has correct extension (named after source file)
+        metadata_path = preview_dir / f"{test_image_path.name}.json"
+        with metadata_path.open() as f:
+            metadata_dict = json.load(f)
+        assert metadata_dict["preview_file_name"] == f"{test_image_path.name}.webp"
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_specific_generator(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test generating preview with specific generator."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            optional_preview_generator_name="Default Image Preview",
+            generate_preview_metadata_json=False,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Verify preview was created
+        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_path = preview_dir / f"{test_image_path.name}.png"
+        assert preview_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_generate_preview_metadata_serialization_preserves_structure(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> None:
+        """Test that metadata can be deserialized back to PreviewMetadata."""
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = await artifact_manager.on_handle_generate_preview_request(request)
+
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        # Read metadata and deserialize with Pydantic
+        preview_dir = test_image_path.parent / "nodes_previews"
+        # Metadata is named after source file, not preview
+        metadata_path = preview_dir / f"{test_image_path.name}.json"
+
+        with metadata_path.open() as f:
+            metadata_dict = json.load(f)
+
+        # Verify can deserialize to PreviewMetadata using Pydantic
+        metadata = PreviewMetadata.model_validate(metadata_dict)
+
+        assert metadata.version == PreviewMetadata.LATEST_SCHEMA_VERSION
+        assert metadata.source_macro_path == str(test_image_path)
+        assert metadata.source_file_size > 0
+        assert metadata.source_file_modified_time > 0
+        assert metadata.preview_file_name == f"{test_image_path.name}.png"
+
+
+class TestGetPreviewForArtifact:
+    """Tests for preview retrieval functionality."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create temporary directory for test files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def test_image_path(self, temp_dir: Path) -> Path:
+        """Create a real test image file."""
+        image_path = temp_dir / "test_source.jpg"
+
+        # Create a simple test image (100x100 red square)
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(str(image_path), format="JPEG")
+
+        return image_path
+
+    @pytest.fixture
+    def test_macro_path(self, test_image_path: Path) -> MacroPath:
+        """Create MacroPath for test image."""
+        parsed_macro = ParsedMacro(str(test_image_path))
+        return MacroPath(parsed_macro=parsed_macro, variables={})
+
+    @pytest.fixture
+    def artifact_manager(self) -> ArtifactManager:
+        """Create ArtifactManager with ImageArtifactProvider registered."""
+        manager = ArtifactManager()
+        # ImageArtifactProvider is already registered in constructor
+        return manager
+
+    @pytest.fixture
+    def generated_preview_with_metadata(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
+    ) -> Path:
+        """Generate a preview with metadata for testing retrieval."""
+        import asyncio
+
+        request = GeneratePreviewRequest(
+            macro_path=test_macro_path,
+            format=None,
+            generate_preview_metadata_json=True,
+            preview_generator_parameters={"max_width": 50, "max_height": 50},
+        )
+
+        result = asyncio.run(artifact_manager.on_handle_generate_preview_request(request))
+        assert isinstance(result, GeneratePreviewResultSuccess)
+
+        preview_dir = test_image_path.parent / "nodes_previews"
+        return preview_dir / f"{test_image_path.name}.png"
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
+        """Test retrieving existing preview."""
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=True,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultSuccess)
+        assert result.path_to_preview is not None
+        assert Path(result.path_to_preview).exists()
+        assert Path(result.path_to_preview).is_absolute()
+
+    def test_get_preview_source_file_not_found(self, artifact_manager: ArtifactManager, temp_dir: Path) -> None:
+        """Test getting preview for non-existent source file."""
+        nonexistent_path = temp_dir / "nonexistent.jpg"
+        parsed_macro = ParsedMacro(str(nonexistent_path))
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=macro_path,
+            generate_preview_if_necessary=True,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "source file not found" in str(result.result_details).lower()
+
+    def test_get_preview_metadata_not_found(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
+    ) -> None:
+        """Test getting preview when metadata doesn't exist."""
+        # Don't generate preview or metadata
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "metadata file not found" in str(result.result_details).lower()
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_metadata_malformed_json(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        test_image_path: Path,
+    ) -> None:
+        """Test getting preview when metadata JSON is malformed."""
+        # Corrupt the metadata file (named after source file, not preview)
+        preview_dir = test_image_path.parent / "nodes_previews"
+        metadata_path = preview_dir / f"{test_image_path.name}.json"
+        metadata_path.write_text("{ invalid json }")
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "malformed" in str(result.result_details).lower() or "json" in str(result.result_details).lower()
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_metadata_invalid_schema(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        test_image_path: Path,
+    ) -> None:
+        """Test getting preview when metadata has missing required field."""
+        # Write metadata with missing field (named after source file)
+        preview_dir = test_image_path.parent / "nodes_previews"
+        metadata_path = preview_dir / f"{test_image_path.name}.json"
+        incomplete_metadata = {
+            "version": "0.1.0",
+            "source_macro_path": str(test_image_path),
+            # Missing: source_file_size, source_file_modified_time, preview_file_name
+        }
+        metadata_path.write_text(json.dumps(incomplete_metadata))
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "invalid metadata" in str(result.result_details).lower()
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_stale_source_modified(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        test_image_path: Path,
+    ) -> None:
+        """Test getting preview when source file was modified."""
+        # Modify source file by writing more data
+        with test_image_path.open("ab") as f:
+            f.write(b"extra data to change size")
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "stale" in str(result.result_details).lower() or "modified" in str(result.result_details).lower()
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_stale_source_touched(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        test_image_path: Path,
+    ) -> None:
+        """Test getting preview when source file mtime was updated."""
+        # Touch the file to update mtime
+        import time
+
+        future_time = time.time() + 100
+        os.utime(test_image_path, (future_time, future_time))
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "stale" in str(result.result_details).lower() or "modified" in str(result.result_details).lower()
+
+    def test_get_preview_preview_file_missing(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        generated_preview_with_metadata: Path,
+    ) -> None:
+        """Test getting preview when preview file is deleted but metadata exists."""
+        # Delete the preview file but keep metadata
+        generated_preview_with_metadata.unlink()
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
+        assert "file not found" in str(result.result_details).lower()
+
+    def test_get_preview_generate_if_necessary_flag(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
+    ) -> None:
+        """Test that generate_preview_if_necessary flag is accepted."""
+        # Test with flag set to False
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            generate_preview_if_necessary=False,
+        )
+
+        # Should not raise error (but will fail since no preview exists)
+        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        assert isinstance(result, GetPreviewForArtifactResultFailure)
