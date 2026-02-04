@@ -245,32 +245,7 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
                 self.set_parameter_value("duration", available_durations[0])
 
     async def _process_generation(self) -> None:
-        self._clear_execution_status()
-        logger.info("%s starting video generation", self.name)
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        result = await self._submit_and_poll(headers)
-        if not result:
-            return
-
-        generation_id, status_response = result
-        self.parameter_output_values["provider_response"] = status_response
-
-        result_json = await self._fetch_generation_result(generation_id)
-        if not result_json:
-            return
-
-        try:
-            await self._parse_result(result_json, generation_id)
-        except Exception as e:
-            self._handle_result_parsing_error(e)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         return {

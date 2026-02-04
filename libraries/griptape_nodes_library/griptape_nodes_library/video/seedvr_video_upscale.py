@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 from time import time
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -264,9 +262,9 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
     async def _build_payload(self) -> dict[str, Any]:
         params = self._get_parameters()
 
-        video_url = await self._prepare_video_data_url_async(params["video_input"])
+        video_url = self._public_video_url_parameter.get_public_url_for_parameter()
         if not video_url:
-            msg = "Failed to process input video"
+            msg = "Video URL must be provided"
             raise ValueError(msg)
 
         payload: dict[str, Any] = {
@@ -329,61 +327,6 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
             self._set_status_results(
                 was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
             )
-
-    async def _prepare_video_data_url_async(self, video_input: Any) -> str | None:
-        if not video_input:
-            return None
-
-        video_url = self._coerce_video_url_or_data_uri(video_input)
-        if not video_url:
-            return None
-
-        if video_url.startswith("data:video/"):
-            return video_url
-
-        if video_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(video_url, "video/mp4")
-
-        return video_url
-
-    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                logger.debug("%s failed to inline URL: %s", self.name, e)
-                return None
-            else:
-                content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-                if not content_type.startswith("video/"):
-                    content_type = default_content_type
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                logger.debug("URL converted to base64 data URI for proxy")
-                return f"data:{content_type};base64,{b64}"
-
-    @staticmethod
-    def _coerce_video_url_or_data_uri(val: Any) -> str | None:
-        if val is None:
-            return None
-
-        if isinstance(val, str):
-            v = val.strip()
-            if not v:
-                return None
-            return v if v.startswith(("http://", "https://", "data:video/")) else f"data:video/mp4;base64,{v}"
-
-        try:
-            v = getattr(val, "value", None)
-            if isinstance(v, str) and v.startswith(("http://", "https://", "data:video/")):
-                return v
-            b64 = getattr(val, "base64", None)
-            if isinstance(b64, str) and b64:
-                return b64 if b64.startswith("data:video/") else f"data:video/mp4;base64,{b64}"
-        except AttributeError:
-            pass
-
-        return None
 
     async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)

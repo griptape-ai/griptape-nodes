@@ -831,35 +831,7 @@ class TopazImageEnhance(GriptapeProxyNode):
             self._update_visible_params_for_model(value)
 
     async def _process_generation(self) -> None:
-        self._clear_execution_status()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        operation = self.get_parameter_value("operation") or "enhance"
-        model = self.get_parameter_value("model") or "Standard V2"
-        self._log(f"Processing image with Topaz {operation} using {model}")
-
-        result = await self._submit_and_poll(headers)
-        if not result:
-            return
-
-        generation_id, _status_response = result
-
-        result_json = await self._fetch_generation_result(generation_id)
-        if not result_json:
-            return
-
-        self.parameter_output_values["provider_response"] = result_json
-        try:
-            await self._parse_result(result_json, generation_id)
-        except Exception as e:
-            self._handle_result_parsing_error(e)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         operation = self.get_parameter_value("operation") or "enhance"

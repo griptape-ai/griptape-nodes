@@ -359,29 +359,9 @@ class WanTextToVideoGeneration(GriptapeProxyNode):
             self.show_message_by_name("artifact_url_parameter_message_input_audio")
 
     async def _process_generation(self) -> None:
-        self._clear_execution_status()
         self._seed_parameter.preprocess()
-
         try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        try:
-            result = await self._submit_and_poll(headers)
-            if not result:
-                return
-
-            generation_id, _status_response = result
-            result_json = await self._fetch_generation_result(generation_id)
-            if not result_json:
-                return
-
-            self.parameter_output_values["provider_response"] = result_json
-            await self._parse_result(result_json, generation_id)
+            await super()._process_generation()
         finally:
             self._public_audio_url_parameter.delete_uploaded_artifact()
 

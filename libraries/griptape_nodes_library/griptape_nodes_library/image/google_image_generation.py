@@ -281,31 +281,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
         return exceptions if exceptions else None
 
     async def _process_generation(self) -> None:
-        self._clear_execution_status()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        result = await self._submit_and_poll(headers)
-        if not result:
-            return
-
-        generation_id, _status_response = result
-
-        result_json = await self._fetch_generation_result(generation_id)
-        if not result_json:
-            return
-
-        self.parameter_output_values["provider_response"] = result_json
-        try:
-            await self._parse_result(result_json, generation_id)
-        except Exception as e:
-            self._handle_result_parsing_error(e)
+        await super()._process_generation()
 
     async def _get_parameters(self) -> dict[str, Any]:
         """Build the request payload matching Gemini API structure."""
