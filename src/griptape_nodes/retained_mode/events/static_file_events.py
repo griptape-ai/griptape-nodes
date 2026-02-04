@@ -1,11 +1,14 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -160,3 +163,179 @@ class CreateStaticFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPa
     """
 
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadArtifactBytesRequest(RequestPayload):
+    """Load artifact content as bytes from any source.
+
+    Universal loader handling all input types:
+    - Artifact objects (ImageUrlArtifact, VideoUrlArtifact, AudioUrlArtifact, etc.)
+    - ImageArtifact with .base64 or .value as bytes
+    - HTTP/HTTPS URLs
+    - File paths (via httpx patch)
+    - Cloud asset URLs (via httpx patch)
+    - Base64 strings (raw or with data URI prefix)
+    - Dictionary format: {"type": "...", "value": "..."}
+
+    Use when: Node needs to load any artifact/URL/path into memory as bytes for processing,
+    validation, or transformation. Common in image processing nodes that need to manipulate
+    raw pixel data or extract metadata.
+
+    Results: LoadArtifactBytesResultSuccess (with content bytes) |
+             LoadArtifactBytesResultFailure (download error, invalid format, timeout)
+
+    Args:
+        artifact_or_url: Mixed input - artifact, URL, path, or encoded data
+        timeout: Download timeout in seconds (default: 120)
+        context_name: Context for error messages (e.g., "FluxImageGeneration.input_image")
+                     Helps users identify which node/parameter failed
+    """
+
+    artifact_or_url: Any
+    timeout: float = 120.0
+    context_name: str = "artifact"
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadArtifactBytesResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully loaded artifact content as bytes.
+
+    Args:
+        content: Raw bytes loaded from artifact/URL/path
+    """
+
+    content: bytes
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadArtifactBytesResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to load artifact content.
+
+    Common failure scenarios:
+    - Cannot load None artifact
+    - Cannot extract value from artifact
+    - Download timeout
+    - HTTP error (404, 403, etc.)
+    - Invalid base64 encoding
+    - Unsupported artifact type
+    """
+
+    # result_details inherited from ResultPayloadFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAsBase64DataUriRequest(RequestPayload):
+    """Load artifact and convert to base64 data URI for API submission.
+
+    Most common pattern for generation APIs requiring inline base64 images.
+    Returns format: "data:image/png;base64,iVBORw0K..."
+
+    Handles same input types as LoadArtifactBytesRequest.
+
+    Use when: Submitting images/media to external APIs (OpenAI, Anthropic, etc.) that
+    require base64 data URIs. Automatically handles downloading from URLs and encoding.
+
+    Results: LoadAsBase64DataUriResultSuccess (with data URI string) |
+             LoadAsBase64DataUriResultFailure (download error, encoding error, timeout)
+
+    Args:
+        artifact_or_url: Mixed input - artifact, URL, path, or encoded data
+        timeout: Download timeout in seconds (default: 120)
+        context_name: Context for error messages (e.g., node name or parameter name)
+        media_type: MIME type for data URI (default: "image/png")
+    """
+
+    artifact_or_url: Any
+    timeout: float = 120.0
+    context_name: str = "artifact"
+    media_type: str = "image/png"
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAsBase64DataUriResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully loaded artifact as base64 data URI.
+
+    Args:
+        data_uri: Base64 data URI string (e.g., "data:image/png;base64,iVBORw0K...")
+    """
+
+    data_uri: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAsBase64DataUriResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to load artifact as base64 data URI.
+
+    Common failure scenarios:
+    - Cannot load None artifact
+    - Cannot extract value from artifact
+    - Download failed
+    - Invalid data format
+    - Encoding error
+    """
+
+    # result_details inherited from ResultPayloadFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadAndSaveRequest(RequestPayload):
+    """Download from URL and save to static storage.
+
+    Common pattern: Download generated media from provider, save to local/cloud storage.
+    Uses use_direct_save=True internally to return stable storage paths.
+
+    Use when: Node receives media URL from external API and needs to save it to
+    workspace storage. Typical in generation nodes (image/video/audio) that download
+    results from provider APIs.
+
+    Results: DownloadAndSaveResultSuccess (with artifact/path) |
+             DownloadAndSaveResultFailure (download error, save error, timeout)
+
+    Args:
+        url: URL to download from (HTTP/HTTPS)
+        filename: Filename to save as (e.g., "video_123.mp4")
+        timeout: Download timeout in seconds (default: 120)
+        artifact_type: Artifact class to return (VideoUrlArtifact, ImageUrlArtifact, etc.)
+                      If None, returns the saved path string.
+        existing_file_policy: How to handle existing files (default: OVERWRITE)
+    """
+
+    url: str
+    filename: str
+    timeout: float = 120.0
+    artifact_type: type | None = None
+    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadAndSaveResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully downloaded and saved media to storage.
+
+    Args:
+        artifact: Either an artifact instance (ImageUrlArtifact, VideoUrlArtifact, etc.)
+                 if artifact_type was provided, or the saved path string if not.
+    """
+
+    artifact: Any
+
+
+@dataclass
+@PayloadRegistry.register
+class DownloadAndSaveResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to download and save media.
+
+    Common failure scenarios:
+    - Failed to download (timeout, HTTP error, network error)
+    - Failed to save (disk full, permission error, invalid path)
+    """
+
+    # result_details inherited from ResultPayloadFailure
