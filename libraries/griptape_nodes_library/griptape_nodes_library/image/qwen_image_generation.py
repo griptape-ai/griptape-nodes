@@ -299,12 +299,13 @@ class QwenImageGeneration(GriptapeProxyNode):
                 LoadAndSaveFromLocationRequest(
                     location=image_url,
                     filename=filename,
-                    artifact_type=ImageUrlArtifact,
                 )
             )
 
             if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-                self.parameter_output_values["image_url"] = result.artifact
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(
+                    value=result.artifact_location, name=filename
+                )
                 logger.info("Saved image to static storage as %s", filename)
                 self._set_status_results(
                     was_successful=True, result_details=f"Image generated successfully and saved as {filename}."

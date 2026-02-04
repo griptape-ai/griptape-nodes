@@ -308,12 +308,11 @@ class GrokImageGeneration(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=image_url,
                 filename=filename,
-                artifact_type=ImageUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            return result.artifact
+            return ImageUrlArtifact(value=result.artifact_location, name=filename)
         with suppress(Exception):
             logger.warning("%s failed to save image %s: %s", self.name, index, result.result_details)
         return ImageUrlArtifact(value=image_url)

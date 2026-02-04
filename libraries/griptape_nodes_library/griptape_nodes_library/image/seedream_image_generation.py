@@ -604,7 +604,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
-        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
         if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             return None
 
@@ -665,13 +665,12 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 LoadAndSaveFromLocationRequest(
                     location=image_url,
                     filename=filename,
-                    artifact_type=ImageUrlArtifact,
                 )
             )
 
             if isinstance(result, LoadAndSaveFromLocationResultSuccess):
                 self._log(f"Saved image {index} to static storage as {filename}")
-                return result.artifact
+                return ImageUrlArtifact(value=result.artifact_location, name=filename)
 
             self._log(f"Could not download image {index}, using provider URL")
             return ImageUrlArtifact(value=image_url)

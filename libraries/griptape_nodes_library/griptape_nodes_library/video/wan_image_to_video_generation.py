@@ -566,7 +566,7 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return result.data_uri
         except Exception as e:
@@ -619,10 +619,10 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
             logger.info("Downloading video from URL")
             filename = f"wan_i2v_{int(time.time())}.mp4"
             result = await GriptapeNodes.ahandle_request(
-                LoadAndSaveFromLocationRequest(location=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+                LoadAndSaveFromLocationRequest(location=video_url, filename=filename)
             )
             if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-                artifact = result.artifact
+                artifact = VideoUrlArtifact(value=result.artifact_location, name=filename)
                 self.parameter_output_values["video"] = artifact
                 logger.info("Saved video to static storage as %s", artifact.name)
                 self._set_status_results(
@@ -662,7 +662,7 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str, _default_content_type: str) -> str | None:
         try:
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 logger.debug("URL converted to base64 data URI for proxy")
                 return result.data_uri

@@ -211,9 +211,7 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            result = await GriptapeNodes.ahandle_request(
-                LoadBase64DataUriFromLocationRequest(artifact_or_url=image_value)
-            )
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=image_value))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return result.data_uri
             return None
@@ -284,12 +282,11 @@ class GrokVideoGeneration(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=video_url,
                 filename=filename,
-                artifact_type=VideoUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             self._set_status_results(
                 was_successful=True,
                 result_details=f"Video generated successfully and saved as {filename}.",

@@ -350,12 +350,11 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=extracted_url,
                 filename=filename,
-                artifact_type=VideoUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video"] = result.artifact
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             msg = f"Saved video to static storage as {filename}"
             logger.info(msg)
             self._set_status_results(

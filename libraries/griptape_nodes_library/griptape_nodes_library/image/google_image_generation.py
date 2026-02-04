@@ -758,7 +758,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return result.data_uri
         except Exception as e:

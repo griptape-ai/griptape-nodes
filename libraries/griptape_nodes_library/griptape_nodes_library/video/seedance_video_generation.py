@@ -501,7 +501,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
             return url
 
-        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
 
         if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             self._log("Frame URL converted to data URI for proxy")
@@ -533,12 +533,11 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=extracted_url,
                 filename=filename,
-                artifact_type=VideoUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             self._log(f"Saved video to static storage as {filename}")
             self._set_status_results(
                 was_successful=True, result_details=f"Video generated successfully and saved as {filename}."

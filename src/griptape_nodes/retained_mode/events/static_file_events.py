@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -227,7 +226,11 @@ class LoadBase64DataUriFromLocationRequest(RequestPayload):
     Most common pattern for generation APIs requiring inline base64 images.
     Returns format: "data:image/png;base64,iVBORw0K..."
 
-    Handles same input types as LoadArtifactBytesRequest.
+    Supports three location types:
+    - HTTP/HTTPS URLs: https://example.com/image.png
+    - File paths: /path/to/file.png or file:///path/to/file.png
+    - Data URIs: data:image/png;base64,iVBORw0K... (returned as-is)
+    - Raw base64: iVBORw0K... (wrapped in data URI)
 
     Use when: Submitting images/media to external APIs (OpenAI, Anthropic, etc.) that
     require base64 data URIs. Automatically handles downloading from URLs and encoding.
@@ -236,12 +239,12 @@ class LoadBase64DataUriFromLocationRequest(RequestPayload):
              LoadBase64DataUriFromLocationResultFailure (download error, encoding error, timeout)
 
     Args:
-        artifact_or_url: Mixed input - artifact, URL, path, or encoded data
+        location: Location string - URL, file path, data URI, or raw base64
         timeout: Download timeout in seconds (default: 120)
         media_type: MIME type for data URI (default: "image/png")
     """
 
-    artifact_or_url: Any
+    location: str
     timeout: float = 120.0
     media_type: str = "image/png"
 
@@ -264,9 +267,8 @@ class LoadBase64DataUriFromLocationResultFailure(WorkflowAlteredMixin, ResultPay
     """Failed to load from location as base64 data URI.
 
     Common failure scenarios:
-    - Cannot load None artifact
-    - Cannot extract value from artifact
-    - Download failed
+    - Cannot load from empty location
+    - Download failed (timeout, HTTP error, network error)
     - Invalid data format
     - Encoding error
     """
@@ -291,22 +293,19 @@ class LoadAndSaveFromLocationRequest(RequestPayload):
     workspace storage. Typical in generation nodes (image/video/audio) that download
     results from provider APIs.
 
-    Results: LoadAndSaveFromLocationResultSuccess (with artifact/path) |
+    Results: LoadAndSaveFromLocationResultSuccess (with artifact_location) |
              LoadAndSaveFromLocationResultFailure (download error, save error, timeout)
 
     Args:
         location: Location string - URL, file path, or data URI
         filename: Filename to save as (e.g., "video_123.mp4")
         timeout: Download timeout in seconds (default: 120)
-        artifact_type: Artifact class to return (VideoUrlArtifact, ImageUrlArtifact, etc.)
-                      If None, returns the saved path string.
         existing_file_policy: How to handle existing files (default: OVERWRITE)
     """
 
     location: str
     filename: str
     timeout: float = 120.0
-    artifact_type: type | None = None
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
 
 
@@ -316,11 +315,11 @@ class LoadAndSaveFromLocationResultSuccess(WorkflowAlteredMixin, ResultPayloadSu
     """Successfully loaded from location and saved media to storage.
 
     Args:
-        artifact: Either an artifact instance (ImageUrlArtifact, VideoUrlArtifact, etc.)
-                 if artifact_type was provided, or the saved path string if not.
+        artifact_location: Location string (file path or URI) where the artifact was saved.
+                          Can be used to construct artifacts like VideoUrlArtifact(value=artifact_location).
     """
 
-    artifact: Any
+    artifact_location: str
 
 
 @dataclass

@@ -535,7 +535,7 @@ class Rodin23DGeneration(GriptapeProxyNode):
         """Convert a string (URL or base64) to raw bytes."""
         # If it's a URL, download the image and get as data URI, then decode
         if value.startswith(("http://", "https://")):
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=value))
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=value))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 # Extract bytes from the data URI
                 data_uri = result.data_uri
@@ -626,26 +626,24 @@ class Rodin23DGeneration(GriptapeProxyNode):
                     LoadAndSaveFromLocationRequest(
                         location=file_url,
                         filename=static_filename,
-                        artifact_type=TextArtifact,
                         existing_file_policy=ExistingFilePolicy.CREATE_NEW,
                     )
                 )
 
                 if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-                    artifact = result.artifact
-                    if isinstance(artifact, TextArtifact) and artifact.value:
-                        saved_url = artifact.value
-                        all_file_urls.append(saved_url)
-                        self._log(f"Saved file: {static_filename}")
+                    saved_url = result.artifact_location
+                    TextArtifact(value=saved_url, name=static_filename)
+                    all_file_urls.append(saved_url)
+                    self._log(f"Saved file: {static_filename}")
 
-                        # Track primary model file
-                        if file_name.lower().endswith(f".{requested_format}") and primary_url is None:
-                            primary_url = saved_url
-                            primary_filename = static_filename
-                        elif primary_url is None:
-                            # Use first file as fallback
-                            primary_url = saved_url
-                            primary_filename = static_filename
+                    # Track primary model file
+                    if file_name.lower().endswith(f".{requested_format}") and primary_url is None:
+                        primary_url = saved_url
+                        primary_filename = static_filename
+                    elif primary_url is None:
+                        # Use first file as fallback
+                        primary_url = saved_url
+                        primary_filename = static_filename
                 else:
                     self._log(f"Failed to download and save file {file_name}")
 

@@ -156,7 +156,7 @@ class GrokVideoEdit(GriptapeProxyNode):
             return video_value
 
         result = await GriptapeNodes.ahandle_request(
-            LoadBase64DataUriFromLocationRequest(artifact_or_url=video_value, media_type="video/mp4")
+            LoadBase64DataUriFromLocationRequest(location=video_value, media_type="video/mp4")
         )
         if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             return result.data_uri
@@ -221,12 +221,11 @@ class GrokVideoEdit(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=video_url,
                 filename=filename,
-                artifact_type=VideoUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             self._set_status_results(
                 was_successful=True,
                 result_details=f"Video edited successfully and saved as {filename}.",

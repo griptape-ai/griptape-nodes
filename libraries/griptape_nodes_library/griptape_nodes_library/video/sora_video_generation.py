@@ -434,13 +434,12 @@ class SoraVideoGeneration(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=video_url,
                 filename=filename,
-                artifact_type=VideoUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
             # Success: use the saved artifact
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             self._log(f"Saved video to static storage as {filename}")
             self._set_status_results(
                 was_successful=True, result_details=f"Video generated successfully and saved as {filename}."

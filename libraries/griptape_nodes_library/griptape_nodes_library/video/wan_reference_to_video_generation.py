@@ -532,7 +532,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str, _default_content_type: str) -> str | None:
         try:
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
             if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 logger.debug("URL converted to base64 data URI for proxy")
                 return result.data_uri
@@ -601,12 +601,10 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
             logger.debug("Downloading video bytes from provider URL")
             filename = f"wan_r2v_{int(time.time())}.mp4"
             result = await GriptapeNodes.ahandle_request(
-                LoadAndSaveFromLocationRequest(
-                    location=extracted_url, filename=filename, artifact_type=VideoUrlArtifact
-                )
+                LoadAndSaveFromLocationRequest(location=extracted_url, filename=filename)
             )
             if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-                artifact = result.artifact
+                artifact = VideoUrlArtifact(value=result.artifact_location, name=filename)
                 self.parameter_output_values["video"] = artifact
                 logger.debug("Saved video to static storage as %s", artifact.name)
                 self._set_status_results(

@@ -201,11 +201,11 @@ class KlingVideoExtension(GriptapeProxyNode):
         # Download and save video
         filename = f"kling_video_extension_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            LoadAndSaveFromLocationRequest(location=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=download_url, filename=filename)
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             logger.info("%s saved video to static storage as %s", self.name, filename)
             self._set_status_results(
                 was_successful=True, result_details=f"Video extended successfully and saved as {filename}."

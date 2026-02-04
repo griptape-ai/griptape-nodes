@@ -307,12 +307,11 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=extracted_url,
                 filename=filename,
-                artifact_type=ImageUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["image"] = result.artifact
+            self.parameter_output_values["image"] = ImageUrlArtifact(value=result.artifact_location, name=filename)
             msg = f"Saved image to static storage as {filename}"
             logger.info(msg)
             self._set_status_results(
@@ -420,9 +419,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            result = await GriptapeNodes.ahandle_request(
-                LoadBase64DataUriFromLocationRequest(artifact_or_url=image_value)
-            )
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=image_value))
             if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return None
             return result.data_uri

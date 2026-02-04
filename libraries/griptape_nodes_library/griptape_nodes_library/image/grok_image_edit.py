@@ -243,9 +243,7 @@ class GrokImageEdit(GriptapeProxyNode):
             return image_value
 
         if image_value.startswith(("http://", "https://")):
-            result = await GriptapeNodes.ahandle_request(
-                LoadBase64DataUriFromLocationRequest(artifact_or_url=image_value)
-            )
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=image_value))
             if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
                 return None
             return result.data_uri
@@ -368,12 +366,11 @@ class GrokImageEdit(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=image_url,
                 filename=filename,
-                artifact_type=ImageUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            return result.artifact
+            return ImageUrlArtifact(value=result.artifact_location, name=filename)
         with suppress(Exception):
             logger.warning("%s failed to save image %s: %s", self.name, index, result.result_details)
         return ImageUrlArtifact(value=image_url)

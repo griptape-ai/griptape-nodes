@@ -374,11 +374,11 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         # Download and save video
         filename = f"kling_omni_video_{generation_id}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            LoadAndSaveFromLocationRequest(location=download_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=download_url, filename=filename)
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video_url"] = result.artifact
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             logger.info("%s saved video to static storage as %s", self.name, filename)
             self._set_status_results(
                 was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
@@ -518,7 +518,7 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str) -> str | None:
         """Download external image URL and convert to data URL."""
-        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
 
         if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             logger.debug("Image URL converted to data URI for proxy")

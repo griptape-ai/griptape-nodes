@@ -472,42 +472,36 @@ class StaticFilesManager:
         """Handle request to load from location as base64 data URI.
 
         Args:
-            request: Request containing artifact_or_url, timeout, and media_type
+            request: Request containing location, timeout, and media_type
 
         Returns:
             Success result with data URI string or failure result with error details
         """
-        # Guard: Check for None/empty
-        if request.artifact_or_url is None:
-            return LoadBase64DataUriFromLocationResultFailure(result_details="Cannot load None artifact")
+        # Guard: Validate location is not empty
+        if not request.location:
+            return LoadBase64DataUriFromLocationResultFailure(result_details="Cannot load from empty location")
 
-        # Extract value
-        value = _extract_artifact_value(request.artifact_or_url)
-        if value is None:
-            return LoadBase64DataUriFromLocationResultFailure(result_details="Cannot extract value from artifact")
-
-        # If bytes, encode directly
-        if isinstance(value, bytes):
-            b64 = base64.b64encode(value).decode("utf-8")
-            return LoadBase64DataUriFromLocationResultSuccess(
-                data_uri=f"data:{request.media_type};base64,{b64}",
-                result_details="Encoded bytes to data URI",
+        # Guard: Validate location is a string
+        if not isinstance(request.location, str):
+            return LoadBase64DataUriFromLocationResultFailure(
+                result_details=f"Location must be a string, got {type(request.location).__name__}"
             )
 
-        # Must be string
-        if not isinstance(value, str):
+        location = request.location.strip()
+
+        # Guard: Validate stripped location is not empty
+        if not location:
             return LoadBase64DataUriFromLocationResultFailure(
-                result_details=f"Unexpected value type: {type(value).__name__}"
+                result_details="Cannot load from whitespace-only location"
             )
 
         # Already a data URI? Return as-is
-        if value.startswith("data:"):
-            return LoadBase64DataUriFromLocationResultSuccess(data_uri=value, result_details="Already a data URI")
+        if location.startswith("data:"):
+            return LoadBase64DataUriFromLocationResultSuccess(data_uri=location, result_details="Already a data URI")
 
         # URL or path? Download then encode
-        if is_url_or_path(value):
-            # Use new LoadBytesFromLocationRequest
-            load_request = LoadBytesFromLocationRequest(location=value, timeout=request.timeout)
+        if is_url_or_path(location):
+            load_request = LoadBytesFromLocationRequest(location=location, timeout=request.timeout)
             load_result = await self.on_handle_load_bytes_from_location_request(load_request)
 
             if isinstance(load_result, LoadBytesFromLocationResultSuccess):
@@ -521,7 +515,7 @@ class StaticFilesManager:
 
         # Assume raw base64 - just add data URI prefix
         return LoadBase64DataUriFromLocationResultSuccess(
-            data_uri=f"data:{request.media_type};base64,{value}",
+            data_uri=f"data:{request.media_type};base64,{location}",
             result_details="Added data URI prefix to base64",
         )
 
@@ -532,17 +526,16 @@ class StaticFilesManager:
         """Handle request to load bytes from location and save to storage.
 
         Args:
-            request: Request containing location, filename, timeout, artifact_type, and existing_file_policy
+            request: Request containing location, filename, timeout, and existing_file_policy
 
         Returns:
-            Success result with artifact/path or failure result with error details
+            Success result with artifact_location or failure result with error details
         """
         # Download bytes
         load_request = LoadBytesFromLocationRequest(location=request.location, timeout=request.timeout)
         load_result = await self.on_handle_load_bytes_from_location_request(load_request)
 
         if isinstance(load_result, LoadBytesFromLocationResultSuccess):
-            # Type narrowing: load_result is LoadBytesFromLocationResultSuccess
             # Save to static storage with use_direct_save=True
             try:
                 saved_path = self.save_static_file(
@@ -554,15 +547,9 @@ class StaticFilesManager:
             except Exception as e:
                 return LoadAndSaveFromLocationResultFailure(result_details=f"Failed to save {request.filename}: {e}")
 
-            # Success: return artifact or raw path
-            if request.artifact_type:
-                artifact = request.artifact_type(value=saved_path, name=request.filename)
-                return LoadAndSaveFromLocationResultSuccess(
-                    artifact=artifact, result_details=f"Downloaded and saved as {request.filename}"
-                )
-
+            # Success: return the saved location
             return LoadAndSaveFromLocationResultSuccess(
-                artifact=saved_path, result_details=f"Downloaded and saved as {request.filename}"
+                artifact_location=saved_path, result_details=f"Downloaded and saved as {request.filename}"
             )
 
         return LoadAndSaveFromLocationResultFailure(

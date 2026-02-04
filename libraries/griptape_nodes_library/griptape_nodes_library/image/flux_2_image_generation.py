@@ -440,12 +440,11 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             LoadAndSaveFromLocationRequest(
                 location=sample_url,
                 filename=filename,
-                artifact_type=ImageUrlArtifact,
             )
         )
 
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["image_url"] = result.artifact
+            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=result.artifact_location, name=filename)
             self._log(f"Saved image to static storage as {filename}")
             self._set_status_results(
                 was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
@@ -513,7 +512,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
-        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(artifact_or_url=url))
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
         if not isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
             self._log(f"Failed to download image from URL {url}")
             return None

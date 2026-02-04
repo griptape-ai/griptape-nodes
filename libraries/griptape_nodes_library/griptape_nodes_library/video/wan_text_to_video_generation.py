@@ -502,10 +502,10 @@ class WanTextToVideoGeneration(GriptapeProxyNode):
         """Download and save the video from the provided URL."""
         filename = f"wan_video_{int(time.time())}.mp4"
         result = await GriptapeNodes.ahandle_request(
-            LoadAndSaveFromLocationRequest(location=video_url, filename=filename, artifact_type=VideoUrlArtifact)
+            LoadAndSaveFromLocationRequest(location=video_url, filename=filename)
         )
         if isinstance(result, LoadAndSaveFromLocationResultSuccess):
-            self.parameter_output_values["video"] = result.artifact
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
             logger.info("Saved video to static storage as %s", filename)
             self._set_status_results(
                 was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
