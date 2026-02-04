@@ -129,11 +129,14 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
                    - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
                    - Absolute paths (e.g., "/absolute/path/to/file.jpg")
                    - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+        preview: If True, adds ?preview=true to the URL for images to serve smaller preview versions.
+                 Defaults to False.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_path: str
+    preview: bool = False
 
 
 @dataclass
