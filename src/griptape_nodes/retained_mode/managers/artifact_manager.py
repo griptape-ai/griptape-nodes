@@ -1,6 +1,7 @@
 """Manager for artifact operations."""
 
 import logging
+from pathlib import Path
 
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewRequest,
@@ -28,6 +29,13 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterPreviewGeneratorResultFailure,
     RegisterPreviewGeneratorResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import (
+    GetFileInfoRequest,
+    GetFileInfoResultSuccess,
+    ResolveMacroPathRequest,
+    ResolveMacroPathResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.default_artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
@@ -106,11 +114,130 @@ class ArtifactManager:
             )
             raise RuntimeError(error_message)
 
-    def on_handle_generate_preview_request(
-        self, _request: GeneratePreviewRequest
+    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
+        self, request: GeneratePreviewRequest
     ) -> GeneratePreviewResultSuccess | GeneratePreviewResultFailure:
-        """Handle generate preview request."""
-        return GeneratePreviewResultFailure(result_details="Not implemented yet")
+        """Handle generate preview request.
+
+        Args:
+            request: Contains macro_path, format (optional), optional_preview_generator_name (optional)
+
+        Returns:
+            Success or failure result
+        """
+        # FAILURE CASE: Resolve source path from MacroPath
+        resolve_request = ResolveMacroPathRequest(macro_path=request.macro_path)
+        resolve_result = GriptapeNodes.handle_request(resolve_request)
+
+        if not isinstance(resolve_result, ResolveMacroPathResultSuccess):
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to resolve macro path. Failed due to: {resolve_result.result_details}"
+            )
+
+        source_path = resolve_result.resolved_path
+
+        # FAILURE CASE: Verify file exists
+        file_info_request = GetFileInfoRequest(path=source_path, workspace_only=False)
+        file_info_result = GriptapeNodes.handle_request(file_info_request)
+
+        if not isinstance(file_info_result, GetFileInfoResultSuccess):
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. "
+                f"Failed due to: {file_info_result.result_details}"
+            )
+
+        if file_info_result.file_entry is None:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: file not found"
+            )
+
+        # FAILURE CASE: Extract file extension
+        file_extension = Path(source_path).suffix[1:].lower()
+        if not file_extension:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: no file extension"
+            )
+
+        # FAILURE CASE: Determine which provider to use
+        if request.specific_artifact_provider_name is not None:
+            # User specified a specific provider - look it up by friendly name
+            provider_class = self._get_provider_class_by_friendly_name(request.specific_artifact_provider_name)
+            if provider_class is None:
+                return GeneratePreviewResultFailure(
+                    result_details=f"Attempted to generate preview for '{source_path}'. "
+                    f"Failed due to: provider '{request.specific_artifact_provider_name}' not found"
+                )
+
+            # Verify the specified provider supports this file format
+            if file_extension not in provider_class.get_supported_formats():
+                return GeneratePreviewResultFailure(
+                    result_details=f"Attempted to generate preview for '{source_path}'. "
+                    f"Failed due to: provider '{request.specific_artifact_provider_name}' does not support file format '{file_extension}'"
+                )
+        else:
+            # No specific provider - auto-select based on file format
+            provider_classes = self._file_format_to_provider_class.get(file_extension)
+            if not provider_classes:
+                return GeneratePreviewResultFailure(
+                    result_details=f"Attempted to generate preview for '{source_path}'. "
+                    f"Failed due to: no provider found for file format '{file_extension}'"
+                )
+
+            # FAILURE CASE: Multiple providers for same format (ambiguous)
+            if len(provider_classes) > 1:
+                provider_names = [cls.get_friendly_name() for cls in provider_classes]
+                return GeneratePreviewResultFailure(
+                    result_details=f"Attempted to generate preview for '{source_path}'. "
+                    f"Failed due to: multiple providers registered for file format '{file_extension}': {', '.join(provider_names)}. "
+                    f"Please specify which provider to use."
+                )
+
+            provider_class = provider_classes[0]
+
+        # FAILURE CASE: Instantiate provider
+        try:
+            provider_instance = self._get_or_create_provider_instance(provider_class)
+        except Exception as e:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. "
+                f"Failed due to: provider instantiation error - {e}"
+            )
+
+        # Determine generator name (use request value or default)
+        if request.optional_preview_generator_name is not None:
+            generator_name = request.optional_preview_generator_name
+        else:
+            generator_name = provider_class.get_default_preview_generator()
+
+        # Determine preview format (use request value or default)
+        if request.format is not None:
+            preview_format = request.format
+        else:
+            preview_format = provider_class.get_default_preview_format()
+
+        # Calculate destination path using nodes_previews pattern
+        source_path_obj = Path(source_path)
+        destination_dir = source_path_obj.parent / "nodes_previews"
+        destination_path = str(destination_dir / source_path_obj.name)
+        # Apply preview format extension to destination filename (keeps full source filename)
+        destination_preview_file_path = f"{destination_path}.{preview_format}"
+
+        # FAILURE CASE: Call provider.generate_preview()
+        try:
+            await provider_instance.generate_preview(
+                preview_generator_friendly_name=generator_name,
+                source_file_location=source_path,
+                preview_format=preview_format,
+                destination_preview_file_location=destination_preview_file_path,
+                params=request.preview_generator_parameters,
+            )
+        except Exception as e:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {e}"
+            )
+
+        # SUCCESS PATH: Return success
+        return GeneratePreviewResultSuccess(result_details="Preview generated successfully")
 
     def on_handle_get_preview_for_artifact_request(
         self, _request: GetPreviewForArtifactRequest
@@ -232,15 +359,19 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Generator registration failed
-        result = provider_instance.register_preview_generator(request.preview_generator_class)
-        if not result.success:
+        try:
+            provider_instance.register_preview_generator(request.preview_generator_class)
+        except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
-                f"Failed due to: {result.message}"
+                f"Failed due to: {e}"
             )
 
         # SUCCESS PATH: Generator registered
-        return RegisterPreviewGeneratorResultSuccess(result_details=result.message)
+        generator_name = request.preview_generator_class.get_friendly_name()
+        return RegisterPreviewGeneratorResultSuccess(
+            result_details=f"Preview generator '{generator_name}' registered successfully"
+        )
 
     def on_handle_list_preview_generators_request(
         self, request: ListPreviewGeneratorsRequest

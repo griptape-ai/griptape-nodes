@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -46,12 +47,23 @@ class GeneratePreviewRequest(RequestPayload):
     Args:
         macro_path: MacroPath with parsed macro and variables
         format: Desired format for the preview (None for requesting the project default)
+        specific_artifact_provider_name: Specific provider to use (None = auto-select if only one exists)
+        optional_preview_generator_name: Preview generator to use (None for provider default)
+        preview_generator_parameters: Parameters for the preview generator (e.g., max_width, max_height)
 
     Results: GeneratePreviewResultSuccess | GeneratePreviewResultFailure
     """
 
     macro_path: MacroPath
     format: str | None = None
+    specific_artifact_provider_name: str | None = None
+    optional_preview_generator_name: str | None = None
+    preview_generator_parameters: dict[str, Any] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        """Initialize mutable default."""
+        if self.preview_generator_parameters is None:
+            object.__setattr__(self, "preview_generator_parameters", {})
 
 
 @dataclass
