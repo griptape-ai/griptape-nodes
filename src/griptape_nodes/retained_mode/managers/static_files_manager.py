@@ -88,12 +88,6 @@ def _extract_artifact_value(artifact_or_value: Any) -> str | bytes | None:  # no
     return None
 
 
-# Type aliases for backward compatibility with deprecated static methods
-LoadArtifactBytesResult = LoadArtifactBytesResultSuccess | LoadArtifactBytesResultFailure
-LoadAsBase64DataUriResult = LoadAsBase64DataUriResultSuccess | LoadAsBase64DataUriResultFailure
-DownloadAndSaveResult = DownloadAndSaveResultSuccess | DownloadAndSaveResultFailure
-
-
 class StaticFilesManager:
     """A class to manage the creation and management of static files."""
 
@@ -426,11 +420,6 @@ class StaticFilesManager:
         Returns:
             Success result with content bytes or failure result with error details
         """
-        from griptape_nodes.retained_mode.events.static_file_events import (
-            LoadArtifactBytesResultFailure,
-            LoadArtifactBytesResultSuccess,
-        )
-
         # Guard: Check for None/empty input
         if request.artifact_or_url is None:
             return LoadArtifactBytesResultFailure(result_details=f"{request.context_name}: Cannot load None artifact")
@@ -499,13 +488,6 @@ class StaticFilesManager:
         Returns:
             Success result with data URI string or failure result with error details
         """
-        from griptape_nodes.retained_mode.events.static_file_events import (
-            LoadArtifactBytesRequest,
-            LoadArtifactBytesResultSuccess,
-            LoadAsBase64DataUriResultFailure,
-            LoadAsBase64DataUriResultSuccess,
-        )
-
         # Guard: Check for None/empty
         if request.artifact_or_url is None:
             return LoadAsBase64DataUriResultFailure(result_details=f"{request.context_name}: Cannot load None artifact")
@@ -572,13 +554,6 @@ class StaticFilesManager:
         Returns:
             Success result with artifact/path or failure result with error details
         """
-        from griptape_nodes.retained_mode.events.static_file_events import (
-            DownloadAndSaveResultFailure,
-            DownloadAndSaveResultSuccess,
-            LoadArtifactBytesRequest,
-            LoadArtifactBytesResultSuccess,
-        )
-
         # Download bytes
         load_request = LoadArtifactBytesRequest(
             artifact_or_url=request.url,
@@ -630,129 +605,3 @@ class StaticFilesManager:
         except httpx.HTTPError as e:
             msg = f"{context_name}: Download failed: {e}"
             raise httpx.HTTPError(msg) from e
-
-    @staticmethod
-    async def load_artifact_bytes(
-        artifact_or_url: Any,
-        *,
-        timeout: float = 120.0,  # noqa: ASYNC109
-        context_name: str = "artifact",
-    ) -> LoadArtifactBytesResult:
-        """DEPRECATED: Use LoadArtifactBytesRequest with GriptapeNodes.ahandle_request() instead.
-
-        This method is deprecated and will be removed in a future release.
-        Use the request/result pattern for architectural consistency:
-
-        Example:
-            >>> from griptape_nodes.retained_mode.events.static_file_events import LoadArtifactBytesRequest
-            >>> request = LoadArtifactBytesRequest(artifact_or_url=image_artifact)
-            >>> result = await GriptapeNodes.ahandle_request(request)
-
-        Args:
-            artifact_or_url: Mixed input - artifact, URL, path, or encoded data
-            timeout: Download timeout in seconds (default: 120)
-            context_name: Context for error messages
-
-        Returns:
-            LoadArtifactBytesResult: Result with content bytes or error details
-        """
-        import warnings
-        from typing import cast
-
-        from griptape_nodes.retained_mode.events.static_file_events import LoadArtifactBytesRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        warnings.warn(
-            "load_artifact_bytes() is deprecated. Use LoadArtifactBytesRequest with GriptapeNodes.ahandle_request() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        request = LoadArtifactBytesRequest(artifact_or_url=artifact_or_url, timeout=timeout, context_name=context_name)
-        return cast("LoadArtifactBytesResult", await GriptapeNodes.ahandle_request(request))
-
-    @staticmethod
-    async def load_as_base64_data_uri(
-        artifact_or_url: Any,
-        *,
-        timeout: float = 120.0,  # noqa: ASYNC109
-        context_name: str = "artifact",
-        media_type: str = "image/png",
-    ) -> LoadAsBase64DataUriResult:
-        """DEPRECATED: Use LoadAsBase64DataUriRequest with GriptapeNodes.ahandle_request() instead.
-
-        This method is deprecated and will be removed in a future release.
-        Use the request/result pattern for architectural consistency:
-
-        Example:
-            >>> from griptape_nodes.retained_mode.events.static_file_events import LoadAsBase64DataUriRequest
-            >>> request = LoadAsBase64DataUriRequest(artifact_or_url=image_artifact, media_type="image/png")
-            >>> result = await GriptapeNodes.ahandle_request(request)
-
-        Args:
-            artifact_or_url: Mixed input - artifact, URL, path, or encoded data
-            timeout: Download timeout in seconds (default: 120)
-            context_name: Context for error messages
-            media_type: MIME type for data URI (default: "image/png")
-
-        Returns:
-            LoadAsBase64DataUriResult: Result with data URI or error details
-        """
-        import warnings
-        from typing import cast
-
-        from griptape_nodes.retained_mode.events.static_file_events import LoadAsBase64DataUriRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        warnings.warn(
-            "load_as_base64_data_uri() is deprecated. Use LoadAsBase64DataUriRequest with GriptapeNodes.ahandle_request() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        request = LoadAsBase64DataUriRequest(
-            artifact_or_url=artifact_or_url, timeout=timeout, context_name=context_name, media_type=media_type
-        )
-        return cast("LoadAsBase64DataUriResult", await GriptapeNodes.ahandle_request(request))
-
-    @staticmethod
-    async def download_and_save(
-        url: str,
-        filename: str,
-        *,
-        timeout: float = 120.0,  # noqa: ASYNC109
-        artifact_type: type | None = None,
-        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
-    ) -> DownloadAndSaveResult:
-        """Download from URL and save to static storage.
-
-        Common pattern: Download generated media from provider, save locally.
-        Uses use_direct_save=True to return stable storage paths.
-
-        Args:
-            url: URL to download from (HTTP/HTTPS)
-            filename: Filename to save as (e.g., "video_123.mp4")
-            timeout: Download timeout in seconds (default: 120)
-            artifact_type: Artifact class to return (VideoUrlArtifact, ImageUrlArtifact, etc.)
-                          If None, returns the saved path string.
-            existing_file_policy: How to handle existing files (default: OVERWRITE)
-
-        Returns:
-            DownloadAndSaveResult: Result with artifact/path or error details
-
-        Example:
-            >>> from griptape_nodes.retained_mode.events.static_file_events import DownloadAndSaveRequest
-            >>> request = DownloadAndSaveRequest(url="https://provider.com/video.mp4", filename="my_video_123.mp4")
-            >>> result = await GriptapeNodes.ahandle_request(request)
-        """
-        from typing import cast
-
-        from griptape_nodes.retained_mode.events.static_file_events import DownloadAndSaveRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        request = DownloadAndSaveRequest(
-            url=url,
-            filename=filename,
-            timeout=timeout,
-            artifact_type=artifact_type,
-            existing_file_policy=existing_file_policy,
-        )
-        return cast("DownloadAndSaveResult", await GriptapeNodes.ahandle_request(request))
