@@ -193,16 +193,15 @@ class QwenImageGeneration(GriptapeProxyNode):
 
         generation_id, _status_response = result
 
-        async with httpx.AsyncClient() as client:
-            result_json = await self._fetch_generation_result(generation_id, headers, client)
-            if not result_json:
-                return
+        result_json = await self._fetch_generation_result(generation_id)
+        if not result_json:
+            return
 
-            self.parameter_output_values["provider_response"] = result_json
-            try:
-                await self._parse_result(result_json, generation_id)
-            except Exception as e:
-                self._handle_result_parsing_error(e)
+        self.parameter_output_values["provider_response"] = result_json
+        try:
+            await self._parse_result(result_json, generation_id)
+        except Exception as e:
+            self._handle_result_parsing_error(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {

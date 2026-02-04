@@ -186,15 +186,14 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
         generation_id, status_response = result
         self.parameter_output_values["provider_response"] = status_response
 
-        async with httpx.AsyncClient() as client:
-            result_json = await self._fetch_generation_result(generation_id, headers, client)
-            if not result_json:
-                return
+        result_json = await self._fetch_generation_result(generation_id)
+        if not result_json:
+            return
 
-            try:
-                await self._parse_result(result_json, generation_id)
-            except Exception as e:
-                self._handle_result_parsing_error(e)
+        try:
+            await self._parse_result(result_json, generation_id)
+        except Exception as e:
+            self._handle_result_parsing_error(e)
 
     async def _get_parameters_async(self) -> dict[str, Any]:
         """Get and process all parameters, including audio and image conversion."""
@@ -428,22 +427,22 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
 
     async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         """Download external URL and convert to base64 data URL."""
-        async with httpx.AsyncClient() as client:
-            try:
+        try:
+            async with httpx.AsyncClient() as client:
                 resp = await client.get(url, timeout=20)
                 resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                logger.debug("%s failed to inline URL: %s", self.name, e)
-                return None
-            else:
-                import base64
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            logger.debug("%s failed to inline URL: %s", self.name, e)
+            return None
+        else:
+            import base64
 
-                content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-                if not content_type.startswith(("image/", "audio/")):
-                    content_type = default_content_type
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                logger.debug("URL converted to base64 data URI for proxy")
-                return f"data:{content_type};base64,{b64}"
+            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
+            if not content_type.startswith(("image/", "audio/")):
+                content_type = default_content_type
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            logger.debug("URL converted to base64 data URI for proxy")
+            return f"data:{content_type};base64,{b64}"
 
     @staticmethod
     def _coerce_audio_url_or_data_uri(val: Any) -> str | None:

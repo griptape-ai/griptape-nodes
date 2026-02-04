@@ -287,15 +287,11 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         )
         return None
 
-    async def _fetch_generation_result(
-        self, generation_id: str, headers: dict[str, str], client: httpx.AsyncClient
-    ) -> dict[str, Any] | None:
+    async def _fetch_generation_result(self, generation_id: str) -> dict[str, Any] | None:
         """Fetch the final result from the /result endpoint.
 
         Args:
             generation_id: The generation ID
-            headers: HTTP headers including Authorization
-            client: The HTTP client to use
 
         Returns:
             dict | None: The result JSON or dict containing raw bytes, or None if fetch failed
@@ -304,8 +300,17 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         self._log(f"Fetching result from {result_url}")
 
         try:
-            response = await client.get(result_url, headers=headers, timeout=300)
-            response.raise_for_status()
+            api_key = self._validate_api_key()
+        except ValueError as e:
+            self._handle_api_key_validation_error(e)
+            return None
+
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(result_url, headers=headers, timeout=300)
+                response.raise_for_status()
         except httpx.HTTPStatusError as e:
             self._log(f"HTTP error fetching result: {e.response.status_code} - {e.response.text}")
             self._set_safe_defaults()
@@ -441,20 +446,19 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         generation_id, _status_response = result
 
         # Fetch and parse result
-        async with httpx.AsyncClient() as client:
-            result_json = await self._fetch_generation_result(generation_id, headers, client)
-            if not result_json:
-                return
+        result_json = await self._fetch_generation_result(generation_id)
+        if not result_json:
+            return
 
-            # Store provider_response if output parameter exists
-            if "provider_response" in self.parameter_output_values:
-                self.parameter_output_values["provider_response"] = result_json
+        # Store provider_response if output parameter exists
+        if "provider_response" in self.parameter_output_values:
+            self.parameter_output_values["provider_response"] = result_json
 
-            # Parse model-specific result
-            try:
-                await self._parse_result(result_json, generation_id)
-            except Exception as e:
-                self._handle_result_parsing_error(e)
+        # Parse model-specific result
+        try:
+            await self._parse_result(result_json, generation_id)
+        except Exception as e:
+            self._handle_result_parsing_error(e)
 
     async def aprocess(self) -> None:
         """Async processing entry point."""

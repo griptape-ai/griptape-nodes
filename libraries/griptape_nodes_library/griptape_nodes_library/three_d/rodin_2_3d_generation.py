@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -8,7 +7,6 @@ import time
 from contextlib import suppress
 from io import BytesIO
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -345,34 +343,8 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
     async def _process_generation(self) -> None:
         self.preprocess()
-        self._clear_execution_status()
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._handle_api_key_validation_error(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}"}
-
         self._log("Generating 3D model with Rodin Gen-2")
-
-        result = await self._submit_and_poll(headers)
-        if not result:
-            return
-
-        generation_id, _status_response = result
-
-        async with httpx.AsyncClient() as client:
-            result_json = await self._fetch_generation_result(generation_id, headers, client)
-            if not result_json:
-                return
-
-            self.parameter_output_values["provider_response"] = result_json
-            try:
-                await self._parse_result(result_json, generation_id)
-            except Exception as e:
-                self._handle_result_parsing_error(e)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         # Get input_images and normalize string paths to ImageUrlArtifact
@@ -437,103 +409,36 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
         return payload
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        form_data, files = await self._build_form_data(params)
-        proxy_url = urljoin(self._proxy_base, "models/rodin-gen2")
-
-        self._log("Submitting request to Griptape model proxy with rodin-gen2")
-        self._log_form_data(form_data, len(files))
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    proxy_url,
-                    data=form_data,
-                    files=files,
-                    headers=headers,
-                    timeout=120,
-                )
-                response.raise_for_status()
-                response_json = response.json()
-                self._log("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
-            return str(generation_id)
-        self._log("No generation_id returned from POST response")
-        return None
-
-    async def _build_form_data(
-        self, params: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[tuple[str, tuple[str, bytes, str]]]]:
-        """Build multipart form data for the Rodin API."""
-        form_data: dict[str, Any] = {
-            "tier": "Gen-2",  # Always use Gen-2 for this node
-            "geometry_file_format": params["geometry_file_format"],
-            "material": params["material"],
-            "quality": params["quality"],
-            "mesh_mode": params["mesh_mode"],
-        }
-
-        # Add optional parameters
-        self._add_optional_params(form_data, params)
-        self._add_advanced_params(form_data, params)
-
-        # Process images into file tuples for multipart upload
-        files = await self._process_images_for_upload(params)
-
-        # Add condition_mode for multi-image generation
-        if len(files) > 1:
-            form_data["condition_mode"] = params["condition_mode"]
-
-        return form_data, files
-
-    def _add_optional_params(self, form_data: dict[str, Any], params: dict[str, Any]) -> None:
-        """Add optional seed and prompt parameters to form data."""
+    def _add_optional_params(self, payload: dict[str, Any], params: dict[str, Any]) -> None:
+        """Add optional seed and prompt parameters to payload."""
         if params.get("seed") is not None:
-            form_data["seed"] = params["seed"]
+            payload["seed"] = params["seed"]
 
         prompt = params.get("prompt", "").strip()
         if prompt:
-            form_data["prompt"] = prompt
+            payload["prompt"] = prompt
 
-    def _add_advanced_params(self, form_data: dict[str, Any], params: dict[str, Any]) -> None:
-        """Add advanced optional parameters to form data."""
+    def _add_advanced_params(self, payload: dict[str, Any], params: dict[str, Any]) -> None:
+        """Add advanced optional parameters to payload."""
         if params.get("use_original_alpha"):
-            form_data["use_original_alpha"] = "true"
+            payload["use_original_alpha"] = True
 
         if params.get("quality_override") is not None:
-            form_data["quality_override"] = params["quality_override"]
+            payload["quality_override"] = params["quality_override"]
 
         if params.get("ta_pose"):
-            form_data["TAPose"] = "true"  # API uses TAPose
+            payload["TAPose"] = True  # API uses TAPose
 
-        self._add_bbox_condition(form_data, params)
+        self._add_bbox_condition(payload, params)
 
         if params.get("high_pack"):
-            form_data["addons"] = "HighPack"
+            payload["addons"] = "HighPack"
 
         if params.get("preview_render"):
-            form_data["preview_render"] = "true"
+            payload["preview_render"] = True
 
-    def _add_bbox_condition(self, form_data: dict[str, Any], params: dict[str, Any]) -> None:
-        """Parse and add bounding box condition to form data."""
+    def _add_bbox_condition(self, payload: dict[str, Any], params: dict[str, Any]) -> None:
+        """Parse and add bounding box condition to payload."""
         bbox_condition = params.get("bbox_condition", "").strip()
         if not bbox_condition:
             return
@@ -543,29 +448,9 @@ class Rodin23DGeneration(GriptapeProxyNode):
             values = [int(float(v.strip())) for v in bbox_condition.split(",")]
             bbox_dimensions = 3
             if len(values) == bbox_dimensions:
-                # Send as JSON array string for form data
-                form_data["bbox_condition"] = json.dumps(values)
+                payload["bbox_condition"] = values
         except ValueError:
             self._log(f"Invalid bbox_condition format: {bbox_condition}")
-
-    async def _process_images_for_upload(self, params: dict[str, Any]) -> list[tuple[str, tuple[str, bytes, str]]]:
-        """Process input images into file tuples for multipart upload."""
-        input_images_list = params.get("input_images", [])
-        if not isinstance(input_images_list, list):
-            input_images_list = [input_images_list] if input_images_list else []
-
-        files: list[tuple[str, tuple[str, bytes, str]]] = []
-        for idx, image_input in enumerate(input_images_list):
-            if len(files) >= MAX_INPUT_IMAGES:
-                break
-
-            image_bytes = await self._get_image_bytes(image_input)
-            if image_bytes:
-                mime_type = self._detect_image_mime(image_bytes)
-                extension = mime_type.split("/", 1)[1]
-                files.append(("images", (f"image_{idx}.{extension}", image_bytes, mime_type)))
-
-        return files
 
     async def _process_images_for_payload(self, params: dict[str, Any]) -> list[str]:
         """Process input images into base64 data URIs for JSON payload."""
@@ -675,63 +560,6 @@ class Rodin23DGeneration(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         params = self._get_parameters()
         await self._handle_success(result_json, params)
-
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str], params: dict[str, Any]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 240  # 20 minutes with 5s intervals (3D generation can take longer)
-        poll_interval = 5
-
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
-
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
-
-                    if status == STATUS_DONE:
-                        await self._handle_success(result_json, params)
-                        return
-                    if status == STATUS_FAILED:
-                        self._log(f"Generation failed with status: {status}")
-                        self._set_safe_defaults()
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing, wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    self._log(f"Error while polling: {e}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            self._log("Polling timed out waiting for result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"3D generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
-            )
 
     async def _handle_success(self, response: dict[str, Any], params: dict[str, Any]) -> None:
         """Handle successful generation result."""

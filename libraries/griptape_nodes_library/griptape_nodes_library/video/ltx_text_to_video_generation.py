@@ -4,7 +4,6 @@ import json
 import logging
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -264,15 +263,14 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
         generation_id, status_response = result
         self.parameter_output_values["provider_response"] = status_response
 
-        async with httpx.AsyncClient() as client:
-            result_json = await self._fetch_generation_result(generation_id, headers, client)
-            if not result_json:
-                return
+        result_json = await self._fetch_generation_result(generation_id)
+        if not result_json:
+            return
 
-            try:
-                await self._parse_result(result_json, generation_id)
-            except Exception as e:
-                self._handle_result_parsing_error(e)
+        try:
+            await self._parse_result(result_json, generation_id)
+        except Exception as e:
+            self._handle_result_parsing_error(e)
 
     def _get_parameters(self) -> dict[str, Any]:
         return {
