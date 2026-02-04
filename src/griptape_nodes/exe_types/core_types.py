@@ -626,11 +626,7 @@ class BaseNodeElement:
                     altered_workflow_state=False,
                 )
             case _:
-                logger.warning(
-                    "%s received unknown badge message type %r",
-                    self.__class__.__name__,
-                    message_type,
-                )
+                # Not a badge message; return None so caller can delegate to other handlers (e.g. on_click).
                 return None
 
     def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
