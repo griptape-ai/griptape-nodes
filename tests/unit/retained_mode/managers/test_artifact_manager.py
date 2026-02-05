@@ -3,7 +3,6 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -25,6 +24,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
 )
+from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
 from griptape_nodes.retained_mode.events.config_events import SetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager, PreviewMetadata
@@ -32,7 +32,6 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )
-
 
 # ==================================================================================
 # CRITICAL WARNING: Config Isolation for Tests
@@ -61,7 +60,7 @@ def mock_config_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     # Store the original handle_request method
     original_handle_request = GriptapeNodes.handle_request
 
-    def selective_mock(request):
+    def selective_mock(request: RequestPayload) -> ResultPayload:
         """Only mock SetConfigValueRequest, let all other requests through."""
         if isinstance(request, SetConfigValueRequest):
             # Mock config writes to prevent test pollution
@@ -69,21 +68,34 @@ def mock_config_writes(monkeypatch: pytest.MonkeyPatch) -> None:
         # Let all other requests go to the real handler
         return original_handle_request(request)
 
-    monkeypatch.setattr("griptape_nodes.retained_mode.managers.artifact_manager.GriptapeNodes.handle_request", selective_mock)
+    monkeypatch.setattr(
+        "griptape_nodes.retained_mode.managers.artifact_manager.GriptapeNodes.handle_request", selective_mock
+    )
 
 
 class TestArtifactManager:
     """Test ArtifactManager functionality."""
 
-    def test_init_creates_empty_providers(self) -> None:
+    @pytest.mark.asyncio
+    async def test_init_creates_empty_providers(self) -> None:
         """Test that initialization creates empty provider collections and registers defaults."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
         manager = ArtifactManager()
 
+        # Initially empty
         assert isinstance(manager._registry._provider_classes, list)
+        assert len(manager._registry._provider_classes) == 0
+
+        # Trigger app initialization to register default providers
+        await manager.on_app_initialization_complete(AppInitializationComplete())
+
+        # Now default providers should be registered
         assert len(manager._registry._provider_classes) == 1
         assert isinstance(manager._registry._file_format_to_provider_class, dict)
         assert len(manager._registry._file_format_to_provider_class) > 0
         assert isinstance(manager._registry._provider_instances, dict)
+        # Provider is registered but NOT instantiated (lazy instantiation)
         assert len(manager._registry._provider_instances) == 0
 
     def test_register_new_provider_success(self) -> None:
@@ -110,6 +122,10 @@ class TestArtifactManager:
             def get_default_preview_format(cls) -> str:
                 return "jpg"
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         manager = ArtifactManager()
         initial_count = len(manager._registry._provider_classes)
 
@@ -125,27 +141,45 @@ class TestArtifactManager:
         """Test that registered provider class is added to _provider_classes list."""
         manager = ArtifactManager()
 
+        # ImageArtifactProvider is not pre-registered anymore
+        initial_count = len(manager._registry._provider_classes)
+
         request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
         result = manager.on_handle_register_artifact_provider_request(request)
 
-        assert isinstance(result, RegisterArtifactProviderResultFailure)
-        assert "duplicate friendly name" in str(result.result_details)
+        assert isinstance(result, RegisterArtifactProviderResultSuccess)
+        assert len(manager._registry._provider_classes) == initial_count + 1
 
     def test_register_provider_maps_all_supported_formats(self) -> None:
         """Test that all supported formats are mapped to provider class."""
         manager = ArtifactManager()
 
-        # ImageArtifactProvider is already registered in constructor
-        image_formats = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
+        # Register ImageArtifactProvider first
+        request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        result = manager.on_handle_register_artifact_provider_request(request)
+        assert isinstance(result, RegisterArtifactProviderResultSuccess)
+
+        # Check all supported formats are mapped
+        image_formats = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif", "tga"}
         for file_format in image_formats:
             assert file_format in manager._registry._file_format_to_provider_class
             assert len(manager._registry._file_format_to_provider_class[file_format]) == 1
             assert manager._registry._file_format_to_provider_class[file_format][0] is ImageArtifactProvider
 
-    def test_initialization_registers_default_providers(self) -> None:
+    @pytest.mark.asyncio
+    async def test_initialization_registers_default_providers(self) -> None:
         """Test that ArtifactManager initialization registers default providers."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+
         manager = ArtifactManager()
 
+        # Initially empty
+        assert len(manager._registry._provider_classes) == 0
+
+        # Trigger app initialization to register default providers
+        await manager.on_app_initialization_complete(AppInitializationComplete())
+
+        # Now providers should be registered
         assert len(manager._registry._provider_classes) == 1
         assert "jpg" in manager._registry._file_format_to_provider_class
 
@@ -173,10 +207,19 @@ class TestArtifactManager:
             def get_default_preview_format(cls) -> str:
                 return "webp"
 
-        manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
-        request = RegisterArtifactProviderRequest(provider_class=AlternateImageProvider)
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
 
+        manager = ArtifactManager()
+
+        # Register ImageArtifactProvider first (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
+
+        # Register AlternateImageProvider
+        request = RegisterArtifactProviderRequest(provider_class=AlternateImageProvider)
         manager.on_handle_register_artifact_provider_request(request)
 
         expected_provider_count = 2
@@ -200,10 +243,27 @@ class TestArtifactManager:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
-        manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
-        request = RegisterArtifactProviderRequest(provider_class=DuplicateImageProvider)
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
 
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "jpg"
+
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
+        manager = ArtifactManager()
+
+        # Register ImageArtifactProvider first (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
+
+        # Try to register DuplicateImageProvider with same friendly name
+        request = RegisterArtifactProviderRequest(provider_class=DuplicateImageProvider)
         result = manager.on_handle_register_artifact_provider_request(request)
 
         assert isinstance(result, RegisterArtifactProviderResultFailure)
@@ -226,8 +286,24 @@ class TestArtifactManager:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "jpg"
+
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
+
+        # Register ImageArtifactProvider first (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
         request = RegisterArtifactProviderRequest(provider_class=LowercaseImageProvider)
 
         result = manager.on_handle_register_artifact_provider_request(request)
@@ -238,7 +314,11 @@ class TestArtifactManager:
     def test_get_provider_class_by_friendly_name_case_insensitive(self) -> None:
         """Test that registry lookup is case-insensitive."""
         manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
+
+        # Register ImageArtifactProvider (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
 
         provider_class_lower = manager._registry.get_provider_class_by_friendly_name("image")
         provider_class_title = manager._registry.get_provider_class_by_friendly_name("Image")
@@ -270,6 +350,11 @@ class TestArtifactManager:
     def test_list_artifact_providers_returns_friendly_names(self) -> None:
         """Test that ListArtifactProvidersRequest returns list of friendly names."""
         manager = ArtifactManager()
+
+        # Register ImageArtifactProvider (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
         # ImageArtifactProvider is already registered in constructor
 
         list_request = ListArtifactProvidersRequest()
@@ -282,7 +367,11 @@ class TestArtifactManager:
     def test_get_artifact_provider_details_success(self) -> None:
         """Test that GetArtifactProviderDetailsRequest returns provider details."""
         manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
+
+        # Register ImageArtifactProvider (no longer auto-registered)
+        manager.on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
 
         details_request = GetArtifactProviderDetailsRequest(friendly_name="image")
         result = manager.on_handle_get_artifact_provider_details_request(details_request)
@@ -339,7 +428,9 @@ class TestGeneratePreview:
     def artifact_manager(self) -> ArtifactManager:
         """Create ArtifactManager instance with ImageArtifactProvider registered."""
         manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
+        # Register ImageArtifactProvider (no longer auto-registered)
+        request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        manager.on_handle_register_artifact_provider_request(request)
         return manager
 
     @pytest.mark.asyncio
@@ -604,7 +695,9 @@ class TestGetPreviewForArtifact:
     def artifact_manager(self) -> ArtifactManager:
         """Create ArtifactManager with ImageArtifactProvider registered."""
         manager = ArtifactManager()
-        # ImageArtifactProvider is already registered in constructor
+        # Register ImageArtifactProvider (no longer auto-registered)
+        request = RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        manager.on_handle_register_artifact_provider_request(request)
         return manager
 
     @pytest.fixture
@@ -805,18 +898,17 @@ class TestGetPreviewForArtifact:
         result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
         assert isinstance(result, GetPreviewForArtifactResultFailure)
 
-    def test_get_generator_config_schema(self, artifact_manager: ArtifactManager) -> None:
-        """Test that get_generator_config_schema generates correct config keys."""
+    def test_get_generator_config_schema(self) -> None:
+        """Test that get_preview_generator_config_schema generates correct config keys."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image import ImageArtifactProvider
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
 
-        # Get the provider instance
-        provider_instance = artifact_manager._registry.get_or_create_provider_instance(ImageArtifactProvider)
-
-        # Generate config schema for PILThumbnailGenerator
-        config_schema = provider_instance.get_generator_config_schema(PILThumbnailGenerator)
+        # Generate config schema for PILThumbnailGenerator using static method
+        config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
+            ImageArtifactProvider, PILThumbnailGenerator
+        )
 
         # Verify the keys are correctly formatted
         assert "artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_width" in config_schema

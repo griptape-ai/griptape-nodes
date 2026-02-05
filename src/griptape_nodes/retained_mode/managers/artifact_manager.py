@@ -56,7 +56,6 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
-    BaseArtifactProvider,
     ImageArtifactProvider,
     ProviderRegistry,
 )
@@ -134,6 +133,33 @@ class ArtifactManager:
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
+
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        """Handle app initialization complete event.
+
+        Registers default artifact providers after the system is fully initialized.
+
+        Args:
+            _payload: App initialization complete payload
+        """
+        # Register default providers (order matters: Image, Video, Audio)
+        # Generator settings are now registered automatically via _register_provider_settings()
+        failures = []
+        for provider_class in [ImageArtifactProvider]:
+            request = RegisterArtifactProviderRequest(provider_class=provider_class)
+            result = self.on_handle_register_artifact_provider_request(request)
+            if isinstance(result, RegisterArtifactProviderResultFailure):
+                provider_name = provider_class.__name__
+                failures.append(f"{provider_name}: {result.result_details}")
+
+        if failures:
+            failure_details = "; ".join(failures)
+            error_message = (
+                f"Attempted to register default artifact providers during initialization. "
+                f"Failed due to: {failure_details}"
+            )
+            logger.error(error_message)
+            raise RuntimeError(error_message)
 
     async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
         self, request: GeneratePreviewRequest
@@ -494,22 +520,15 @@ class ArtifactManager:
                 f"Failed due to: provider not found"
             )
 
-        # FAILURE CASE: Provider instantiation failed
-        try:
-            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
-        except Exception as e:
-            return GetArtifactProviderDetailsResultFailure(
-                result_details=f"Attempted to get artifact provider details for '{request.friendly_name}'. "
-                f"Failed due to: provider instantiation error - {e}"
-            )
-
-        # SUCCESS PATH: Return provider details with registered generators
+        # SUCCESS PATH: Return provider details with registered generators from registry
+        preview_generators = self._registry.get_preview_generators_for_provider(provider_class)
+        preview_generator_names = [gen.get_friendly_name() for gen in preview_generators]
         return GetArtifactProviderDetailsResultSuccess(
             result_details="Successfully retrieved artifact provider details",
             friendly_name=provider_class.get_friendly_name(),
             supported_formats=provider_class.get_supported_formats(),
             preview_formats=provider_class.get_preview_formats(),
-            registered_preview_generators=provider_instance.get_registered_preview_generators(),
+            registered_preview_generators=preview_generator_names,
         )
 
     def on_handle_register_artifact_provider_request(
@@ -535,6 +554,7 @@ class ArtifactManager:
             )
 
         # SUCCESS PATH: Provider registered
+        # NOTE: Provider is NOT instantiated here - lazy instantiation happens on first use
         return RegisterArtifactProviderResultSuccess(result_details="Artifact provider registered successfully")
 
     def on_handle_register_preview_generator_request(
@@ -556,19 +576,22 @@ class ArtifactManager:
                 f"Failed due to: provider not found"
             )
 
-        # FAILURE CASE: Provider instantiation failed
-        try:
-            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
-        except Exception as e:
-            return RegisterPreviewGeneratorResultFailure(
-                result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
-                f"Failed due to: provider instantiation error - {e}"
-            )
-
         # FAILURE CASE: Generator registration failed
         try:
-            provider_instance.register_preview_generator(request.preview_generator_class)
-            self._register_generator_settings(provider_instance, request.preview_generator_class)
+            # Register with registry (no provider instantiation - lazy instantiation preserved)
+            self._registry.register_preview_generator_with_provider(provider_class, request.preview_generator_class)
+
+            # Register generator settings using static method (no provider instantiation)
+            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
+                BaseArtifactProvider,
+            )
+
+            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
+                provider_class, request.preview_generator_class
+            )
+            for key, default_value in config_schema.items():
+                config_request = SetConfigValueRequest(category_and_key=key, value=default_value)
+                GriptapeNodes.handle_request(config_request)
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -600,19 +623,12 @@ class ArtifactManager:
                 f"Failed due to: provider not found"
             )
 
-        # FAILURE CASE: Provider instantiation failed
-        try:
-            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
-        except Exception as e:
-            return ListPreviewGeneratorsResultFailure(
-                result_details=f"Attempted to list preview generators for provider '{request.provider_friendly_name}'. "
-                f"Failed due to: provider instantiation error - {e}"
-            )
-
-        # SUCCESS PATH: Return generator list
+        # SUCCESS PATH: Return generator list from registry
+        preview_generators = self._registry.get_preview_generators_for_provider(provider_class)
+        preview_generator_names = [gen.get_friendly_name() for gen in preview_generators]
         return ListPreviewGeneratorsResultSuccess(
             result_details="Successfully listed preview generators",
-            preview_generator_names=provider_instance.get_registered_preview_generators(),
+            preview_generator_names=preview_generator_names,
         )
 
     def on_handle_get_preview_generator_details_request(
@@ -634,17 +650,10 @@ class ArtifactManager:
                 f"Failed due to: provider not found"
             )
 
-        # FAILURE CASE: Provider instantiation failed
-        try:
-            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
-        except Exception as e:
-            return GetPreviewGeneratorDetailsResultFailure(
-                result_details=f"Attempted to get preview generator details for provider '{request.provider_friendly_name}'. "
-                f"Failed due to: provider instantiation error - {e}"
-            )
-
         # FAILURE CASE: Generator not found
-        generator_class = provider_instance._get_preview_generator_by_name(request.preview_generator_friendly_name)
+        generator_class = self._registry.get_preview_generator_by_name(
+            provider_class, request.preview_generator_friendly_name
+        )
         if generator_class is None:
             return GetPreviewGeneratorDetailsResultFailure(
                 result_details=f"Attempted to get preview generator details for '{request.preview_generator_friendly_name}' "
@@ -675,64 +684,99 @@ class ArtifactManager:
             parameters=parameters_dict,
         )
 
+    def get_artifact_schemas(self) -> dict:
+        """Generate artifact configuration schemas for all registered providers.
+
+        NO INSTANTIATION: Uses static methods and registry tracking to avoid loading heavyweight dependencies.
+
+        Returns detailed schema information including:
+        - Enum values for format and generator dropdowns
+        - Type information for generator parameters
+        - Default values and descriptions
+
+        Returns:
+            Dictionary mapping provider keys to their schemas
+        """
+        schemas = {}
+
+        for provider_class in self._registry.get_all_provider_classes():
+            provider_friendly_name = provider_class.get_friendly_name()
+            provider_key = provider_friendly_name.lower().replace(" ", "_")
+
+            provider_formats = sorted(provider_class.get_preview_formats())
+            default_format = provider_class.get_default_preview_format()
+            default_preview_generator_name = provider_class.get_default_preview_generator()
+
+            preview_generator_names = []
+            preview_generator_schemas = {}
+
+            # Get preview generators from registry without instantiation
+            for preview_generator_class in self._registry.get_preview_generators_for_provider(provider_class):
+                preview_generator_friendly_name = preview_generator_class.get_friendly_name()
+                preview_generator_key = preview_generator_friendly_name.lower().replace(" ", "_")
+                preview_generator_names.append(preview_generator_friendly_name)
+
+                parameters = preview_generator_class.get_parameters()
+                param_schemas = {}
+                for param_name, provider_value in parameters.items():
+                    param_schemas[param_name] = {
+                        "type": provider_value.json_schema_type,
+                        "default": provider_value.default_value,
+                        "description": provider_value.description,
+                    }
+
+                preview_generator_schemas[preview_generator_key] = param_schemas
+
+            schemas[provider_key] = {
+                "preview_generation": {
+                    "default_preview_format": {
+                        "type": "string",
+                        "enum": provider_formats,
+                        "default": default_format,
+                        "description": f"{provider_friendly_name} format for generated previews",
+                    },
+                    "default_preview_generator": {
+                        "type": "string",
+                        "enum": sorted(preview_generator_names),
+                        "default": default_preview_generator_name,
+                        "description": "Preview generator to use for creating previews",
+                    },
+                    "generators": preview_generator_schemas,
+                }
+            }
+
+        return schemas
+
     def _register_provider_settings(self, provider_class: type) -> None:
-        """Register provider settings in config system.
+        """Register provider settings and default generators in config system.
 
         Args:
             provider_class: The provider class to register settings for
+
+        Note:
+            Default generators are registered WITHOUT instantiating the provider (lazy instantiation).
+            Generator settings are registered statically using class methods.
         """
+        # Register provider-level settings
         config_schema = self._registry.get_provider_config_schema(provider_class)
 
         for key, default_value in config_schema.items():
             request = SetConfigValueRequest(category_and_key=key, value=default_value)
             GriptapeNodes.handle_request(request)
 
-    def _register_generator_settings(self, provider_instance: BaseArtifactProvider, generator_class: type) -> None:
-        """Register generator settings in config system.
+        # Register default preview generators and their settings WITHOUT instantiating provider
+        for preview_generator_class in provider_class.get_default_generators():
+            # Register with registry
+            self._registry.register_preview_generator_with_provider(provider_class, preview_generator_class)
 
-        Args:
-            provider_instance: The provider instance to use for generating config schema
-            generator_class: The generator class to register settings for
-        """
-        config_schema = provider_instance.get_generator_config_schema(generator_class)
-
-        for key, default_value in config_schema.items():
-            request = SetConfigValueRequest(category_and_key=key, value=default_value)
-            GriptapeNodes.handle_request(request)
-
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
-        """Handle app initialization complete event.
-
-        Registers default artifact providers after the system is fully initialized.
-
-        Args:
-            _payload: App initialization complete payload
-        """
-        # Register default providers (order matters: Image, Video, Audio)
-        failures = []
-        for provider_class in [ImageArtifactProvider]:
-            request = RegisterArtifactProviderRequest(provider_class=provider_class)
-            result = self.on_handle_register_artifact_provider_request(request)
-            if isinstance(result, RegisterArtifactProviderResultFailure):
-                provider_name = provider_class.__name__
-                failures.append(f"{provider_name}: {result.result_details}")
-                continue
-
-            # IMPORTANT: Provider's __init__ may have registered generators internally
-            # We need to register their config settings too
-            try:
-                provider_instance = self._registry.get_or_create_provider_instance(provider_class)
-                for generator_class in provider_instance._preview_generator_classes:
-                    self._register_generator_settings(provider_instance, generator_class)
-            except Exception as e:
-                provider_name = provider_class.__name__
-                failures.append(f"{provider_name} generator settings: {e}")
-
-        if failures:
-            failure_details = "; ".join(failures)
-            error_message = (
-                f"Attempted to register default artifact providers during initialization. "
-                f"Failed due to: {failure_details}"
+            # Register generator settings using static method (no provider instantiation)
+            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
+                BaseArtifactProvider,
             )
-            logger.error(error_message)
-            raise RuntimeError(error_message)
+
+            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
+                provider_class, preview_generator_class
+            )
+            for key, default_value in config_schema.items():
+                request = SetConfigValueRequest(category_and_key=key, value=default_value)
+                GriptapeNodes.handle_request(request)

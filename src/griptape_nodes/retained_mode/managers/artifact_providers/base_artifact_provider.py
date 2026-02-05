@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
         BaseArtifactPreviewGenerator,
     )
+    from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
 
 
 class ProviderValue(NamedTuple):
@@ -17,10 +18,14 @@ class ProviderValue(NamedTuple):
     Attributes:
         default_value: Default value if parameter not provided
         required: Whether parameter must be provided
+        json_schema_type: JSON Schema type (e.g., 'integer', 'string', 'number', 'boolean')
+        description: Human-readable description of the parameter
     """
 
     default_value: Any
     required: bool
+    json_schema_type: str = "string"
+    description: str = ""
 
 
 class BaseArtifactProvider(ABC):
@@ -33,10 +38,13 @@ class BaseArtifactProvider(ABC):
     Instance attributes may hold heavyweight dependencies (e.g., PIL, ffmpeg) loaded lazily.
     """
 
-    def __init__(self) -> None:
-        """Initialize provider with empty preview generator registry."""
-        self._preview_generator_classes: list[type[BaseArtifactPreviewGenerator]] = []
-        self._friendly_name_to_preview_generator_class: dict[str, type[BaseArtifactPreviewGenerator]] = {}
+    def __init__(self, registry: ProviderRegistry) -> None:
+        """Initialize provider with registry reference.
+
+        Args:
+            registry: The ProviderRegistry that manages this provider
+        """
+        self._registry = registry
 
     @classmethod
     @abstractmethod
@@ -85,6 +93,19 @@ class BaseArtifactProvider(ABC):
 
         Returns:
             Default format extension WITHOUT leading dot (e.g., 'png', 'webp')
+        """
+        ...
+
+    @classmethod
+    @abstractmethod
+    def get_default_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
+        """Get default preview generator classes for this provider.
+
+        Returns generator classes without requiring provider instantiation.
+        This allows schema generation and registration without loading heavyweight dependencies.
+
+        Returns:
+            List of default preview generator classes
         """
         ...
 
@@ -145,7 +166,7 @@ class BaseArtifactProvider(ABC):
             Exception: If generator instantiation or execution fails
         """
         # FAILURE CASE: Generator not registered
-        generator_class = self._get_preview_generator_by_name(preview_generator_friendly_name)
+        generator_class = self._registry.get_preview_generator_by_name(self.__class__, preview_generator_friendly_name)
         if generator_class is None:
             msg = f"Preview generator '{preview_generator_friendly_name}' not registered with this provider"
             raise ValueError(msg)
@@ -178,58 +199,42 @@ class BaseArtifactProvider(ABC):
         # FAILURE CASE: Execute generator
         await generator.generate_preview()
 
-    def register_preview_generator(self, preview_generator_class: type[BaseArtifactPreviewGenerator]) -> None:
-        """Register a preview generator with this provider.
+    def register_preview_generator_with_config(
+        self, preview_generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> None:
+        """Register a preview generator and its config settings.
+
+        This is the provider's responsibility - it knows about its generators.
 
         Args:
             preview_generator_class: The preview generator class to register
-
-        Raises:
-            ValueError: If generator with same name or class already registered
         """
-        friendly_name = preview_generator_class.get_friendly_name()
-        friendly_name_lower = friendly_name.lower()
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-        if friendly_name_lower in self._friendly_name_to_preview_generator_class:
-            msg = f"Preview generator with friendly name '{friendly_name}' already registered"
-            raise ValueError(msg)
+        # Register with registry
+        self._registry.register_preview_generator_with_provider(self.__class__, preview_generator_class)
 
-        if preview_generator_class in self._preview_generator_classes:
-            msg = f"Preview generator class {preview_generator_class.__name__} already registered"
-            raise ValueError(msg)
+        # Register config settings (access config manager via singleton)
+        config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
+            self.__class__, preview_generator_class
+        )
+        for key, default_value in config_schema.items():
+            GriptapeNodes.ConfigManager().set_config_value(key, default_value)
 
-        self._preview_generator_classes.append(preview_generator_class)
-        self._friendly_name_to_preview_generator_class[friendly_name_lower] = preview_generator_class
-
-    def get_registered_preview_generators(self) -> list[str]:
-        """Get friendly names of all registered preview generators.
-
-        Returns:
-            List of friendly names
-        """
-        return [gen.get_friendly_name() for gen in self._preview_generator_classes]
-
-    def _get_preview_generator_by_name(self, friendly_name: str) -> type[BaseArtifactPreviewGenerator] | None:
-        """Get preview generator class by friendly name (case-insensitive).
+    @classmethod
+    def get_preview_generator_config_schema(
+        cls, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> dict:
+        """Generate config schema for a preview generator without requiring provider instantiation.
 
         Args:
-            friendly_name: The friendly name to look up
-
-        Returns:
-            The preview generator class, or None if not found
-        """
-        return self._friendly_name_to_preview_generator_class.get(friendly_name.lower())
-
-    def get_generator_config_schema(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict:
-        """Generate config schema for a generator.
-
-        Args:
+            provider_class: The provider class this generator belongs to
             generator_class: The generator class to generate config schema for
 
         Returns:
             Dictionary mapping config keys to default values for generator parameters
         """
-        key_prefix = generator_class.get_config_key_prefix(self.__class__.get_friendly_name())
+        key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
 
         parameters = generator_class.get_parameters()
         config = {}

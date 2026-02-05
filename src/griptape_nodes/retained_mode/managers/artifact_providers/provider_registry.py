@@ -22,6 +22,7 @@ class ProviderRegistry:
         self._provider_instances: dict[type[BaseArtifactProvider], BaseArtifactProvider] = {}
         self._file_format_to_provider_class: dict[str, list[type[BaseArtifactProvider]]] = {}
         self._friendly_name_to_provider_class: dict[str, type[BaseArtifactProvider]] = {}
+        self._provider_preview_generators: dict[type[BaseArtifactProvider], list[type]] = {}
 
     def register_provider(self, provider_class: type[BaseArtifactProvider]) -> None:
         """Register a provider class.
@@ -99,7 +100,7 @@ class ProviderRegistry:
         """
         if provider_class not in self._provider_instances:
             try:
-                self._provider_instances[provider_class] = provider_class()
+                self._provider_instances[provider_class] = provider_class(registry=self)
             except Exception as e:
                 logger.error("Failed to instantiate provider %s: %s", provider_class.__name__, e)
                 raise
@@ -132,3 +133,56 @@ class ProviderRegistry:
             format_key: format_value,
             generator_key: generator_value,
         }
+
+    def register_preview_generator_with_provider(
+        self, provider_class: type[BaseArtifactProvider], preview_generator_class: type
+    ) -> None:
+        """Register a preview generator class with a provider class (no instantiation).
+
+        Args:
+            provider_class: The provider class this preview generator belongs to
+            preview_generator_class: The preview generator class to register
+        """
+        if provider_class not in self._provider_preview_generators:
+            self._provider_preview_generators[provider_class] = []
+
+        if preview_generator_class not in self._provider_preview_generators[provider_class]:
+            self._provider_preview_generators[provider_class].append(preview_generator_class)
+
+    def get_preview_generators_for_provider(self, provider_class: type[BaseArtifactProvider]) -> list[type]:
+        """Get all registered preview generators for a provider class.
+
+        Combines default preview generators from the provider class with any dynamically registered preview generators.
+
+        Args:
+            provider_class: The provider class to get preview generators for
+
+        Returns:
+            List of all preview generator classes for this provider
+        """
+        preview_generators = provider_class.get_default_generators().copy()
+
+        if provider_class in self._provider_preview_generators:
+            for preview_generator_class in self._provider_preview_generators[provider_class]:
+                if preview_generator_class not in preview_generators:
+                    preview_generators.append(preview_generator_class)
+
+        return preview_generators
+
+    def get_preview_generator_by_name(
+        self, provider_class: type[BaseArtifactProvider], friendly_name: str
+    ) -> type | None:
+        """Get a specific preview generator by name for a provider.
+
+        Args:
+            provider_class: The provider class to get preview generator for
+            friendly_name: The friendly name to search for (case-insensitive)
+
+        Returns:
+            The preview generator class if found, None otherwise
+        """
+        generators = self.get_preview_generators_for_provider(provider_class)
+        for gen_class in generators:
+            if gen_class.get_friendly_name().lower() == friendly_name.lower():
+                return gen_class
+        return None

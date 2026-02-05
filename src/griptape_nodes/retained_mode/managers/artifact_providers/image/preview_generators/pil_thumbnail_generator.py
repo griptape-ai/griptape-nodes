@@ -76,8 +76,18 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
     def get_parameters(cls) -> dict[str, ProviderValue]:
         """Generator-specific parameters."""
         return {
-            "max_width": ProviderValue(default_value=1024, required=True),
-            "max_height": ProviderValue(default_value=1024, required=True),
+            "max_width": ProviderValue(
+                default_value=1024,
+                required=True,
+                json_schema_type="integer",
+                description="Maximum width in pixels for generated preview",
+            ),
+            "max_height": ProviderValue(
+                default_value=1024,
+                required=True,
+                json_schema_type="integer",
+                description="Maximum height in pixels for generated preview",
+            ),
         }
 
     async def generate_preview(self) -> None:
