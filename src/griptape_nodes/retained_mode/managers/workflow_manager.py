@@ -1891,6 +1891,9 @@ class WorkflowManager:
             # Keep track of all of the nodes we create and the generated variable names for them
             node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str] = {}
 
+            # Keep track of subflow names to their generated variable names (for node group metadata)
+            subflow_name_to_variable_name: dict[str, str] = {}
+
             # Create the "with..." statement
             assign_flow_context_node = self._generate_assign_flow_context(
                 flow_initialization_command=flow_initialization_command, flow_creation_index=flow_creation_index
@@ -1917,6 +1920,7 @@ class WorkflowManager:
                     current_node_index,
                     import_recorder,
                     node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                    subflow_name_to_variable_name=subflow_name_to_variable_name,
                 )
                 assign_flow_context_node.body.extend(node_creation_ast)
                 current_node_index += 1
@@ -1928,6 +1932,13 @@ class WorkflowManager:
                 # Generate initialization command for the sub-flow
                 sub_flow_initialization_command = sub_flow_commands.flow_initialization_command
                 if sub_flow_initialization_command is not None:
+                    # Track the subflow name to variable mapping for node groups
+                    if isinstance(sub_flow_initialization_command, CreateFlowRequest):
+                        original_subflow_name = sub_flow_initialization_command.flow_name
+                        subflow_variable_name = f"flow{sub_flow_creation_index}_name"
+                        if original_subflow_name:
+                            subflow_name_to_variable_name[original_subflow_name] = subflow_variable_name
+
                     match sub_flow_initialization_command:
                         case CreateFlowRequest():
                             sub_flow_create_node = self._generate_create_flow(
@@ -1952,7 +1963,11 @@ class WorkflowManager:
                     )
                     # Generate nodes in subflow, passing current index and getting next available
                     subflow_nodes, current_node_index = self._generate_nodes_in_flow(
-                        sub_flow_commands, import_recorder, node_uuid_to_node_variable_name, current_node_index
+                        sub_flow_commands,
+                        import_recorder,
+                        node_uuid_to_node_variable_name,
+                        current_node_index,
+                        subflow_name_to_variable_name,
                     )
                     subflow_context_node.body.extend(subflow_nodes)
 
@@ -1983,6 +1998,7 @@ class WorkflowManager:
                     current_node_index,
                     import_recorder,
                     node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                    subflow_name_to_variable_name=subflow_name_to_variable_name,
                 )
                 assign_flow_context_node.body.extend(node_creation_ast)
                 current_node_index += 1
@@ -3189,6 +3205,7 @@ class WorkflowManager:
         import_recorder: ImportRecorder,
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
         starting_node_index: int,
+        subflow_name_to_variable_name: dict[str, str],
     ) -> tuple[list[ast.stmt], int]:
         """Generate node creation code for nodes in a flow.
 
@@ -3197,6 +3214,7 @@ class WorkflowManager:
             import_recorder: Import recorder for tracking imports
             node_uuid_to_node_variable_name: Mapping from node UUIDs to variable names
             starting_node_index: The starting index for node variable names
+            subflow_name_to_variable_name: Mapping from subflow names to variable names
 
         Returns:
             Tuple of (list of AST statements, next available node index)
@@ -3209,17 +3227,19 @@ class WorkflowManager:
                 current_index,
                 import_recorder,
                 node_uuid_to_node_variable_name=node_uuid_to_node_variable_name,
+                subflow_name_to_variable_name=subflow_name_to_variable_name,
             )
             node_creation_asts.extend(node_creation_ast)
             current_index += 1
         return node_creation_asts, current_index
 
-    def _generate_node_creation_code(  # noqa: C901, PLR0912
+    def _generate_node_creation_code(  # noqa: C901, PLR0912, PLR0915
         self,
         serialized_node_command: SerializedNodeCommands,
         node_index: int,
         import_recorder: ImportRecorder,
         node_uuid_to_node_variable_name: dict[SerializedNodeCommands.NodeUUID, str],
+        subflow_name_to_variable_name: dict[str, str],
     ) -> list[ast.stmt]:
         # Ensure necessary imports are recorded
         import_recorder.add_from_import("griptape_nodes.node_library.library_registry", "NodeMetadata")
@@ -3243,10 +3263,19 @@ class WorkflowManager:
         create_node_request = serialized_node_command.create_node_command
         create_node_request_args = []
 
+        # Extract subflow_name from metadata if it exists (only for nodes that use subflows)
+        # This will be added as a parameter with a variable reference if found in mapping
+        subflow_name_from_metadata = None
+        if create_node_request.metadata:
+            subflow_name_from_metadata = create_node_request.metadata.get("subflow_name")
+
         if is_dataclass(create_node_request):
             for field in fields(create_node_request):
                 field_value = getattr(create_node_request, field.name)
                 if field_value != field.default:
+                    # Skip subflow_name field - we'll handle it separately from metadata
+                    if field.name == "subflow_name":
+                        continue
                     # Special handling for node_names_to_add - these are now UUIDs, convert to variable references
                     if field_value is create_node_request.node_names_to_add and field_value:
                         # field_value is now a list of UUIDs (converted in _serialize_package_nodes_for_local_execution)
@@ -3275,6 +3304,15 @@ class WorkflowManager:
                         create_node_request_args.append(
                             ast.keyword(arg=field.name, value=ast.Constant(value=field_value, lineno=1, col_offset=0))
                         )
+
+        # After processing all fields, handle subflow_name from metadata
+        # If subflow_name exists in metadata and is in our mapping, add it as a parameter with variable reference
+        if subflow_name_from_metadata and subflow_name_from_metadata in subflow_name_to_variable_name:
+            variable_name = subflow_name_to_variable_name[subflow_name_from_metadata]
+            create_node_request_args.append(
+                ast.keyword(arg="subflow_name", value=ast.Name(id=variable_name, ctx=ast.Load()))
+            )
+
         # Get the actual request class name (CreateNodeRequest)
         request_class_name = type(create_node_request).__name__
         # Handle the create node command and assign to node name

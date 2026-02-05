@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pydantic import Field
-
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
@@ -66,11 +64,11 @@ class AddParameterToNodeRequest(RequestPayload):
     input_types: list[str] | None = None
     output_type: str | None = None
     ui_options: dict | None = None
-    mode_allowed_input: bool = Field(default=True)
-    mode_allowed_property: bool = Field(default=True)
-    mode_allowed_output: bool = Field(default=True)
-    is_user_defined: bool = Field(default=True)
-    settable: bool = Field(default=True)
+    mode_allowed_input: bool = field(default=True)
+    mode_allowed_property: bool = field(default=True)
+    mode_allowed_output: bool = field(default=True)
+    is_user_defined: bool = field(default=True)
+    settable: bool = field(default=True)
     parent_container_name: str | None = None
     parent_element_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
