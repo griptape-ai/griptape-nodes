@@ -469,7 +469,7 @@ class TestGeneratePreview:
             macro_path=test_macro_path,
             artifact_provider_name="Image",
             format=None,
-            preview_generator_name="Default Image Preview",
+            preview_generator_name="Standard Thumbnail Generation",
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
         )

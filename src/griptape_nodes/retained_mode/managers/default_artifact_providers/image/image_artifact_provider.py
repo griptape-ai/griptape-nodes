@@ -18,11 +18,11 @@ class ImageArtifactProvider(BaseArtifactProvider):
 
         # Do lazy imports here to only instantiate when the provider gets rezzed up.
         from griptape_nodes.retained_mode.managers.default_artifact_providers.image.preview_generators import (
-            DefaultImagePreviewGenerator,
+            PILThumbnailGenerator,
         )
 
         # Register default generator
-        self.register_preview_generator(DefaultImagePreviewGenerator)
+        self.register_preview_generator(PILThumbnailGenerator)
 
     @classmethod
     def get_friendly_name(cls) -> str:
@@ -38,7 +38,7 @@ class ImageArtifactProvider(BaseArtifactProvider):
 
     @classmethod
     def get_default_preview_generator(cls) -> str:
-        return "Default Image Preview"
+        return "Standard Thumbnail Generation"
 
     @classmethod
     def get_default_preview_format(cls) -> str:

@@ -1,4 +1,4 @@
-"""Default image preview generator using PIL/Pillow."""
+"""PIL-based thumbnail generator using Pillow."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ from griptape_nodes.retained_mode.managers.default_artifact_providers.base_artif
 )
 
 
-class DefaultImagePreviewGenerator(BaseArtifactPreviewGenerator):
-    """Default PIL-based image preview generator with dimension constraints.
+class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
+    """PIL-based thumbnail generator with dimension constraints.
 
     Resizes images to fit within max_width x max_height while preserving aspect ratio.
     """
@@ -60,7 +60,7 @@ class DefaultImagePreviewGenerator(BaseArtifactPreviewGenerator):
     @classmethod
     def get_friendly_name(cls) -> str:
         """Human-readable name."""
-        return "Default Image Preview"
+        return "Standard Thumbnail Generation"
 
     @classmethod
     def get_supported_source_formats(cls) -> set[str]:
