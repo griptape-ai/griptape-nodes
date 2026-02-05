@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import BaseNode, ControlNode
 from griptape_nodes.retained_mode.events.connection_events import DeleteConnectionRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes_library.splat.splat_artifact import SplatArtifact, SplatUrlArtifact
 from griptape_nodes_library.three_d.three_d_artifact import ThreeDArtifact, ThreeDUrlArtifact
 from griptape_nodes_library.utils.audio_utils import is_audio_url_artifact
 from griptape_nodes_library.utils.video_utils import is_video_url_artifact
@@ -149,7 +150,14 @@ class DisplayList(ControlNode):
             parameter.ui_options = {"display": "video"}
         elif item_specific_type in ["AudioUrlArtifact", "AudioArtifact"]:
             parameter.ui_options = {"display": "audio"}
-        elif item_specific_type in ["ThreeDUrlArtifact", "ThreeDArtifact", "GLTFUrlArtifact", "GLTFArtifact"]:
+        elif item_specific_type in [
+            "ThreeDUrlArtifact",
+            "ThreeDArtifact",
+            "GLTFUrlArtifact",
+            "GLTFArtifact",
+            "SplatUrlArtifact",
+            "SplatArtifact",
+        ]:
             parameter.ui_options = {"display": "3d"}
         elif item_specific_type == "dict":
             parameter.ui_options = {"multiline": True}
@@ -187,7 +195,14 @@ class DisplayList(ControlNode):
             new_child.ui_options = {"display": "video"}
         elif item_specific_type in ["AudioUrlArtifact", "AudioArtifact"]:
             new_child.ui_options = {"display": "audio"}
-        elif item_specific_type in ["ThreeDUrlArtifact", "ThreeDArtifact", "GLTFUrlArtifact", "GLTFArtifact"]:
+        elif item_specific_type in [
+            "ThreeDUrlArtifact",
+            "ThreeDArtifact",
+            "GLTFUrlArtifact",
+            "GLTFArtifact",
+            "SplatUrlArtifact",
+            "SplatArtifact",
+        ]:
             new_child.ui_options = {"display": "3d"}
         elif item_specific_type == "dict":
             new_child.ui_options = {"multiline": True}
@@ -280,6 +295,8 @@ class DisplayList(ControlNode):
         elif is_audio_url_artifact(item) or isinstance(item, AudioArtifact):
             result = "AudioUrlArtifact"
         # 3D artifacts
+        elif isinstance(item, (SplatUrlArtifact, SplatArtifact)):
+            result = "SplatUrlArtifact"
         elif isinstance(item, (ThreeDUrlArtifact, ThreeDArtifact)):
             result = "ThreeDUrlArtifact"
         # GLTF artifacts - check class name (handles different implementations)
