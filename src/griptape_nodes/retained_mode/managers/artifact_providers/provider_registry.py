@@ -1,0 +1,115 @@
+"""Registry for artifact provider classes."""
+
+import logging
+
+from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
+    BaseArtifactProvider,
+)
+
+logger = logging.getLogger("griptape_nodes")
+
+
+class ProviderRegistry:
+    """Registry for artifact provider classes with lazy instantiation.
+
+    Manages provider registration, lookup by friendly name or file format,
+    and lazy instantiation of provider instances.
+    """
+
+    def __init__(self) -> None:
+        """Initialize empty registry."""
+        self._provider_classes: list[type[BaseArtifactProvider]] = []
+        self._provider_instances: dict[type[BaseArtifactProvider], BaseArtifactProvider] = {}
+        self._file_format_to_provider_class: dict[str, list[type[BaseArtifactProvider]]] = {}
+        self._friendly_name_to_provider_class: dict[str, type[BaseArtifactProvider]] = {}
+
+    def register_provider(self, provider_class: type[BaseArtifactProvider]) -> None:
+        """Register a provider class.
+
+        Args:
+            provider_class: The provider class to register
+
+        Raises:
+            ValueError: If provider with same friendly name already registered
+            Exception: If provider class methods fail
+        """
+        provider_name = provider_class.__name__
+
+        # FAILURE CASE: Try to access class methods
+        try:
+            friendly_name = provider_class.get_friendly_name()
+            supported_formats = provider_class.get_supported_formats()
+        except Exception as e:
+            msg = f"Attempted to register artifact provider {provider_name}. Failed due to: class method access error - {e}"
+            raise Exception(msg) from e  # noqa: TRY002
+
+        # FAILURE CASE: Check for duplicate friendly name
+        friendly_name_lower = friendly_name.lower()
+        if friendly_name_lower in self._friendly_name_to_provider_class:
+            existing_provider_class = self._friendly_name_to_provider_class[friendly_name_lower]
+            msg = (
+                f"Attempted to register artifact provider '{friendly_name}' ({provider_name}). "
+                f"Failed due to: duplicate friendly name with existing provider ({existing_provider_class.__name__})"
+            )
+            raise ValueError(msg)
+
+        # SUCCESS PATH: Register provider class
+        self._provider_classes.append(provider_class)
+
+        for file_format in supported_formats:
+            if file_format not in self._file_format_to_provider_class:
+                self._file_format_to_provider_class[file_format] = []
+            self._file_format_to_provider_class[file_format].append(provider_class)
+
+        self._friendly_name_to_provider_class[friendly_name_lower] = provider_class
+
+    def get_provider_class_by_friendly_name(self, friendly_name: str) -> type[BaseArtifactProvider] | None:
+        """Get provider class by friendly name (case-insensitive).
+
+        Args:
+            friendly_name: The friendly name to search for
+
+        Returns:
+            The provider class if found, None otherwise
+        """
+        return self._friendly_name_to_provider_class.get(friendly_name.lower())
+
+    def get_provider_classes_by_format(self, file_format: str) -> list[type[BaseArtifactProvider]]:
+        """Get all provider classes that support a given file format.
+
+        Args:
+            file_format: The file format to search for
+
+        Returns:
+            List of provider classes that support the format (empty list if none found)
+        """
+        return self._file_format_to_provider_class.get(file_format, [])
+
+    def get_or_create_provider_instance(self, provider_class: type[BaseArtifactProvider]) -> BaseArtifactProvider:
+        """Get or create singleton instance of provider class (lazy instantiation).
+
+        Args:
+            provider_class: The provider class to instantiate
+
+        Returns:
+            Cached singleton instance of the provider
+
+        Raises:
+            Exception: If provider instantiation fails
+        """
+        if provider_class not in self._provider_instances:
+            try:
+                self._provider_instances[provider_class] = provider_class()
+            except Exception as e:
+                logger.error("Failed to instantiate provider %s: %s", provider_class.__name__, e)
+                raise
+
+        return self._provider_instances[provider_class]
+
+    def get_all_provider_classes(self) -> list[type[BaseArtifactProvider]]:
+        """Get list of all registered provider classes.
+
+        Returns:
+            List of all registered provider classes
+        """
+        return self._provider_classes

@@ -39,12 +39,12 @@ class TestArtifactManager:
         """Test that initialization creates empty provider collections and registers defaults."""
         manager = ArtifactManager()
 
-        assert isinstance(manager._provider_classes, list)
-        assert len(manager._provider_classes) == 1
-        assert isinstance(manager._file_format_to_provider_class, dict)
-        assert len(manager._file_format_to_provider_class) > 0
-        assert isinstance(manager._provider_instances, dict)
-        assert len(manager._provider_instances) == 0
+        assert isinstance(manager._registry._provider_classes, list)
+        assert len(manager._registry._provider_classes) == 1
+        assert isinstance(manager._registry._file_format_to_provider_class, dict)
+        assert len(manager._registry._file_format_to_provider_class) > 0
+        assert isinstance(manager._registry._provider_instances, dict)
+        assert len(manager._registry._provider_instances) == 0
 
     def test_register_new_provider_success(self) -> None:
         """Test successful registration of a new provider."""
@@ -63,15 +63,15 @@ class TestArtifactManager:
                 return {"jpg"}
 
         manager = ArtifactManager()
-        initial_count = len(manager._provider_classes)
+        initial_count = len(manager._registry._provider_classes)
 
         request = RegisterArtifactProviderRequest(provider_class=TestProvider)
         result = manager.on_handle_register_artifact_provider_request(request)
 
         assert isinstance(result, RegisterArtifactProviderResultSuccess)
-        assert len(manager._provider_classes) == initial_count + 1
-        assert "test" in manager._file_format_to_provider_class
-        assert "tst" in manager._file_format_to_provider_class
+        assert len(manager._registry._provider_classes) == initial_count + 1
+        assert "test" in manager._registry._file_format_to_provider_class
+        assert "tst" in manager._registry._file_format_to_provider_class
 
     def test_register_provider_adds_to_providers_list(self) -> None:
         """Test that registered provider class is added to _provider_classes list."""
@@ -90,16 +90,16 @@ class TestArtifactManager:
         # ImageArtifactProvider is already registered in constructor
         image_formats = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "tif"}
         for file_format in image_formats:
-            assert file_format in manager._file_format_to_provider_class
-            assert len(manager._file_format_to_provider_class[file_format]) == 1
-            assert manager._file_format_to_provider_class[file_format][0] is ImageArtifactProvider
+            assert file_format in manager._registry._file_format_to_provider_class
+            assert len(manager._registry._file_format_to_provider_class[file_format]) == 1
+            assert manager._registry._file_format_to_provider_class[file_format][0] is ImageArtifactProvider
 
     def test_initialization_registers_default_providers(self) -> None:
         """Test that ArtifactManager initialization registers default providers."""
         manager = ArtifactManager()
 
-        assert len(manager._provider_classes) == 1
-        assert "jpg" in manager._file_format_to_provider_class
+        assert len(manager._registry._provider_classes) == 1
+        assert "jpg" in manager._registry._file_format_to_provider_class
 
     def test_multiple_providers_can_handle_same_format(self) -> None:
         """Test that multiple provider classes can be registered for the same format."""
@@ -124,9 +124,9 @@ class TestArtifactManager:
         manager.on_handle_register_artifact_provider_request(request)
 
         expected_provider_count = 2
-        assert len(manager._provider_classes) == expected_provider_count
-        assert len(manager._file_format_to_provider_class["jpg"]) == expected_provider_count
-        assert len(manager._file_format_to_provider_class["png"]) == expected_provider_count
+        assert len(manager._registry._provider_classes) == expected_provider_count
+        assert len(manager._registry._file_format_to_provider_class["jpg"]) == expected_provider_count
+        assert len(manager._registry._file_format_to_provider_class["png"]) == expected_provider_count
 
     def test_duplicate_friendly_name_fails_registration(self) -> None:
         """Test that registering a provider class with duplicate friendly name fails."""
@@ -180,14 +180,14 @@ class TestArtifactManager:
         assert "duplicate friendly name" in str(result.result_details)
 
     def test_get_provider_class_by_friendly_name_case_insensitive(self) -> None:
-        """Test that _get_provider_class_by_friendly_name is case-insensitive."""
+        """Test that registry lookup is case-insensitive."""
         manager = ArtifactManager()
         # ImageArtifactProvider is already registered in constructor
 
-        provider_class_lower = manager._get_provider_class_by_friendly_name("image")
-        provider_class_title = manager._get_provider_class_by_friendly_name("Image")
-        provider_class_upper = manager._get_provider_class_by_friendly_name("IMAGE")
-        provider_class_missing = manager._get_provider_class_by_friendly_name("Video")
+        provider_class_lower = manager._registry.get_provider_class_by_friendly_name("image")
+        provider_class_title = manager._registry.get_provider_class_by_friendly_name("Image")
+        provider_class_upper = manager._registry.get_provider_class_by_friendly_name("IMAGE")
+        provider_class_missing = manager._registry.get_provider_class_by_friendly_name("Video")
 
         assert provider_class_lower is not None
         assert provider_class_title is not None
@@ -198,18 +198,18 @@ class TestArtifactManager:
         assert provider_class_missing is None
 
     def test_lazy_instantiation_creates_singleton(self) -> None:
-        """Test that _get_or_create_provider_instance creates and caches singleton."""
+        """Test that registry lazy instantiation creates and caches singleton."""
         manager = ArtifactManager()
 
-        assert len(manager._provider_instances) == 0
+        assert len(manager._registry._provider_instances) == 0
 
-        instance1 = manager._get_or_create_provider_instance(ImageArtifactProvider)
+        instance1 = manager._registry.get_or_create_provider_instance(ImageArtifactProvider)
         assert isinstance(instance1, ImageArtifactProvider)
-        assert len(manager._provider_instances) == 1
+        assert len(manager._registry._provider_instances) == 1
 
-        instance2 = manager._get_or_create_provider_instance(ImageArtifactProvider)
+        instance2 = manager._registry.get_or_create_provider_instance(ImageArtifactProvider)
         assert instance2 is instance1
-        assert len(manager._provider_instances) == 1
+        assert len(manager._registry._provider_instances) == 1
 
     def test_list_artifact_providers_returns_friendly_names(self) -> None:
         """Test that ListArtifactProvidersRequest returns list of friendly names."""

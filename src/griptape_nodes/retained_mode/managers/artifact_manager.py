@@ -47,8 +47,8 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
-    BaseArtifactProvider,
     ImageArtifactProvider,
+    ProviderRegistry,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -88,17 +88,8 @@ class ArtifactManager:
         Args:
             event_manager: Optional event manager for handling artifact events
         """
-        # The list of classes we have registered
-        self._provider_classes: list[type[BaseArtifactProvider]] = []
-
-        # INSTANTIATIONS of these classes (lazy instantiated to limit headless execution overhead)
-        self._provider_instances: dict[type[BaseArtifactProvider], BaseArtifactProvider] = {}
-
-        # Map of source file type to provider class
-        self._file_format_to_provider_class: dict[str, list[type[BaseArtifactProvider]]] = {}
-
-        # Map of friendly name to provider class
-        self._friendly_name_to_provider_class: dict[str, type[BaseArtifactProvider]] = {}
+        # Provider registry for managing artifact providers
+        self._registry = ProviderRegistry()
 
         if event_manager is not None:
             event_manager.assign_manager_to_request_type(
@@ -129,12 +120,11 @@ class ArtifactManager:
         # Register default providers (order matters: Image, Video, Audio)
         failures = []
         for provider_class in [ImageArtifactProvider]:
-            request = RegisterArtifactProviderRequest(provider_class=provider_class)
-            result = self.on_handle_register_artifact_provider_request(request)
-
-            if result.failed():
+            try:
+                self._registry.register_provider(provider_class)
+            except Exception as e:
                 provider_name = provider_class.__name__
-                failures.append(f"{provider_name}: {result.result_details}")
+                failures.append(f"{provider_name}: {e}")
 
         if failures:
             failure_details = "; ".join(failures)
@@ -189,7 +179,7 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Look up provider by friendly name
-        provider_class = self._get_provider_class_by_friendly_name(request.artifact_provider_name)
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.artifact_provider_name)
         if provider_class is None:
             return GeneratePreviewResultFailure(
                 result_details=f"Attempted to generate preview for '{source_path}'. "
@@ -205,7 +195,7 @@ class ArtifactManager:
 
         # FAILURE CASE: Instantiate provider
         try:
-            provider_instance = self._get_or_create_provider_instance(provider_class)
+            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
         except Exception as e:
             return GeneratePreviewResultFailure(
                 result_details=f"Attempted to generate preview for '{source_path}'. "
@@ -410,7 +400,9 @@ class ArtifactManager:
         self, _request: ListArtifactProvidersRequest
     ) -> ListArtifactProvidersResultSuccess | ListArtifactProvidersResultFailure:
         """Handle list artifact providers request."""
-        friendly_names = [provider_class.get_friendly_name() for provider_class in self._provider_classes]
+        friendly_names = [
+            provider_class.get_friendly_name() for provider_class in self._registry.get_all_provider_classes()
+        ]
 
         return ListArtifactProvidersResultSuccess(
             result_details="Successfully listed artifact providers", friendly_names=friendly_names
@@ -421,7 +413,7 @@ class ArtifactManager:
     ) -> GetArtifactProviderDetailsResultSuccess | GetArtifactProviderDetailsResultFailure:
         """Handle get artifact provider details request."""
         # FAILURE CASE: Provider not found
-        provider_class = self._get_provider_class_by_friendly_name(request.friendly_name)
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.friendly_name)
         if provider_class is None:
             return GetArtifactProviderDetailsResultFailure(
                 result_details=f"Attempted to get artifact provider details for '{request.friendly_name}'. "
@@ -430,7 +422,7 @@ class ArtifactManager:
 
         # FAILURE CASE: Provider instantiation failed
         try:
-            provider_instance = self._get_or_create_provider_instance(provider_class)
+            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
         except Exception as e:
             return GetArtifactProviderDetailsResultFailure(
                 result_details=f"Attempted to get artifact provider details for '{request.friendly_name}'. "
@@ -458,37 +450,16 @@ class ArtifactManager:
             Success or failure result
         """
         provider_class = request.provider_class
-        provider_name = provider_class.__name__
 
-        # FAILURE CASE: Try to access class methods
+        # FAILURE CASE: Try to register provider
         try:
-            friendly_name = provider_class.get_friendly_name()
-            supported_formats = provider_class.get_supported_formats()
+            self._registry.register_provider(provider_class)
         except Exception as e:
             return RegisterArtifactProviderResultFailure(
-                result_details=f"Attempted to register artifact provider {provider_name}. "
-                f"Failed due to: class method access error - {e}"
+                result_details=f"Attempted to register artifact provider {provider_class.__name__}. Failed due to: {e}"
             )
 
-        # FAILURE CASE: Check for duplicate friendly name
-        friendly_name_lower = friendly_name.lower()
-        if friendly_name_lower in self._friendly_name_to_provider_class:
-            existing_provider_class = self._friendly_name_to_provider_class[friendly_name_lower]
-            return RegisterArtifactProviderResultFailure(
-                result_details=f"Attempted to register artifact provider '{friendly_name}' ({provider_name}). "
-                f"Failed due to: duplicate friendly name with existing provider ({existing_provider_class.__name__})"
-            )
-
-        # SUCCESS PATH: Register provider class
-        self._provider_classes.append(provider_class)
-
-        for file_format in supported_formats:
-            if file_format not in self._file_format_to_provider_class:
-                self._file_format_to_provider_class[file_format] = []
-            self._file_format_to_provider_class[file_format].append(provider_class)
-
-        self._friendly_name_to_provider_class[friendly_name_lower] = provider_class
-
+        # SUCCESS PATH: Provider registered
         return RegisterArtifactProviderResultSuccess(result_details="Artifact provider registered successfully")
 
     def on_handle_register_preview_generator_request(
@@ -503,7 +474,7 @@ class ArtifactManager:
             Success or failure result
         """
         # FAILURE CASE: Provider not found
-        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.provider_friendly_name)
         if provider_class is None:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -512,7 +483,7 @@ class ArtifactManager:
 
         # FAILURE CASE: Provider instantiation failed
         try:
-            provider_instance = self._get_or_create_provider_instance(provider_class)
+            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -546,7 +517,7 @@ class ArtifactManager:
             Success or failure result
         """
         # FAILURE CASE: Provider not found
-        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.provider_friendly_name)
         if provider_class is None:
             return ListPreviewGeneratorsResultFailure(
                 result_details=f"Attempted to list preview generators for provider '{request.provider_friendly_name}'. "
@@ -555,7 +526,7 @@ class ArtifactManager:
 
         # FAILURE CASE: Provider instantiation failed
         try:
-            provider_instance = self._get_or_create_provider_instance(provider_class)
+            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
         except Exception as e:
             return ListPreviewGeneratorsResultFailure(
                 result_details=f"Attempted to list preview generators for provider '{request.provider_friendly_name}'. "
@@ -580,7 +551,7 @@ class ArtifactManager:
             Success or failure result
         """
         # FAILURE CASE: Provider not found
-        provider_class = self._get_provider_class_by_friendly_name(request.provider_friendly_name)
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.provider_friendly_name)
         if provider_class is None:
             return GetPreviewGeneratorDetailsResultFailure(
                 result_details=f"Attempted to get preview generator details for provider '{request.provider_friendly_name}'. "
@@ -589,7 +560,7 @@ class ArtifactManager:
 
         # FAILURE CASE: Provider instantiation failed
         try:
-            provider_instance = self._get_or_create_provider_instance(provider_class)
+            provider_instance = self._registry.get_or_create_provider_instance(provider_class)
         except Exception as e:
             return GetPreviewGeneratorDetailsResultFailure(
                 result_details=f"Attempted to get preview generator details for provider '{request.provider_friendly_name}'. "
@@ -627,35 +598,3 @@ class ArtifactManager:
             supported_preview_formats=preview_formats,
             parameters=parameters_dict,
         )
-
-    def _get_provider_class_by_friendly_name(self, friendly_name: str) -> type[BaseArtifactProvider] | None:
-        """Get provider class by friendly name (case-insensitive).
-
-        Args:
-            friendly_name: The friendly name to search for
-
-        Returns:
-            The provider class if found, None otherwise
-        """
-        return self._friendly_name_to_provider_class.get(friendly_name.lower())
-
-    def _get_or_create_provider_instance(self, provider_class: type[BaseArtifactProvider]) -> BaseArtifactProvider:
-        """Get or create singleton instance of provider class.
-
-        Args:
-            provider_class: The provider class to instantiate
-
-        Returns:
-            Cached singleton instance of the provider
-
-        Raises:
-            Exception: If provider instantiation fails
-        """
-        if provider_class not in self._provider_instances:
-            # Not instantiated yet; lazily instantiate (or at least attempt to)
-            try:
-                self._provider_instances[provider_class] = provider_class()
-            except Exception as e:
-                logger.error("Failed to instantiate provider %s: %s", provider_class.__name__, e)
-                raise
-        return self._provider_instances[provider_class]
