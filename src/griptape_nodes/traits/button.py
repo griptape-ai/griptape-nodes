@@ -40,6 +40,11 @@ IconPosition = Literal[
     "right",
 ]
 
+ButtonPosition = Literal[
+    "before",
+    "after",
+]
+
 
 class ButtonDetailsMessagePayload(NodeMessagePayload):
     """Payload containing complete button details and status information."""
@@ -99,6 +104,7 @@ class Button(Trait):
     icon: str | None = None
     icon_class: str | None = None
     icon_position: IconPosition | None = None
+    position: ButtonPosition | None = None
     full_width: bool = False
     loading_label: str | None = None
     loading_icon: str | None = None
@@ -120,6 +126,7 @@ class Button(Trait):
         icon: str | None = None,
         icon_class: str | None = None,
         icon_position: IconPosition | None = None,
+        position: ButtonPosition | None = None,
         full_width: bool = False,
         loading_label: str | None = None,
         loading_icon: str | None = None,
@@ -137,6 +144,7 @@ class Button(Trait):
         self.icon = icon
         self.icon_class = icon_class
         self.icon_position = icon_position
+        self.position = position
         self.full_width = full_width
         self.loading_label = loading_label
         self.loading_icon = loading_icon
@@ -208,6 +216,10 @@ class Button(Trait):
             "state": self.state,
             "full_width": self.full_width,
         }
+
+        # Include position if specified
+        if self.position:
+            options["position"] = self.position
 
         # Only include icon properties if icon is specified
         if self.icon:
@@ -351,6 +363,7 @@ class Button(Trait):
             "icon": str,
             "icon_class": str,
             "icon_position": str,  # Will validate against IconPosition literals
+            "position": str,  # Will validate against ButtonPosition literals
             "full_width": bool,
             "loading_label": str,
             "loading_icon": str,
@@ -383,6 +396,9 @@ class Button(Trait):
                 continue
             if field_name == "icon_position" and value is not None and value not in get_args(IconPosition):
                 validation_errors.append(f"Invalid icon_position: {value}")
+                continue
+            if field_name == "position" and value is not None and value not in get_args(ButtonPosition):
+                validation_errors.append(f"Invalid position: {value}")
                 continue
 
             # Update the field
