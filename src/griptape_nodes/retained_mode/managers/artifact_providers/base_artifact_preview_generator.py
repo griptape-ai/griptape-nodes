@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 
 
 class BaseArtifactPreviewGenerator(ABC):
-    """Abstract base class for preview generator callables.
+    """Abstract base class for preview generators.
 
-    Preview generators are callables that perform the actual conversion work.
+    Preview generators perform the actual conversion work.
     They are passed to provider generate_preview methods.
 
     Metadata is defined as class methods for zero-cost introspection without instantiation.
@@ -86,7 +86,7 @@ class BaseArtifactPreviewGenerator(ABC):
         ...
 
     @abstractmethod
-    async def __call__(self) -> None:
+    async def generate_preview(self) -> None:
         """Execute the preview generation.
 
         Raises:

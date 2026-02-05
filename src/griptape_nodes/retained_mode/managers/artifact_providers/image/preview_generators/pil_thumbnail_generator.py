@@ -80,7 +80,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             "max_height": ProviderValue(default_value=None, required=True),
         }
 
-    async def __call__(self) -> None:
+    async def generate_preview(self) -> None:
         """Execute preview generation.
 
         Raises:

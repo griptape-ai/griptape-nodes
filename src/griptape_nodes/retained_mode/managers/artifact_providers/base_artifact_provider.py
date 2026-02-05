@@ -147,7 +147,7 @@ class BaseArtifactProvider(ABC):
         generator = generator_class(source_file_location, preview_format, destination_preview_file_location, params)
 
         # FAILURE CASE: Execute generator
-        await generator()
+        await generator.generate_preview()
 
     def register_preview_generator(self, preview_generator_class: type[BaseArtifactPreviewGenerator]) -> None:
         """Register a preview generator with this provider.
