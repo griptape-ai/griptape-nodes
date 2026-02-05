@@ -902,40 +902,61 @@ class WorkflowManager:
         workflow_name = request.workflow_name
         file_path = request.file_path
 
+        # Failure: no identifier and no current context
         if workflow_name is None and file_path is None:
             context_manager = GriptapeNodes.ContextManager()
-            if context_manager.has_current_workflow():
-                workflow_name = context_manager.get_current_workflow_name()
-            else:
+            if not context_manager.has_current_workflow():
                 return GetWorkflowRunCommandResultFailure(
                     result_details="Provide workflow_name or file_path, or have a workflow loaded in the current context."
                 )
+            workflow_name = context_manager.get_current_workflow_name()
 
+        # Failure: both workflow_name and file_path provided
         if workflow_name is not None and file_path is not None:
             return GetWorkflowRunCommandResultFailure(result_details="Provide only one of workflow_name or file_path.")
 
+        # Resolve relative_file_path and workflow_shape (or fail)
+        workflow_shape: WorkflowShape | None = None
         if workflow_name is not None:
             try:
                 workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
             except KeyError:
-                return GetWorkflowRunCommandResultFailure(result_details=f"Workflow '{workflow_name}' not found.")
+                return GetWorkflowRunCommandResultFailure(
+                    result_details=(
+                        f"Workflow '{workflow_name}' not found in the registry. "
+                        "Save the workflow first, or provide file_path."
+                    )
+                )
             relative_file_path = workflow.file_path
+            workflow_shape = workflow.metadata.workflow_shape
         else:
             relative_file_path = file_path
 
+        # Failure: path still missing after resolution
         if relative_file_path is None:
             return GetWorkflowRunCommandResultFailure(result_details="Provide either workflow_name or file_path.")
 
         complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
         file_path_obj = Path(complete_file_path)
+
+        # Failure: workflow file does not exist
         if not file_path_obj.is_file():
             return GetWorkflowRunCommandResultFailure(
                 result_details=f"Workflow file not found at '{complete_file_path}'."
             )
 
+        # Optional: load workflow_shape from file when resolved by file_path only
+        if workflow_shape is None:
+            load_metadata_request = LoadWorkflowMetadata(file_name=relative_file_path)
+            load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)
+            if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                workflow_shape = load_metadata_result.metadata.workflow_shape
+
+        # Success path at end
         run_command = f"{sys.executable} {complete_file_path}"
         return GetWorkflowRunCommandResultSuccess(
             run_command=run_command,
+            workflow_shape=workflow_shape,
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 

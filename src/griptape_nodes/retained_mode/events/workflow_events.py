@@ -405,9 +405,11 @@ class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
 
     Args:
         run_command: Full command string: python_executable_path workflow_file_path
+        workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node), or None if not available
     """
 
     run_command: str
+    workflow_shape: WorkflowShape | None = None
 
 
 @dataclass
