@@ -121,22 +121,22 @@ class BaseArtifactProvider(ABC):
         return f"artifacts.{provider_key}.preview_generation"
 
     @classmethod
-    def get_default_preview_format_config_key(cls) -> str:
-        """Get the config key for default preview format.
+    def get_preview_format_config_key(cls) -> str:
+        """Get the config key for the user's selected preview format.
 
         Returns:
-            Config key (e.g., 'artifacts.image.preview_generation.default_preview_format')
+            Config key (e.g., 'artifacts.image.preview_generation.preview_format')
         """
-        return f"{cls.get_config_key_prefix()}.default_preview_format"
+        return f"{cls.get_config_key_prefix()}.preview_format"
 
     @classmethod
-    def get_default_preview_generator_config_key(cls) -> str:
-        """Get the config key for default preview generator.
+    def get_preview_generator_config_key(cls) -> str:
+        """Get the config key for the user's selected preview generator.
 
         Returns:
-            Config key (e.g., 'artifacts.image.preview_generation.default_preview_generator')
+            Config key (e.g., 'artifacts.image.preview_generation.preview_generator')
         """
-        return f"{cls.get_config_key_prefix()}.default_preview_generator"
+        return f"{cls.get_config_key_prefix()}.preview_generator"
 
     async def generate_preview(
         self,

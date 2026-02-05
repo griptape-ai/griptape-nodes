@@ -338,7 +338,7 @@ class ArtifactManager:
             )
 
         # FAILURE CASE: Read format from config
-        format_config_key = provider_class.get_default_preview_format_config_key()
+        format_config_key = provider_class.get_preview_format_config_key()
         format_request = GetConfigValueRequest(category_and_key=format_config_key)
         format_result = GriptapeNodes.handle_request(format_request)
         if not isinstance(format_result, GetConfigValueResultSuccess):
@@ -349,7 +349,7 @@ class ArtifactManager:
         preview_format = format_result.value
 
         # FAILURE CASE: Read generator from config
-        generator_config_key = provider_class.get_default_preview_generator_config_key()
+        generator_config_key = provider_class.get_preview_generator_config_key()
         generator_request = GetConfigValueRequest(category_and_key=generator_config_key)
         generator_result = GriptapeNodes.handle_request(generator_request)
         if not isinstance(generator_result, GetConfigValueResultSuccess):
@@ -729,19 +729,19 @@ class ArtifactManager:
 
             schemas[provider_key] = {
                 "preview_generation": {
-                    "default_preview_format": {
+                    "preview_format": {
                         "type": "string",
                         "enum": provider_formats,
                         "default": default_format,
                         "description": f"{provider_friendly_name} format for generated previews",
                     },
-                    "default_preview_generator": {
+                    "preview_generator": {
                         "type": "string",
                         "enum": sorted(preview_generator_names),
                         "default": default_preview_generator_name,
                         "description": "Preview generator to use for creating previews",
                     },
-                    "generators": preview_generator_schemas,
+                    "preview_generator_configurations": preview_generator_schemas,
                 }
             }
 

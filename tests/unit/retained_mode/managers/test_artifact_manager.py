@@ -911,15 +911,25 @@ class TestGetPreviewForArtifact:
         )
 
         # Verify the keys are correctly formatted
-        assert "artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_width" in config_schema
-        assert "artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_height" in config_schema
+        assert (
+            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
+            in config_schema
+        )
+        assert (
+            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
+            in config_schema
+        )
 
         # Verify the default values
         assert (
-            config_schema["artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_width"]
+            config_schema[
+                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
+            ]
             == 1024  # noqa: PLR2004
         )
         assert (
-            config_schema["artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_height"]
+            config_schema[
+                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
+            ]
             == 1024  # noqa: PLR2004
         )

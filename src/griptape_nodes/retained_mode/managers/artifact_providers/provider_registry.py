@@ -124,9 +124,9 @@ class ProviderRegistry:
         Returns:
             Dictionary mapping config keys to default values
         """
-        format_key = provider_class.get_default_preview_format_config_key()
+        format_key = provider_class.get_preview_format_config_key()
         format_value = provider_class.get_default_preview_format()
-        generator_key = provider_class.get_default_preview_generator_config_key()
+        generator_key = provider_class.get_preview_generator_config_key()
         generator_value = provider_class.get_default_preview_generator()
 
         return {
