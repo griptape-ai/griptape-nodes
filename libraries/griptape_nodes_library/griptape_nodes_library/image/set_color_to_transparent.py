@@ -18,6 +18,7 @@ from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
+    apply_mask_transformations,
     dict_to_image_url_artifact,
     load_pil_from_url,
     parse_hex_color,
@@ -35,6 +36,8 @@ class SetColorToTransparent(DataNode):
         input_image: The image to process
         color: The color to make transparent (hex format, e.g., #00ff00)
         tolerance: How much color variance to allow (0-255), higher values match more colors
+        grow_shrink: Grow (negative) or shrink (positive) the transparent area
+        blur: Blur the edges of the transparent area for smoother transitions
         output: The resulting PNG image with transparency
     """
 
@@ -77,6 +80,32 @@ class SetColorToTransparent(DataNode):
             )
         )
 
+        # Grow/shrink parameter for expanding or contracting the transparent area
+        self.add_parameter(
+            ParameterInt(
+                name="grow_shrink",
+                default_value=0,
+                tooltip="Grow (negative) or shrink (positive) the transparent area. Useful for refining edges.",
+                min_val=-100,
+                max_val=100,
+                slider=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # Blur parameter for softening the edges of the transparent area
+        self.add_parameter(
+            ParameterInt(
+                name="blur",
+                default_value=0,
+                tooltip="Blur the edges of the transparent area for smoother transitions.",
+                min_val=0,
+                max_val=100,
+                slider=True,
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
         # Output image
         self.add_parameter(
             ParameterImage(
@@ -111,6 +140,8 @@ class SetColorToTransparent(DataNode):
             tolerance = self.get_parameter_value("tolerance")
             if tolerance is None:
                 tolerance = 10
+            grow_shrink = self.get_parameter_value("grow_shrink") or 0
+            blur = self.get_parameter_value("blur") or 0
 
             # Parse the hex color to RGB
             target_rgb = parse_hex_color(color_hex)
@@ -132,9 +163,28 @@ class SetColorToTransparent(DataNode):
             # Check if each pixel is within tolerance for all channels
             within_tolerance = np.all(color_diff <= tolerance, axis=2)
 
-            # Create new alpha channel: 0 where color matches, preserve original elsewhere
-            new_alpha = img_array[:, :, 3].copy()
-            new_alpha[within_tolerance] = 0
+            # Create a mask where matching pixels are black (0) and non-matching are white (255)
+            # This represents the alpha channel: 0 = transparent, 255 = opaque
+            mask_array = np.where(within_tolerance, 0, 255).astype(np.uint8)
+            mask_pil = Image.fromarray(mask_array, mode="L")
+
+            # Apply grow/shrink and blur transformations to the mask
+            if grow_shrink != 0 or blur != 0:
+                mask_pil = apply_mask_transformations(
+                    mask_pil,
+                    grow_shrink=grow_shrink,
+                    invert=False,
+                    blur_radius=blur,
+                    context_name=self.name,
+                )
+
+            # Convert mask back to numpy array
+            transformed_mask = np.array(mask_pil, dtype=np.float32)
+
+            # Combine with original alpha: take minimum of original alpha and transformed mask
+            # This preserves any existing transparency while adding new transparent areas
+            original_alpha = img_array[:, :, 3]
+            new_alpha = np.minimum(original_alpha, transformed_mask)
 
             # Update alpha channel
             img_array[:, :, 3] = new_alpha
