@@ -10,10 +10,6 @@ from workflow import execute_workflow  # type: ignore[attr-defined]
 
 from griptape_nodes.bootstrap.workflow_executors.local_session_workflow_executor import LocalSessionWorkflowExecutor
 from griptape_nodes.drivers.storage import StorageBackend
-from griptape_nodes.utils import install_file_url_support
-
-# Install file:// URL support for httpx/requests in subprocess
-install_file_url_support()
 
 
 def _main() -> None:
