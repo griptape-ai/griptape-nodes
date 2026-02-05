@@ -1,6 +1,6 @@
 """Events for artifact operations."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -46,9 +46,9 @@ class GeneratePreviewRequest(RequestPayload):
 
     Args:
         macro_path: MacroPath with parsed macro and variables
+        artifact_provider_name: Specific provider to use
         format: Desired format for the preview (None for requesting the project default)
-        specific_artifact_provider_name: Specific provider to use (None = auto-select if only one exists)
-        optional_preview_generator_name: Preview generator to use (None for provider default)
+        preview_generator_name: Preview generator to use (None for provider default)
         preview_generator_parameters: Parameters for the preview generator (e.g., max_width, max_height)
         generate_preview_metadata_json: Whether to generate metadata JSON file alongside preview
 
@@ -56,16 +56,11 @@ class GeneratePreviewRequest(RequestPayload):
     """
 
     macro_path: MacroPath
+    artifact_provider_name: str
     format: str | None = None
-    specific_artifact_provider_name: str | None = None
-    optional_preview_generator_name: str | None = None
-    preview_generator_parameters: dict[str, Any] = None  # type: ignore[assignment]
+    preview_generator_name: str | None = None
+    preview_generator_parameters: dict[str, Any] = field(default_factory=dict)
     generate_preview_metadata_json: bool = False
-
-    def __post_init__(self) -> None:
-        """Initialize mutable default."""
-        if self.preview_generator_parameters is None:
-            object.__setattr__(self, "preview_generator_parameters", {})
 
 
 @dataclass

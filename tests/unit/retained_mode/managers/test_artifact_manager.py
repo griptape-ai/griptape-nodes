@@ -293,6 +293,7 @@ class TestGeneratePreview:
         """Test generating preview without metadata."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -323,6 +324,7 @@ class TestGeneratePreview:
         """Test generating preview with metadata."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=True,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -369,6 +371,7 @@ class TestGeneratePreview:
 
         request = GeneratePreviewRequest(
             macro_path=macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -391,6 +394,7 @@ class TestGeneratePreview:
 
         request = GeneratePreviewRequest(
             macro_path=macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -408,6 +412,7 @@ class TestGeneratePreview:
         """Test generating preview with custom dimensions."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 30, "max_height": 40},
@@ -434,6 +439,7 @@ class TestGeneratePreview:
         """Test generating preview with specific format."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format="webp",
             generate_preview_metadata_json=True,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -461,8 +467,9 @@ class TestGeneratePreview:
         """Test generating preview with specific generator."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
-            optional_preview_generator_name="Default Image Preview",
+            preview_generator_name="Default Image Preview",
             generate_preview_metadata_json=False,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
         )
@@ -483,6 +490,7 @@ class TestGeneratePreview:
         """Test that metadata can be deserialized back to PreviewMetadata."""
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=True,
             preview_generator_parameters={"max_width": 50, "max_height": 50},
@@ -552,6 +560,7 @@ class TestGetPreviewForArtifact:
 
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
+            artifact_provider_name="Image",
             format=None,
             generate_preview_metadata_json=True,
             preview_generator_parameters={"max_width": 50, "max_height": 50},

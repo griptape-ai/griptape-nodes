@@ -144,13 +144,13 @@ class ArtifactManager:
             )
             raise RuntimeError(error_message)
 
-    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912, PLR0915
+    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
         self, request: GeneratePreviewRequest
     ) -> GeneratePreviewResultSuccess | GeneratePreviewResultFailure:
         """Handle generate preview request.
 
         Args:
-            request: Contains macro_path, format (optional), optional_preview_generator_name (optional)
+            request: Contains macro_path, artifact_provider_name, format (optional), preview_generator_name (optional)
 
         Returns:
             Success or failure result
@@ -188,41 +188,20 @@ class ArtifactManager:
                 result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: no file extension"
             )
 
-        # FAILURE CASE: Determine which provider to use
-        if request.specific_artifact_provider_name is not None:
-            # User specified a specific provider - look it up by friendly name
-            provider_class = self._get_provider_class_by_friendly_name(request.specific_artifact_provider_name)
-            if provider_class is None:
-                return GeneratePreviewResultFailure(
-                    result_details=f"Attempted to generate preview for '{source_path}'. "
-                    f"Failed due to: provider '{request.specific_artifact_provider_name}' not found"
-                )
+        # FAILURE CASE: Look up provider by friendly name
+        provider_class = self._get_provider_class_by_friendly_name(request.artifact_provider_name)
+        if provider_class is None:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. "
+                f"Failed due to: provider '{request.artifact_provider_name}' not found"
+            )
 
-            # Verify the specified provider supports this file format
-            if file_extension not in provider_class.get_supported_formats():
-                return GeneratePreviewResultFailure(
-                    result_details=f"Attempted to generate preview for '{source_path}'. "
-                    f"Failed due to: provider '{request.specific_artifact_provider_name}' does not support file format '{file_extension}'"
-                )
-        else:
-            # No specific provider - auto-select based on file format
-            provider_classes = self._file_format_to_provider_class.get(file_extension)
-            if not provider_classes:
-                return GeneratePreviewResultFailure(
-                    result_details=f"Attempted to generate preview for '{source_path}'. "
-                    f"Failed due to: no provider found for file format '{file_extension}'"
-                )
-
-            # FAILURE CASE: Multiple providers for same format (ambiguous)
-            if len(provider_classes) > 1:
-                provider_names = [cls.get_friendly_name() for cls in provider_classes]
-                return GeneratePreviewResultFailure(
-                    result_details=f"Attempted to generate preview for '{source_path}'. "
-                    f"Failed due to: multiple providers registered for file format '{file_extension}': {', '.join(provider_names)}. "
-                    f"Please specify which provider to use."
-                )
-
-            provider_class = provider_classes[0]
+        # FAILURE CASE: Verify provider supports this file format
+        if file_extension not in provider_class.get_supported_formats():
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. "
+                f"Failed due to: provider '{request.artifact_provider_name}' does not support file format '{file_extension}'"
+            )
 
         # FAILURE CASE: Instantiate provider
         try:
@@ -234,8 +213,8 @@ class ArtifactManager:
             )
 
         # Determine generator name (use request value or default)
-        if request.optional_preview_generator_name is not None:
-            generator_name = request.optional_preview_generator_name
+        if request.preview_generator_name is not None:
+            generator_name = request.preview_generator_name
         else:
             generator_name = provider_class.get_default_preview_generator()
 
