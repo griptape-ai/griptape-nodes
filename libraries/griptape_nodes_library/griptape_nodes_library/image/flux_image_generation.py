@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import asyncio
-import json as _json
+import json
 import logging
-import os
 import time
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_components.api_key_provider_parameter import (
-    ApiKeyProviderParameter,
-    ApiKeyValidationResult,
-)
+from griptape_nodes.exe_types.param_components.api_key_provider_parameter import ApiKeyProviderParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -26,6 +19,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
     read_image_from_file_path,
@@ -66,7 +60,7 @@ POLLING_URL_TEMPLATE = "{base}generations/{id}"
 RESPONSE_ID_KEY = "generation_id"
 
 
-class FluxImageGeneration(SuccessFailureNode):
+class FluxImageGeneration(GriptapeProxyNode):
     """Generate images using Flux models via API (supports user-provided API keys via proxy).
 
     Inputs:
@@ -98,12 +92,6 @@ class FluxImageGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate images using Flux models via API (supports user-provided API keys via proxy)"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"  # Ensure trailing slash
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Add API key provider component
         self._api_key_provider = ApiKeyProviderParameter(
@@ -241,64 +229,9 @@ class FluxImageGeneration(SuccessFailureNode):
         with suppress(Exception):
             logger.info(message)
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        # Preprocess to handle seed randomization
+    async def _process_generation(self) -> None:
         self.preprocess()
-
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            validation_result = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Build headers: always use proxy API key, optionally add user API key
-        headers = {
-            "Authorization": f"Bearer {validation_result.proxy_api_key}",
-            "Content-Type": "application/json",
-        }
-        if validation_result.user_api_key:
-            headers["X-GTC-PROXY-AUTH-API-KEY"] = validation_result.user_api_key
-
-        model = params["model"]
-        if validation_result.user_api_key:
-            self._log(f"Generating image with {model} using Griptape model proxy with user-provided API key")
-        else:
-            self._log(f"Generating image with {model} using Griptape model proxy")
-
-        # Submit request to get generation ID
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation ID returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            # HTTP error during submission
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         input_image = self.get_parameter_value("input_image")
@@ -344,14 +277,6 @@ class FluxImageGeneration(SuccessFailureNode):
         msg = f"Invalid safety_tolerance value: '{value}'. Must be one of: {SAFETY_TOLERANCE_OPTIONS}"
         raise ValueError(msg)
 
-    def _validate_api_key(self) -> ApiKeyValidationResult:
-        """Validate and return API key and whether to use user API.
-
-        Returns:
-            ApiKeyValidationResult: Named tuple containing api_key and use_user_api
-        """
-        return self._api_key_provider.validate_api_key()
-
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
         self._api_key_provider.after_value_set(parameter, value)
@@ -365,69 +290,16 @@ class FluxImageGeneration(SuccessFailureNode):
 
     def preprocess(self) -> None:
         self._seed_parameter.preprocess()
+        validation_result = self._api_key_provider.validate_api_key()
+        if validation_result.user_api_key:
+            self.register_user_auth_info(validation_result.user_api_key)
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        """Submit request to proxy API and return generation ID.
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model") or "flux-kontext-pro"
 
-        Args:
-            params: Request parameters
-            headers: Request headers
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
 
-        Returns:
-            Generation ID string, or None if not found
-        """
-        payload = await self._build_payload(params)
-        model = params["model"]
-        url = PROXY_URL_TEMPLATE.format(base=self._proxy_base, model=model)
-
-        self._log(f"Submitting request to Griptape model proxy with {model}")
-        self._log_request(payload)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=payload, headers=headers, timeout=API_TIMEOUT)
-                response.raise_for_status()
-                response_json = response.json()
-                self._log("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            # Try to parse error response body
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except httpx.ConnectTimeout as e:
-            error_msg = (
-                f"{self.name}: Connection to API timed out after {API_TIMEOUT} seconds. "
-                f"This may indicate network connectivity issues or the API may be temporarily unavailable."
-            )
-            raise RuntimeError(error_msg) from e
-        except httpx.TimeoutException as e:
-            error_msg = (
-                f"{self.name}: Request to API timed out after {API_TIMEOUT} seconds. "
-                f"The API may be experiencing high load. Please try again later."
-            )
-            raise RuntimeError(error_msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        # Extract generation ID from response
-        generation_id = response_json.get(RESPONSE_ID_KEY)
-
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. {RESPONSE_ID_KEY}={generation_id}")
-            return str(generation_id)
-
-        self._log(f"No {RESPONSE_ID_KEY} returned from POST response")
-        return None
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "prompt": params["prompt"],
             "aspect_ratio": params["aspect_ratio"],
@@ -527,87 +399,20 @@ class FluxImageGeneration(SuccessFailureNode):
                     b64_len = len(parts[1]) if len(parts) > 1 else 0
                     sanitized_payload["input_image"] = f"{header},<base64 data length={b64_len}>"
 
-            self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
+            self._log(f"Request payload: {json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the proxy API endpoint until ready.
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        sample_url = result_json.get("result", {}).get("sample")
+        if sample_url:
+            await self._save_image_from_url(sample_url)
+            return
 
-        Args:
-            generation_id: The generation/request ID to poll for
-            headers: Request headers
-        """
-        # Build polling URL for proxy API
-        get_url = POLLING_URL_TEMPLATE.format(base=self._proxy_base, id=generation_id)
-
-        max_attempts = 120  # 10 minutes with 5s intervals
-        poll_interval = 5
-
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=API_TIMEOUT)
-                    response.raise_for_status()
-                    result_json = response.json()
-
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
-
-                    if status == "Ready":
-                        # Extract the image URL from result.sample
-                        sample_url = result_json.get("result", {}).get("sample")
-                        if sample_url:
-                            await self._handle_success(result_json, sample_url)
-                        else:
-                            self._log("No sample URL found in ready result")
-                            self._set_safe_defaults()
-                            self._set_status_results(
-                                was_successful=False,
-                                result_details="Generation completed but no image URL was found in the response.",
-                            )
-                        return
-                    if status in [STATUS_FAILED, STATUS_ERROR, STATUS_REQUEST_MODERATED, STATUS_CONTENT_MODERATED]:
-                        self._log(f"Generation failed with status: {status}")
-                        self._set_safe_defaults()
-                        # Extract error details from the response
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing, wait before next poll
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-                except Exception as e:
-                    self._log(f"Error while polling: {e}")
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        error_msg = f"Failed to poll generation status: {e}"
-                        self._set_status_results(was_successful=False, result_details=error_msg)
-                        return
-
-            # Timeout reached
-            self._log("Polling timed out waiting for result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Image generation timed out after {max_attempts * poll_interval} seconds waiting for result.",
-            )
-
-    async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
-        """Handle successful generation result."""
-        self.parameter_output_values["provider_response"] = response
-        await self._save_image_from_url(image_url)
+        self._log("No sample URL found in result")
+        self._set_safe_defaults()
+        self._set_status_results(
+            was_successful=False,
+            result_details="Generation completed but no image URL was found in the response.",
+        )
 
     async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
@@ -639,7 +444,7 @@ class FluxImageGeneration(SuccessFailureNode):
                 result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.
 
         Args:
@@ -697,7 +502,7 @@ class FluxImageGeneration(SuccessFailureNode):
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                return _json.loads(provider_response)
+                return json.loads(provider_response)
             except Exception:
                 return None
         if isinstance(provider_response, dict):
@@ -744,6 +549,20 @@ class FluxImageGeneration(SuccessFailureNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["image_url"] = None
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        self._handle_failure_exception(e)
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:
