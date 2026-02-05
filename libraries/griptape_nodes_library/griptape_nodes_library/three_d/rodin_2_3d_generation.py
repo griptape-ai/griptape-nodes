@@ -22,8 +22,8 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.static_file_events import (
     LoadAndSaveFromLocationRequest,
     LoadAndSaveFromLocationResultSuccess,
-    LoadBase64DataUriFromLocationRequest,
-    LoadBase64DataUriFromLocationResultSuccess,
+    LoadBytesFromLocationRequest,
+    LoadBytesFromLocationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -533,18 +533,11 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
     async def _string_to_bytes(self, value: str) -> bytes | None:
         """Convert a string (URL or base64) to raw bytes."""
-        # If it's a URL, download the image and get as data URI, then decode
+        # If it's a URL, download the bytes directly
         if value.startswith(("http://", "https://")):
-            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=value))
-            if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
-                # Extract bytes from the data URI
-                data_uri = result.data_uri
-                if data_uri and data_uri.startswith("data:"):
-                    try:
-                        _, b64_data = data_uri.split(",", 1)
-                        return base64.b64decode(b64_data)
-                    except Exception as e:
-                        self._log(f"Failed to decode data URI from LoadBase64DataUriFromLocationRequest: {e}")
+            result = await GriptapeNodes.ahandle_request(LoadBytesFromLocationRequest(location=value))
+            if isinstance(result, LoadBytesFromLocationResultSuccess):
+                return result.content
             return None
 
         # If it's a data URI, extract and decode the base64 part
