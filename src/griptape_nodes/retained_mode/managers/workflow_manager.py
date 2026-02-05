@@ -545,7 +545,7 @@ class WorkflowManager:
             # Workflow name column with emoji, name, colored status, and file path underneath
             emoji = status_emoji.get(wf_info.status, "ERR: Unknown/Unexpected Workflow Status")
             colored_status = status_text.get(wf_info.status, "(UNKNOWN)")
-            name = wf_info.workflow_name if wf_info.workflow_name else "*UNKNOWN*"
+            name = wf_info.workflow_name or "*UNKNOWN*"
             file_path = wf_info.workflow_path
             workflow_name_with_path = Text.from_markup(
                 f"{emoji} - {name} {colored_status}\n[cyan dim]{file_path}[/cyan dim]"
@@ -1553,7 +1553,7 @@ class WorkflowManager:
             save_target.scenario.value,
             file_name,
             str(file_path),
-            branched_from if branched_from else "None",
+            branched_from or "None",
         )
 
         # Serialize current flow and get shape
@@ -1725,7 +1725,7 @@ class WorkflowManager:
             if template_workflow is None:
                 msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
                 raise ValueError(msg)
-            base_name = requested_file_name if requested_file_name else template_workflow.metadata.name
+            base_name = requested_file_name or template_workflow.metadata.name
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
@@ -1754,7 +1754,7 @@ class WorkflowManager:
         else:
             # No requested name or no current workflow → first save
             scenario = WorkflowManager.SaveWorkflowScenario.FIRST_SAVE
-            file_name = requested_file_name if requested_file_name else datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
+            file_name = requested_file_name or datetime.now(tz=UTC).strftime("%d.%m_%H.%M")
             creation_date = datetime.now(tz=UTC)
             branched_from = None
             relative_file_path = f"{file_name}.py"
