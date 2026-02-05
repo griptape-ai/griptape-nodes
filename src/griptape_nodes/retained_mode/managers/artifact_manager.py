@@ -46,7 +46,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.default_artifact_providers import (
+from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )

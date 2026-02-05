@@ -26,7 +26,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
 )
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager, PreviewMetadata
-from griptape_nodes.retained_mode.managers.default_artifact_providers import (
+from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )

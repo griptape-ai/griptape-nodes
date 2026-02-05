@@ -1,6 +1,6 @@
 """Image artifact provider."""
 
-from griptape_nodes.retained_mode.managers.default_artifact_providers.base_artifact_provider import (
+from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
     BaseArtifactProvider,
 )
 
@@ -17,7 +17,7 @@ class ImageArtifactProvider(BaseArtifactProvider):
         super().__init__()
 
         # Do lazy imports here to only instantiate when the provider gets rezzed up.
-        from griptape_nodes.retained_mode.managers.default_artifact_providers.image.preview_generators import (
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
 
