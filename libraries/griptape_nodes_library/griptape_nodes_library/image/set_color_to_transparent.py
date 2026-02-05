@@ -37,7 +37,7 @@ class SetColorToTransparent(DataNode):
         color: The color to make transparent (hex format, e.g., #00ff00)
         tolerance: How much color variance to allow (0-255), higher values match more colors
         grow_shrink: Grow (negative) or shrink (positive) the transparent area
-        blur: Blur the edges of the transparent area for smoother transitions
+        blur_edges: Blur the edges of the transparent area for smoother transitions
         output: The resulting PNG image with transparency
     """
 
@@ -96,7 +96,7 @@ class SetColorToTransparent(DataNode):
         # Blur parameter for softening the edges of the transparent area
         self.add_parameter(
             ParameterInt(
-                name="blur",
+                name="blur_edges",
                 default_value=0,
                 tooltip="Blur the edges of the transparent area for smoother transitions.",
                 min_val=0,
@@ -141,7 +141,7 @@ class SetColorToTransparent(DataNode):
             if tolerance is None:
                 tolerance = 10
             grow_shrink = self.get_parameter_value("grow_shrink") or 0
-            blur = self.get_parameter_value("blur") or 0
+            blur_edges = self.get_parameter_value("blur_edges") or 0
 
             # Parse the hex color to RGB
             target_rgb = parse_hex_color(color_hex)
@@ -169,12 +169,12 @@ class SetColorToTransparent(DataNode):
             mask_pil = Image.fromarray(mask_array, mode="L")
 
             # Apply grow/shrink and blur transformations to the mask
-            if grow_shrink != 0 or blur != 0:
+            if grow_shrink != 0 or blur_edges != 0:
                 mask_pil = apply_mask_transformations(
                     mask_pil,
                     grow_shrink=grow_shrink,
                     invert=False,
-                    blur_radius=blur,
+                    blur_radius=blur_edges,
                     context_name=self.name,
                 )
 
