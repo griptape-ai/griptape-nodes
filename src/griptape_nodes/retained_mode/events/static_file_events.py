@@ -4,8 +4,10 @@ from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
     ResultPayloadSuccess,
+    WorkflowAlteredMixin,
     WorkflowNotAlteredMixin,
 )
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
@@ -160,3 +162,174 @@ class CreateStaticFileDownloadUrlResultFailure(WorkflowNotAlteredMixin, ResultPa
     """
 
     error: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBytesFromLocationRequest(RequestPayload):
+    """Load bytes from a location string.
+
+    Supports three location types:
+    - HTTP/HTTPS URLs: https://example.com/image.png
+    - File paths: /path/to/file.png or file:///path/to/file.png
+    - Data URIs: data:image/png;base64,iVBORw0K...
+
+    Use when: Node needs to load content from a location string into memory as bytes
+    for processing, validation, or transformation.
+
+    Results: LoadBytesFromLocationResultSuccess (with content bytes) |
+             LoadBytesFromLocationResultFailure (download error, invalid format, timeout)
+
+    Args:
+        location: Location string - URL, file path, or data URI
+        timeout: Download timeout in seconds (default: 120)
+    """
+
+    location: str
+    timeout: float = 120.0
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBytesFromLocationResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully loaded bytes from location.
+
+    Args:
+        content: Raw bytes loaded from location (omitted from websocket for size)
+    """
+
+    content: bytes = field(metadata={"omit_from_serialization": True})
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBytesFromLocationResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to load bytes from location.
+
+    Common failure scenarios:
+    - Cannot load from empty/None location
+    - Invalid location string
+    - Download timeout
+    - HTTP error (404, 403, etc.)
+    - Invalid base64 encoding in data URI
+    - File not found
+    """
+
+    # result_details inherited from ResultPayloadFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBase64DataUriFromLocationRequest(RequestPayload):
+    """Load from location and convert to base64 data URI for API submission.
+
+    Most common pattern for generation APIs requiring inline base64 images.
+    Returns format: "data:image/png;base64,iVBORw0K..."
+
+    Supports three location types:
+    - HTTP/HTTPS URLs: https://example.com/image.png
+    - File paths: /path/to/file.png or file:///path/to/file.png
+    - Data URIs: data:image/png;base64,iVBORw0K... (returned as-is)
+    - Raw base64: iVBORw0K... (wrapped in data URI)
+
+    Use when: Submitting images/media to external APIs (OpenAI, Anthropic, etc.) that
+    require base64 data URIs. Automatically handles downloading from URLs and encoding.
+
+    Results: LoadBase64DataUriFromLocationResultSuccess (with data URI string) |
+             LoadBase64DataUriFromLocationResultFailure (download error, encoding error, timeout)
+
+    Args:
+        location: Location string - URL, file path, data URI, or raw base64
+        timeout: Download timeout in seconds (default: 120)
+        media_type: MIME type for data URI (default: "image/png")
+    """
+
+    location: str
+    timeout: float = 120.0
+    media_type: str = "image/png"
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBase64DataUriFromLocationResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully loaded from location as base64 data URI.
+
+    Args:
+        data_uri: Base64 data URI string (e.g., "data:image/png;base64,iVBORw0K...") (omitted from websocket for size)
+    """
+
+    data_uri: str = field(metadata={"omit_from_serialization": True})
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadBase64DataUriFromLocationResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to load from location as base64 data URI.
+
+    Common failure scenarios:
+    - Cannot load from empty location
+    - Download failed (timeout, HTTP error, network error)
+    - Invalid data format
+    - Encoding error
+    """
+
+    # result_details inherited from ResultPayloadFailure
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAndSaveFromLocationRequest(RequestPayload):
+    """Load bytes from location and save to static storage.
+
+    Supports three location types:
+    - HTTP/HTTPS URLs: https://example.com/image.png
+    - File paths: /path/to/file.png or file:///path/to/file.png
+    - Data URIs: data:image/png;base64,iVBORw0K...
+
+    Common pattern: Download generated media from provider, save to local/cloud storage.
+    Uses use_direct_save=True internally to return stable storage paths.
+
+    Use when: Node receives media location from external API and needs to save it to
+    workspace storage. Typical in generation nodes (image/video/audio) that download
+    results from provider APIs.
+
+    Results: LoadAndSaveFromLocationResultSuccess (with artifact_location) |
+             LoadAndSaveFromLocationResultFailure (download error, save error, timeout)
+
+    Args:
+        location: Location string - URL, file path, or data URI
+        filename: Filename to save as (e.g., "video_123.mp4")
+        timeout: Download timeout in seconds (default: 120)
+        existing_file_policy: How to handle existing files (default: OVERWRITE)
+    """
+
+    location: str
+    filename: str
+    timeout: float = 120.0
+    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAndSaveFromLocationResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Successfully loaded from location and saved media to storage.
+
+    Args:
+        artifact_location: Location string (file path or URI) where the artifact was saved.
+                          Can be used to construct artifacts like VideoUrlArtifact(value=artifact_location).
+    """
+
+    artifact_location: str
+
+
+@dataclass
+@PayloadRegistry.register
+class LoadAndSaveFromLocationResultFailure(WorkflowAlteredMixin, ResultPayloadFailure):
+    """Failed to load from location and save media.
+
+    Common failure scenarios:
+    - Failed to load (timeout, HTTP error, network error)
+    - Failed to save (disk full, permission error, invalid path)
+    """
+
+    # result_details inherited from ResultPayloadFailure

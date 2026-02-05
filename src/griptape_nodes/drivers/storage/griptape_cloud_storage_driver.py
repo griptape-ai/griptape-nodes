@@ -1,8 +1,6 @@
 import logging
 import os
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -510,19 +508,16 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         bucket_id: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
-        *,
-        httpx_request_func: Callable[..., Any],
     ) -> str | None:
         """Create a signed download URL for a cloud asset.
 
-        Static version for use without driver instance (e.g., httpx patching layer).
+        Static version for use without driver instance.
 
         Args:
             asset_url: Cloud asset URL to convert
             bucket_id: Bucket ID. If None, reads from GT_CLOUD_BUCKET_ID env var.
             api_key: API key. If None, reads from GT_CLOUD_API_KEY env var.
             base_url: Cloud base URL. If None, reads from GT_CLOUD_BASE_URL env var.
-            httpx_request_func: The httpx request function to use (original, not patched)
 
         Returns:
             Signed download URL if successful, None if fails
@@ -556,7 +551,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         # Make API request to get signed URL
         try:
             headers = {"Authorization": f"Bearer {api_key}"}
-            response = httpx_request_func("POST", api_url, json={"method": "GET"}, headers=headers)
+            response = httpx.request("POST", api_url, json={"method": "GET"}, headers=headers)
             response.raise_for_status()
 
             response_data = response.json()

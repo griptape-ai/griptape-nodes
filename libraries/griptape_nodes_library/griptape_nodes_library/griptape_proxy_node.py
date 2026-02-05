@@ -470,21 +470,3 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
     async def aprocess(self) -> None:
         """Async processing entry point."""
         await self._process_generation()
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL.
-
-        Args:
-            url: The URL to download from
-
-        Returns:
-            bytes | None: The downloaded bytes, or None if download failed
-        """
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

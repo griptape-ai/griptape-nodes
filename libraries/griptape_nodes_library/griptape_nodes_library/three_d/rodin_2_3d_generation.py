@@ -8,8 +8,7 @@ from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
-import httpx
-from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact, TextArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
@@ -20,6 +19,12 @@ from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.static_file_events import (
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBytesFromLocationRequest,
+    LoadBytesFromLocationResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
@@ -528,11 +533,12 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
     async def _string_to_bytes(self, value: str) -> bytes | None:
         """Convert a string (URL or base64) to raw bytes."""
-        import base64
-
-        # If it's a URL, download the image
+        # If it's a URL, download the bytes directly
         if value.startswith(("http://", "https://")):
-            return await self._download_bytes_from_url(value)
+            result = await GriptapeNodes.ahandle_request(LoadBytesFromLocationRequest(location=value))
+            if isinstance(result, LoadBytesFromLocationResultSuccess):
+                return result.content
+            return None
 
         # If it's a data URI, extract and decode the base64 part
         if value.startswith("data:image/"):
@@ -588,7 +594,6 @@ class Rodin23DGeneration(GriptapeProxyNode):
         """Download and save the generated 3D model files."""
         requested_format = params["geometry_file_format"]
         timestamp = int(time.time())
-        static_files_manager = GriptapeNodes.StaticFilesManager()
 
         all_file_urls: list[str] = []
         primary_url: str | None = None
@@ -603,17 +608,24 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             try:
                 self._log(f"Downloading file: {file_name}")
-                file_bytes = await self._download_bytes_from_url(file_url)
 
-                if file_bytes:
-                    # Create safe filename
-                    extension = file_name.rsplit(".", 1)[-1] if "." in file_name else requested_format
-                    base_name = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
-                    static_filename = f"rodin2_3d_{timestamp}_{idx}_{base_name}.{extension}"
+                # Create safe filename
+                extension = file_name.rsplit(".", 1)[-1] if "." in file_name else requested_format
+                base_name = file_name.rsplit(".", 1)[0] if "." in file_name else file_name
+                static_filename = f"rodin2_3d_{timestamp}_{idx}_{base_name}.{extension}"
 
-                    saved_url = static_files_manager.save_static_file(
-                        file_bytes, static_filename, ExistingFilePolicy.CREATE_NEW
+                # Download and save using event request pattern
+                result = await GriptapeNodes.ahandle_request(
+                    LoadAndSaveFromLocationRequest(
+                        location=file_url,
+                        filename=static_filename,
+                        existing_file_policy=ExistingFilePolicy.CREATE_NEW,
                     )
+                )
+
+                if isinstance(result, LoadAndSaveFromLocationResultSuccess):
+                    saved_url = result.artifact_location
+                    TextArtifact(value=saved_url, name=static_filename)
                     all_file_urls.append(saved_url)
                     self._log(f"Saved file: {static_filename}")
 
@@ -625,6 +637,8 @@ class Rodin23DGeneration(GriptapeProxyNode):
                         # Use first file as fallback
                         primary_url = saved_url
                         primary_filename = static_filename
+                else:
+                    self._log(f"Failed to download and save file {file_name}")
 
             except Exception as e:
                 self._log(f"Failed to save file {file_name}: {e}")
@@ -730,14 +744,3 @@ class Rodin23DGeneration(GriptapeProxyNode):
         self._set_safe_defaults()
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

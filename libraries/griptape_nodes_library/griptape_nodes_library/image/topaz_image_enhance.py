@@ -7,7 +7,6 @@ from contextlib import suppress
 from copy import deepcopy
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -17,6 +16,12 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
@@ -958,12 +963,9 @@ class TopazImageEnhance(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
-
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
+            if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
+                return result.data_uri
         except Exception as e:
             self._log(f"Failed to download image from URL {url}: {e}")
         return None
@@ -1021,13 +1023,19 @@ class TopazImageEnhance(GriptapeProxyNode):
     async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
         try:
-            self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if image_bytes:
-                filename = f"topaz_enhanced_{int(time.time())}.jpg"
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image_output"] = ImageUrlArtifact(value=saved_url, name=filename)
+            filename = f"topaz_enhanced_{int(time.time())}.jpg"
+            self._log("Downloading image from URL and saving to static storage")
+            result = await GriptapeNodes.ahandle_request(
+                LoadAndSaveFromLocationRequest(
+                    location=image_url,
+                    filename=filename,
+                )
+            )
+
+            if isinstance(result, LoadAndSaveFromLocationResultSuccess):
+                self.parameter_output_values["image_output"] = ImageUrlArtifact(
+                    value=result.artifact_location, name=filename
+                )
                 self._log(f"Saved image to static storage as {filename}")
                 self._set_status_results(
                     was_successful=True, result_details=f"Image processed successfully and saved as {filename}."
@@ -1036,7 +1044,7 @@ class TopazImageEnhance(GriptapeProxyNode):
                 self.parameter_output_values["image_output"] = ImageUrlArtifact(value=image_url)
                 self._set_status_results(
                     was_successful=True,
-                    result_details="Image processed successfully. Using provider URL (could not download image bytes).",
+                    result_details="Image processed successfully. Using provider URL (could not download and save image).",
                 )
         except Exception as e:
             self._log(f"Failed to save image from URL: {e}")
@@ -1087,14 +1095,3 @@ class TopazImageEnhance(GriptapeProxyNode):
         self._set_safe_defaults()
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

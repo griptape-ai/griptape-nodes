@@ -3,10 +3,6 @@ import pytest  # type: ignore[reportMissingImports]
 from griptape_nodes.retained_mode.events.flow_events import CreateFlowRequest, CreateFlowResultSuccess
 from griptape_nodes.retained_mode.events.library_events import RegisterLibraryFromFileRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils import install_file_url_support
-
-# Install file:// URL support for httpx/requests in integration tests
-install_file_url_support()
 
 
 @pytest.fixture

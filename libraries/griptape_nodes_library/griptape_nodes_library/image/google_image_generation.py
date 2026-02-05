@@ -17,6 +17,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -754,25 +758,13 @@ class GoogleImageGeneration(GriptapeProxyNode):
     async def _download_and_encode_image(self, url: str) -> str | None:
         """Download image from URL and encode as base64 data URI."""
         try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
+            result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
+            if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
+                return result.data_uri
         except Exception as e:
             msg = f"{self.name} failed to download image from URL {url}: {e}"
             logger.info(msg)
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:

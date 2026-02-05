@@ -35,6 +35,62 @@ def uri_to_path(uri: str) -> Path:
     return Path(url2pathname(parsed.path))
 
 
+def is_http_url(location: str) -> bool:
+    """Check if a location is an HTTP/HTTPS URL.
+
+    Args:
+        location: Location string to check
+
+    Returns:
+        True if location is an HTTP/HTTPS URL
+    """
+    return location.startswith(("http://", "https://"))
+
+
+def is_file_location(location: str) -> bool:
+    """Check if a location is a file path (file:// URL or local path).
+
+    Args:
+        location: Location string to check
+
+    Returns:
+        True if location is a file:// URL or local path
+    """
+    if location.startswith("file://"):
+        return True
+
+    # Check if it's a local path by attempting to create a Path object
+    # Exclude other URI schemes (data:, ftp:, mailto:, etc.)
+    if "://" in location:
+        return False
+
+    if ":" in location and location[1:3] != ":\\" and location[0] != "/":
+        return False
+
+    try:
+        Path(location)
+    except (ValueError, OSError):
+        return False
+    else:
+        return True
+
+
+def location_to_path(location: str) -> str:
+    """Convert a file location (file:// URL or local path) to a path string.
+
+    Args:
+        location: Location string (file:// URL or local path)
+
+    Returns:
+        Path string
+    """
+    if location.startswith("file://"):
+        parsed = urlparse(location)
+        return url2pathname(parsed.path)
+
+    return location
+
+
 def is_url_or_path(value: str) -> bool:
     """Check if a value is a URL or file path.
 

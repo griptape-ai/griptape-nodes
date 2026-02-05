@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 from contextlib import suppress
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -17,6 +15,12 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.events.static_file_events import (
+    LoadAndSaveFromLocationRequest,
+    LoadAndSaveFromLocationResultSuccess,
+    LoadBase64DataUriFromLocationRequest,
+    LoadBase64DataUriFromLocationResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -497,19 +501,14 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
             return url
 
-        try:
-            async with httpx.AsyncClient() as client:
-                rff = await client.get(url, timeout=20)
-                rff.raise_for_status()
-                ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
-                if not ct.startswith("image/"):
-                    ct = "image/jpeg"
-                b64 = base64.b64encode(rff.content).decode("utf-8")
-                self._log("Frame URL converted to data URI for proxy")
-                return f"data:{ct};base64,{b64}"
-        except Exception as e:
-            self._log(f"Warning: failed to inline frame URL: {e}")
-            return url
+        result = await GriptapeNodes.ahandle_request(LoadBase64DataUriFromLocationRequest(location=url))
+
+        if isinstance(result, LoadBase64DataUriFromLocationResultSuccess):
+            self._log("Frame URL converted to data URI for proxy")
+            return result.data_uri
+
+        self._log(f"Warning: failed to inline frame URL: {result.result_details}")
+        return url
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the result and set output parameters.
@@ -528,34 +527,24 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
             )
             return
 
-        # Download video bytes
-        try:
-            self._log("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
-        except Exception as e:
-            self._log(f"Failed to download video: {e}")
-            video_bytes = None
+        # Download and save video using LoadAndSaveFromLocationRequest
+        filename = f"seedance_video_{generation_id}.mp4"
+        result = await GriptapeNodes.ahandle_request(
+            LoadAndSaveFromLocationRequest(
+                location=extracted_url,
+                filename=filename,
+            )
+        )
 
-        # Save video to static storage or use provider URL as fallback
-        if video_bytes:
-            try:
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                filename = f"seedance_video_{generation_id}.mp4"
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-                self._log(f"Saved video to static storage as {filename}")
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                self._log(f"Failed to save to static storage: {e}, using provider URL")
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
+        if isinstance(result, LoadAndSaveFromLocationResultSuccess):
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=result.artifact_location, name=filename)
+            self._log(f"Saved video to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)
+            self._log(f"Failed to download/save video: {result.result_details}")
             self._set_status_results(
                 was_successful=True,
                 result_details="Video generated successfully. Using provider URL (could not download video bytes).",
