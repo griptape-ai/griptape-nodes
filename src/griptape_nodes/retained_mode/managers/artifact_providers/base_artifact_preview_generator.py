@@ -85,6 +85,21 @@ class BaseArtifactPreviewGenerator(ABC):
         """
         ...
 
+    @classmethod
+    def get_config_key_prefix(cls, provider_friendly_name: str) -> str:
+        """Get the config key prefix for this generator's parameters.
+
+        Args:
+            provider_friendly_name: The friendly name of the provider (e.g., 'Image')
+
+        Returns:
+            Config key prefix (e.g., 'artifacts.image.preview_generation.generators.standard_thumbnail_generation')
+        """
+        friendly_name = cls.get_friendly_name()
+        generator_key = friendly_name.lower().replace(" ", "_")
+        provider_key = provider_friendly_name.lower().replace(" ", "_")
+        return f"artifacts.{provider_key}.preview_generation.generators.{generator_key}"
+
     @abstractmethod
     async def generate_preview(self) -> None:
         """Execute the preview generation.

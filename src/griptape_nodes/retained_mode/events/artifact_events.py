@@ -77,6 +77,40 @@ class GeneratePreviewResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure
 
 @dataclass
 @PayloadRegistry.register
+class GeneratePreviewFromDefaultsRequest(RequestPayload):
+    """Generate a preview for an artifact using ALL defaults from config.
+
+    This is a high-level convenience request that reads all settings from config
+    (default preview format, default preview generator, and generator parameters),
+    then delegates to GeneratePreviewRequest with all parameters filled in.
+
+    No overrides allowed - uses config defaults exclusively.
+
+    Args:
+        macro_path: MacroPath with parsed macro and variables
+        artifact_provider_name: Specific provider to use
+
+    Results: GeneratePreviewFromDefaultsResultSuccess | GeneratePreviewFromDefaultsResultFailure
+    """
+
+    macro_path: MacroPath
+    artifact_provider_name: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GeneratePreviewFromDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Preview generated successfully using config defaults."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GeneratePreviewFromDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to generate preview using config defaults."""
+
+
+@dataclass
+@PayloadRegistry.register
 class GetPreviewForArtifactRequest(RequestPayload):
     """Get preview for an artifact.
 

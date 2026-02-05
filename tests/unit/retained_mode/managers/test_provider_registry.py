@@ -41,6 +41,14 @@ class TestProviderRegistry:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "jpg"
+
         registry = ProviderRegistry()
         registry.register_provider(TestProvider)
 
@@ -186,6 +194,14 @@ class TestProviderRegistry:
             def get_preview_formats(cls) -> set[str]:
                 return {"webp"}
 
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "webp"
+
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)
         registry.register_provider(AlternateImageProvider)
@@ -288,6 +304,14 @@ class TestProviderRegistry:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "jpg"
+
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)
         registry.register_provider(TestProvider)
@@ -297,3 +321,18 @@ class TestProviderRegistry:
         assert len(all_providers) == 2  # noqa: PLR2004
         assert ImageArtifactProvider in all_providers
         assert TestProvider in all_providers
+
+    def test_get_provider_config_schema(self) -> None:
+        """Test that get_provider_config_schema generates correct config keys."""
+        registry = ProviderRegistry()
+        registry.register_provider(ImageArtifactProvider)
+
+        config_schema = registry.get_provider_config_schema(ImageArtifactProvider)
+
+        assert "artifacts.image.preview_generation.default_preview_format" in config_schema
+        assert "artifacts.image.preview_generation.default_preview_generator" in config_schema
+        assert config_schema["artifacts.image.preview_generation.default_preview_format"] == "png"
+        assert (
+            config_schema["artifacts.image.preview_generation.default_preview_generator"]
+            == "Standard Thumbnail Generation"
+        )

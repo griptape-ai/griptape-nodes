@@ -113,3 +113,22 @@ class ProviderRegistry:
             List of all registered provider classes
         """
         return self._provider_classes
+
+    def get_provider_config_schema(self, provider_class: type[BaseArtifactProvider]) -> dict:
+        """Generate config schema for a provider.
+
+        Args:
+            provider_class: The provider class to generate config schema for
+
+        Returns:
+            Dictionary mapping config keys to default values
+        """
+        format_key = provider_class.get_default_preview_format_config_key()
+        format_value = provider_class.get_default_preview_format()
+        generator_key = provider_class.get_default_preview_generator_config_key()
+        generator_value = provider_class.get_default_preview_generator()
+
+        return {
+            format_key: format_value,
+            generator_key: generator_value,
+        }

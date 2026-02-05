@@ -3,6 +3,7 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -24,12 +25,51 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
 )
+from griptape_nodes.retained_mode.events.config_events import SetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager, PreviewMetadata
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )
+
+
+# ==================================================================================
+# CRITICAL WARNING: Config Isolation for Tests
+# ==================================================================================
+# Tests in this file register artifact providers, which triggers config writes
+# to the REAL user config files at ~/.config/griptape_nodes/
+#
+# To prevent test pollution of real config files, we MUST mock
+# GriptapeNodes.handle_request to intercept SetConfigValueRequest calls.
+#
+# Without this mock, running tests will write test provider configs to your
+# actual config files, causing the errors you saw in the editor.
+# ==================================================================================
+
+
+@pytest.fixture(autouse=True)
+def mock_config_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock GriptapeNodes.handle_request to prevent tests from writing to real config files.
+
+    This fixture is autouse=True, so it applies to ALL tests in this file automatically.
+    Any test that registers providers would otherwise pollute the real user config.
+    """
+    from griptape_nodes.retained_mode.events.config_events import SetConfigValueRequest
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+    # Store the original handle_request method
+    original_handle_request = GriptapeNodes.handle_request
+
+    def selective_mock(request):
+        """Only mock SetConfigValueRequest, let all other requests through."""
+        if isinstance(request, SetConfigValueRequest):
+            # Mock config writes to prevent test pollution
+            return SetConfigValueResultSuccess(result_details="Mocked config write")
+        # Let all other requests go to the real handler
+        return original_handle_request(request)
+
+    monkeypatch.setattr("griptape_nodes.retained_mode.managers.artifact_manager.GriptapeNodes.handle_request", selective_mock)
 
 
 class TestArtifactManager:
@@ -61,6 +101,14 @@ class TestArtifactManager:
             @classmethod
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
+
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "jpg"
 
         manager = ArtifactManager()
         initial_count = len(manager._registry._provider_classes)
@@ -116,6 +164,14 @@ class TestArtifactManager:
             @classmethod
             def get_preview_formats(cls) -> set[str]:
                 return {"webp"}
+
+            @classmethod
+            def get_default_preview_generator(cls) -> str:
+                return "Default"
+
+            @classmethod
+            def get_default_preview_format(cls) -> str:
+                return "webp"
 
         manager = ArtifactManager()
         # ImageArtifactProvider is already registered in constructor
@@ -748,3 +804,30 @@ class TestGetPreviewForArtifact:
         # Should not raise error (but will fail since no preview exists)
         result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
         assert isinstance(result, GetPreviewForArtifactResultFailure)
+
+    def test_get_generator_config_schema(self, artifact_manager: ArtifactManager) -> None:
+        """Test that get_generator_config_schema generates correct config keys."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image import ImageArtifactProvider
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        # Get the provider instance
+        provider_instance = artifact_manager._registry.get_or_create_provider_instance(ImageArtifactProvider)
+
+        # Generate config schema for PILThumbnailGenerator
+        config_schema = provider_instance.get_generator_config_schema(PILThumbnailGenerator)
+
+        # Verify the keys are correctly formatted
+        assert "artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_width" in config_schema
+        assert "artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_height" in config_schema
+
+        # Verify the default values
+        assert (
+            config_schema["artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_width"]
+            == 1024  # noqa: PLR2004
+        )
+        assert (
+            config_schema["artifacts.image.preview_generation.generators.standard_thumbnail_generation.max_height"]
+            == 1024  # noqa: PLR2004
+        )

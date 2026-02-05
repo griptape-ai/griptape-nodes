@@ -88,6 +88,35 @@ class BaseArtifactProvider(ABC):
         """
         ...
 
+    @classmethod
+    def get_config_key_prefix(cls) -> str:
+        """Get the config key prefix for this provider.
+
+        Returns:
+            Config key prefix (e.g., 'artifacts.image.preview_generation')
+        """
+        friendly_name = cls.get_friendly_name()
+        provider_key = friendly_name.lower().replace(" ", "_")
+        return f"artifacts.{provider_key}.preview_generation"
+
+    @classmethod
+    def get_default_preview_format_config_key(cls) -> str:
+        """Get the config key for default preview format.
+
+        Returns:
+            Config key (e.g., 'artifacts.image.preview_generation.default_preview_format')
+        """
+        return f"{cls.get_config_key_prefix()}.default_preview_format"
+
+    @classmethod
+    def get_default_preview_generator_config_key(cls) -> str:
+        """Get the config key for default preview generator.
+
+        Returns:
+            Config key (e.g., 'artifacts.image.preview_generation.default_preview_generator')
+        """
+        return f"{cls.get_config_key_prefix()}.default_preview_generator"
+
     async def generate_preview(
         self,
         preview_generator_friendly_name: str,
@@ -190,3 +219,21 @@ class BaseArtifactProvider(ABC):
             The preview generator class, or None if not found
         """
         return self._friendly_name_to_preview_generator_class.get(friendly_name.lower())
+
+    def get_generator_config_schema(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict:
+        """Generate config schema for a generator.
+
+        Args:
+            generator_class: The generator class to generate config schema for
+
+        Returns:
+            Dictionary mapping config keys to default values for generator parameters
+        """
+        key_prefix = generator_class.get_config_key_prefix(self.__class__.get_friendly_name())
+
+        parameters = generator_class.get_parameters()
+        config = {}
+        for param_name, provider_value in parameters.items():
+            config[f"{key_prefix}.{param_name}"] = provider_value.default_value
+
+        return config

@@ -7,7 +7,11 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ValidationError
 
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
+    GeneratePreviewFromDefaultsRequest,
+    GeneratePreviewFromDefaultsResultFailure,
+    GeneratePreviewFromDefaultsResultSuccess,
     GeneratePreviewRequest,
     GeneratePreviewResultFailure,
     GeneratePreviewResultSuccess,
@@ -33,6 +37,11 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterPreviewGeneratorResultFailure,
     RegisterPreviewGeneratorResultSuccess,
 )
+from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigValueRequest,
+    GetConfigValueResultSuccess,
+    SetConfigValueRequest,
+)
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
     ExistingFilePolicy,
@@ -47,6 +56,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
+    BaseArtifactProvider,
     ImageArtifactProvider,
     ProviderRegistry,
 )
@@ -96,6 +106,9 @@ class ArtifactManager:
                 GeneratePreviewRequest, self.on_handle_generate_preview_request
             )
             event_manager.assign_manager_to_request_type(
+                GeneratePreviewFromDefaultsRequest, self.on_handle_generate_preview_from_defaults_request
+            )
+            event_manager.assign_manager_to_request_type(
                 GetPreviewForArtifactRequest, self.on_handle_get_preview_for_artifact_request
             )
             event_manager.assign_manager_to_request_type(
@@ -117,22 +130,10 @@ class ArtifactManager:
                 GetPreviewGeneratorDetailsRequest, self.on_handle_get_preview_generator_details_request
             )
 
-        # Register default providers (order matters: Image, Video, Audio)
-        failures = []
-        for provider_class in [ImageArtifactProvider]:
-            try:
-                self._registry.register_provider(provider_class)
-            except Exception as e:
-                provider_name = provider_class.__name__
-                failures.append(f"{provider_name}: {e}")
-
-        if failures:
-            failure_details = "; ".join(failures)
-            error_message = (
-                f"Attempted to register default artifact providers during initialization. "
-                f"Failed due to: {failure_details}"
+            event_manager.add_listener_to_app_event(
+                AppInitializationComplete,
+                self.on_app_initialization_complete,
             )
-            raise RuntimeError(error_message)
 
     async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
         self, request: GeneratePreviewRequest
@@ -288,6 +289,79 @@ class ArtifactManager:
             result_message += f". Metadata at {metadata_path}"
 
         return GeneratePreviewResultSuccess(result_details=result_message)
+
+    async def on_handle_generate_preview_from_defaults_request(
+        self, request: GeneratePreviewFromDefaultsRequest
+    ) -> GeneratePreviewFromDefaultsResultSuccess | GeneratePreviewFromDefaultsResultFailure:
+        """Handle generate preview request using ALL config defaults.
+
+        Reads all settings from config, then delegates to GeneratePreviewRequest.
+
+        Args:
+            request: Contains macro_path and artifact_provider_name
+
+        Returns:
+            Success or failure result
+        """
+        # FAILURE CASE: Look up provider
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.artifact_provider_name)
+        if provider_class is None:
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. "
+                f"Failed due to: provider '{request.artifact_provider_name}' not found"
+            )
+
+        # FAILURE CASE: Read format from config
+        format_config_key = provider_class.get_default_preview_format_config_key()
+        format_request = GetConfigValueRequest(category_and_key=format_config_key)
+        format_result = GriptapeNodes.handle_request(format_request)
+        if not isinstance(format_result, GetConfigValueResultSuccess):
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. "
+                f"Failed due to: config key '{format_config_key}' not found - {format_result.result_details}"
+            )
+        preview_format = format_result.value
+
+        # FAILURE CASE: Read generator from config
+        generator_config_key = provider_class.get_default_preview_generator_config_key()
+        generator_request = GetConfigValueRequest(category_and_key=generator_config_key)
+        generator_result = GriptapeNodes.handle_request(generator_request)
+        if not isinstance(generator_result, GetConfigValueResultSuccess):
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. "
+                f"Failed due to: config key '{generator_config_key}' not found - {generator_result.result_details}"
+            )
+        generator_name = generator_result.value
+
+        # FAILURE CASE: Read generator parameters from config
+        generator_key = generator_name.lower().replace(" ", "_")
+        generator_params_config_key = f"{provider_class.get_config_key_prefix()}.generators.{generator_key}"
+        params_request = GetConfigValueRequest(category_and_key=generator_params_config_key)
+        params_result = GriptapeNodes.handle_request(params_request)
+        if not isinstance(params_result, GetConfigValueResultSuccess):
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. "
+                f"Failed due to: config key '{generator_params_config_key}' not found - {params_result.result_details}"
+            )
+        generator_params = params_result.value
+
+        # Delegate to GeneratePreviewRequest with all parameters from config
+        generate_request = GeneratePreviewRequest(
+            macro_path=request.macro_path,
+            artifact_provider_name=request.artifact_provider_name,
+            format=preview_format,
+            preview_generator_name=generator_name,
+            preview_generator_parameters=generator_params,
+            generate_preview_metadata_json=True,
+        )
+
+        result = await self.on_handle_generate_preview_request(generate_request)
+
+        # Convert result types
+        if isinstance(result, GeneratePreviewResultSuccess):
+            return GeneratePreviewFromDefaultsResultSuccess(result_details=result.result_details)
+
+        return GeneratePreviewFromDefaultsResultFailure(result_details=result.result_details)
 
     def on_handle_get_preview_for_artifact_request(  # noqa: PLR0911
         self, request: GetPreviewForArtifactRequest
@@ -454,6 +528,7 @@ class ArtifactManager:
         # FAILURE CASE: Try to register provider
         try:
             self._registry.register_provider(provider_class)
+            self._register_provider_settings(provider_class)
         except Exception as e:
             return RegisterArtifactProviderResultFailure(
                 result_details=f"Attempted to register artifact provider {provider_class.__name__}. Failed due to: {e}"
@@ -493,6 +568,7 @@ class ArtifactManager:
         # FAILURE CASE: Generator registration failed
         try:
             provider_instance.register_preview_generator(request.preview_generator_class)
+            self._register_generator_settings(provider_instance, request.preview_generator_class)
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -598,3 +674,65 @@ class ArtifactManager:
             supported_preview_formats=preview_formats,
             parameters=parameters_dict,
         )
+
+    def _register_provider_settings(self, provider_class: type) -> None:
+        """Register provider settings in config system.
+
+        Args:
+            provider_class: The provider class to register settings for
+        """
+        config_schema = self._registry.get_provider_config_schema(provider_class)
+
+        for key, default_value in config_schema.items():
+            request = SetConfigValueRequest(category_and_key=key, value=default_value)
+            GriptapeNodes.handle_request(request)
+
+    def _register_generator_settings(self, provider_instance: BaseArtifactProvider, generator_class: type) -> None:
+        """Register generator settings in config system.
+
+        Args:
+            provider_instance: The provider instance to use for generating config schema
+            generator_class: The generator class to register settings for
+        """
+        config_schema = provider_instance.get_generator_config_schema(generator_class)
+
+        for key, default_value in config_schema.items():
+            request = SetConfigValueRequest(category_and_key=key, value=default_value)
+            GriptapeNodes.handle_request(request)
+
+    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+        """Handle app initialization complete event.
+
+        Registers default artifact providers after the system is fully initialized.
+
+        Args:
+            _payload: App initialization complete payload
+        """
+        # Register default providers (order matters: Image, Video, Audio)
+        failures = []
+        for provider_class in [ImageArtifactProvider]:
+            request = RegisterArtifactProviderRequest(provider_class=provider_class)
+            result = self.on_handle_register_artifact_provider_request(request)
+            if isinstance(result, RegisterArtifactProviderResultFailure):
+                provider_name = provider_class.__name__
+                failures.append(f"{provider_name}: {result.result_details}")
+                continue
+
+            # IMPORTANT: Provider's __init__ may have registered generators internally
+            # We need to register their config settings too
+            try:
+                provider_instance = self._registry.get_or_create_provider_instance(provider_class)
+                for generator_class in provider_instance._preview_generator_classes:
+                    self._register_generator_settings(provider_instance, generator_class)
+            except Exception as e:
+                provider_name = provider_class.__name__
+                failures.append(f"{provider_name} generator settings: {e}")
+
+        if failures:
+            failure_details = "; ".join(failures)
+            error_message = (
+                f"Attempted to register default artifact providers during initialization. "
+                f"Failed due to: {failure_details}"
+            )
+            logger.error(error_message)
+            raise RuntimeError(error_message)
