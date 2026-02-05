@@ -1720,6 +1720,16 @@
       }
     },
     {
+      "class_name": "SetColorToTransparent",
+      "file_path": "griptape_nodes_library/image/set_color_to_transparent.py",
+      "metadata": {
+        "category": "image",
+        "description": "Replace a specific color in an image with transparency",
+        "display_name": "Set Color to Transparent",
+        "group": "edit"
+      }
+    },
+    {
       "class_name": "LoadImage",
       "file_path": "griptape_nodes_library/image/load_image.py",
       "metadata": {
