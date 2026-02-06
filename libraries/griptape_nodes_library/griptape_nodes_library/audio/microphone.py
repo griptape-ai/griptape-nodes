@@ -17,6 +17,7 @@ class Microphone(DataNode):
             allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
         )
         self.add_parameter(audio_parameter)
+        self.set_initial_node_size(height=270)
 
     def process(self) -> None:
         audio = self.get_parameter_value("audio")
