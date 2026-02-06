@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -56,6 +56,8 @@ from griptape_nodes.retained_mode.events.os_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
+    BaseArtifactPreviewGenerator,
+    BaseArtifactProvider,
     ImageArtifactProvider,
     ProviderRegistry,
 )
@@ -82,6 +84,20 @@ class PreviewMetadata(BaseModel):
     source_file_size: int
     source_file_modified_time: float
     preview_file_name: str
+
+
+class PreviewSettings(BaseModel):
+    """Preview settings read from config with fallback to defaults.
+
+    Attributes:
+        format: Preview format (e.g., 'png', 'webp')
+        generator_name: Friendly name of preview generator
+        generator_params: Generator-specific parameters
+    """
+
+    format: str
+    generator_name: str
+    generator_params: dict[str, Any]
 
 
 class ArtifactManager:
@@ -319,9 +335,10 @@ class ArtifactManager:
     async def on_handle_generate_preview_from_defaults_request(
         self, request: GeneratePreviewFromDefaultsRequest
     ) -> GeneratePreviewFromDefaultsResultSuccess | GeneratePreviewFromDefaultsResultFailure:
-        """Handle generate preview request using ALL config defaults.
+        """Handle generate preview request using config defaults.
 
-        Reads all settings from config, then delegates to GeneratePreviewRequest.
+        Reads settings from config with intelligent fallback, then delegates to GeneratePreviewRequest.
+        Provider's generate_preview() does all validation.
 
         Args:
             request: Contains macro_path and artifact_provider_name
@@ -337,57 +354,27 @@ class ArtifactManager:
                 f"Failed due to: provider '{request.artifact_provider_name}' not found"
             )
 
-        # FAILURE CASE: Read format from config
-        format_config_key = provider_class.get_preview_format_config_key()
-        format_request = GetConfigValueRequest(category_and_key=format_config_key)
-        format_result = GriptapeNodes.handle_request(format_request)
-        if not isinstance(format_result, GetConfigValueResultSuccess):
-            return GeneratePreviewFromDefaultsResultFailure(
-                result_details=f"Attempted to generate preview using defaults. "
-                f"Failed due to: config key '{format_config_key}' not found - {format_result.result_details}"
-            )
-        preview_format = format_result.value
+        # Read settings from config with fallback (no validation)
+        settings = self._get_preview_settings_from_config(provider_class, request.artifact_provider_name)
 
-        # FAILURE CASE: Read generator from config
-        generator_config_key = provider_class.get_preview_generator_config_key()
-        generator_request = GetConfigValueRequest(category_and_key=generator_config_key)
-        generator_result = GriptapeNodes.handle_request(generator_request)
-        if not isinstance(generator_result, GetConfigValueResultSuccess):
-            return GeneratePreviewFromDefaultsResultFailure(
-                result_details=f"Attempted to generate preview using defaults. "
-                f"Failed due to: config key '{generator_config_key}' not found - {generator_result.result_details}"
-            )
-        generator_name = generator_result.value
-
-        # FAILURE CASE: Read generator parameters from config
-        generator_key = generator_name.lower().replace(" ", "_")
-        generator_params_config_key = f"{provider_class.get_config_key_prefix()}.generators.{generator_key}"
-        params_request = GetConfigValueRequest(category_and_key=generator_params_config_key)
-        params_result = GriptapeNodes.handle_request(params_request)
-        if not isinstance(params_result, GetConfigValueResultSuccess):
-            return GeneratePreviewFromDefaultsResultFailure(
-                result_details=f"Attempted to generate preview using defaults. "
-                f"Failed due to: config key '{generator_params_config_key}' not found - {params_result.result_details}"
-            )
-        generator_params = params_result.value
-
-        # Delegate to GeneratePreviewRequest with all parameters from config
+        # Delegate to GeneratePreviewRequest (provider will validate)
         generate_request = GeneratePreviewRequest(
             macro_path=request.macro_path,
             artifact_provider_name=request.artifact_provider_name,
-            format=preview_format,
-            preview_generator_name=generator_name,
-            preview_generator_parameters=generator_params,
+            format=settings.format,
+            preview_generator_name=settings.generator_name,
+            preview_generator_parameters=settings.generator_params,
             generate_preview_metadata_json=True,
         )
 
         result = await self.on_handle_generate_preview_request(generate_request)
 
-        # Convert result types
-        if isinstance(result, GeneratePreviewResultSuccess):
-            return GeneratePreviewFromDefaultsResultSuccess(result_details=result.result_details)
+        # FAILURE CASE: Delegation/validation failed
+        if isinstance(result, GeneratePreviewResultFailure):
+            return GeneratePreviewFromDefaultsResultFailure(result_details=result.result_details)
 
-        return GeneratePreviewFromDefaultsResultFailure(result_details=result.result_details)
+        # SUCCESS PATH: Preview generated successfully
+        return GeneratePreviewFromDefaultsResultSuccess(result_details=result.result_details)
 
     def on_handle_get_preview_for_artifact_request(  # noqa: PLR0911
         self, request: GetPreviewForArtifactRequest
@@ -780,3 +767,112 @@ class ArtifactManager:
             for key, default_value in config_schema.items():
                 request = SetConfigValueRequest(category_and_key=key, value=default_value)
                 GriptapeNodes.handle_request(request)
+
+    def _get_default_params_for_generator(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict[str, Any]:
+        """Get default parameter values for a preview generator.
+
+        Args:
+            generator_class: The generator class to get default parameters for
+
+        Returns:
+            Dictionary of parameter names to default values
+        """
+        parameters = generator_class.get_parameters()
+        default_params = {}
+        for param_name, provider_value in parameters.items():
+            default_params[param_name] = provider_value.default_value
+        return default_params
+
+    def _get_preview_settings_from_config(
+        self, provider_class: type[BaseArtifactProvider], provider_name: str
+    ) -> PreviewSettings:
+        """Read preview settings from config with intelligent fallback.
+
+        NO VALIDATION - just reads config and falls back to defaults if missing.
+        Prevents "half-valid" states by checking if generator is registered.
+
+        Args:
+            provider_class: The provider class
+            provider_name: The provider friendly name (for logging)
+
+        Returns:
+            PreviewSettings object containing format, generator_name, and generator_params
+            - All values are from config OR defaults, never mixed
+            - Provider's generate_preview() will validate these values
+        """
+        # Step 1: Read format from config (or use default if missing)
+        format_config_key = provider_class.get_preview_format_config_key()
+        format_request = GetConfigValueRequest(category_and_key=format_config_key)
+        format_result = GriptapeNodes.handle_request(format_request)
+
+        if isinstance(format_result, GetConfigValueResultSuccess):
+            # Config exists - use it (provider will validate later)
+            preview_format = format_result.value
+        else:
+            # Config missing - use default
+            preview_format = provider_class.get_default_preview_format()
+
+        # Step 2: Read generator from config (or use default if missing/invalid)
+        generator_config_key = provider_class.get_preview_generator_config_key()
+        generator_request = GetConfigValueRequest(category_and_key=generator_config_key)
+        generator_result = GriptapeNodes.handle_request(generator_request)
+
+        registered_generators = self._registry.get_preview_generators_for_provider(provider_class)
+        registered_generator_names = [gen.get_friendly_name() for gen in registered_generators]
+
+        generator_from_config_is_registered = False
+        if isinstance(generator_result, GetConfigValueResultSuccess):
+            user_generator = generator_result.value
+
+            if user_generator in registered_generator_names:
+                # Config exists and generator is registered - use it
+                generator_name = user_generator
+                generator_from_config_is_registered = True
+            else:
+                # Config exists but generator NOT registered - fall back to default
+                logger.warning(
+                    "Config preview generator '%s' not registered with provider '%s'. "
+                    "Falling back to default generator and default parameters.",
+                    user_generator,
+                    provider_name,
+                )
+                generator_name = provider_class.get_default_preview_generator()
+        else:
+            # Config missing - use default
+            generator_name = provider_class.get_default_preview_generator()
+
+        # Step 3: Read params (only if generator from config was registered)
+        if generator_from_config_is_registered:
+            # Generator from config is valid - read its params from config
+            generator_key = generator_name.lower().replace(" ", "_")
+            params_config_key = (
+                f"{provider_class.get_config_key_prefix()}.preview_generator_configurations.{generator_key}"
+            )
+            params_request = GetConfigValueRequest(category_and_key=params_config_key)
+            params_result = GriptapeNodes.handle_request(params_request)
+
+            if isinstance(params_result, GetConfigValueResultSuccess):
+                # Params exist in config - use them (provider will validate later)
+                generator_params = params_result.value
+            else:
+                # Params missing from config - use defaults for this generator
+                generator_class = self._registry.get_preview_generator_by_name(provider_class, generator_name)
+                if generator_class is None:
+                    msg = f"Generator '{generator_name}' not found in registry but was validated as registered"
+                    raise RuntimeError(msg)
+                generator_params = self._get_default_params_for_generator(generator_class)
+        else:
+            # Generator from config was invalid OR missing - use default params
+            # This prevents "half-valid" states (user's params with default generator)
+            generator_class = self._registry.get_preview_generator_by_name(provider_class, generator_name)
+            if generator_class is None:
+                msg = f"Default generator '{generator_name}' not found in registry but provider claims it as default"
+                raise RuntimeError(msg)
+            generator_params = self._get_default_params_for_generator(generator_class)
+
+        # Return all settings (provider will validate them)
+        return PreviewSettings(
+            format=preview_format,
+            generator_name=generator_name,
+            generator_params=generator_params,
+        )
