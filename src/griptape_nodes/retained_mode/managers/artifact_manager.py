@@ -32,6 +32,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     ListPreviewGeneratorsRequest,
     ListPreviewGeneratorsResultFailure,
     ListPreviewGeneratorsResultSuccess,
+    PreviewGenerationPolicy,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
@@ -403,13 +404,13 @@ class ArtifactManager:
             result_details=result.result_details, paths_to_preview=result.paths_to_preview
         )
 
-    def on_handle_get_preview_for_artifact_request(  # noqa: C901, PLR0911, PLR0912
+    async def on_handle_get_preview_for_artifact_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: GetPreviewForArtifactRequest
     ) -> GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure:
-        """Handle get preview for artifact request.
+        """Handle get preview for artifact request with policy-based generation.
 
         Args:
-            request: Contains macro_path and generate_preview_if_necessary flag
+            request: Contains macro_path, artifact_provider_name, and preview_generation_policy
 
         Returns:
             Success with path_to_preview string, or failure with details
@@ -439,21 +440,59 @@ class ArtifactManager:
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: source file not found"
             )
 
+        # FAILURE CASE: Validate provider
+        provider_class = self._registry.get_provider_class_by_friendly_name(request.artifact_provider_name)
+        if provider_class is None:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: provider '{request.artifact_provider_name}' not found"
+            )
+
         # Calculate metadata path
         source_path_obj = Path(source_path)
         destination_dir = source_path_obj.parent / "nodes_previews"
         metadata_path = str(destination_dir / f"{source_path_obj.name}.json")
 
-        # FAILURE CASE: Check if metadata file exists
+        # Check if metadata file exists
         metadata_info_request = GetFileInfoRequest(path=metadata_path, workspace_only=False)
         metadata_info_result = GriptapeNodes.handle_request(metadata_info_request)
 
-        if not isinstance(metadata_info_result, GetFileInfoResultSuccess) or metadata_info_result.file_entry is None:
-            return GetPreviewForArtifactResultFailure(
-                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: metadata file not found at '{metadata_path}'"
-            )
+        metadata_exists = (
+            isinstance(metadata_info_result, GetFileInfoResultSuccess) and metadata_info_result.file_entry is not None
+        )
 
-        # FAILURE CASE: Read metadata file
+        # EARLY CASE: Missing metadata - match on policy
+        if not metadata_exists:
+            match request.preview_generation_policy:
+                case PreviewGenerationPolicy.DO_NOT_GENERATE:
+                    return GetPreviewForArtifactResultFailure(
+                        result_details=f"Attempted to get preview for '{source_path}'. Failed due to: metadata file not found at '{metadata_path}'"
+                    )
+                case (
+                    PreviewGenerationPolicy.ONLY_IF_STALE
+                    | PreviewGenerationPolicy.IF_DOES_NOT_MATCH_USER_PREVIEW_SETTINGS
+                    | PreviewGenerationPolicy.ALWAYS
+                ):
+                    # Generate from defaults since no metadata exists
+                    generate_request = GeneratePreviewFromDefaultsRequest(
+                        macro_path=request.macro_path,
+                        artifact_provider_name=request.artifact_provider_name,
+                    )
+                    generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
+
+                    if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
+                        return GetPreviewForArtifactResultSuccess(
+                            result_details=f"Preview generated for '{source_path}'",
+                            paths_to_preview=generate_result.paths_to_preview,
+                        )
+                    return GetPreviewForArtifactResultFailure(
+                        result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
+                    )
+                case _:
+                    return GetPreviewForArtifactResultFailure(
+                        result_details=f"Attempted to get preview for '{source_path}'. Failed due to: unknown policy '{request.preview_generation_policy}'"
+                    )
+
+        # Read metadata file
         read_metadata_request = ReadFileRequest(
             file_path=metadata_path,
             workspace_only=False,
@@ -466,7 +505,7 @@ class ArtifactManager:
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: could not read metadata file at '{metadata_path}'"
             )
 
-        # FAILURE CASE: Parse and validate metadata using Pydantic
+        # Parse and validate metadata using Pydantic
         try:
             metadata_dict = json.loads(read_metadata_result.content)
             metadata = PreviewMetadata.model_validate(metadata_dict)
@@ -479,20 +518,15 @@ class ArtifactManager:
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: invalid metadata - {e}"
             )
 
-        # FAILURE CASE: Validate preview metadata version
+        # Validate preview metadata version
         try:
             metadata_version = semver.VersionInfo.parse(metadata.version)
             latest_version = semver.VersionInfo.parse(PreviewMetadata.LATEST_SCHEMA_VERSION)
 
             if metadata_version < latest_version:
-                return GetPreviewForArtifactResultFailure(
-                    result_details=(
-                        f"Attempted to get preview for '{source_path}'. "
-                        f"Preview metadata version {metadata.version} is outdated. "
-                        f"Latest version is {PreviewMetadata.LATEST_SCHEMA_VERSION}. "
-                        f"Please regenerate the preview."
-                    )
-                )
+                metadata_version_outdated = True
+            else:
+                metadata_version_outdated = False
         except ValueError as e:
             return GetPreviewForArtifactResultFailure(
                 result_details=(
@@ -501,51 +535,112 @@ class ArtifactManager:
                 )
             )
 
-        # FAILURE CASE: Validate preview is fresh (source hasn't changed)
-        source_size = file_info_result.file_entry.size
-        source_mtime = file_info_result.file_entry.modified_time
-
-        if metadata.source_file_size != source_size or metadata.source_file_modified_time != source_mtime:
-            return GetPreviewForArtifactResultFailure(
-                result_details=(
-                    f"Attempted to get preview for '{source_path}'. "
-                    f"Preview metadata exists but is stale (source file modified since preview generation). "
-                    f"Please regenerate the preview."
-                )
-            )
-
-        # Construct preview path(s) from metadata and verify existence
+        # Check preview files exist on disk
+        preview_files_missing = False
         if isinstance(metadata.preview_file_names, str):
             # Single file case
             preview_file_path = str(destination_dir / metadata.preview_file_names)
-
-            # FAILURE CASE: Verify preview file exists
             preview_info_request = GetFileInfoRequest(path=preview_file_path, workspace_only=False)
             preview_info_result = GriptapeNodes.handle_request(preview_info_request)
 
             if not isinstance(preview_info_result, GetFileInfoResultSuccess) or preview_info_result.file_entry is None:
+                preview_files_missing = True
+        else:
+            # Multi-file case
+            for filename in metadata.preview_file_names.values():
+                file_path = str(destination_dir / filename)
+                preview_file_check_request = GetFileInfoRequest(path=file_path, workspace_only=False)
+                preview_file_check_result = GriptapeNodes.handle_request(preview_file_check_request)
+
+                if (
+                    not isinstance(preview_file_check_result, GetFileInfoResultSuccess)
+                    or preview_file_check_result.file_entry is None
+                ):
+                    preview_files_missing = True
+                    break
+
+        # Check source staleness
+        source_size = file_info_result.file_entry.size
+        source_mtime = file_info_result.file_entry.modified_time
+        source_is_stale = self._is_preview_source_stale(metadata, source_size, source_mtime)
+
+        # Determine if there's any validity issue
+        has_validity_issue = metadata_version_outdated or preview_files_missing or source_is_stale
+
+        # Match on policy to determine if regeneration is needed
+        should_regenerate_preview = False
+
+        match request.preview_generation_policy:
+            case PreviewGenerationPolicy.DO_NOT_GENERATE:
+                if has_validity_issue:
+                    if metadata_version_outdated:
+                        return GetPreviewForArtifactResultFailure(
+                            result_details=(
+                                f"Attempted to get preview for '{source_path}'. "
+                                f"Preview metadata version {metadata.version} is outdated. "
+                                f"Latest version is {PreviewMetadata.LATEST_SCHEMA_VERSION}. "
+                                f"Please regenerate the preview."
+                            )
+                        )
+                    if preview_files_missing:
+                        return GetPreviewForArtifactResultFailure(
+                            result_details=f"Attempted to get preview for '{source_path}'. Preview file(s) not found."
+                        )
+                    if source_is_stale:
+                        return GetPreviewForArtifactResultFailure(
+                            result_details=(
+                                f"Attempted to get preview for '{source_path}'. "
+                                f"Preview metadata exists but is stale (source file modified since preview generation). "
+                                f"Please regenerate the preview."
+                            )
+                        )
+            case PreviewGenerationPolicy.ONLY_IF_STALE:
+                if has_validity_issue:
+                    should_regenerate_preview = True
+            case PreviewGenerationPolicy.IF_DOES_NOT_MATCH_USER_PREVIEW_SETTINGS:
+                if has_validity_issue:
+                    should_regenerate_preview = True
+                else:
+                    # Check if settings match
+                    preview_settings = self._get_preview_settings_from_config(
+                        provider_class, request.artifact_provider_name
+                    )
+                    settings_match = self._does_preview_match_current_settings(
+                        metadata, preview_settings.generator_name, preview_settings.generator_params
+                    )
+                    if not settings_match:
+                        should_regenerate_preview = True
+            case PreviewGenerationPolicy.ALWAYS:
+                should_regenerate_preview = True
+            case _:
                 return GetPreviewForArtifactResultFailure(
-                    result_details=f"Attempted to get preview for '{source_path}'. Preview file not found."
+                    result_details=f"Attempted to get preview for '{source_path}'. Failed due to: unknown policy '{request.preview_generation_policy}'"
                 )
 
-            paths_to_preview = preview_file_path
+        # If regeneration needed, generate from defaults
+        if should_regenerate_preview:
+            generate_request = GeneratePreviewFromDefaultsRequest(
+                macro_path=request.macro_path,
+                artifact_provider_name=request.artifact_provider_name,
+            )
+            generate_result = await self.on_handle_generate_preview_from_defaults_request(generate_request)
+
+            if isinstance(generate_result, GeneratePreviewFromDefaultsResultSuccess):
+                return GetPreviewForArtifactResultSuccess(
+                    result_details=f"Preview regenerated for '{source_path}'",
+                    paths_to_preview=generate_result.paths_to_preview,
+                )
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to regenerate preview for '{source_path}'. Failed due to: {generate_result.result_details}"
+            )
+
+        # Construct preview path(s) from metadata
+        if isinstance(metadata.preview_file_names, str):
+            paths_to_preview = str(destination_dir / metadata.preview_file_names)
         else:
-            # Multi-file case - construct dict of paths
             preview_file_paths = {}
             for key, filename in metadata.preview_file_names.items():
                 preview_file_paths[key] = str(destination_dir / filename)
-
-            # FAILURE CASE: Verify all preview files exist
-            for key, file_path in preview_file_paths.items():
-                file_info_request = GetFileInfoRequest(path=file_path, workspace_only=False)
-                file_info_result = GriptapeNodes.handle_request(file_info_request)
-
-                if not isinstance(file_info_result, GetFileInfoResultSuccess) or file_info_result.file_entry is None:
-                    return GetPreviewForArtifactResultFailure(
-                        result_details=f"Attempted to get preview for '{source_path}'. "
-                        f"Preview file '{metadata.preview_file_names[key]}' (key '{key}') not found."
-                    )
-
             paths_to_preview = preview_file_paths
 
         # SUCCESS PATH: Return path(s) to preview
@@ -946,4 +1041,43 @@ class ArtifactManager:
             format=preview_format,
             generator_name=generator_name,
             generator_params=generator_params,
+        )
+
+    def _is_preview_source_stale(
+        self,
+        metadata: PreviewMetadata,
+        source_size: int,
+        source_mtime: float,
+    ) -> bool:
+        """Check if preview source file has changed since generation.
+
+        Args:
+            metadata: Preview metadata containing stored source file info
+            source_size: Current size of source file in bytes
+            source_mtime: Current modification time of source file
+
+        Returns:
+            True if source file has changed (stale), False otherwise
+        """
+        return metadata.source_file_size != source_size or metadata.source_file_modified_time != source_mtime
+
+    def _does_preview_match_current_settings(
+        self,
+        metadata: PreviewMetadata,
+        current_generator_name: str,
+        current_generator_params: dict[str, Any],
+    ) -> bool:
+        """Check if preview was generated with current generator settings.
+
+        Args:
+            metadata: Preview metadata containing stored generator info
+            current_generator_name: Current generator name from config
+            current_generator_params: Current generator parameters from config
+
+        Returns:
+            True if settings match, False otherwise
+        """
+        return (
+            metadata.preview_generator_name == current_generator_name
+            and metadata.preview_generator_parameters == current_generator_params
         )

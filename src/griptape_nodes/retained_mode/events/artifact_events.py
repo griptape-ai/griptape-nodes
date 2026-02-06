@@ -39,6 +39,15 @@ class ArtifactFailureReason(StrEnum):
     UNKNOWN = "unknown"  # Unexpected error
 
 
+class PreviewGenerationPolicy(StrEnum):
+    """When to generate/regenerate a preview in GetPreviewForArtifact requests."""
+
+    DO_NOT_GENERATE = "do_not_generate"
+    ONLY_IF_STALE = "only_if_stale"
+    IF_DOES_NOT_MATCH_USER_PREVIEW_SETTINGS = "if_does_not_match_user_preview_settings"
+    ALWAYS = "always"
+
+
 @dataclass
 @PayloadRegistry.register
 class GeneratePreviewRequest(RequestPayload):
@@ -130,17 +139,19 @@ class GeneratePreviewFromDefaultsResultFailure(WorkflowNotAlteredMixin, ResultPa
 @dataclass
 @PayloadRegistry.register
 class GetPreviewForArtifactRequest(RequestPayload):
-    """Get preview for an artifact.
+    """Get preview for an artifact, optionally generating/regenerating if needed.
 
     Args:
         macro_path: MacroPath with parsed macro and variables
-        generate_preview_if_necessary: Whether to auto-generate if preview missing/stale (future feature)
+        artifact_provider_name: Provider to use for generation (required - no auto-detection)
+        preview_generation_policy: When to generate/regenerate the preview
 
     Results: GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure
     """
 
     macro_path: MacroPath
-    generate_preview_if_necessary: bool = True
+    artifact_provider_name: str
+    preview_generation_policy: PreviewGenerationPolicy = PreviewGenerationPolicy.IF_DOES_NOT_MATCH_USER_PREVIEW_SETTINGS
 
 
 @dataclass

@@ -20,6 +20,7 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     GetPreviewForArtifactResultSuccess,
     ListArtifactProvidersRequest,
     ListArtifactProvidersResultSuccess,
+    PreviewGenerationPolicy,
     RegisterArtifactProviderRequest,
     RegisterArtifactProviderResultFailure,
     RegisterArtifactProviderResultSuccess,
@@ -730,12 +731,14 @@ class TestGetPreviewForArtifact:
     @pytest.mark.usefixtures("generated_preview_with_metadata")
     def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
         """Test retrieving existing preview."""
+        import asyncio
+
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=True,
+            artifact_provider_name="Image",
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultSuccess)
         assert result.paths_to_preview is not None
@@ -745,16 +748,18 @@ class TestGetPreviewForArtifact:
 
     def test_get_preview_source_file_not_found(self, artifact_manager: ArtifactManager, temp_dir: Path) -> None:
         """Test getting preview for non-existent source file."""
+        import asyncio
+
         nonexistent_path = temp_dir / "nonexistent.jpg"
         parsed_macro = ParsedMacro(str(nonexistent_path))
         macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
 
         request = GetPreviewForArtifactRequest(
             macro_path=macro_path,
-            generate_preview_if_necessary=True,
+            artifact_provider_name="Image",
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "source file not found" in str(result.result_details).lower()
@@ -763,13 +768,16 @@ class TestGetPreviewForArtifact:
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
     ) -> None:
         """Test getting preview when metadata doesn't exist."""
+        import asyncio
+
         # Don't generate preview or metadata
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "metadata file not found" in str(result.result_details).lower()
@@ -782,6 +790,8 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when metadata JSON is malformed."""
+        import asyncio
+
         # Corrupt the metadata file (named after source file, not preview)
         preview_dir = test_image_path.parent / "nodes_previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
@@ -789,10 +799,11 @@ class TestGetPreviewForArtifact:
 
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "malformed" in str(result.result_details).lower() or "json" in str(result.result_details).lower()
@@ -805,6 +816,8 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when metadata has missing required field."""
+        import asyncio
+
         # Write metadata with missing field (named after source file)
         preview_dir = test_image_path.parent / "nodes_previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
@@ -817,10 +830,11 @@ class TestGetPreviewForArtifact:
 
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "invalid metadata" in str(result.result_details).lower()
@@ -833,16 +847,19 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when source file was modified."""
+        import asyncio
+
         # Modify source file by writing more data
         with test_image_path.open("ab") as f:
             f.write(b"extra data to change size")
 
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "stale" in str(result.result_details).lower() or "modified" in str(result.result_details).lower()
@@ -855,7 +872,7 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when source file mtime was updated."""
-        # Touch the file to update mtime
+        import asyncio
         import time
 
         future_time = time.time() + 100
@@ -863,10 +880,11 @@ class TestGetPreviewForArtifact:
 
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
         assert "stale" in str(result.result_details).lower() or "modified" in str(result.result_details).lower()
@@ -878,32 +896,102 @@ class TestGetPreviewForArtifact:
         generated_preview_with_metadata: Path,
     ) -> None:
         """Test getting preview when preview file is deleted but metadata exists."""
+        import asyncio
+
         # Delete the preview file but keep metadata
         generated_preview_with_metadata.unlink()
 
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
 
         assert isinstance(result, GetPreviewForArtifactResultFailure)
-        assert "file not found" in str(result.result_details).lower()
+        assert "not found" in str(result.result_details).lower()
 
-    def test_get_preview_generate_if_necessary_flag(
+    def test_get_preview_policy_do_not_generate(
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
     ) -> None:
-        """Test that generate_preview_if_necessary flag is accepted."""
-        # Test with flag set to False
+        """Test that DO_NOT_GENERATE policy is accepted and fails when no preview exists."""
+        import asyncio
+
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
-            generate_preview_if_necessary=False,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.DO_NOT_GENERATE,
         )
 
         # Should not raise error (but will fail since no preview exists)
-        result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
         assert isinstance(result, GetPreviewForArtifactResultFailure)
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_only_if_stale_regenerates(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+        test_image_path: Path,
+    ) -> None:
+        """Test ONLY_IF_STALE policy regenerates when source is stale."""
+        import asyncio
+
+        # Make source stale by modifying it
+        with test_image_path.open("ab") as f:
+            f.write(b"extra data to change size")
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+        )
+
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
+
+        # Should regenerate successfully
+        assert isinstance(result, GetPreviewForArtifactResultSuccess)
+        assert result.paths_to_preview is not None
+
+    def test_get_preview_missing_metadata_with_only_if_stale(
+        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
+    ) -> None:
+        """Test ONLY_IF_STALE policy generates when metadata missing."""
+        import asyncio
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.ONLY_IF_STALE,
+        )
+
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
+
+        # Should generate successfully
+        assert isinstance(result, GetPreviewForArtifactResultSuccess)
+        assert result.paths_to_preview is not None
+
+    @pytest.mark.usefixtures("generated_preview_with_metadata")
+    def test_get_preview_always_regenerates(
+        self,
+        artifact_manager: ArtifactManager,
+        test_macro_path: MacroPath,
+    ) -> None:
+        """Test ALWAYS policy regenerates even when preview is fresh."""
+        import asyncio
+
+        request = GetPreviewForArtifactRequest(
+            macro_path=test_macro_path,
+            artifact_provider_name="Image",
+            preview_generation_policy=PreviewGenerationPolicy.ALWAYS,
+        )
+
+        result = asyncio.run(artifact_manager.on_handle_get_preview_for_artifact_request(request))
+
+        # Should regenerate successfully even though preview was fresh
+        assert isinstance(result, GetPreviewForArtifactResultSuccess)
+        assert result.paths_to_preview is not None
 
     def test_get_generator_config_schema(self) -> None:
         """Test that get_preview_generator_config_schema generates correct config keys."""
