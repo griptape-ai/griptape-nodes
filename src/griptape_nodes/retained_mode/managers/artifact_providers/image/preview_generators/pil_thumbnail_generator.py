@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 from PIL import Image
@@ -33,7 +34,8 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         self,
         source_file_location: str,
         preview_format: str,
-        destination_preview_file_location: str,
+        destination_preview_directory: str,
+        destination_preview_file_name: str,
         params: dict[str, Any],
     ) -> None:
         """Initialize the generator.
@@ -41,10 +43,13 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         Args:
             source_file_location: Path to the source image file
             preview_format: Target format (webp, jpg, png)
-            destination_preview_file_location: Path where the preview should be saved
+            destination_preview_directory: Directory where the preview should be saved
+            destination_preview_file_name: Filename for the preview
             params: Generator parameters (max_width, max_height - both required)
         """
-        super().__init__(source_file_location, preview_format, destination_preview_file_location, params)
+        super().__init__(
+            source_file_location, preview_format, destination_preview_directory, destination_preview_file_name, params
+        )
 
         # Extract and validate parameters (presence already validated by base provider)
         self.max_width = params["max_width"]
@@ -90,7 +95,7 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             ),
         }
 
-    async def generate_preview(self) -> None:
+    async def attempt_generate_preview(self) -> str:
         """Execute preview generation.
 
         Raises:
@@ -123,9 +128,12 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             img.save(output_buffer, format=self.preview_format.upper())
             output_bytes = output_buffer.getvalue()
 
+        # Construct full path for writing
+        destination_path = str(Path(self.destination_preview_directory) / self.destination_preview_file_name)
+
         # Write the preview file
         write_request = WriteFileRequest(
-            file_path=self.destination_preview_file_location,
+            file_path=destination_path,
             content=output_bytes,
             create_parents=True,
             existing_file_policy=ExistingFilePolicy.OVERWRITE,
@@ -135,3 +143,5 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         if not isinstance(write_result, WriteFileResultSuccess):
             msg = f"Failed to write preview image: {write_result.result_details}"
             raise OSError(msg)
+
+        return self.destination_preview_file_name

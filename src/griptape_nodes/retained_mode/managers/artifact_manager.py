@@ -2,6 +2,7 @@
 
 import json
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -75,7 +76,9 @@ class PreviewMetadata(BaseModel):
         source_macro_path: Macro template string for source artifact
         source_file_size: Source file size in bytes
         source_file_modified_time: Source file modification timestamp (Unix time)
-        preview_file_name: Name of the preview file (without path)
+        preview_file_names: Name(s) of preview file(s) - str for single file, dict for multiple
+        preview_generator_name: Friendly name of preview generator used
+        preview_generator_parameters: Parameters supplied to preview generator
     """
 
     LATEST_SCHEMA_VERSION: ClassVar[str] = "0.1.0"
@@ -84,7 +87,9 @@ class PreviewMetadata(BaseModel):
     source_macro_path: str
     source_file_size: int
     source_file_modified_time: float
-    preview_file_name: str
+    preview_file_names: str | dict[str, str]
+    preview_generator_name: str
+    preview_generator_parameters: dict[str, Any]
 
 
 class PreviewSettings(BaseModel):
@@ -178,7 +183,7 @@ class ArtifactManager:
             logger.error(error_message)
             raise RuntimeError(error_message)
 
-    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912
+    async def on_handle_generate_preview_request(  # noqa: PLR0911, C901, PLR0912, PLR0915
         self, request: GeneratePreviewRequest
     ) -> GeneratePreviewResultSuccess | GeneratePreviewResultFailure:
         """Handle generate preview request.
@@ -261,17 +266,16 @@ class ArtifactManager:
         # Calculate destination path using nodes_previews pattern
         source_path_obj = Path(source_path)
         destination_dir = source_path_obj.parent / "nodes_previews"
-        # Build preview filename once, then construct full path
         preview_file_name = f"{source_path_obj.name}.{preview_format}"
-        destination_preview_file_path = str(destination_dir / preview_file_name)
 
-        # FAILURE CASE: Call provider.generate_preview()
+        # FAILURE CASE: Call provider and get returned filenames
         try:
-            await provider_instance.generate_preview(
+            preview_file_names = await provider_instance.attempt_generate_preview(
                 preview_generator_friendly_name=generator_name,
                 source_file_location=source_path,
                 preview_format=preview_format,
-                destination_preview_file_location=destination_preview_file_path,
+                destination_preview_directory=str(destination_dir),
+                destination_preview_file_name=preview_file_name,
                 params=request.preview_generator_parameters,
             )
         except Exception as e:
@@ -282,13 +286,26 @@ class ArtifactManager:
         # OPTIONAL: Generate metadata if requested
         metadata_path = None
         if request.generate_preview_metadata_json:
-            # Helper to clean up preview file on metadata failure
+            # Helper to clean up preview file(s) on metadata failure
             def fail_with_cleanup(error_details: str) -> GeneratePreviewResultFailure:
-                delete_request = DeleteFileRequest(path=destination_preview_file_path, workspace_only=False)
-                delete_result = GriptapeNodes.handle_request(delete_request)
+                if isinstance(preview_file_names, str):
+                    preview_path = str(destination_dir / preview_file_names)
+                    delete_request = DeleteFileRequest(path=preview_path, workspace_only=False)
+                    delete_result = GriptapeNodes.handle_request(delete_request)
 
-                if delete_result.failed():
-                    error_details += f". Additionally, failed to delete preview file: {delete_result.result_details}"
+                    if delete_result.failed():
+                        error_details += (
+                            f". Additionally, failed to delete preview file: {delete_result.result_details}"
+                        )
+                else:
+                    # Multi-file cleanup
+                    for filename in preview_file_names.values():
+                        preview_path = str(destination_dir / filename)
+                        delete_request = DeleteFileRequest(path=preview_path, workspace_only=False)
+                        delete_result = GriptapeNodes.handle_request(delete_request)
+
+                        if delete_result.failed():
+                            error_details += f". Additionally, failed to delete preview file {filename}: {delete_result.result_details}"
 
                 return GeneratePreviewResultFailure(result_details=error_details)
 
@@ -298,7 +315,9 @@ class ArtifactManager:
                 source_macro_path=request.macro_path.parsed_macro.template,
                 source_file_size=file_info_result.file_entry.size,
                 source_file_modified_time=file_info_result.file_entry.modified_time,
-                preview_file_name=preview_file_name,
+                preview_file_names=preview_file_names,
+                preview_generator_name=generator_name,
+                preview_generator_parameters=deepcopy(request.preview_generator_parameters),
             )
 
             # Step 2: Serialize to JSON
@@ -326,12 +345,17 @@ class ArtifactManager:
                     f"Preview created but metadata write failed: {metadata_write_result.result_details}"
                 )
 
-        # SUCCESS PATH: Build result message
-        result_message = f"Successfully generated preview of {source_path}. Preview at {destination_preview_file_path}"
+        # SUCCESS PATH: Build result message and paths
+        if isinstance(preview_file_names, str):
+            paths_to_preview = str(destination_dir / preview_file_names)
+        else:
+            paths_to_preview = {key: str(destination_dir / filename) for key, filename in preview_file_names.items()}
+
+        result_message = f"Successfully generated preview of {source_path}"
         if metadata_path is not None:
             result_message += f". Metadata at {metadata_path}"
 
-        return GeneratePreviewResultSuccess(result_details=result_message)
+        return GeneratePreviewResultSuccess(result_details=result_message, paths_to_preview=paths_to_preview)
 
     async def on_handle_generate_preview_from_defaults_request(
         self, request: GeneratePreviewFromDefaultsRequest
@@ -375,9 +399,11 @@ class ArtifactManager:
             return GeneratePreviewFromDefaultsResultFailure(result_details=result.result_details)
 
         # SUCCESS PATH: Preview generated successfully
-        return GeneratePreviewFromDefaultsResultSuccess(result_details=result.result_details)
+        return GeneratePreviewFromDefaultsResultSuccess(
+            result_details=result.result_details, paths_to_preview=result.paths_to_preview
+        )
 
-    def on_handle_get_preview_for_artifact_request(  # noqa: C901, PLR0911
+    def on_handle_get_preview_for_artifact_request(  # noqa: C901, PLR0911, PLR0912
         self, request: GetPreviewForArtifactRequest
     ) -> GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure:
         """Handle get preview for artifact request.
@@ -488,22 +514,44 @@ class ArtifactManager:
                 )
             )
 
-        # Construct preview path from metadata
-        preview_file_path = str(destination_dir / metadata.preview_file_name)
+        # Construct preview path(s) from metadata and verify existence
+        if isinstance(metadata.preview_file_names, str):
+            # Single file case
+            preview_file_path = str(destination_dir / metadata.preview_file_names)
 
-        # FAILURE CASE: Verify preview file actually exists
-        preview_info_request = GetFileInfoRequest(path=preview_file_path, workspace_only=False)
-        preview_info_result = GriptapeNodes.handle_request(preview_info_request)
+            # FAILURE CASE: Verify preview file exists
+            preview_info_request = GetFileInfoRequest(path=preview_file_path, workspace_only=False)
+            preview_info_result = GriptapeNodes.handle_request(preview_info_request)
 
-        if not isinstance(preview_info_result, GetFileInfoResultSuccess) or preview_info_result.file_entry is None:
-            return GetPreviewForArtifactResultFailure(
-                result_details=f"Attempted to get preview for '{source_path}'. Metadata indicates preview at '{preview_file_path}' but file not found"
-            )
+            if not isinstance(preview_info_result, GetFileInfoResultSuccess) or preview_info_result.file_entry is None:
+                return GetPreviewForArtifactResultFailure(
+                    result_details=f"Attempted to get preview for '{source_path}'. Preview file not found."
+                )
 
-        # SUCCESS PATH: Return absolute path to preview
+            paths_to_preview = preview_file_path
+        else:
+            # Multi-file case - construct dict of paths
+            preview_file_paths = {}
+            for key, filename in metadata.preview_file_names.items():
+                preview_file_paths[key] = str(destination_dir / filename)
+
+            # FAILURE CASE: Verify all preview files exist
+            for key, file_path in preview_file_paths.items():
+                file_info_request = GetFileInfoRequest(path=file_path, workspace_only=False)
+                file_info_result = GriptapeNodes.handle_request(file_info_request)
+
+                if not isinstance(file_info_result, GetFileInfoResultSuccess) or file_info_result.file_entry is None:
+                    return GetPreviewForArtifactResultFailure(
+                        result_details=f"Attempted to get preview for '{source_path}'. "
+                        f"Preview file '{metadata.preview_file_names[key]}' (key '{key}') not found."
+                    )
+
+            paths_to_preview = preview_file_paths
+
+        # SUCCESS PATH: Return path(s) to preview
         return GetPreviewForArtifactResultSuccess(
-            result_details=f"Found preview for '{source_path}' at '{preview_file_path}'",
-            path_to_preview=preview_file_path,
+            result_details=f"Preview retrieved for '{source_path}'",
+            paths_to_preview=paths_to_preview,
         )
 
     def on_handle_list_artifact_providers_request(

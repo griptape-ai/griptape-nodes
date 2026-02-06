@@ -24,7 +24,8 @@ class BaseArtifactPreviewGenerator(ABC):
         self,
         source_file_location: str,
         preview_format: str,
-        destination_preview_file_location: str,
+        destination_preview_directory: str,
+        destination_preview_file_name: str,
         _params: dict[str, Any],
     ) -> None:
         """Initialize the preview generator.
@@ -32,12 +33,14 @@ class BaseArtifactPreviewGenerator(ABC):
         Args:
             source_file_location: Path to the source artifact file
             preview_format: Target format for the preview (e.g., "png", "jpg", "webp")
-            destination_preview_file_location: Path where the preview should be saved
+            destination_preview_directory: Directory where the preview should be saved
+            destination_preview_file_name: Filename for the preview
             _params: Generator-specific parameters (concrete implementations validate internally)
         """
         self.source_file_location = source_file_location
         self.preview_format = preview_format
-        self.destination_preview_file_location = destination_preview_file_location
+        self.destination_preview_directory = destination_preview_directory
+        self.destination_preview_file_name = destination_preview_file_name
 
     @classmethod
     @abstractmethod
@@ -101,10 +104,28 @@ class BaseArtifactPreviewGenerator(ABC):
         return f"artifacts.{provider_key}.preview_generation.preview_generator_configurations.{generator_key}"
 
     @abstractmethod
-    async def generate_preview(self) -> None:
-        """Execute the preview generation.
+    async def attempt_generate_preview(self) -> str | dict[str, str]:
+        """Attempt to generate preview file(s).
+
+        Writes file(s) to destination directory using provided filename or generated names.
+
+        Returns:
+            str: Single filename if one preview generated (e.g., "thumbnail.webp")
+            dict[str, str]: Multiple filenames if multiple previews generated
+                (e.g., {"mask_r": "output_R.png", "mask_g": "output_G.png"})
 
         Raises:
             Exception: If preview generation fails
+
+        Examples:
+            Single file generator:
+                return "thumbnail.webp"
+
+            Multi-file generator:
+                return {
+                    "mask_r": "output_R.png",
+                    "mask_g": "output_G.png",
+                    "composite": "composite.png"
+                }
         """
         ...

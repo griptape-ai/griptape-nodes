@@ -498,13 +498,17 @@ class TestGeneratePreview:
         assert "source_macro_path" in metadata_dict
         assert "source_file_size" in metadata_dict
         assert "source_file_modified_time" in metadata_dict
-        assert "preview_file_name" in metadata_dict
+        assert "preview_file_names" in metadata_dict
+        assert "preview_generator_name" in metadata_dict
+        assert "preview_generator_parameters" in metadata_dict
 
         # Verify metadata values match source file
         source_stat = test_image_path.stat()
         assert metadata_dict["source_file_size"] == source_stat.st_size
         assert metadata_dict["source_file_modified_time"] == source_stat.st_mtime
-        assert metadata_dict["preview_file_name"] == f"{test_image_path.name}.png"
+        assert metadata_dict["preview_file_names"] == f"{test_image_path.name}.png"
+        assert metadata_dict["preview_generator_name"] == "Standard Thumbnail Generation"
+        assert metadata_dict["preview_generator_parameters"] == {"max_width": 50, "max_height": 50}
         assert metadata_dict["version"] == PreviewMetadata.LATEST_SCHEMA_VERSION
 
     @pytest.mark.asyncio
@@ -605,7 +609,7 @@ class TestGeneratePreview:
         metadata_path = preview_dir / f"{test_image_path.name}.json"
         with metadata_path.open() as f:
             metadata_dict = json.load(f)
-        assert metadata_dict["preview_file_name"] == f"{test_image_path.name}.webp"
+        assert metadata_dict["preview_file_names"] == f"{test_image_path.name}.webp"
 
     @pytest.mark.asyncio
     async def test_generate_preview_specific_generator(
@@ -662,7 +666,9 @@ class TestGeneratePreview:
         assert metadata.source_macro_path == str(test_image_path)
         assert metadata.source_file_size > 0
         assert metadata.source_file_modified_time > 0
-        assert metadata.preview_file_name == f"{test_image_path.name}.png"
+        assert metadata.preview_file_names == f"{test_image_path.name}.png"
+        assert metadata.preview_generator_name == "Standard Thumbnail Generation"
+        assert isinstance(metadata.preview_generator_parameters, dict)
 
 
 class TestGetPreviewForArtifact:
@@ -732,9 +738,10 @@ class TestGetPreviewForArtifact:
         result = artifact_manager.on_handle_get_preview_for_artifact_request(request)
 
         assert isinstance(result, GetPreviewForArtifactResultSuccess)
-        assert result.path_to_preview is not None
-        assert Path(result.path_to_preview).exists()
-        assert Path(result.path_to_preview).is_absolute()
+        assert result.paths_to_preview is not None
+        assert isinstance(result.paths_to_preview, str)
+        assert Path(result.paths_to_preview).exists()
+        assert Path(result.paths_to_preview).is_absolute()
 
     def test_get_preview_source_file_not_found(self, artifact_manager: ArtifactManager, temp_dir: Path) -> None:
         """Test getting preview for non-existent source file."""

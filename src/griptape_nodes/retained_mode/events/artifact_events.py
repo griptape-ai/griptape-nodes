@@ -66,7 +66,16 @@ class GeneratePreviewRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GeneratePreviewResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Preview generated successfully."""
+    """Preview generated successfully.
+
+    Attributes:
+        paths_to_preview: Absolute path(s) to generated preview file(s).
+            - str: Single preview file path (e.g., "/path/to/image.png.webp")
+            - dict[str, str]: Multiple preview files with semantic keys
+              (e.g., {"mask_r": "/path/to/output_R.png", "mask_g": "/path/to/output_G.png"})
+    """
+
+    paths_to_preview: str | dict[str, str]
 
 
 @dataclass
@@ -100,7 +109,16 @@ class GeneratePreviewFromDefaultsRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GeneratePreviewFromDefaultsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Preview generated successfully using config defaults."""
+    """Preview generated successfully using config defaults.
+
+    Attributes:
+        paths_to_preview: Absolute path(s) to generated preview file(s).
+            - str: Single preview file path (e.g., "/path/to/image.png.webp")
+            - dict[str, str]: Multiple preview files with semantic keys
+              (e.g., {"mask_r": "/path/to/output_R.png", "mask_g": "/path/to/output_G.png"})
+    """
+
+    paths_to_preview: str | dict[str, str]
 
 
 @dataclass
@@ -128,9 +146,16 @@ class GetPreviewForArtifactRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetPreviewForArtifactResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Preview retrieved successfully."""
+    """Preview retrieved successfully.
 
-    path_to_preview: str
+    Attributes:
+        paths_to_preview: Absolute path(s) to retrieved preview file(s).
+            - str: Single preview file path (e.g., "/path/to/image.png.webp")
+            - dict[str, str]: Multiple preview files with semantic keys
+              (e.g., {"mask_r": "/path/to/output_R.png", "mask_g": "/path/to/output_G.png"})
+    """
+
+    paths_to_preview: str | dict[str, str]
 
 
 @dataclass
