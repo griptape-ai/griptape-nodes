@@ -981,7 +981,7 @@ class ImageGridSplitter(DataNode):
                     node_name=self.name,
                     parameter_name=name,
                     type="ImageUrlArtifact",
-                    input_types=None,
+                    input_types=["ImageUrlArtifact", "ImageArtifact", "str"],
                     output_type="ImageUrlArtifact",
                     tooltip=f"Grid cell output {name} (row-major).",
                     ui_options={
