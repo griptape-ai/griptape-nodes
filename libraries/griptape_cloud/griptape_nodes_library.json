@@ -69,6 +69,14 @@
         "description": "Griptape Cloud Structures",
         "icon": "layout-panel-top"
       }
+    },
+    {
+      "griptape_cloud/knowledge_bases": {
+        "color": "border-purple-500",
+        "title": "GTC Knowledge Bases",
+        "description": "Query Griptape Cloud Knowledge Bases",
+        "icon": "book-open"
+      }
     }
   ],
   "nodes": [
@@ -160,6 +168,15 @@
         "category": "griptape_cloud/structures",
         "description": "Griptape Node that runs a specific structure.",
         "display_name": "Run Structure"
+      }
+    },
+    {
+      "class_name": "QueryKnowledgeBase",
+      "file_path": "griptape_cloud/knowledge_bases/query_knowledge_base.py",
+      "metadata": {
+        "category": "griptape_cloud/knowledge_bases",
+        "description": "Query a Griptape Cloud Knowledge Base using a RAG pipeline and optional agent.",
+        "display_name": "Query Knowledge Base"
       }
     }
   ],

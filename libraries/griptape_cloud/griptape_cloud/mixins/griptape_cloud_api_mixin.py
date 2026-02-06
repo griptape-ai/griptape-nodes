@@ -17,6 +17,7 @@ from griptape_cloud_client.api.deployments.get_deployment import sync as get_dep
 from griptape_cloud_client.api.deployments.list_structure_deployments import sync as list_structure_deployments
 from griptape_cloud_client.api.events.list_assistant_events import sync as list_assistant_events
 from griptape_cloud_client.api.events.list_events import sync as list_events
+from griptape_cloud_client.api.knowledge_bases.list_knowledge_bases import sync as list_knowledge_bases
 from griptape_cloud_client.api.structure_runs.create_structure_run import sync as create_structure_run
 from griptape_cloud_client.api.structure_runs.get_structure_run import sync as get_structure_run
 from griptape_cloud_client.api.structures.list_structures import sync as list_structures
@@ -59,6 +60,9 @@ from griptape_cloud_client.models.list_assistant_events_response_content import 
 from griptape_cloud_client.models.list_assistants_response_content import ListAssistantsResponseContent
 from griptape_cloud_client.models.list_buckets_response_content import ListBucketsResponseContent
 from griptape_cloud_client.models.list_events_response_content import ListEventsResponseContent
+from griptape_cloud_client.models.list_knowledge_bases_response_content import (
+    ListKnowledgeBasesResponseContent,
+)
 from griptape_cloud_client.models.list_structure_deployments_response_content import (
     ListStructureDeploymentsResponseContent,
 )
@@ -349,6 +353,22 @@ class GriptapeCloudApiMixin:
             raise TypeError(msg)  # noqa: TRY301
         except Exception as e:
             logger.error("Error creating asset URL: %s", e)
+            raise
+
+    def _list_knowledge_bases(self) -> ListKnowledgeBasesResponseContent:
+        try:
+            response = list_knowledge_bases(
+                client=self.gtc_client,
+                page=1,
+                page_size=100,
+            )
+            if isinstance(response, ListKnowledgeBasesResponseContent):
+                return response
+            msg = f"Unexpected response type: {type(response)}"
+            logger.error(msg)
+            raise TypeError(msg)  # noqa: TRY301
+        except Exception as e:
+            logger.error("Error listing knowledge bases: %s", e)
             raise
 
     def _list_structures(self) -> ListStructuresResponseContent:
