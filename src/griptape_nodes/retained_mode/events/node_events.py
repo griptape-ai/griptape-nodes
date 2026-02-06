@@ -56,6 +56,7 @@ class CreateNodeRequest(RequestPayload):
         set_as_new_context: Set this node as current context after creation (defaults to False)
         create_error_proxy_on_failure: Create Error Proxy node if creation fails (defaults to True)
         node_names_to_add: List of existing node names to add to this node after creation (used by SubflowNodeGroup, defaults to None)
+        subflow_name: Subflow name for node groups (if None, a fresh one will be created; used by SubflowNodeGroup, defaults to None)
 
     Results: CreateNodeResultSuccess (with assigned name) | CreateNodeResultFailure (invalid type, missing library, flow not found)
     """
@@ -75,6 +76,8 @@ class CreateNodeRequest(RequestPayload):
     create_error_proxy_on_failure: bool = True
     # List of node names to add to this node after creation (used by SubflowNodeGroup)
     node_names_to_add: list[str] | None = None
+    # Subflow name for node groups (if None, a fresh one will be created; used by SubflowNodeGroup)
+    subflow_name: str | None = None
 
 
 @dataclass
@@ -566,6 +569,8 @@ class SerializeNodeToCommandsRequest(RequestPayload):
     )
     use_pickling: bool = False
     serialize_all_parameter_values: bool = False
+    # If True, keep subflow_name in group metadata for workflow file generation (defaults to False for copy/paste)
+    include_existing_subflow_in_group: bool = False
 
 
 @dataclass
@@ -652,6 +657,7 @@ class SerializeSelectedNodesToCommandsResultSuccess(WorkflowNotAlteredMixin, Res
     # Could be a flow command if it's all nodes in a flow.
     serialized_selected_node_commands: str
     pickled_values: dict[str, str]
+    node_names_serialized: list[str]
 
 
 @dataclass
@@ -688,10 +694,12 @@ class DeserializeSelectedNodesFromCommandsResultSuccess(WorkflowAlteredMixin, Re
     """Nodes recreated successfully from serialized commands. Parameter values and connections restored.
 
     Args:
-        node_names: List of names assigned to newly created nodes
+        node_names: List of all node names created (including children)
+        non_children_names: List of node names that are not children, which should have connections remapped in a duplicate operation.
     """
 
     node_names: list[str]
+    non_children_names: list[str] = field(default_factory=list)
 
 
 @dataclass
