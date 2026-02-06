@@ -743,7 +743,7 @@ class BaseNode(ABC):
                 return element_item
         return None
 
-    def set_parameter_value(
+    def set_parameter_value(  # noqa: C901, PLR0912
         self,
         param_name: str,
         value: Any,
@@ -810,10 +810,19 @@ class BaseNode(ABC):
             # If a parameter value has been set at the top level of a container, wipe all children.
             # Allow custom node logic to respond after it's been set. Record any modified parameters for cascading.
             self.after_value_set(parameter=parameter, value=final_value)
+
+            # Allow parameter itself to respond after value is set (for reactive UI updates)
+            if hasattr(parameter, "after_value_set") and callable(parameter.after_value_set):  # type: ignore[attr-defined]
+                parameter.after_value_set(final_value)  # type: ignore[attr-defined]
+
             if emit_change:
                 self._emit_parameter_lifecycle_event(parameter)
         else:
             self.parameter_values[param_name] = candidate_value
+
+            # Allow parameter itself to respond after value is set during initial setup
+            if hasattr(parameter, "after_value_set") and callable(parameter.after_value_set):  # type: ignore[attr-defined]
+                parameter.after_value_set(candidate_value)  # type: ignore[attr-defined]
         # handle with container parameters
         if parameter.parent_container_name is not None:
             # Does it have a parent container

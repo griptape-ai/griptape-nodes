@@ -97,9 +97,9 @@ class GenerateImage(ControlNode):
         )
         self.file_path = ParameterFileLocation(
             name="file_path",
-            default_value="output.png",
+            default_value="{workflow_name}_output.png",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="File location for saving image (accepts FileLocation or string path)",
+            tooltip="File location for saving image (supports macros like {workflow_name}, {outputs}, etc.)",
         )
         self.add_parameter(self.file_path)
         # Group for logging information.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import time
 from contextlib import suppress
 from copy import deepcopy
 from io import BytesIO
@@ -13,11 +12,11 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
+from griptape_nodes.exe_types.param_types.parameter_file_location import ParameterFileLocation
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -224,6 +223,15 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 ui_options={"hide": True},
             )
         )
+
+        # File path parameter for saving images
+        self.file_path = ParameterFileLocation(
+            name="file_path",
+            default_value="seedream_{index}.png",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            tooltip="File location for saving images (supports macros like {index} for multi-image generation)",
+        )
+        self.add_parameter(self.file_path)
 
         # OUTPUTS
         self.add_parameter(
@@ -643,13 +651,16 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
     async def _save_single_image_from_url(
-        self, image_url: str, generation_id: str | None = None, index: int = 0
+        self,
+        image_url: str,
+        generation_id: str | None = None,  # noqa: ARG002
+        index: int = 0,
     ) -> ImageUrlArtifact | None:
         """Download and save a single image from the provided URL.
 
         Args:
             image_url: URL of the image to download
-            generation_id: Optional generation ID for filename
+            generation_id: Optional generation ID for filename (unused, kept for compatibility)
             index: Index of the image in multi-image response
 
         Returns:
@@ -668,13 +679,11 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             pil_image.save(png_buffer, format="PNG")
             png_bytes = png_buffer.getvalue()
 
-            if generation_id:
-                filename = f"seedream_image_{generation_id}_{index}.png"
-            else:
-                filename = f"seedream_image_{int(time.time())}_{index}.png"
+            # Use file_path parameter with index - it handles all the complexity
+            saved_url = self.file_path.save(png_bytes, index=index)
 
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(png_bytes, filename)
+            # Extract filename from the saved URL for the artifact name
+            filename = saved_url.split("/")[-1]
             self._log(f"Saved image {index} to static storage as {filename}")
             return ImageUrlArtifact(value=saved_url, name=filename)
 

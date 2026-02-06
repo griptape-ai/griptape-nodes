@@ -23,12 +23,15 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_file_location import ParameterFileLocation
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
+    GetAllSituationsForProjectRequest,
+    GetAllSituationsForProjectResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
     GetSituationRequest,
@@ -82,7 +85,9 @@ class ResolveFilePath(BaseNode):
         super().__init__(**kwargs)
 
         self._updating_lock = False
-        self._situation_name = "save_node_output"  # Default situation
+
+        # Fetch available situations from project
+        self._available_situations = self._fetch_available_situations()
 
         # Create parameters
         self._create_parameters()
@@ -90,8 +95,84 @@ class ResolveFilePath(BaseNode):
         # Load project situation and perform initial resolution
         self._load_project_situation()
 
+    def _fetch_available_situations(self) -> list[str]:
+        """Fetch available situations from ProjectManager.
+
+        Returns:
+            List of situation names, or fallback list if fetch fails
+        """
+        request = GetAllSituationsForProjectRequest()
+        result = GriptapeNodes.ProjectManager().on_get_all_situations_for_project_request(request)
+
+        if not isinstance(result, GetAllSituationsForProjectResultSuccess):
+            logger.warning("%s: Failed to fetch situations from project", self.name)
+            # Fallback to known default situations
+            return ["save_node_output", "save_file", "copy_external_file", "download_url", "save_preview"]
+
+        return sorted(result.situations.keys())
+
     def _create_parameters(self) -> None:
         """Create all parameters for the node."""
+        # situation parameter (dropdown selector)
+        self.situation = ParameterString(
+            name="situation",
+            default_value="save_node_output",
+            allowed_modes={ParameterMode.PROPERTY},
+            tooltip="Select the file save situation template to use for path resolution",
+            traits={Options(choices=self._available_situations)},
+            settable=True,
+        )
+        self.add_parameter(self.situation)
+
+        # Situation group
+        with ParameterGroup(name="Situation") as situation_group:
+            self.macro = ParameterString(
+                name="macro",
+                default_value="",
+                tooltip="Macro template for output path resolution",
+                settable=True,
+            )
+
+            self.allow_creating_intermediate_dirs = Parameter(
+                name="allow_creating_intermediate_dirs",
+                type="bool",
+                default_value=True,
+                allowed_modes={ParameterMode.PROPERTY},
+                tooltip="Allow creating parent directories if they don't exist",
+                settable=True,
+            )
+
+            self.overwrite_policy = Parameter(
+                name="overwrite_policy",
+                type="str",
+                default_value=POLICY_STRING_CREATE_NEW,
+                allowed_modes={ParameterMode.PROPERTY},
+                tooltip="Policy for handling existing files",
+                traits={
+                    Options(choices=[POLICY_STRING_CREATE_NEW, POLICY_STRING_OVERWRITE, POLICY_STRING_FAIL]),
+                },
+                settable=True,
+            )
+
+            ParameterButton(
+                name="reset_situation",
+                label="Reset",
+                variant="default",
+                icon="refresh-cw",
+                on_click=self._on_reset_situation_clicked,
+            )
+
+        self.add_node_element(situation_group)
+
+        # Absolute path warning
+        self.absolute_path_warning = ParameterMessage(
+            name="absolute_path_warning",
+            variant="warning",
+            value="The file path specified could not be found within a directory defined within the current project. This may affect portability.",
+            ui_options={"hide": True},
+        )
+        self.add_node_element(self.absolute_path_warning)
+
         # filename parameter (user input)
         self.filename = ParameterString(
             name="filename",
@@ -127,63 +208,6 @@ class ResolveFilePath(BaseNode):
         )
         self.add_parameter(self.file_location)
 
-        # File Location Macro group
-        with ParameterGroup(name="File Location Macro") as file_location_group:
-            self.macro = ParameterString(
-                name="macro",
-                default_value="",
-                tooltip="Macro template for output path resolution",
-                settable=True,
-                traits={
-                    Button(
-                        label="Reset",
-                        variant="default",
-                        on_click=self._on_reset_macro_clicked,
-                    )
-                },
-            )
-
-        self.add_node_element(file_location_group)
-
-        # Absolute path warning
-        self.absolute_path_warning = ParameterMessage(
-            name="absolute_path_warning",
-            variant="warning",
-            value="The file path specified could not be found within a directory defined within the current project. This may affect portability.",
-            ui_options={"hide": True},
-        )
-        self.add_node_element(self.absolute_path_warning)
-
-        # Save Policy group
-        with ParameterGroup(name="Save Policy") as save_policy_group:
-            self.allow_creating_intermediate_dirs = Parameter(
-                name="allow_creating_intermediate_dirs",
-                type="bool",
-                default_value=True,
-                allowed_modes={ParameterMode.PROPERTY},
-                tooltip="Allow creating parent directories if they don't exist",
-                settable=True,
-            )
-
-            self.overwrite_policy = Parameter(
-                name="overwrite_policy",
-                type="str",
-                default_value=POLICY_STRING_CREATE_NEW,
-                allowed_modes={ParameterMode.PROPERTY},
-                tooltip="Policy for handling existing files",
-                traits={
-                    Options(choices=[POLICY_STRING_CREATE_NEW, POLICY_STRING_OVERWRITE, POLICY_STRING_FAIL]),
-                    Button(
-                        label="Reset",
-                        variant="default",
-                        on_click=self._on_reset_policy_defaults_clicked,
-                    ),
-                },
-                settable=True,
-            )
-
-        self.add_node_element(save_policy_group)
-
     def set_parameter_value(self, param_name: str, value: Any, **kwargs: Any) -> None:
         """Override to handle reactive path resolution updates."""
         super().set_parameter_value(param_name, value, **kwargs)
@@ -198,6 +222,7 @@ class ResolveFilePath(BaseNode):
 
         # Check if this is a parameter we manage
         managed_params = {
+            self.situation.name,
             self.filename.name,
             self.macro.name,
             self.allow_creating_intermediate_dirs.name,
@@ -211,7 +236,11 @@ class ResolveFilePath(BaseNode):
         self._updating_lock = True
         try:
             # Handle parameter changes
-            if param_name in managed_params:
+            if param_name == self.situation.name:
+                # Situation changes reload the entire template
+                self._load_project_situation()
+            else:
+                # Other parameter changes trigger path resolution
                 self._resolve_and_update_path()
         finally:
             # Always clear the lock
@@ -234,11 +263,12 @@ class ResolveFilePath(BaseNode):
 
     def _load_project_situation(self) -> None:
         """Load situation template from ProjectManager and set defaults."""
-        request = GetSituationRequest(situation_name=self._situation_name)
+        situation_name = self.get_parameter_value(self.situation.name)
+        request = GetSituationRequest(situation_name=situation_name)
         result = GriptapeNodes.ProjectManager().on_get_situation_request(request)
 
         if not isinstance(result, GetSituationResultSuccess):
-            logger.warning("%s: Could not load situation template '%s'", self.name, self._situation_name)
+            logger.warning("%s: Could not load situation template '%s'", self.name, situation_name)
             return
 
         # Set macro parameter value
@@ -326,21 +356,23 @@ class ResolveFilePath(BaseNode):
             normalized_path=str(resolved),
         )
 
-    def _create_file_location(self, resolved_path: str) -> FileLocation:
-        """Create FileLocation from resolved path and current policies.
+    def _create_file_location(self, macro_template: str, variables: dict[str, str | int]) -> FileLocation:
+        """Create FileLocation from macro template, variables, and current policies.
 
         Args:
-            resolved_path: The absolute resolved file path
+            macro_template: The macro template string
+            variables: Variables for macro resolution
 
         Returns:
-            FileLocation object with path and configured policies
+            FileLocation object with template, variables, and configured policies
         """
         overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
         existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
 
         return FileLocation(
-            resolved_path=resolved_path,
+            macro_template=macro_template,
+            base_variables=variables,
             existing_file_policy=existing_file_policy,
             create_parent_dirs=allow_create_dirs,
         )
@@ -371,7 +403,7 @@ class ResolveFilePath(BaseNode):
             "node_name": self.name,
         }
 
-        # Resolve the macro
+        # Resolve the macro to get the absolute path for display in resolved_path output
         parsed_macro = ParsedMacro(macro_template)
         resolve_result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(
             GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables)
@@ -381,50 +413,55 @@ class ResolveFilePath(BaseNode):
             logger.error("%s: Failed to resolve macro: %s", self.name, macro_template)
             return
 
-        # Use the absolute path
+        # Set resolved_path output for display
         resolved_absolute_path = str(resolve_result.absolute_path)
         self.set_parameter_value(self.resolved_path.name, resolved_absolute_path)
 
-        # Create and set file_location output
-        file_location = self._create_file_location(resolved_absolute_path)
+        # Create and set file_location output with template and variables
+        file_location = self._create_file_location(macro_template, variables)
         self.set_parameter_value(self.file_location.name, file_location)
 
         # Hide warning
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_inside_project(self, classified: ClassifiedPath) -> None:
-        """Handle absolute path inside project - resolve macro to get absolute path."""
+        """Handle absolute path inside project - use macro form as template."""
         logger.debug("%s: Handling absolute path inside project: %s", self.name, classified.normalized_path)
 
         # The normalized_path is in macro form (e.g., "{outputs}/file.png")
-        # We need to resolve it to get the absolute path
-        parsed_macro = ParsedMacro(classified.normalized_path)
+        macro_template = classified.normalized_path
+
+        # Resolve it to get the absolute path for display
+        parsed_macro = ParsedMacro(macro_template)
         resolve_result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(
             GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
         )
 
         if not isinstance(resolve_result, GetPathForMacroResultSuccess):
-            logger.error("%s: Failed to resolve macro: %s", self.name, classified.normalized_path)
+            logger.error("%s: Failed to resolve macro: %s", self.name, macro_template)
             return
 
-        # Use the absolute path
+        # Set resolved_path output for display
         resolved_absolute_path = str(resolve_result.absolute_path)
         self.set_parameter_value(self.resolved_path.name, resolved_absolute_path)
 
-        # Create and set file_location output
-        file_location = self._create_file_location(resolved_absolute_path)
+        # Create and set file_location output with macro template and empty variables
+        file_location = self._create_file_location(macro_template, {})
         self.set_parameter_value(self.file_location.name, file_location)
 
         # Hide warning
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_outside_project(self, classified: ClassifiedPath) -> None:
-        """Handle absolute path outside project - use directly, show warning."""
+        """Handle absolute path outside project - use directly as literal template, show warning."""
         logger.debug("%s: Handling absolute path outside project: %s", self.name, classified.normalized_path)
-        self.set_parameter_value(self.resolved_path.name, classified.normalized_path)
 
-        # Create and set file_location output
-        file_location = self._create_file_location(classified.normalized_path)
+        # Use the absolute path directly
+        absolute_path = classified.normalized_path
+        self.set_parameter_value(self.resolved_path.name, absolute_path)
+
+        # Create file_location with the absolute path as a literal template (no variables)
+        file_location = self._create_file_location(absolute_path, {})
         self.set_parameter_value(self.file_location.name, file_location)
 
         # Show absolute path warning
@@ -432,12 +469,12 @@ class ResolveFilePath(BaseNode):
 
     # Private methods for button handlers
 
-    def _on_reset_macro_clicked(
+    def _on_reset_situation_clicked(
         self,
         button: Button,  # noqa: ARG002
         button_details: ButtonDetailsMessagePayload,
     ) -> NodeMessageResult:
-        """Handle Reset to Project Macro button click."""
+        """Handle Reset to Situation Defaults button click."""
         self._load_project_situation()
 
         # Publish updates to UI
@@ -452,32 +489,7 @@ class ResolveFilePath(BaseNode):
 
         return NodeMessageResult(
             success=True,
-            details="Macro reset to project default",
-            response=button_details,
-            altered_workflow_state=True,
-        )
-
-    def _on_reset_policy_defaults_clicked(
-        self,
-        button: Button,  # noqa: ARG002
-        button_details: ButtonDetailsMessagePayload,
-    ) -> NodeMessageResult:
-        """Handle Reset to Project Defaults button click."""
-        self._load_project_situation()
-
-        # Publish updates to UI
-        self.publish_update_to_parameter(self.macro.name, self.get_parameter_value(self.macro.name))
-        self.publish_update_to_parameter(
-            self.allow_creating_intermediate_dirs.name,
-            self.get_parameter_value(self.allow_creating_intermediate_dirs.name),
-        )
-        self.publish_update_to_parameter(
-            self.overwrite_policy.name, self.get_parameter_value(self.overwrite_policy.name)
-        )
-
-        return NodeMessageResult(
-            success=True,
-            details="Policy reset to project defaults",
+            details="Situation parameters reset to defaults",
             response=button_details,
             altered_workflow_state=True,
         )

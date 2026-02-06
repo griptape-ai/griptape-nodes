@@ -6,7 +6,6 @@ from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, Pa
 from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 
@@ -84,6 +83,21 @@ class ParameterFileLocation(Parameter):
             **kwargs,
         )
 
+        # Set initial helper text if we have a default value
+        # Note: _node_context will be set later when parameter is attached to node
+        # So we'll also update helper text in after_value_set()
+        self._initial_helper_text_set = False
+
+    def _set_initial_helper_text(self) -> None:
+        """Set initial helper text once node context is available."""
+        if self._initial_helper_text_set or not self._node_context:
+            return
+
+        self._initial_helper_text_set = True
+        preview = self.get_resolved_path_preview(index=0)
+        if preview:
+            self.update_ui_options_key("helper_text", preview)
+
     def _create_path_resolver_callback(
         self,
         param_name: str,
@@ -158,6 +172,7 @@ class ParameterFileLocation(Parameter):
     def save(
         self,
         data: bytes,
+        index: int = 0,
         *,
         use_direct_save: bool = True,
         skip_metadata_injection: bool = False,
@@ -165,11 +180,12 @@ class ParameterFileLocation(Parameter):
         """Save data using this parameter's current value.
 
         Handles two cases:
-        - str: use string path with default policies
-        - FileLocation: delegate to FileLocation.save() with configured policies
+        - str: treat as macro template, resolve with ProjectManager, use with default policies
+        - FileLocation: delegate to FileLocation.save() with configured policies and index
 
         Args:
             data: Binary data to save
+            index: Index for multi-image generation (0 for single image)
             use_direct_save: Whether to save directly without cloud storage
             skip_metadata_injection: Whether to skip metadata injection
 
@@ -180,7 +196,7 @@ class ParameterFileLocation(Parameter):
             ValueError: If parameter value is None or empty string
             TypeError: If parameter value is an unexpected type
             FileExistsError: If file exists and policy is FAIL
-            RuntimeError: If save operation fails
+            RuntimeError: If save operation fails or macro resolution fails
         """
         if not self._node_context:
             error_msg = f"{self.name}: Parameter has no parent node context"
@@ -193,23 +209,99 @@ class ParameterFileLocation(Parameter):
             raise ValueError(error_msg)
 
         if isinstance(value, str):
-            file_name = value
-        elif isinstance(value, FileLocation):
-            # FileLocation has policies configured, use its save method
+            # Create FileLocation with the string as macro template and default policies
+            # Only provide node_name as a variable - don't extract file_name_base/file_extension
+            # from the template itself (those are only meaningful in ResolveFilePath with separate filename input)
+            variables: dict[str, str | int] = {
+                "node_name": self._node_context.name,
+            }
+
+            value = FileLocation(
+                macro_template=value,
+                base_variables=variables,
+                existing_file_policy=ExistingFilePolicy.OVERWRITE,
+                create_parent_dirs=True,
+            )
+
+        if isinstance(value, FileLocation):
+            # FileLocation has policies configured, use its save method with index
             return value.save(
                 data,
+                index=index,
                 use_direct_save=use_direct_save,
                 skip_metadata_injection=skip_metadata_injection,
             )
-        else:
-            error_msg = f"{self._node_context.name}: {self.name} has unexpected value type: {type(value)}"
-            raise TypeError(error_msg)
 
-        # For string case, use StaticFilesManager with default policies
-        return GriptapeNodes.StaticFilesManager().save_static_file(
-            data=data,
-            file_name=file_name,
-            existing_file_policy=ExistingFilePolicy.OVERWRITE,
-            use_direct_save=use_direct_save,
-            skip_metadata_injection=skip_metadata_injection,
-        )
+        error_msg = f"{self._node_context.name}: {self.name} has unexpected value type: {type(value)}"
+        raise TypeError(error_msg)
+
+    def get_resolved_path_preview(self, index: int = 0) -> str | None:
+        """Compute what the resolved path would be without saving (dry run).
+
+        Args:
+            index: Index for multi-image generation preview (default 0)
+
+        Returns:
+            Resolved absolute path string, or None if resolution fails
+        """
+        if not self._node_context:
+            return None
+
+        value = self._node_context.get_parameter_value(self.name)
+
+        if value is None or (isinstance(value, str) and not value):
+            return None
+
+        if isinstance(value, str):
+            # Create variables dict for macro resolution
+            variables: dict[str, str | int] = {
+                "node_name": self._node_context.name,
+            }
+            if index > 0:
+                variables["index"] = index
+
+            # Resolve macro template
+            from griptape_nodes.common.macro_parser import ParsedMacro
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetPathForMacroResultSuccess,
+            )
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            parsed_macro = ParsedMacro(value)
+            resolve_request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables)
+            result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(resolve_request)
+
+            if isinstance(result, GetPathForMacroResultSuccess):
+                return str(result.absolute_path)
+            return None
+
+        if isinstance(value, FileLocation):
+            # Use FileLocation's __str__() which resolves the path
+            return str(value)
+
+        return None
+
+    def after_value_set(self, new_value: Any) -> None:  # noqa: ARG002
+        """Update helper text when parameter value changes.
+
+        Args:
+            new_value: The new value that was just set
+        """
+        if not self._node_context:
+            return
+
+        # Set initial helper text if not already set
+        self._set_initial_helper_text()
+
+        # Compute preview
+        preview = self.get_resolved_path_preview(index=0)
+
+        # Update helper text in ui_options
+        if preview:
+            self.update_ui_options_key("helper_text", preview)
+        else:
+            # Clear helper text if resolution fails
+            ui_options = self.ui_options.copy()
+            ui_options.pop("helper_text", None)
+            self.ui_options = ui_options
