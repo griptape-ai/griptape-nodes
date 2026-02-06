@@ -44,7 +44,7 @@ BADGE_MESSAGE = """
 Select a Knowledge Base to use. 
 Use the refresh button to reload the list of Knowledge Bases.
 
-To manage your knowledge bases, visit the [Griptape Cloud Knowledge Base Management](https://app.griptape.cloud/knowledge-bases) page.
+To manage your knowledge bases, visit the [Griptape Cloud Knowledge Base](https://cloud.griptape.ai/knowledge-bases) page.
 """
 
 
