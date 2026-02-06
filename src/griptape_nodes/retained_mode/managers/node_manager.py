@@ -2818,6 +2818,7 @@ class NodeManager:
             set_parameter_value_commands=set_value_commands,  # The commands to serialize it with
             result_details=details,
         )
+        logger.info("[SERIALIZE_NODE] EXIT SUCCESS | Node: '%s' | Request ID: %s", node_name, id(request))
         return result
 
     def check_response(self, response: object, class_to_check: type, attribute_to_retrieve: Any) -> Any:

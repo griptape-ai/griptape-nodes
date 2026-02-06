@@ -532,7 +532,8 @@ class ContextManager:
 
         current_workflow = self._workflow_stack[-1]
         current_flow = current_workflow._flow_stack[-1]
-        return current_flow.push_node(node)
+        result = current_flow.push_node(node)
+        return result
 
     def pop_node(self) -> BaseNode:
         """Pop the current Node context from the stack for the current Flow.
@@ -550,7 +551,8 @@ class ContextManager:
 
         current_workflow = self._workflow_stack[-1]
         current_flow = current_workflow._flow_stack[-1]
-        return current_flow.pop_node()
+        result = current_flow.pop_node()
+        return result
 
     def push_element(self, element: BaseNodeElement) -> BaseNodeElement:
         """Push a new element onto the stack for the current node.

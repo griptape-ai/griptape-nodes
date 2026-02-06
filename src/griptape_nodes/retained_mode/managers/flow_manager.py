@@ -3453,6 +3453,7 @@ class FlowManager:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
                 flow_name = flow.name
+                pushed_flow_context=False
             else:
                 details = "Attempted to deserialize a set of Flow Creation commands into the Current Context. Failed because the Current Context was empty."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
@@ -3483,6 +3484,7 @@ class FlowManager:
                 details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to find created flow '{flow_name}'."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             GriptapeNodes.ContextManager().push_flow(flow=flow)
+            pushed_flow_context = True  # Mark that we pushed this flow
 
         # Deserializing a flow goes in a specific order.
 
@@ -3596,6 +3598,8 @@ class FlowManager:
 
                     # Call the SetParameterValueRequest, subbing in the value from our unique value list.
                     indirect_set_value_command.set_parameter_value_command.value = value
+                    # Update the parameter value command to have the correct name.
+                    indirect_set_value_command.set_parameter_value_command.node_name = node.name
                     set_parameter_value_result = GriptapeNodes.handle_request(
                         indirect_set_value_command.set_parameter_value_command
                     )
@@ -3605,11 +3609,20 @@ class FlowManager:
 
         # Now the child flows.
         for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
-            sub_flow_request = DeserializeFlowFromCommandsRequest(serialized_flow_commands=sub_flow_command)
+            logger.info("[DESERIALIZE] Recursively deserializing child flow | Parent: '%s'", flow_name)
+            sub_flow_request = DeserializeFlowFromCommandsRequest(
+                serialized_flow_commands=sub_flow_command,
+                pop_flow_context_after=True,  # Clean up child flows
+            )
             sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
             if sub_flow_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
+            logger.info("[DESERIALIZE] Completed child flow deserialization | Parent: '%s'", flow_name)
+
+        # Pop flow context if requested and we pushed it
+        if request.pop_flow_context_after and pushed_flow_context:
+            GriptapeNodes.ContextManager().pop_flow()
 
         details = f"Successfully deserialized Flow '{flow_name}'."
         return DeserializeFlowFromCommandsResultSuccess(

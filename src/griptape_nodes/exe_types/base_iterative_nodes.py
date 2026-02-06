@@ -380,9 +380,7 @@ class BaseIterativeStartNode(BaseNode):
     ) -> bool:
         """Class-level validation for incoming connections to iterative start nodes."""
         # Check signal connections (by OUR parameter name)
-        if (
-            target_parameter_name in ("trigger_next_iteration_signal", "break_loop_signal")
-        ):
+        if target_parameter_name in ("trigger_next_iteration_signal", "break_loop_signal"):
             compatible_end_classes = cls._get_compatible_end_classes()
             compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
             source_class_name = source_node_class.__name__
