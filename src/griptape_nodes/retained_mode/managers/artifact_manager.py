@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, ClassVar
 
+import semver
 from pydantic import BaseModel, ValidationError
 
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -376,7 +377,7 @@ class ArtifactManager:
         # SUCCESS PATH: Preview generated successfully
         return GeneratePreviewFromDefaultsResultSuccess(result_details=result.result_details)
 
-    def on_handle_get_preview_for_artifact_request(  # noqa: PLR0911
+    def on_handle_get_preview_for_artifact_request(  # noqa: C901, PLR0911
         self, request: GetPreviewForArtifactRequest
     ) -> GetPreviewForArtifactResultSuccess | GetPreviewForArtifactResultFailure:
         """Handle get preview for artifact request.
@@ -450,6 +451,28 @@ class ArtifactManager:
         except ValidationError as e:
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: invalid metadata - {e}"
+            )
+
+        # FAILURE CASE: Validate preview metadata version
+        try:
+            metadata_version = semver.VersionInfo.parse(metadata.version)
+            latest_version = semver.VersionInfo.parse(PreviewMetadata.LATEST_SCHEMA_VERSION)
+
+            if metadata_version < latest_version:
+                return GetPreviewForArtifactResultFailure(
+                    result_details=(
+                        f"Attempted to get preview for '{source_path}'. "
+                        f"Preview metadata version {metadata.version} is outdated. "
+                        f"Latest version is {PreviewMetadata.LATEST_SCHEMA_VERSION}. "
+                        f"Please regenerate the preview."
+                    )
+                )
+        except ValueError as e:
+            return GetPreviewForArtifactResultFailure(
+                result_details=(
+                    f"Attempted to get preview for '{source_path}'. "
+                    f"Invalid metadata version format '{metadata.version}': {e}"
+                )
             )
 
         # FAILURE CASE: Validate preview is fresh (source hasn't changed)
