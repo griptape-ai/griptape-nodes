@@ -403,13 +403,15 @@ class GetWorkflowRunCommandRequest(RequestPayload):
 class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
     """Workflow run command retrieved successfully.
 
+    Only returned when the workflow has Start and End nodes. When absent, the request fails with GetWorkflowRunCommandResultFailure.
+
     Args:
         run_command: Full command string: python_executable_path workflow_file_path
-        workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node), or None if not available
+        workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node)
     """
 
     run_command: str
-    workflow_shape: WorkflowShape | None = None
+    workflow_shape: WorkflowShape
 
 
 @dataclass
