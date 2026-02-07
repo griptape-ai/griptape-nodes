@@ -1816,6 +1816,8 @@ class NodeManager:
             parameter.input_types = request.input_types
         if request.output_type is not None:
             parameter.output_type = request.output_type
+        if request.default_value is not None:
+            parameter.default_value = request.default_value
         if request.mode_allowed_input is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_input is True:
