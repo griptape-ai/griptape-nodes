@@ -77,6 +77,8 @@ class TranscribeAudio(ControlNode):
         self.add_node_element(pm)
         self.clear_api_key_check()
 
+        self.set_initial_node_size(height=480)
+
     def clear_api_key_check(self) -> bool:
         # Check to see if the API key is set, if not we'll show the message
         # TODO(jason): Implement a better way to check for the API key after https://github.com/griptape-ai/griptape-nodes/issues/1309

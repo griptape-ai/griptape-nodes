@@ -15,6 +15,7 @@ dependencies = [
   # TODO: https://github.com/griptape-ai/griptape-nodes/issues/833
   "uv>=0.6.16",
   "fastapi>=0.115.12",
+  "starlette>=0.48.0,<0.49.0",
   "uvicorn>=0.34.2",
   "packaging>=25.0",
   "python-multipart>=0.0.20",
