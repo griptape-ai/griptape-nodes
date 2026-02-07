@@ -995,7 +995,7 @@ class WorkflowManager:
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
                 workflow_shape = load_metadata_result.metadata.workflow_shape
 
-        # Failure: workflow has no Start/End nodes and cannot be run from the command line
+        # Failure: workflow has no Start/End nodes (or metadata could not be loaded)
         if workflow_shape is None:
             return GetWorkflowRunCommandResultFailure(
                 result_details=(
