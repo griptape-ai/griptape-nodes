@@ -131,6 +131,7 @@ When developing, follow this iteration loop:
 
 **Include context in error messages** - Always provide meaningful context to help users understand where errors occur:
 
+- Use the format: **"Attempted to do X. Failed with data Y because of Z."** (X = operation, Y = relevant inputs/identifiers, Z = reason)
 - Include `{self.name}` in error messages when available (for classes with a name attribute)
 - Include relevant parameter names, object identifiers, or operation context
 - This helps users identify which specific node, component, or operation failed
@@ -143,6 +144,10 @@ When developing, follow this iteration loop:
     ```python
     logger.warning(f"{self.name} received invalid input: {input_value}")
     return f"Error: {self.name} failed to process input"
+    ```
+- Good example (structured format):
+    ```python
+    return f"Attempted to get workflow run command. Failed with workflow_name='{name}' because the workflow was not found in the registry."
     ```
 
 ## Architecture Overview
