@@ -1788,6 +1788,15 @@ class NodeExecutor:
             node.name,
         )
 
+        # Mark all packaged nodes as RESOLVED to prevent them from executing in the outer flow.
+        # This is critical for nested iterative groups: when an inner group's body is packaged, those nodes
+        # exist in the outer flow but should not execute there - they only execute in the packaged iterations.
+        node_manager = GriptapeNodes.NodeManager()
+        for node_name in node_names:
+            node_reference = node_manager.get_node_by_name(node_name)
+            if node_reference:
+                node_reference.state = NodeResolutionState.RESOLVED
+
         # Remove packaged nodes from global queue
         self._remove_packaged_nodes_from_queue(set(node_names))
 

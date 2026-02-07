@@ -3609,7 +3609,6 @@ class FlowManager:
 
         # Now the child flows.
         for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
-            logger.info("[DESERIALIZE] Recursively deserializing child flow | Parent: '%s'", flow_name)
             sub_flow_request = DeserializeFlowFromCommandsRequest(
                 serialized_flow_commands=sub_flow_command,
                 pop_flow_context_after=True,  # Clean up child flows
@@ -3618,7 +3617,6 @@ class FlowManager:
             if sub_flow_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
-            logger.info("[DESERIALIZE] Completed child flow deserialization | Parent: '%s'", flow_name)
 
         # Pop flow context if requested and we pushed it
         if request.pop_flow_context_after and pushed_flow_context:
