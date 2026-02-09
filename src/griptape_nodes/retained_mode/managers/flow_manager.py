@@ -317,6 +317,28 @@ class FlowManager:
         """Get the connections instance."""
         return self._connections
 
+    def _cleanup_flow_on_failed_deserialization(self, flow_name: str, *, pushed_flow_context: bool) -> None:
+        """Clean up a flow that failed during deserialization.
+
+        This method deletes the flow (which cascades to delete all nodes and connections)
+        and pops the flow context if it was pushed.
+
+        Args:
+            flow_name: The name of the flow to delete
+            pushed_flow_context: Whether we pushed this flow to the context
+        """
+        if pushed_flow_context:
+            GriptapeNodes.ContextManager().pop_flow()
+
+        delete_flow_request = DeleteFlowRequest(flow_name=flow_name)
+        delete_result = GriptapeNodes.handle_request(delete_flow_request)
+        if delete_result.failed():
+            logger.warning(
+                "Failed to clean up flow '%s' after deserialization failure: %s",
+                flow_name,
+                delete_result.result_details,
+            )
+
     def _has_connection(
         self,
         source_node: BaseNode,
@@ -3453,7 +3475,8 @@ class FlowManager:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
                 flow_name = flow.name
-                pushed_flow_context=False
+                pushed_flow_context = False
+                created_new_flow = False
             else:
                 details = "Attempted to deserialize a set of Flow Creation commands into the Current Context. Failed because the Current Context was empty."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
@@ -3485,6 +3508,7 @@ class FlowManager:
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             GriptapeNodes.ContextManager().push_flow(flow=flow)
             pushed_flow_context = True  # Mark that we pushed this flow
+            created_new_flow = True  # Mark that we created this flow
 
         # Deserializing a flow goes in a specific order.
 
@@ -3539,6 +3563,8 @@ class FlowManager:
                 details = (
                     f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                 )
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
             node_name_mappings[original_node_name] = deserialized_node_result.node_name
@@ -3551,10 +3577,14 @@ class FlowManager:
             source_node_uuid = indirect_connection.source_node_uuid
             if source_node_uuid not in node_uuid_to_deserialized_node_result:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a source node that did not exist within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             target_node_uuid = indirect_connection.target_node_uuid
             if target_node_uuid not in node_uuid_to_deserialized_node_result:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a target node that did not exist within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
             source_node_result = node_uuid_to_deserialized_node_result[source_node_uuid]
@@ -3571,6 +3601,8 @@ class FlowManager:
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indirect_connection.source_parameter_name}' to '{target_node_name}.{indirect_connection.target_parameter_name}' within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         # Now assign the values.
@@ -3584,6 +3616,8 @@ class FlowManager:
             node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}'."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             with GriptapeNodes.ContextManager().node(node=node):
                 # Iterate through each set value command in the list for this node.
@@ -3594,6 +3628,10 @@ class FlowManager:
                         value = request.serialized_flow_commands.unique_parameter_uuid_to_values[unique_value_uuid]
                     except IndexError as err:
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node.name}.{parameter_name}': {err}"
+                        if created_new_flow:
+                            self._cleanup_flow_on_failed_deserialization(
+                                flow_name, pushed_flow_context=pushed_flow_context
+                            )
                         return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
                     # Call the SetParameterValueRequest, subbing in the value from our unique value list.
@@ -3605,6 +3643,10 @@ class FlowManager:
                     )
                     if set_parameter_value_result.failed():
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node.name}.{parameter_name}'."
+                        if created_new_flow:
+                            self._cleanup_flow_on_failed_deserialization(
+                                flow_name, pushed_flow_context=pushed_flow_context
+                            )
                         return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         # Now the child flows.
@@ -3616,6 +3658,8 @@ class FlowManager:
             sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
             if sub_flow_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         # Pop flow context if requested and we pushed it
