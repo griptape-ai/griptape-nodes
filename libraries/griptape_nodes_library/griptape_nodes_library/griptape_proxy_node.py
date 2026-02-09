@@ -17,6 +17,13 @@ logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["GriptapeProxyNode"]
 
+STATUS_QUEUED = "QUEUED"
+STATUS_CANCELLED = "CANCELLED"
+STATUS_RUNNING = "RUNNING"
+STATUS_ERRORED = "ERRORED"
+STATUS_FAILED = "FAILED"
+STATUS_COMPLETED = "COMPLETED"
+
 
 class GriptapeProxyNode(SuccessFailureNode, ABC):
     """Base class for nodes that use the Griptape Cloud v2 async model proxy API.
@@ -233,10 +240,10 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         Returns:
             tuple: (is_terminal, result_json_or_none)
         """
-        if status == "COMPLETED":
+        if status == STATUS_COMPLETED:
             return True, result_json
 
-        if status in ["FAILED", "ERRORED"]:
+        if status in [STATUS_FAILED, STATUS_ERRORED]:
             logger.error("%s: Generation failed with status: %s", self.name, status)
             logger.error("%s: Error response: %s", self.name, result_json)
             self._set_safe_defaults()
@@ -249,7 +256,7 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
             self._set_status_results(was_successful=False, result_details=error_message)
             return True, None
 
-        if status == "CANCELLED":
+        if status == STATUS_CANCELLED:
             logger.info("%s: Generation cancelled.", self.name)
             self._set_safe_defaults()
             status_detail = result_json.get("status_detail", {})
