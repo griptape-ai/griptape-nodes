@@ -1531,7 +1531,7 @@ class NodeManager:
 
         new_group = ParameterGroup(
             name=request.group_name,
-            ui_options=request.ui_options if request.ui_options else {},
+            ui_options=request.ui_options or {},
             parent_group_name=parent_group.name if parent_group is not None else None,
             user_defined=request.is_user_defined,
         )
@@ -1816,6 +1816,18 @@ class NodeManager:
             parameter.input_types = request.input_types
         if request.output_type is not None:
             parameter.output_type = request.output_type
+        if request.clear_default_value:
+            if request.default_value is not None:
+                node_label = request.node_name if request.node_name is not None else "current context"
+                logger.warning(
+                    "Conflicting options: clear_default_value and default_value were both provided for parameter '%s' on node '%s'. "
+                    "clear_default_value takes precedence, so the default value will be cleared and default_value will be ignored.",
+                    parameter.name,
+                    node_label,
+                )
+            parameter.default_value = None
+        elif request.default_value is not None:
+            parameter.default_value = request.default_value
         if request.mode_allowed_input is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_input is True:
@@ -2204,7 +2216,7 @@ class NodeManager:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because that Parameter was flagged as not settable."
             result = SetParameterValueResultFailure(result_details=details)
             return result
-        object_type = parameter_value_type if parameter_value_type else parameter.type
+        object_type = parameter_value_type or parameter.type
         # If the parameter is control type, we shouldn't check the value being set, since it's just a marker for which path to take, not a real value, and will likely be a string, which doesn't match ControlType.
         if parameter.type != ParameterTypeBuiltin.CONTROL_TYPE.value and not parameter.is_incoming_type_allowed(
             object_type
@@ -2834,7 +2846,7 @@ class NodeManager:
                         node_name=node_name,
                         group_name=group.name,
                         parent_element_name=group.parent_group_name,
-                        ui_options=group.ui_options if group.ui_options else {},
+                        ui_options=group.ui_options or {},
                         is_user_defined=True,
                         initial_setup=True,
                     )
@@ -3643,7 +3655,7 @@ class NodeManager:
                     create_node_request.resolution = NodeResolutionState.UNRESOLVED.value
             else:
                 commands.append(output_command)
-        return commands if commands else None
+        return commands or None
 
     @staticmethod
     def serialize_parameter_output_values(node: BaseNode, *, use_pickling: bool = False) -> SerializedParameterValues:
@@ -3715,9 +3727,7 @@ class NodeManager:
 
             uuid_referenced_values[param_name] = unique_uuid
 
-        return SerializedParameterValues(
-            uuid_referenced_values, unique_parameter_uuid_to_values if unique_parameter_uuid_to_values else None
-        )
+        return SerializedParameterValues(uuid_referenced_values, unique_parameter_uuid_to_values or None)
 
     @staticmethod
     def _get_parameter_value_for_serialization(node: BaseNode, param_name: str) -> Any:

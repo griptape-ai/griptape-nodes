@@ -362,6 +362,7 @@ class AlterParameterDetailsRequest(RequestPayload):
         input_types: New list of accepted input types
         output_type: New output type when used as output
         default_value: New default value
+        clear_default_value: If True, clear the parameter default (set to None)
         tooltip: New general tooltip text
         tooltip_as_input: New tooltip when used as input
         tooltip_as_property: New tooltip when used as property
@@ -384,6 +385,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     input_types: list[str] | None = None
     output_type: str | None = None
     default_value: Any | None = None
+    clear_default_value: bool = False
     tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
@@ -422,6 +424,7 @@ class AlterParameterDetailsRequest(RequestPayload):
             "input_types",
             "output_type",
             "default_value",
+            "clear_default_value",
             "tooltip",
             "tooltip_as_input",
             "tooltip_as_property",
