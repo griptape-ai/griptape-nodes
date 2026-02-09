@@ -196,6 +196,7 @@ def start_static_server() -> None:
         allow_credentials=True,
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
+        allow_private_network=True,  # Required for Starlette 0.51+ to allow localhost access from public origins
     )
 
     # Mount static files
