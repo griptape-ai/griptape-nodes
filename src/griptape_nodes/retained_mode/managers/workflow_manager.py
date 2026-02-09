@@ -915,6 +915,7 @@ class WorkflowManager:
                         "because no workflow is loaded in the current context. Provide workflow_name or file_path, or load a workflow."
                     )
                 )
+            # When neither workflow_name nor file_path is provided, use the workflow in the current context as a fallback.
             workflow_name = context_manager.get_current_workflow_name()
 
         # Failure: both workflow_name and file_path provided
