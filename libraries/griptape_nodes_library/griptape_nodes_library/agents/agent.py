@@ -285,7 +285,10 @@ class Agent(ControlNode):
         value: Any,
     ) -> Any:
         if parameter.name == "model":
-            if value in DEPRECATED_MODELS:
+            # Only run deprecation check for string model names. When a prompt driver
+            # is connected, value is a BasePromptDriver; "value in DEPRECATED_MODELS"
+            # would hash it and raise (drivers are unhashable). See #3713.
+            if isinstance(value, str) and value in DEPRECATED_MODELS:
                 replacement = DEPRECATED_MODELS[value]
                 message = self.get_message_by_name_or_element_id("model_deprecation_notice")
                 if message is None:
@@ -293,7 +296,7 @@ class Agent(ControlNode):
                 message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
                 self.show_message_by_name("model_deprecation_notice")
                 value = replacement
-            else:
+            elif isinstance(value, str):
                 self.hide_message_by_name("model_deprecation_notice")
 
         # Call the parent implementation and return the result
