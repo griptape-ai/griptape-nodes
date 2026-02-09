@@ -84,6 +84,31 @@ class StatusType(StrEnum):
     BREAK = "break"
 
 
+class IterativeNodeParam(StrEnum):
+    """Parameter names for iterative start and end nodes."""
+
+    # BaseIterativeStartNode parameters
+    EXEC_IN = "exec_in"
+    EXEC_OUT = "exec_out"
+    INDEX = "index"
+    LOOP = "loop"
+    TRIGGER_NEXT_ITERATION_SIGNAL = "trigger_next_iteration_signal"
+    BREAK_LOOP_SIGNAL = "break_loop_signal"
+    LOOP_END_CONDITION_MET_SIGNAL = "loop_end_condition_met_signal"
+    STATUS_MESSAGE = "status_message"
+
+    # BaseIterativeEndNode parameters
+    FROM_START = "from_start"
+    ADD_ITEM = "add_item"
+    NEW_ITEM_TO_ADD = "new_item_to_add"
+    RESULTS = "results"
+    SKIP_ITERATION = "skip_iteration"
+    BREAK_LOOP = "break_loop"
+    LOOP_END_CONDITION_MET_SIGNAL_INPUT = "loop_end_condition_met_signal_input"
+    TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT = "trigger_next_iteration_signal_output"
+    BREAK_LOOP_SIGNAL_OUTPUT = "break_loop_signal_output"
+
+
 class NodeParameterPair(NamedTuple):
     """A named tuple for storing a pair of node and parameters for connections.
 
@@ -120,12 +145,12 @@ class BaseIterativeStartNode(BaseNode):
         self._connected_parameters: set[str] = set()
 
         # Main control flow
-        self.exec_in = ControlParameterInput(tooltip="Start Loop", name="exec_in")
+        self.exec_in = ControlParameterInput(tooltip="Start Loop", name=IterativeNodeParam.EXEC_IN)
         self.exec_in.ui_options = {"display_name": "Start Loop"}
         self.add_parameter(self.exec_in)
 
         # On Each Item control output - moved outside group for proper rendering
-        self.exec_out = ControlParameterOutput(tooltip=self._get_exec_out_tooltip(), name="exec_out")
+        self.exec_out = ControlParameterOutput(tooltip=self._get_exec_out_tooltip(), name=IterativeNodeParam.EXEC_OUT)
         self.exec_out.ui_options = {"display_name": self._get_exec_out_display_name()}
         self.add_parameter(self.exec_out)
 
@@ -133,7 +158,7 @@ class BaseIterativeStartNode(BaseNode):
         with ParameterGroup(name=self._get_parameter_group_name()) as group:
             # Add index parameter that all iterative nodes have
             self.index_count = Parameter(
-                name="index",
+                name=IterativeNodeParam.INDEX,
                 tooltip="Current index of the iteration",
                 type=ParameterTypeBuiltin.INT.value,
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -145,7 +170,7 @@ class BaseIterativeStartNode(BaseNode):
 
         # Explicit tethering to corresponding End node (hidden)
         self.loop = Parameter(
-            name="loop",
+            name=IterativeNodeParam.LOOP,
             tooltip="Connected Loop End Node",
             output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
@@ -155,20 +180,21 @@ class BaseIterativeStartNode(BaseNode):
 
         # Hidden signal inputs from End node
         self.trigger_next_iteration_signal = ControlParameterInput(
-            tooltip="Signal from End to continue to next iteration", name="trigger_next_iteration_signal"
+            tooltip="Signal from End to continue to next iteration",
+            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
         )
         self.trigger_next_iteration_signal.ui_options = {"hide": True, "display_name": "Next Iteration Signal"}
         self.trigger_next_iteration_signal.settable = False
 
         self.break_loop_signal = ControlParameterInput(
-            tooltip="Signal from End to break out of loop", name="break_loop_signal"
+            tooltip="Signal from End to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL
         )
         self.break_loop_signal.ui_options = {"hide": True, "display_name": "Break Loop Signal"}
         self.break_loop_signal.settable = False
 
         # Hidden control output - loop end condition
         self.loop_end_condition_met_signal = ControlParameterOutput(
-            tooltip="Signal to End when loop should end", name="loop_end_condition_met_signal"
+            tooltip="Signal to End when loop should end", name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL
         )
         self.loop_end_condition_met_signal.ui_options = {"hide": True, "display_name": "Loop End Signal"}
         self.loop_end_condition_met_signal.settable = False
@@ -184,7 +210,7 @@ class BaseIterativeStartNode(BaseNode):
 
         # Status message parameter - moved to bottom
         self.status_message = ParameterMessage(
-            name="status_message",
+            name=IterativeNodeParam.STATUS_MESSAGE,
             variant="info",
             value="",
         )
@@ -363,7 +389,7 @@ class BaseIterativeStartNode(BaseNode):
     ) -> bool:
         """Class-level validation for outgoing connections from iterative start nodes."""
         # Check if this is a loop tethering connection (by OUR parameter name)
-        if source_parameter_name == "loop":
+        if source_parameter_name == IterativeNodeParam.LOOP:
             compatible_end_classes = cls._get_compatible_end_classes()
             compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
             target_class_name = target_node_class.__name__
@@ -380,7 +406,10 @@ class BaseIterativeStartNode(BaseNode):
     ) -> bool:
         """Class-level validation for incoming connections to iterative start nodes."""
         # Check signal connections (by OUR parameter name)
-        if target_parameter_name in ("trigger_next_iteration_signal", "break_loop_signal"):
+        if target_parameter_name in (
+            IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
+            IterativeNodeParam.BREAK_LOOP_SIGNAL,
+        ):
             compatible_end_classes = cls._get_compatible_end_classes()
             compatible_class_names = {cls.__name__ for cls in compatible_end_classes}
             source_class_name = source_node_class.__name__
@@ -453,8 +482,8 @@ class BaseIterativeStartNode(BaseNode):
 
         # Always set the index output in base class
         current_index = self.get_current_index()
-        self.parameter_output_values["index"] = current_index
-        self.publish_update_to_parameter("index", current_index)
+        self.parameter_output_values[IterativeNodeParam.INDEX] = current_index
+        self.publish_update_to_parameter(IterativeNodeParam.INDEX, current_index)
 
         # Get current item value from subclass (subclasses handle their own logic)
         current_item_value = self._get_current_item_value()
@@ -585,7 +614,7 @@ class BaseIterativeEndNode(BaseNode):
 
         # Explicit tethering to Start node
         self.from_start = Parameter(
-            name="from_start",
+            name=IterativeNodeParam.FROM_START,
             tooltip="Connected Loop Start Node",
             input_types=[ParameterTypeBuiltin.ALL.value],
             allowed_modes={ParameterMode.INPUT},
@@ -594,25 +623,27 @@ class BaseIterativeEndNode(BaseNode):
 
         # Main control input and data parameter
         self.add_item_control = ControlParameterInput(
-            tooltip="Add current item to output and continue loop", name="add_item"
+            tooltip="Add current item to output and continue loop", name=IterativeNodeParam.ADD_ITEM
         )
         self.add_item_control.ui_options = {"display_name": "Add Item to Output"}
 
         # Data input for the item to add - positioned right under Add Item control
         self.new_item_to_add = Parameter(
-            name="new_item_to_add",
+            name=IterativeNodeParam.NEW_ITEM_TO_ADD,
             tooltip="Item to add to results list",
             type=ParameterTypeBuiltin.ANY.value,
             allowed_modes={ParameterMode.INPUT},
         )
 
         # Loop completion output
-        self.exec_out = ControlParameterOutput(tooltip="Triggered when loop completes", name="exec_out")
+        self.exec_out = ControlParameterOutput(
+            tooltip="Triggered when loop completes", name=IterativeNodeParam.EXEC_OUT
+        )
         self.exec_out.ui_options = {"display_name": "On Loop Complete"}
 
         # Results output - positioned below On Loop Complete
         self.results = Parameter(
-            name="results",
+            name=IterativeNodeParam.RESULTS,
             tooltip="Collected loop results",
             output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
@@ -620,23 +651,27 @@ class BaseIterativeEndNode(BaseNode):
 
         # Advanced control options for skip and break
         self.skip_control = ControlParameterInput(
-            tooltip="Skip current item and continue to next iteration", name="skip_iteration"
+            tooltip="Skip current item and continue to next iteration", name=IterativeNodeParam.SKIP_ITERATION
         )
         self.skip_control.ui_options = {"display_name": "Skip to Next Iteration"}
 
-        self.break_control = ControlParameterInput(tooltip="Break out of loop immediately", name="break_loop")
+        self.break_control = ControlParameterInput(
+            tooltip="Break out of loop immediately", name=IterativeNodeParam.BREAK_LOOP
+        )
         self.break_control.ui_options = {"display_name": "Break Out of Loop"}
 
         # Hidden inputs from Start
         self.loop_end_condition_met_signal_input = ControlParameterInput(
-            tooltip="Signal from Start when loop should end", name="loop_end_condition_met_signal_input"
+            tooltip="Signal from Start when loop should end",
+            name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT,
         )
         self.loop_end_condition_met_signal_input.ui_options = {"hide": True, "display_name": "Loop End Signal Input"}
         self.loop_end_condition_met_signal_input.settable = False
 
         # Hidden outputs to Start
         self.trigger_next_iteration_signal_output = ControlParameterOutput(
-            tooltip="Signal to Start to continue to next iteration", name="trigger_next_iteration_signal_output"
+            tooltip="Signal to Start to continue to next iteration",
+            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
         )
         self.trigger_next_iteration_signal_output.ui_options = {
             "hide": True,
@@ -645,7 +680,7 @@ class BaseIterativeEndNode(BaseNode):
         self.trigger_next_iteration_signal_output.settable = False
 
         self.break_loop_signal_output = ControlParameterOutput(
-            tooltip="Signal to Start to break out of loop", name="break_loop_signal_output"
+            tooltip="Signal to Start to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT
         )
         self.break_loop_signal_output.ui_options = {"hide": True, "display_name": "Break Loop Signal Output"}
         self.break_loop_signal_output.settable = False
@@ -684,7 +719,7 @@ class BaseIterativeEndNode(BaseNode):
         Uses deep copy to ensure nested objects (like dictionaries) are properly copied
         and won't have unintended side effects if modified later.
         """
-        self.parameter_output_values["results"] = copy.deepcopy(self._results_list)
+        self.parameter_output_values[IterativeNodeParam.RESULTS] = copy.deepcopy(self._results_list)
 
     def _validate_end_node(self) -> list[Exception] | None:
         """Common validation logic for both workflow and node run validation."""
@@ -712,7 +747,7 @@ class BaseIterativeEndNode(BaseNode):
         match self._entry_control_parameter:
             case self.add_item_control:
                 # Only evaluate new_item_to_add parameter when adding to output
-                new_item_value = self.get_parameter_value("new_item_to_add")
+                new_item_value = self.get_parameter_value(IterativeNodeParam.NEW_ITEM_TO_ADD)
                 self._results_list.append(new_item_value)
                 if self.results_output is not None:
                     node, param = self.results_output
@@ -802,7 +837,10 @@ class BaseIterativeEndNode(BaseNode):
     ) -> bool:
         """Class-level validation for outgoing connections from iterative end nodes."""
         # Check signal connections (by OUR parameter name)
-        if source_parameter_name in ("trigger_next_iteration_signal_output", "break_loop_signal_output"):
+        if source_parameter_name in (
+            IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
+            IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT,
+        ):
             compatible_start_classes = cls._get_compatible_start_classes()
             compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
             target_class_name = target_node_class.__name__
@@ -819,7 +857,7 @@ class BaseIterativeEndNode(BaseNode):
     ) -> bool:
         """Class-level validation for incoming connections to iterative end nodes."""
         # Check loop tethering connection (by OUR parameter name)
-        if target_parameter_name == "from_start":
+        if target_parameter_name == IterativeNodeParam.FROM_START:
             compatible_start_classes = cls._get_compatible_start_classes()
             compatible_class_names = {class_type.__name__ for class_type in compatible_start_classes}
             source_class_name = source_node_class.__name__
@@ -853,7 +891,7 @@ class BaseIterativeEndNode(BaseNode):
             )
 
         # Check if control inputs have at least one connection
-        control_names = ["add_item", "skip_iteration", "break_loop"]
+        control_names = [IterativeNodeParam.ADD_ITEM, IterativeNodeParam.SKIP_ITERATION, IterativeNodeParam.BREAK_LOOP]
         connected_controls = []
 
         for control_name in control_names:
@@ -877,7 +915,7 @@ class BaseIterativeEndNode(BaseNode):
         match self._entry_control_parameter:
             case self.add_item_control:
                 # Only resolve new_item_to_add dependency if we're actually going to use it
-                new_item_param = self.get_parameter_by_name("new_item_to_add")
+                new_item_param = self.get_parameter_by_name(IterativeNodeParam.NEW_ITEM_TO_ADD)
                 if new_item_param and ParameterMode.INPUT in new_item_param.get_mode():
                     self.current_spotlight_parameter = new_item_param
             case _:
@@ -943,9 +981,9 @@ class BaseIterativeEndNode(BaseNode):
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=start_node.name,
-                source_parameter_name="loop_end_condition_met_signal",
+                source_parameter_name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL,
                 target_node_name=self.name,
-                target_parameter_name="loop_end_condition_met_signal_input",
+                target_parameter_name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT,
             )
         )
 
@@ -953,9 +991,9 @@ class BaseIterativeEndNode(BaseNode):
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=self.name,
-                source_parameter_name="trigger_next_iteration_signal_output",
+                source_parameter_name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
                 target_node_name=start_node.name,
-                target_parameter_name="trigger_next_iteration_signal",
+                target_parameter_name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
             )
         )
 
@@ -963,21 +1001,21 @@ class BaseIterativeEndNode(BaseNode):
         GriptapeNodes.handle_request(
             CreateConnectionRequest(
                 source_node_name=self.name,
-                source_parameter_name="break_loop_signal_output",
+                source_parameter_name=IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT,
                 target_node_name=start_node.name,
-                target_parameter_name="break_loop_signal",
+                target_parameter_name=IterativeNodeParam.BREAK_LOOP_SIGNAL,
             )
         )
 
         # 4. Default control flow: Start → End: exec_out → add_item (default "happy path")
         # Only create this connection if the exec_out parameter doesn't already have a connection
-        if not _outgoing_connection_exists(start_node.name, "exec_out"):
+        if not _outgoing_connection_exists(start_node.name, IterativeNodeParam.EXEC_OUT):
             GriptapeNodes.handle_request(
                 CreateConnectionRequest(
                     source_node_name=start_node.name,
-                    source_parameter_name="exec_out",
+                    source_parameter_name=IterativeNodeParam.EXEC_OUT,
                     target_node_name=self.name,
-                    target_parameter_name="add_item",
+                    target_parameter_name=IterativeNodeParam.ADD_ITEM,
                 )
             )
 
@@ -1021,38 +1059,49 @@ class BaseIterativeEndNode(BaseNode):
 
         # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
         if connection_exists(
-            start_node.name, "loop_end_condition_met_signal", self.name, "loop_end_condition_met_signal_input"
+            start_node.name,
+            IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL,
+            self.name,
+            IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT,
         ):
             GriptapeNodes.handle_request(
                 DeleteConnectionRequest(
                     source_node_name=start_node.name,
-                    source_parameter_name="loop_end_condition_met_signal",
+                    source_parameter_name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL,
                     target_node_name=self.name,
-                    target_parameter_name="loop_end_condition_met_signal_input",
+                    target_parameter_name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT,
                 )
             )
 
         # 2. End → Start: trigger_next_iteration_signal_output → trigger_next_iteration_signal
         if connection_exists(
-            self.name, "trigger_next_iteration_signal_output", start_node.name, "trigger_next_iteration_signal"
+            self.name,
+            IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
+            start_node.name,
+            IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
         ):
             GriptapeNodes.handle_request(
                 DeleteConnectionRequest(
                     source_node_name=self.name,
-                    source_parameter_name="trigger_next_iteration_signal_output",
+                    source_parameter_name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
                     target_node_name=start_node.name,
-                    target_parameter_name="trigger_next_iteration_signal",
+                    target_parameter_name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
                 )
             )
 
         # 3. End → Start: break_loop_signal_output → break_loop_signal
-        if connection_exists(self.name, "break_loop_signal_output", start_node.name, "break_loop_signal"):
+        if connection_exists(
+            self.name,
+            IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT,
+            start_node.name,
+            IterativeNodeParam.BREAK_LOOP_SIGNAL,
+        ):
             GriptapeNodes.handle_request(
                 DeleteConnectionRequest(
                     source_node_name=self.name,
-                    source_parameter_name="break_loop_signal_output",
+                    source_parameter_name=IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT,
                     target_node_name=start_node.name,
-                    target_parameter_name="break_loop_signal",
+                    target_parameter_name=IterativeNodeParam.BREAK_LOOP_SIGNAL,
                 )
             )
 

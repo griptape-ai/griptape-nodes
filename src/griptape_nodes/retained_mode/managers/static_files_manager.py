@@ -256,7 +256,6 @@ class StaticFilesManager:
         file_path = Path(resolved_directory) / file_name
 
         # Inject workflow metadata if enabled (only when not using direct save)
-        # TEMPORARILY DISABLED: Testing if metadata injection causes concurrent serialization issues
         if (
             not use_direct_save
             and self.config_manager.get_config_value("auto_inject_workflow_metadata", default=True)

@@ -1950,6 +1950,7 @@ class FlowManager:
 
                 # Only create the connection if validation passes
                 if not valid_connection:
+                    # Some nodes only allow connections to certain other nodes (for example ForEach Start and End Node). We shouldn't allow those connections to be serialized, because they'll fail on deserialization.
                     logger.warning(
                         "Skipping control connection from %s.%s to EndFlow - connection not allowed by node validation rules",
                         package_node.name,
@@ -2007,18 +2008,22 @@ class FlowManager:
                     continue
 
                 # Get the EndFlow node class for validation
-                end_library = LibraryRegistry.get_library_for_node_type(
-                    request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
-                    request.end_node_library_name,
-                )
-                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+                try:
+                    end_library = LibraryRegistry.get_library_for_node_type(
+                        request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                        request.end_node_library_name,
+                    )
+                    end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
 
-                # Validate from package node's perspective (we know source param name, not target)
-                valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
-                    end_node_class,
-                    package_param.name,  # source parameter name - we KNOW this
-                    None,  # target parameter name - we DON'T know this yet
-                )
+                    # Validate from package node's perspective (we know source param name, not target)
+                    valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
+                        end_node_class,
+                        package_param.name,  # source parameter name - we KNOW this
+                        None,  # target parameter name - we DON'T know this yet
+                    )
+                except KeyError as err:
+                    msg = f"Unable to find library for node type '{request.end_node_type}'"
+                    raise KeyError(msg) from err
 
                 # Use comprehensive helper to process this data parameter
                 if valid_connection:
