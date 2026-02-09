@@ -1454,29 +1454,12 @@ class NodeExecutor:
         )
 
         # Step 6: Build results list in iteration order, with None for failed iterations
-        logger.info(
-            "[RESULTS] Building final results list | Loop: '%s' | Total iterations: %d | Results dict size: %d",
-            start_node.name,
-            total_iterations,
-            len(iteration_results),
-        )
         node._results_list = []
         for iteration_index in range(total_iterations):
             if iteration_index in iteration_results:
                 value = iteration_results[iteration_index]
-                logger.info(
-                    "[RESULTS] Iteration %d: Using extracted value | Loop: '%s' | Value: %s",
-                    iteration_index,
-                    start_node.name,
-                    value,
-                )
             else:
                 value = None  # Failed iterations get None
-                logger.warning(
-                    "[RESULTS] Iteration %d: No result found, using None | Loop: '%s'",
-                    iteration_index,
-                    start_node.name,
-                )
             node._results_list.append(value)
 
         # Step 7: Output final results to the results parameter
@@ -2283,34 +2266,13 @@ class NodeExecutor:
                 deserialized_end_node = node_manager.get_node_by_name(deserialized_end_node_name)
                 if endflow_param_name in deserialized_end_node.parameter_output_values:
                     extracted_value = deserialized_end_node.parameter_output_values[endflow_param_name]
-                    logger.info(
-                        "[EXTRACT] Iteration %d: Extracted result from End node | Loop: '%s' | Value: %s",
-                        iteration_index,
-                        end_loop_node.name,
-                        extracted_value,
-                    )
                     iteration_results[iteration_index] = extracted_value
-                else:
-                    logger.warning(
-                        "[EXTRACT] Iteration %d: End node has no output for param '%s' | Loop: '%s'",
-                        iteration_index,
-                        endflow_param_name,
-                        end_loop_node.name,
-                    )
             except Exception as e:
                 logger.warning(
-                    "[EXTRACT] Iteration %d: Failed to extract result from End node | Loop: '%s' | Error: %s",
+                    "Failed to extract result from End node for iteration %d: %s",
                     iteration_index,
-                    end_loop_node.name,
                     e,
                 )
-
-        logger.info(
-            "[EXTRACT] Completed extraction | Loop: '%s' | Total flows checked: %d | Results extracted: %d",
-            end_loop_node.name,
-            len(deserialized_flows),
-            len(iteration_results),
-        )
         return iteration_results
 
     def get_last_iteration_values_for_packaged_nodes(
@@ -2564,27 +2526,9 @@ class NodeExecutor:
 
             # Add None values for failed iterations that didn't produce any results
             # (e.g., nested loops may fail but still produce partial output)
-            logger.info(
-                "[RESULTS] Processing failed iterations | Loop: '%s' | Failed count: %d | Extracted results count: %d",
-                end_loop_node.name,
-                len(failed_iteration_indices),
-                len(iteration_results),
-            )
             for failed_idx in failed_iteration_indices:
                 if failed_idx not in iteration_results:
-                    logger.warning(
-                        "[RESULTS] Setting None for failed iteration %d (no results extracted) | Loop: '%s'",
-                        failed_idx,
-                        end_loop_node.name,
-                    )
                     iteration_results[failed_idx] = None
-                else:
-                    logger.info(
-                        "[RESULTS] Keeping partial results for failed iteration %d | Loop: '%s' | Result: %s",
-                        failed_idx,
-                        end_loop_node.name,
-                        iteration_results[failed_idx],
-                    )
 
             # Step 5: Extract last iteration values BEFORE cleanup (flows deleted in finally block)
             last_iteration_values = self.get_last_iteration_values_for_packaged_nodes(
