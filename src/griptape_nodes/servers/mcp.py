@@ -129,7 +129,9 @@ def start_mcp_server(api_key: str) -> None:
 
         request_payload = SUPPORTED_REQUEST_EVENTS[name](**arguments)
 
-        result = await manager.request(request_payload.__class__.__name__, request_payload.__dict__, timeout_ms=30000)
+        result = await manager.request(
+            request_payload.__class__.__name__, dict(request_payload.__dict__), timeout_ms=30000
+        )
         mcp_server_logger.debug("Got result: %s", result)
 
         return [TextContent(type="text", text=json.dumps(result))]
