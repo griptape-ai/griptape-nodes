@@ -1816,6 +1816,18 @@ class NodeManager:
             parameter.input_types = request.input_types
         if request.output_type is not None:
             parameter.output_type = request.output_type
+        if request.clear_default_value:
+            if request.default_value is not None:
+                node_label = request.node_name if request.node_name is not None else "current context"
+                logger.warning(
+                    "Conflicting options: clear_default_value and default_value were both provided for parameter '%s' on node '%s'. "
+                    "clear_default_value takes precedence, so the default value will be cleared and default_value will be ignored.",
+                    parameter.name,
+                    node_label,
+                )
+            parameter.default_value = None
+        elif request.default_value is not None:
+            parameter.default_value = request.default_value
         if request.mode_allowed_input is not None:
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/828
             if request.mode_allowed_input is True:
