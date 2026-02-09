@@ -30,6 +30,10 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             name="previews",
             path_macro="previews",
         ),
+        "staticfiles": DirectoryDefinition(
+            name="staticfiles",
+            path_macro="staticfiles",
+        ),
     },
     environment={},
     situations={
