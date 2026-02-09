@@ -4,6 +4,9 @@ import pytest  # type: ignore[reportMissingImports]
 
 from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
 
+# No badge by default; elements send badge: null until set_badge() is called.
+NO_BADGE = None
+
 
 class TestBaseNodeElement:
     @pytest.fixture
@@ -46,16 +49,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -63,12 +69,14 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
                                     "element_type": "BaseNodeElement",
                                     "parent_group_name": "group1",
+                                    "badge": NO_BADGE,
                                     "children": [],
                                 }
                             ],
@@ -79,11 +87,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -112,6 +122,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },
@@ -127,16 +138,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -144,17 +158,20 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
                                     "element_type": "BaseNodeElement",
                                     "parent_group_name": "group1",
+                                    "badge": NO_BADGE,
                                     "children": [
                                         {
                                             "element_id": "leaf3",
                                             "element_type": "BaseNodeElement",
                                             "parent_group_name": None,
+                                            "badge": NO_BADGE,
                                             "children": [],
                                         },
                                     ],
@@ -167,11 +184,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -200,6 +219,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },
@@ -231,16 +251,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -248,6 +271,7 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [],
                         },
@@ -257,11 +281,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -290,6 +316,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },

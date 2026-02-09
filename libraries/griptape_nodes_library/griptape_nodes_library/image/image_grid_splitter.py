@@ -17,11 +17,7 @@ from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.events.parameter_events import (
-    AddParameterToNodeRequest,
-    AddParameterToNodeResultSuccess,
-    RemoveParameterFromNodeRequest,
-)
+from griptape_nodes.retained_mode.events.parameter_events import RemoveParameterFromNodeRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -977,30 +973,21 @@ class ImageGridSplitter(DataNode):
                     )
                     raise ValueError(msg)
 
-                request = AddParameterToNodeRequest.create(
-                    node_name=self.name,
-                    parameter_name=name,
-                    type="ImageUrlArtifact",
-                    input_types=None,
-                    output_type="ImageUrlArtifact",
+                param = ParameterImage(
+                    name=name,
                     tooltip=f"Grid cell output {name} (row-major).",
+                    allowed_modes={ParameterMode.OUTPUT},
                     ui_options={
                         "display_name": name,
                         "expander": True,
                         "pulse_on_run": True,
                     },
-                    mode_allowed_input=False,
-                    mode_allowed_property=False,
-                    mode_allowed_output=True,
-                    is_user_defined=True,
+                    clickable_file_browser=False,
+                    user_defined=True,
                     settable=False,
-                    parent_element_name=self._grid_cells_group.name,
+                    parent_container_name=self._grid_cells_group.name,
                 )
-                result = GriptapeNodes.handle_request(request)
-                if not isinstance(result, AddParameterToNodeResultSuccess):
-                    raise RuntimeError(  # noqa: TRY004
-                        str(getattr(result, "result_details", "Failed to add parameter"))
-                    )
+                self.add_parameter(param)
 
     def _remove_existing_cell_outputs(self) -> None:
         to_remove: list[str] = []

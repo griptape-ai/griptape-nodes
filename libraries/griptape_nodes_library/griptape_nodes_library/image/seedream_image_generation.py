@@ -5,9 +5,11 @@ import logging
 import time
 from contextlib import suppress
 from copy import deepcopy
+from io import BytesIO
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
+from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -660,13 +662,19 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 self._log(f"Could not download image {index}, using provider URL")
                 return ImageUrlArtifact(value=image_url)
 
+            # Convert to PNG format to enable automatic workflow metadata embedding
+            pil_image = Image.open(BytesIO(image_bytes))
+            png_buffer = BytesIO()
+            pil_image.save(png_buffer, format="PNG")
+            png_bytes = png_buffer.getvalue()
+
             if generation_id:
-                filename = f"seedream_image_{generation_id}_{index}.jpg"
+                filename = f"seedream_image_{generation_id}_{index}.png"
             else:
-                filename = f"seedream_image_{int(time.time())}_{index}.jpg"
+                filename = f"seedream_image_{int(time.time())}_{index}.png"
 
             static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            saved_url = static_files_manager.save_static_file(png_bytes, filename)
             self._log(f"Saved image {index} to static storage as {filename}")
             return ImageUrlArtifact(value=saved_url, name=filename)
 

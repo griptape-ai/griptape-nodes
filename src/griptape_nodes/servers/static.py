@@ -182,7 +182,10 @@ def start_static_server() -> None:
         os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
         "https://app.nodes-staging.griptape.ai",
         "https://app-nightly.nodes.griptape.ai",
+        "https://editor.nodes.griptape.ai",
+        "https://editor-nightly.nodes.griptape.ai",
         "http://localhost:5173",
+        "http://localhost:5174",
         GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
     ]
 
@@ -193,6 +196,7 @@ def start_static_server() -> None:
         allow_credentials=True,
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
+        allow_private_network=True,  # Required for Starlette 0.51+ to allow localhost access from public origins
     )
 
     # Mount static files
