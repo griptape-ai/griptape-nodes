@@ -398,7 +398,7 @@ class NodeManager:
         for node_name in node_names:
             self._cleanup_node_on_failed_deserialization(node_name)
 
-    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0912, PLR0915
+    def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
         parent_flow = None
@@ -3338,7 +3338,6 @@ class NodeManager:
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
         created_node_names: list[str] = []
-
 
         # Build a set of child node UUIDs to identify implicitly selected nodes
         child_node_uuids = set()
