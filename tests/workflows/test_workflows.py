@@ -12,12 +12,8 @@ from griptape_nodes.bootstrap.workflow_executors.local_workflow_executor import 
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
-from griptape_nodes.utils import install_file_url_support
 
 logger = logging.getLogger(__name__)
-
-# Install file:// URL support for httpx/requests in tests
-install_file_url_support()
 
 
 def get_libraries_dir() -> Path:
