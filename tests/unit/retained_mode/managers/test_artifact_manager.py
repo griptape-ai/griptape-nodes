@@ -453,7 +453,7 @@ class TestGeneratePreview:
 
         # Verify preview file exists
         preview_dir = test_image_path.parent / "nodes_previews"
-        preview_path = preview_dir / f"{test_image_path.name}.png"
+        preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
         # Verify preview dimensions
@@ -484,7 +484,7 @@ class TestGeneratePreview:
 
         # Verify preview file exists
         preview_dir = test_image_path.parent / "nodes_previews"
-        preview_path = preview_dir / f"{test_image_path.name}.png"
+        preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
         # Verify metadata file exists (named after source file, not preview)
@@ -507,7 +507,7 @@ class TestGeneratePreview:
         source_stat = test_image_path.stat()
         assert metadata_dict["source_file_size"] == source_stat.st_size
         assert metadata_dict["source_file_modified_time"] == source_stat.st_mtime
-        assert metadata_dict["preview_file_names"] == f"{test_image_path.name}.png"
+        assert metadata_dict["preview_file_names"] == f"{test_image_path.name}.webp"
         assert metadata_dict["preview_generator_name"] == "Standard Thumbnail Generation"
         assert metadata_dict["preview_generator_parameters"] == {"max_width": 50, "max_height": 50}
         assert metadata_dict["version"] == PreviewMetadata.LATEST_SCHEMA_VERSION
@@ -576,7 +576,7 @@ class TestGeneratePreview:
 
         # Verify preview dimensions respect constraints
         preview_dir = test_image_path.parent / "nodes_previews"
-        preview_path = preview_dir / f"{test_image_path.name}.png"
+        preview_path = preview_dir / f"{test_image_path.name}.webp"
 
         with Image.open(str(preview_path)) as preview_img:
             assert preview_img.width <= 30  # noqa: PLR2004
@@ -632,7 +632,7 @@ class TestGeneratePreview:
 
         # Verify preview was created
         preview_dir = test_image_path.parent / "nodes_previews"
-        preview_path = preview_dir / f"{test_image_path.name}.png"
+        preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
     @pytest.mark.asyncio
@@ -667,7 +667,7 @@ class TestGeneratePreview:
         assert metadata.source_macro_path == str(test_image_path)
         assert metadata.source_file_size > 0
         assert metadata.source_file_modified_time > 0
-        assert metadata.preview_file_names == f"{test_image_path.name}.png"
+        assert metadata.preview_file_names == f"{test_image_path.name}.webp"
         assert metadata.preview_generator_name == "Standard Thumbnail Generation"
         assert isinstance(metadata.preview_generator_parameters, dict)
 
@@ -726,7 +726,7 @@ class TestGetPreviewForArtifact:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         preview_dir = test_image_path.parent / "nodes_previews"
-        return preview_dir / f"{test_image_path.name}.png"
+        return preview_dir / f"{test_image_path.name}.webp"
 
     @pytest.mark.usefixtures("generated_preview_with_metadata")
     def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
