@@ -102,12 +102,15 @@ class ListConnectionsForNodeRequest(RequestPayload):
 
     Args:
         node_name: Name of the node to list connections for (None for current context)
+        include_internal: Whether to include internal connections (connections where both nodes are in the same group). Defaults to True.
 
     Results: ListConnectionsForNodeResultSuccess (with connection lists) | ListConnectionsForNodeResultFailure (node not found)
     """
 
     # If node name is None, use the Current Context
     node_name: str | None = None
+    # Whether to include internal connections to groups (defaults to True for backward compatibility)
+    include_internal: bool = True
 
 
 @dataclass

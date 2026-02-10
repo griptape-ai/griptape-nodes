@@ -1,8 +1,14 @@
+import logging
+
+import pytest
+
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.retained_mode.events.node_events import (
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
 )
+from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
@@ -122,3 +128,32 @@ class TestNodeManagerResolutionStateSerialization:
 
         # Resolution should be reset to UNRESOLVED due to serialization failure
         assert create_node_request.resolution == NodeResolutionState.UNRESOLVED.value
+
+
+class TestNodeManagerAlterParameterDetailsClearDefaultValue:
+    """Test AlterParameterDetailsRequest behavior when clear_default_value and default_value are both set."""
+
+    def test_clear_default_value_with_default_value_logs_warning_and_clears(
+        self, griptape_nodes: GriptapeNodes, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When both clear_default_value and default_value are provided, default is cleared and a warning is logged."""
+        parameter = Parameter(name="test_param", default_value="original_value")
+        request = AlterParameterDetailsRequest(
+            parameter_name="test_param",
+            node_name="test_node",
+            clear_default_value=True,
+            default_value="ignored_value",
+        )
+
+        caplog.clear()
+        caplog.set_level(logging.WARNING)
+
+        griptape_nodes.NodeManager().modify_key_parameter_fields(request, parameter)
+
+        assert parameter.default_value is None
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert "Conflicting options" in caplog.records[0].message
+        assert "clear_default_value takes precedence" in caplog.records[0].message
+        assert "test_param" in caplog.records[0].message
+        assert "test_node" in caplog.records[0].message

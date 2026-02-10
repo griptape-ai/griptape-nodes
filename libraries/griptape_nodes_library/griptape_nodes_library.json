@@ -27,7 +27,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.62.0",
+    "library_version": "0.63.1",
     "engine_version": "0.71.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
@@ -1716,6 +1716,16 @@
         "category": "image",
         "description": "Invert a full image (creates a negative).",
         "display_name": "Invert Image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "SetColorToTransparent",
+      "file_path": "griptape_nodes_library/image/set_color_to_transparent.py",
+      "metadata": {
+        "category": "image",
+        "description": "Replace a specific color in an image with transparency",
+        "display_name": "Set Color to Transparent",
         "group": "edit"
       }
     },

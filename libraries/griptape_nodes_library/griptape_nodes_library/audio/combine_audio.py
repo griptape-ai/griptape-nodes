@@ -103,6 +103,8 @@ class CombineAudio(SuccessFailureNode):
             parameter_group_initially_collapsed=True,
         )
 
+        self.set_initial_node_size(height=855)
+
     def validate_before_node_run(self) -> list[Exception] | None:
         """Validate that at least one track has audio input before running the node."""
         exceptions = []

@@ -8,6 +8,7 @@ from .dependency_installation_failed_problem import DependencyInstallationFailed
 from .deprecated_node_warning_problem import DeprecatedNodeWarningProblem
 from .duplicate_library_problem import DuplicateLibraryProblem
 from .duplicate_node_registration_problem import DuplicateNodeRegistrationProblem
+from .duplicate_widget_registration_problem import DuplicateWidgetRegistrationProblem
 from .engine_version_error_problem import EngineVersionErrorProblem
 from .incompatible_requirements_problem import IncompatibleRequirementsProblem
 from .insufficient_disk_space_problem import InsufficientDiskSpaceProblem
@@ -39,6 +40,7 @@ __all__ = [
     "DeprecatedNodeWarningProblem",
     "DuplicateLibraryProblem",
     "DuplicateNodeRegistrationProblem",
+    "DuplicateWidgetRegistrationProblem",
     "EngineVersionErrorProblem",
     "IncompatibleRequirementsProblem",
     "InsufficientDiskSpaceProblem",

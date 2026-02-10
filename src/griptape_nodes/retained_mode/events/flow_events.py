@@ -286,6 +286,9 @@ class SerializeFlowToCommandsResultFailure(WorkflowNotAlteredMixin, ResultPayloa
 @PayloadRegistry.register
 class DeserializeFlowFromCommandsRequest(RequestPayload):
     serialized_flow_commands: SerializedFlowCommands
+    pop_flow_context_after: bool = (
+        True  # Whether to pop the flow context after deserialization (default: True for cleanup)
+    )
 
 
 @dataclass

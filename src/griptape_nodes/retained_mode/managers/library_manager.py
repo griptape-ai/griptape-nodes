@@ -129,6 +129,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     UpdateLibraryRequest,
     UpdateLibraryResultFailure,
     UpdateLibraryResultSuccess,
+    WidgetInfo,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
@@ -1893,10 +1894,10 @@ class LibraryManager:
         await self._libraries_loading_complete.wait()
         return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
-    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
+    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
         # Does this library exist?
         try:
-            LibraryRegistry.get_library(name=request.library)
+            library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
             result = GetAllInfoForLibraryResultFailure(result_details=details)
@@ -1953,11 +1954,42 @@ class LibraryManager:
             # Put it into the map.
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
+        # Build widget info list if the library has widgets
+        widgets_info: list[WidgetInfo] | None = None
+        library_data = library.get_library_data()
+        if library_data.widgets:
+            logger.info(
+                "Library '%s' has %d widget(s), building widget info",
+                request.library,
+                len(library_data.widgets),
+            )
+            # Get the static server base URL for constructing absolute bundle URLs
+            static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            widgets_info = []
+            for widget_def in library_data.widgets:
+                # Construct the full URL for this widget
+                # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/widgets/{path}
+                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                logger.debug(
+                    "Widget '%s' from library '%s': bundle_url=%s",
+                    widget_def.name,
+                    request.library,
+                    bundle_url,
+                )
+                widgets_info.append(
+                    WidgetInfo(
+                        name=widget_def.name,
+                        bundle_url=bundle_url,
+                        description=widget_def.description,
+                    )
+                )
+
         details = f"Successfully got all library info for a Library named '{request.library}'."
         result = GetAllInfoForLibraryResultSuccess(
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,
             node_type_name_to_node_metadata_details=node_type_name_to_node_metadata_details,
+            widgets=widgets_info,
             result_details=details,
         )
         return result
@@ -2674,6 +2706,15 @@ class LibraryManager:
 
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
+
+        # Register widgets and check for duplicates
+        if library_data.widgets:
+            for widget_def in library_data.widgets:
+                widget_problem = LibraryRegistry.register_widget_from_library(
+                    library_name=library_data.name, widget_name=widget_def.name
+                )
+                if widget_problem is not None:
+                    library_info.problems.append(widget_problem)
 
         # Call the after_library_nodes_loaded callback if available
         if advanced_library:
