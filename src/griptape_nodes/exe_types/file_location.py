@@ -118,7 +118,7 @@ class FileLocation:
             RuntimeError: If load operation fails or macro resolution fails
 
         Example:
-            >>> file_location = FileLocation.from_any(url, base_variables={...})
+            >>> file_location = FileLocation.from_value(url, base_variables={...})
             >>> image_bytes = await file_location.aload()
         """
         # Resolve location (handles macro templates)
@@ -177,7 +177,7 @@ class FileLocation:
         )
 
     @classmethod
-    def from_any(
+    def from_value(
         cls,
         value: Any,
         *,
@@ -214,7 +214,7 @@ class FileLocation:
 
         Example:
             >>> # Simple usage in nodes - no conditionals needed!
-            >>> file_location = FileLocation.from_any(
+            >>> file_location = FileLocation.from_value(
             ...     self.get_parameter_value("file_path"),
             ...     base_variables={"node_name": self.name},
             ... )

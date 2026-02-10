@@ -18,19 +18,14 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 
 class FileLocationParameter:
-    """Parameter component for FileLocation UI integration and file operations.
+    """Parameter component for FileLocation UI integration.
 
-    This component provides:
+    This is a UI-only component that provides:
     - Parameter creation with proper traits (FileSystemPicker, Button)
     - UI helper text updates showing resolved path preview
     - Button to create/connect ResolveFilePath nodes
-    - Instance methods for saving/loading from the parameter
 
-    For working with arbitrary values (not from parameters), use FileLocation directly:
-        >>> file_location = FileLocation.from_any(value, base_variables={"node_name": self.name})
-        >>> data = await file_location.aload()
-
-    Example:
+    Node authors should use FileLocation directly for file operations:
         >>> # In node __init__:
         >>> self._file_path_param = FileLocationParameter(
         ...     node=self,
@@ -39,10 +34,19 @@ class FileLocationParameter:
         ... )
         >>> self._file_path_param.add_parameter()
         >>>
-        >>> # In node process() - use instance methods:
-        >>> static_url = self._file_path_param.save(data)
+        >>> # In node process() - use FileLocation directly:
+        >>> file_path_value = self.get_parameter_value("file_path")
+        >>> file_location = FileLocation.from_value(
+        ...     file_path_value,
+        ...     base_variables={"node_name": self.name}
+        ... )
+        >>> static_url = file_location.save(data)
         >>> # Or with extra variables:
-        >>> static_url = self._file_path_param.save(data, index=i)
+        >>> file_location = FileLocation.from_value(
+        ...     file_path_value,
+        ...     base_variables={"node_name": self.name, "index": i}
+        ... )
+        >>> static_url = file_location.save(data)
     """
 
     def __init__(
@@ -260,90 +264,3 @@ class FileLocationParameter:
             return str(value)
 
         return None
-
-    def get_file_location(self, **extra_variables: str | int) -> FileLocation:
-        """Get FileLocation from parameter value with node_name auto-populated.
-
-        Args:
-            **extra_variables: Additional variables for macro resolution (e.g., index=0)
-
-        Returns:
-            FileLocation instance ready for save/load operations
-
-        Raises:
-            ValueError: If parameter value is None or empty
-            TypeError: If parameter value is unsupported type
-
-        Example:
-            >>> file_location = self._file_path_param.get_file_location()
-            >>> file_location = self._file_path_param.get_file_location(index=0)
-        """
-        value = self._node.get_parameter_value(self._name)
-        base_variables = {"node_name": self._node.name, **extra_variables}
-        return FileLocation.from_any(value, base_variables=base_variables)
-
-    def save(self, data: bytes, **extra_variables: str | int) -> str:
-        """Save data using the parameter's file location.
-
-        Automatically includes node_name in base_variables.
-
-        Args:
-            data: Binary data to save
-            **extra_variables: Additional variables for macro resolution (e.g., index=0)
-
-        Returns:
-            URL of the saved file for UI display
-
-        Raises:
-            FileExistsError: If file exists and policy is FAIL
-            RuntimeError: If save operation fails or macro resolution fails
-
-        Example:
-            >>> static_url = self._file_path_param.save(image_bytes)
-            >>> static_url = self._file_path_param.save(image_bytes, index=i)
-        """
-        file_location = self.get_file_location(**extra_variables)
-        return file_location.save(data)
-
-    def load(self, timeout: float = 120.0) -> bytes:
-        """Load data from the parameter's file location (synchronous).
-
-        WARNING: This method makes synchronous HTTP requests which will block.
-        For async contexts (node process methods), use aload() instead.
-
-        Args:
-            timeout: Timeout in seconds for HTTP downloads (default: 120.0)
-
-        Returns:
-            File content as bytes
-
-        Raises:
-            FileNotFoundError: If file does not exist at resolved path
-            RuntimeError: If load operation fails or macro resolution fails
-
-        Example:
-            >>> image_bytes = self._file_path_param.load()
-        """
-        file_location = self.get_file_location()
-        return file_location.load(timeout=timeout)
-
-    async def aload(self, timeout: float = 120.0) -> bytes:  # noqa: ASYNC109
-        """Load data from the parameter's file location (asynchronous).
-
-        Use this in async contexts like node process methods to avoid blocking.
-
-        Args:
-            timeout: Timeout in seconds for HTTP downloads (default: 120.0)
-
-        Returns:
-            File content as bytes
-
-        Raises:
-            FileNotFoundError: If file does not exist at resolved path
-            RuntimeError: If load operation fails or macro resolution fails
-
-        Example:
-            >>> image_bytes = await self._file_path_param.aload()
-        """
-        file_location = self.get_file_location()
-        return await file_location.aload(timeout=timeout)

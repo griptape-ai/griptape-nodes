@@ -571,7 +571,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             return None
 
         try:
-            file_location = FileLocation.from_any(image_input, base_variables={"node_name": self.name})
+            file_location = FileLocation.from_value(image_input, base_variables={"node_name": self.name})
             image_bytes = await file_location.aload()
         except Exception as e:
             self._log(f"Failed to load data URI from input: {e}")
@@ -628,7 +628,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         # FAILURE CASES FIRST
         self._log(f"Downloading image {index} from URL")
         try:
-            file_location = FileLocation.from_any(image_url, base_variables={"node_name": self.name})
+            file_location = FileLocation.from_value(image_url, base_variables={"node_name": self.name})
             image_bytes = await file_location.aload()
         except Exception as e:
             self._log(f"Could not download image {index}: {e}, using provider URL")
@@ -644,13 +644,17 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             self._log(f"Failed to convert image {index} to PNG: {e}")
             return ImageUrlArtifact(value=image_url)
 
-        # SUCCESS PATH - Save using output path parameter with custom variables
-        # Use index+1 for 1-based filename numbering (_1, _2, _3, etc.)
-        saved_url = self._output_path_param.save(
-            png_bytes,
-            generation_id=generation_id or str(int(time.time())),
-            image_index=index + 1,
+        # Get file location with variables and save
+        output_path_value = self.get_parameter_value("output_path")
+        file_location = FileLocation.from_value(
+            output_path_value,
+            base_variables={
+                "node_name": self.name,
+                "generation_id": generation_id or str(int(time.time())),
+                "image_index": index + 1,
+            },
         )
+        saved_url = file_location.save(png_bytes)
 
         # Extract filename from URL for artifact name
         filename = (

@@ -8,6 +8,7 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
@@ -333,8 +334,10 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
 
-        # Save using FileLocationParameter helper method
-        static_url = self._file_path_param.save(agent.output.to_bytes())
+        # Get file location and save
+        file_path_value = self.get_parameter_value("file_path")
+        file_location = FileLocation.from_value(file_path_value, base_variables={"node_name": self.name})
+        static_url = file_location.save(agent.output.to_bytes())
 
         # Create URL artifact for output preview
         url_artifact = ImageUrlArtifact(value=static_url)
