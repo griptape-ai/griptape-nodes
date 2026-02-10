@@ -368,7 +368,4 @@ class TestProviderRegistry:
         assert "artifacts.image.preview_generation.preview_format" in config_schema
         assert "artifacts.image.preview_generation.preview_generator" in config_schema
         assert config_schema["artifacts.image.preview_generation.preview_format"] == "webp"
-        assert (
-            config_schema["artifacts.image.preview_generation.preview_generator"]
-            == "Standard Thumbnail Generation"
-        )
+        assert config_schema["artifacts.image.preview_generation.preview_generator"] == "Standard Thumbnail Generation"
