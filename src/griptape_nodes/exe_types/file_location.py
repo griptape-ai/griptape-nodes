@@ -1,17 +1,17 @@
 """FileLocation class for encapsulating file paths with save policies."""
 
-import asyncio
-import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
+from asyncio_thread_runner import ThreadRunner
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.drivers.location import LocationDriverRegistry
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import GetPathForMacroRequest, GetPathForMacroResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.image_metadata_injector import inject_workflow_metadata_if_image
 from griptape_nodes.utils.url_utils import is_url_or_path
 
 
@@ -35,7 +35,10 @@ class FileLocation:
     create_parent_dirs: bool = True
 
     def save(self, data: bytes) -> str:
-        """Save data by resolving macro template at save-time.
+        """Save data by resolving macro template and using location driver (synchronous).
+
+        WARNING: This method may make synchronous HTTP requests which will block.
+        For async contexts (node process methods), consider using asave() instead.
 
         Args:
             data: Binary data to save
@@ -47,26 +50,51 @@ class FileLocation:
             FileExistsError: If file exists and policy is FAIL
             RuntimeError: If save operation fails or macro resolution fails
         """
-        # Resolve macro with ProjectManager
-        parsed_macro = ParsedMacro(self.macro_template)
-        resolve_request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables=self.base_variables)
-        result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(resolve_request)
+        with ThreadRunner() as runner:
+            return runner.run(self.asave(data))
 
-        if not isinstance(result, GetPathForMacroResultSuccess):
-            error_msg = f"Failed to resolve macro template '{self.macro_template}' with variables {self.base_variables}"
-            raise RuntimeError(error_msg)  # noqa: TRY004  # noqa: TRY004
+    async def asave(self, data: bytes) -> str:
+        """Save data by resolving macro template and using location driver (asynchronous).
 
-        # Extract filename from resolved absolute path
-        file_name = result.absolute_path.name
+        This is the primary save implementation. Use this in async contexts like
+        node process methods to avoid blocking.
 
-        # Save via StaticFilesManager with defaults
-        return GriptapeNodes.StaticFilesManager().save_static_file(
-            data=data,
-            file_name=file_name,
-            existing_file_policy=self.existing_file_policy,
-            use_direct_save=True,
-            skip_metadata_injection=False,
-        )
+        Flow:
+        1. Resolve macro template to actual location
+        2. Inject workflow metadata if image format supports it
+        3. Find appropriate driver for location
+        4. Delegate save to driver
+
+        Args:
+            data: Binary data to save
+
+        Returns:
+            URL of the saved file for UI display
+
+        Raises:
+            FileExistsError: If file exists and policy is FAIL
+            RuntimeError: If save operation fails or macro resolution fails or no driver can handle location
+
+        Example:
+            >>> file_location = FileLocation.from_value("{outputs}/image.png", base_variables={...})
+            >>> url = await file_location.asave(image_bytes)
+        """
+        # STEP 1: Resolve macro template (pre-processing)
+        location = self._resolve_location()
+
+        # STEP 2: Inject metadata if image format supports it
+        file_name = Path(location).name
+        data = inject_workflow_metadata_if_image(data, file_name)
+
+        # STEP 3: Get driver for resolved location
+        driver = LocationDriverRegistry.get_driver_for_location(location)
+
+        if driver is None:
+            error_msg = f"No driver can handle location: {location[:100]}"
+            raise RuntimeError(error_msg)
+
+        # STEP 4: Delegate to driver
+        return await driver.asave(location, data, self.existing_file_policy.value)
 
     def load(self, timeout: float = 120.0) -> bytes:
         """Load file data from macro template or direct location (synchronous).
@@ -79,20 +107,21 @@ class FileLocation:
         - HTTP/HTTPS URLs: "https://example.com/image.png" → downloaded
         - Data URIs: "data:image/png;base64,..." → decoded
         - File paths: "/path/to/file.png" → read directly
-        - Raw base64 strings → decoded as fallback
+        - Custom drivers can be registered for additional location types
 
         Args:
-            timeout: Timeout in seconds for HTTP downloads (default: 120.0)
+            timeout: Timeout in seconds for network operations (default: 120.0)
 
         Returns:
             File content as bytes
 
         Raises:
-            FileNotFoundError: If file does not exist at resolved path
-            RuntimeError: If load operation fails or macro resolution fails
+            FileNotFoundError: If file does not exist
+            ValueError: If location format is invalid
+            RuntimeError: If load operation fails or no driver can handle location
         """
-        # Run async version in a new event loop (for sync contexts)
-        return asyncio.run(self.aload(timeout=timeout))
+        with ThreadRunner() as runner:
+            return runner.run(self.aload(timeout=timeout))
 
     async def aload(self, timeout: float = 120.0) -> bytes:  # noqa: ASYNC109
         """Load file data from macro template or direct location (asynchronous).
@@ -105,34 +134,35 @@ class FileLocation:
         - HTTP/HTTPS URLs: "https://example.com/image.png" → downloaded
         - Data URIs: "data:image/png;base64,..." → decoded
         - File paths: "/path/to/file.png" → read directly
-        - Raw base64 strings → decoded as fallback
+        - Custom drivers can be registered for additional location types
 
         Args:
-            timeout: Timeout in seconds for HTTP downloads (default: 120.0)
+            timeout: Timeout in seconds for network operations (default: 120.0)
 
         Returns:
             File content as bytes
 
         Raises:
-            FileNotFoundError: If file does not exist at resolved path
-            RuntimeError: If load operation fails or macro resolution fails
+            FileNotFoundError: If file does not exist
+            ValueError: If location format is invalid
+            RuntimeError: If load operation fails or no driver can handle location
 
         Example:
             >>> file_location = FileLocation.from_value(url, base_variables={...})
             >>> image_bytes = await file_location.aload()
         """
-        # Resolve location (handles macro templates)
+        # STEP 1: Resolve macro templates (pre-processing)
         location = self._resolve_location()
 
-        # Load based on location type
-        if location.startswith("data:"):
-            return self._decode_data_uri(location)
+        # STEP 2: Get driver for resolved location
+        driver = LocationDriverRegistry.get_driver_for_location(location)
 
-        if location.startswith(("http://", "https://")):
-            return await self._download_from_http_url(location, timeout)
+        if driver is None:
+            error_msg = f"No driver can handle location: {location[:100]}"
+            raise RuntimeError(error_msg)
 
-        # File path - read from filesystem
-        return self._read_from_file_path(location)
+        # STEP 3: Delegate to driver
+        return await driver.aload(location, timeout)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize FileLocation for workflow save.
@@ -308,85 +338,6 @@ class FileLocation:
             raise RuntimeError(error_msg)  # noqa: TRY004
 
         return str(result.absolute_path)
-
-    @staticmethod
-    def _decode_data_uri(data_uri: str) -> bytes:
-        """Decode data URI to bytes.
-
-        Args:
-            data_uri: Data URI string (e.g., "data:image/png;base64,...")
-
-        Returns:
-            Decoded bytes
-
-        Raises:
-            ValueError: If data URI is malformed
-        """
-        if not data_uri.startswith("data:"):
-            error_msg = f"Invalid data URI: must start with 'data:', got: {data_uri[:50]}"
-            raise ValueError(error_msg)
-
-        # Split into header and data
-        if ";base64," not in data_uri:
-            error_msg = f"Invalid data URI: must contain ';base64,', got: {data_uri[:100]}"
-            raise ValueError(error_msg)
-
-        _, b64_data = data_uri.split(";base64,", 1)
-
-        try:
-            return base64.b64decode(b64_data)
-        except Exception as e:
-            error_msg = f"Failed to decode base64 data from data URI: {e}"
-            raise ValueError(error_msg) from e
-
-    @staticmethod
-    async def _download_from_http_url(url: str, timeout: float) -> bytes:  # noqa: ASYNC109
-        """Download file from HTTP/HTTPS URL.
-
-        Args:
-            url: HTTP/HTTPS URL to download from
-            timeout: Timeout in seconds
-
-        Returns:
-            Downloaded bytes
-
-        Raises:
-            RuntimeError: If download fails
-        """
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=timeout)
-                response.raise_for_status()
-                return response.content
-        except httpx.HTTPError as e:
-            error_msg = f"Failed to download from {url}: {e}"
-            raise RuntimeError(error_msg) from e
-
-    @staticmethod
-    def _read_from_file_path(file_path: str) -> bytes:
-        """Read file from filesystem.
-
-        Args:
-            file_path: Path to file
-
-        Returns:
-            File content as bytes
-
-        Raises:
-            FileNotFoundError: If file does not exist
-            RuntimeError: If read fails
-        """
-        path = Path(file_path)
-
-        if not path.exists():
-            error_msg = f"File not found: {file_path}"
-            raise FileNotFoundError(error_msg)
-
-        try:
-            return path.read_bytes()
-        except Exception as e:
-            error_msg = f"Failed to read file {file_path}: {e}"
-            raise RuntimeError(error_msg) from e
 
     def __str__(self) -> str:
         """Return resolved path for string conversion (resolves macro with base variables)."""
