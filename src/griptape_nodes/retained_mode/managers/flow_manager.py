@@ -317,6 +317,28 @@ class FlowManager:
         """Get the connections instance."""
         return self._connections
 
+    def _cleanup_flow_on_failed_deserialization(self, flow_name: str, *, pushed_flow_context: bool) -> None:
+        """Clean up a flow that failed during deserialization.
+
+        This method deletes the flow (which cascades to delete all nodes and connections)
+        and pops the flow context if it was pushed.
+
+        Args:
+            flow_name: The name of the flow to delete
+            pushed_flow_context: Whether we pushed this flow to the context
+        """
+        if pushed_flow_context:
+            GriptapeNodes.ContextManager().pop_flow()
+
+        delete_flow_request = DeleteFlowRequest(flow_name=flow_name)
+        delete_result = GriptapeNodes.handle_request(delete_flow_request)
+        if delete_result.failed():
+            logger.warning(
+                "Failed to clean up flow '%s' after deserialization failure: %s",
+                flow_name,
+                delete_result.result_details,
+            )
+
     def _has_connection(
         self,
         source_node: BaseNode,
@@ -1913,6 +1935,30 @@ class FlowManager:
                     msg = f"External control connection references parameter '{control_conn.source_parameter_name}' on node '{package_node.name}' which does not exist. This indicates a data consistency issue."
                     raise ValueError(msg)
 
+                # Get the EndFlow node class for validation
+                end_library = LibraryRegistry.get_library_for_node_type(
+                    request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                    request.end_node_library_name,
+                )
+                end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+
+                # Validate from package node's perspective (we know source param name, not target)
+                valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
+                    end_node_class,
+                    source_param.name,  # source parameter name - we KNOW this
+                    None,  # target parameter name - we DON'T know this yet
+                )
+
+                # Only create the connection if validation passes
+                if not valid_connection:
+                    # Some nodes only allow connections to certain other nodes (for example ForEach Start and End Node). We shouldn't allow those connections to be serialized, because they'll fail on deserialization.
+                    logger.warning(
+                        "Skipping control connection from %s.%s to EndFlow - connection not allowed by node validation rules",
+                        package_node.name,
+                        source_param.name,
+                    )
+                    continue
+
                 # Use comprehensive helper to process this control parameter
                 self._process_parameter_for_end_node(
                     request=request,
@@ -1962,20 +2008,39 @@ class FlowManager:
                 if package_param.output_type == ParameterTypeBuiltin.CONTROL_TYPE.value:
                     continue
 
+                # Get the EndFlow node class for validation
+                try:
+                    end_library = LibraryRegistry.get_library_for_node_type(
+                        request.end_node_type,  # type: ignore[arg-type]  # Guaranteed non-None by handler
+                        request.end_node_library_name,
+                    )
+                    end_node_class = end_library._node_types[request.end_node_type]  # type: ignore[arg-type]
+
+                    # Validate from package node's perspective (we know source param name, not target)
+                    valid_connection = package_node.__class__.allow_outgoing_connection_by_class(
+                        end_node_class,
+                        package_param.name,  # source parameter name - we KNOW this
+                        None,  # target parameter name - we DON'T know this yet
+                    )
+                except KeyError as err:
+                    msg = f"Unable to find library for node type '{request.end_node_type}'"
+                    raise KeyError(msg) from err
+
                 # Use comprehensive helper to process this data parameter
-                self._process_parameter_for_end_node(
-                    request=request,
-                    parameter=package_param,
-                    node_name=package_node.name,
-                    node_uuid=package_node_uuid,
-                    end_node_name=end_node_name,
-                    end_node_uuid=end_node_uuid,
-                    tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
-                    end_node_parameter_commands=end_node_parameter_commands,
-                    package_to_end_connections=package_to_end_connections,
-                    parameter_name_mappings=parameter_name_mappings,
-                    output_shape_data=output_shape_data,
-                )
+                if valid_connection:
+                    self._process_parameter_for_end_node(
+                        request=request,
+                        parameter=package_param,
+                        node_name=package_node.name,
+                        node_uuid=package_node_uuid,
+                        end_node_name=end_node_name,
+                        end_node_uuid=end_node_uuid,
+                        tooltip=f"Output parameter {package_param.name} from packaged node {package_node.name}",
+                        end_node_parameter_commands=end_node_parameter_commands,
+                        package_to_end_connections=package_to_end_connections,
+                        parameter_name_mappings=parameter_name_mappings,
+                        output_shape_data=output_shape_data,
+                    )
 
     def _process_parameter_for_end_node(  # noqa: PLR0913
         self,
@@ -3420,6 +3485,8 @@ class FlowManager:
             if GriptapeNodes.ContextManager().has_current_flow():
                 flow = GriptapeNodes.ContextManager().get_current_flow()
                 flow_name = flow.name
+                pushed_flow_context = False
+                created_new_flow = False
             else:
                 details = "Attempted to deserialize a set of Flow Creation commands into the Current Context. Failed because the Current Context was empty."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
@@ -3450,6 +3517,8 @@ class FlowManager:
                 details = f"Attempted to deserialize a serialized set of Flow Creation commands. Failed to find created flow '{flow_name}'."
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             GriptapeNodes.ContextManager().push_flow(flow=flow)
+            pushed_flow_context = True  # Mark that we pushed this flow
+            created_new_flow = True  # Mark that we created this flow
 
         # Deserializing a flow goes in a specific order.
 
@@ -3504,6 +3573,8 @@ class FlowManager:
                 details = (
                     f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a node within the flow."
                 )
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             node_uuid_to_deserialized_node_result[serialized_node.node_uuid] = deserialized_node_result
             node_name_mappings[original_node_name] = deserialized_node_result.node_name
@@ -3516,10 +3587,14 @@ class FlowManager:
             source_node_uuid = indirect_connection.source_node_uuid
             if source_node_uuid not in node_uuid_to_deserialized_node_result:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a source node that did not exist within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             target_node_uuid = indirect_connection.target_node_uuid
             if target_node_uuid not in node_uuid_to_deserialized_node_result:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while attempting to create a Connection for a target node that did not exist within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
             source_node_result = node_uuid_to_deserialized_node_result[source_node_uuid]
@@ -3536,6 +3611,8 @@ class FlowManager:
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a Connection from '{source_node_name}.{indirect_connection.source_parameter_name}' to '{target_node_name}.{indirect_connection.target_parameter_name}' within the flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         # Now assign the values.
@@ -3549,6 +3626,8 @@ class FlowManager:
             node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(node_name, BaseNode)
             if node is None:
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node_name}'."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
             with GriptapeNodes.ContextManager().node(node=node):
                 # Iterate through each set value command in the list for this node.
@@ -3559,24 +3638,43 @@ class FlowManager:
                         value = request.serialized_flow_commands.unique_parameter_uuid_to_values[unique_value_uuid]
                     except IndexError as err:
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node.name}.{parameter_name}': {err}"
+                        if created_new_flow:
+                            self._cleanup_flow_on_failed_deserialization(
+                                flow_name, pushed_flow_context=pushed_flow_context
+                            )
                         return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
                     # Call the SetParameterValueRequest, subbing in the value from our unique value list.
                     indirect_set_value_command.set_parameter_value_command.value = value
+                    # Update the parameter value command to have the correct name.
+                    indirect_set_value_command.set_parameter_value_command.node_name = node.name
                     set_parameter_value_result = GriptapeNodes.handle_request(
                         indirect_set_value_command.set_parameter_value_command
                     )
                     if set_parameter_value_result.failed():
                         details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a value assignment for node '{node.name}.{parameter_name}'."
+                        if created_new_flow:
+                            self._cleanup_flow_on_failed_deserialization(
+                                flow_name, pushed_flow_context=pushed_flow_context
+                            )
                         return DeserializeFlowFromCommandsResultFailure(result_details=details)
 
         # Now the child flows.
         for sub_flow_command in request.serialized_flow_commands.sub_flows_commands:
-            sub_flow_request = DeserializeFlowFromCommandsRequest(serialized_flow_commands=sub_flow_command)
+            sub_flow_request = DeserializeFlowFromCommandsRequest(
+                serialized_flow_commands=sub_flow_command,
+                pop_flow_context_after=True,  # Clean up child flows
+            )
             sub_flow_result = GriptapeNodes.handle_request(sub_flow_request)
             if sub_flow_result.failed():
                 details = f"Attempted to deserialize a Flow '{flow_name}'. Failed while deserializing a sub-flow within the Flow."
+                if created_new_flow:
+                    self._cleanup_flow_on_failed_deserialization(flow_name, pushed_flow_context=pushed_flow_context)
                 return DeserializeFlowFromCommandsResultFailure(result_details=details)
+
+        # Pop flow context if requested and we pushed it
+        if request.pop_flow_context_after and pushed_flow_context:
+            GriptapeNodes.ContextManager().pop_flow()
 
         details = f"Successfully deserialized Flow '{flow_name}'."
         return DeserializeFlowFromCommandsResultSuccess(

@@ -746,6 +746,15 @@ class NodeExecutor:
             end_node.name,
         )
 
+        # Mark all packaged nodes as RESOLVED to prevent them from executing in the outer flow.
+        # This is critical for nested loops: when an inner loop's body is packaged, those nodes
+        # exist in the outer flow but should not execute there - they only execute in the packaged iterations.
+        node_manager = GriptapeNodes.NodeManager()
+        for node_name in all_nodes:
+            node = node_manager.get_node_by_name(node_name)
+            if node:
+                node.state = NodeResolutionState.RESOLVED
+
         # Remove packaged nodes from global queue since they will be copied into loop iterations
         self._remove_packaged_nodes_from_queue(all_nodes)
 
@@ -1100,12 +1109,16 @@ class NodeExecutor:
 
                 if not isinstance(start_subflow_result, StartLocalSubflowResultSuccess):
                     msg = f"Sequential loop iteration {iteration_index} failed: {start_subflow_result.result_details}"
-                    logger.error(
-                        "Sequential iteration %d failed for loop ending at '%s'", iteration_index, end_loop_node.name
+                    logger.warning(
+                        "Sequential iteration %d failed for loop ending at '%s'. Will attempt to extract partial results. Error: %s",
+                        iteration_index,
+                        end_loop_node.name,
+                        start_subflow_result.result_details,
                     )
-                    raise RuntimeError(msg)  # noqa: TRY004 - This is a runtime execution error, not a type error
-
-                successful_iterations.append(iteration_index)
+                    # Don't immediately store None - try to extract results first in case there are partial results
+                    # (e.g., nested loop that had some failures but still produced output)
+                else:
+                    successful_iterations.append(iteration_index)
 
                 # For BaseIterativeNodeGroup, check control action to handle skip/break
                 if isinstance(end_loop_node, BaseIterativeNodeGroup):
@@ -1426,19 +1439,27 @@ class NodeExecutor:
 
         if len(successful_iterations) != total_iterations:
             failed_count = total_iterations - len(successful_iterations)
-            msg = f"Loop execution failed: {failed_count} of {total_iterations} iterations failed"
-            raise RuntimeError(msg)
+            logger.warning(
+                "Loop execution: %d of %d iterations failed. Results will contain None for failed iterations.",
+                failed_count,
+                total_iterations,
+            )
 
         logger.info(
-            "Successfully completed parallel execution of %d iterations for loop '%s'",
+            "Completed execution of %d iterations for loop '%s' (%d successful, %d failed)",
             total_iterations,
             start_node.name,
+            len(successful_iterations),
+            total_iterations - len(successful_iterations),
         )
 
-        # Step 6: Build results list in iteration order
+        # Step 6: Build results list in iteration order, with None for failed iterations
         node._results_list = []
-        for iteration_index in sorted(iteration_results.keys()):
-            value = iteration_results[iteration_index]
+        for iteration_index in range(total_iterations):
+            if iteration_index in iteration_results:
+                value = iteration_results[iteration_index]
+            else:
+                value = None  # Failed iterations get None
             node._results_list.append(value)
 
         # Step 7: Output final results to the results parameter
@@ -1749,6 +1770,15 @@ class NodeExecutor:
             len(node_names),
             node.name,
         )
+
+        # Mark all packaged nodes as RESOLVED to prevent them from executing in the outer flow.
+        # This is critical for nested iterative groups: when an inner group's body is packaged, those nodes
+        # exist in the outer flow but should not execute there - they only execute in the packaged iterations.
+        node_manager = GriptapeNodes.NodeManager()
+        for node_name in node_names:
+            node_reference = node_manager.get_node_by_name(node_name)
+            if node_reference:
+                node_reference.state = NodeResolutionState.RESOLVED
 
         # Remove packaged nodes from global queue
         self._remove_packaged_nodes_from_queue(set(node_names))
@@ -2235,16 +2265,14 @@ class NodeExecutor:
             try:
                 deserialized_end_node = node_manager.get_node_by_name(deserialized_end_node_name)
                 if endflow_param_name in deserialized_end_node.parameter_output_values:
-                    iteration_results[iteration_index] = deserialized_end_node.parameter_output_values[
-                        endflow_param_name
-                    ]
+                    extracted_value = deserialized_end_node.parameter_output_values[endflow_param_name]
+                    iteration_results[iteration_index] = extracted_value
             except Exception as e:
                 logger.warning(
                     "Failed to extract result from End node for iteration %d: %s",
                     iteration_index,
                     e,
                 )
-
         return iteration_results
 
     def get_last_iteration_values_for_packaged_nodes(
@@ -2464,22 +2492,30 @@ class NodeExecutor:
 
             # Step 4: Collect successful and failed iterations
             successful_iterations = []
-            failed_iterations = []
+            failed_iteration_indices = []
+            failed_iteration_errors = {}  # Map iteration_index -> error
 
-            for result in iteration_results:
+            for idx, result in enumerate(iteration_results):
                 if isinstance(result, Exception):
-                    failed_iterations.append(result)
+                    # Exception doesn't include iteration_index, use enumerate index
+                    failed_iteration_indices.append(idx)
+                    failed_iteration_errors[idx] = str(result)
                     continue
                 if isinstance(result, tuple):
                     iteration_index, success = result
                     if success:
                         successful_iterations.append(iteration_index)
                     else:
-                        failed_iterations.append(iteration_index)
+                        failed_iteration_indices.append(iteration_index)
+                        failed_iteration_errors[iteration_index] = "Iteration failed"
 
-            if failed_iterations:
-                msg = f"Loop execution failed: {len(failed_iterations)} of {total_iterations} iterations failed"
-                raise RuntimeError(msg)
+            if failed_iteration_indices:
+                logger.warning(
+                    "Loop execution: %d of %d parallel iterations failed. Results will contain None for failed iterations. Errors: %s",
+                    len(failed_iteration_indices),
+                    total_iterations,
+                    failed_iteration_errors,
+                )
 
             # Step 4: Extract parameter values from iterations BEFORE cleanup
             iteration_results = self.get_parameter_values_from_iterations(
@@ -2487,6 +2523,12 @@ class NodeExecutor:
                 deserialized_flows=deserialized_flows,
                 package_flow_result_success=package_result,
             )
+
+            # Add None values for failed iterations that didn't produce any results
+            # (e.g., nested loops may fail but still produce partial output)
+            for failed_idx in failed_iteration_indices:
+                if failed_idx not in iteration_results:
+                    iteration_results[failed_idx] = None
 
             # Step 5: Extract last iteration values BEFORE cleanup (flows deleted in finally block)
             last_iteration_values = self.get_last_iteration_values_for_packaged_nodes(

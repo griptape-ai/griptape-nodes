@@ -370,6 +370,34 @@ class NodeManager:
             if parent_flow_name == old_name:
                 self._name_to_parent_flow_name[node_name] = new_name
 
+    def _cleanup_node_on_failed_deserialization(self, node_name: str) -> None:
+        """Clean up a node that failed during deserialization.
+
+        This method deletes the node (which cascades to delete all connections).
+
+        Args:
+            node_name: The name of the node to delete
+        """
+        delete_node_request = DeleteNodeRequest(node_name=node_name)
+        delete_result = GriptapeNodes.handle_request(delete_node_request)
+        if delete_result.failed():
+            logger.warning(
+                "Failed to clean up node '%s' after deserialization failure: %s",
+                node_name,
+                delete_result.result_details,
+            )
+
+    def _cleanup_created_nodes(self, node_names: list[str]) -> None:
+        """Clean up multiple nodes that were created during a failed deserialization.
+
+        This method deletes all nodes (which cascades to delete all connections).
+
+        Args:
+            node_names: The list of node names to delete
+        """
+        for node_name in node_names:
+            self._cleanup_node_on_failed_deserialization(node_name)
+
     def on_create_node_request(self, request: CreateNodeRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         # Validate as much as possible before we actually create one.
         parent_flow_name = request.override_parent_flow_name
@@ -3099,6 +3127,7 @@ class NodeManager:
                 element_result = GriptapeNodes().handle_request(element_command)
                 if element_result.failed():
                     details = f"Attempted to deserialize a serialized set of Node Creation commands. Failed to execute an element command for node '{node_name}'."
+                    self._cleanup_node_on_failed_deserialization(node_name)
                     return DeserializeNodeFromCommandsResultFailure(result_details=details)
         details = f"Successfully deserialized a serialized set of Node Creation commands for node '{node_name}'."
         return DeserializeNodeFromCommandsResultSuccess(node_name=node_name, result_details=details)
@@ -3308,6 +3337,7 @@ class NodeManager:
             return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
         connections = commands.serialized_connection_commands
         node_uuid_to_name = {}
+        created_node_names: list[str] = []
 
         # Build a set of child node UUIDs to identify implicitly selected nodes
         child_node_uuids = set()
@@ -3372,11 +3402,15 @@ class NodeManager:
             )
             if not isinstance(result, DeserializeNodeFromCommandsResultSuccess):
                 details = "Attempted to deserialize node but ran into an error on node serialization."
+                self._cleanup_created_nodes(created_node_names)
                 return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
+
+            created_node_names.append(result.node_name)
             node_uuid_to_name[node_command.node_uuid] = result.node_name
             node = GriptapeNodes.ObjectManager().attempt_get_object_by_name_as_type(result.node_name, BaseNode)
             if node is None:
                 details = "Attempted to deserialize node but ran into an error on node serialization."
+                self._cleanup_created_nodes(created_node_names)
                 return DeserializeSelectedNodesFromCommandsResultFailure(result_details=details)
             with GriptapeNodes.ContextManager().node(node=node):
                 parameter_commands = commands.set_parameter_value_commands[node_command.node_uuid]
