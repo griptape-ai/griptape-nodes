@@ -182,6 +182,15 @@
       }
     },
     {
+      "filesystem": {
+        "color": "border-gray-500",
+        "title": "Filesystem",
+        "description": "File and directory operations",
+        "icon": "FolderOpen",
+        "group": "Input/Output"
+      }
+    },
+    {
       "number": {
         "color": "border-blue-500",
         "title": "Number",
@@ -1866,6 +1875,17 @@
         "description": "Save an image to a file",
         "display_name": "Save Image",
         "icon": "image-down",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "ResolveFilePath",
+      "file_path": "griptape_nodes_library/filesystem/resolve_path.py",
+      "metadata": {
+        "category": "filesystem",
+        "description": "Resolve filename to full path with macro expansion",
+        "display_name": "Resolve File Path",
+        "icon": "FolderOpen",
         "group": "Input/Output"
       }
     },

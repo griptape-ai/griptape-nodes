@@ -9,6 +9,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -16,7 +17,6 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from griptape_nodes_library.utils.file_utils import generate_filename
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -95,6 +95,14 @@ class GenerateImage(ControlNode):
                 settable=False,  # Ensures this serializes on save, but don't let user set it.
             )
         )
+        self._file_path_param = FileLocationParameter(
+            node=self,
+            name="file_path",
+            default_value="{staticfiles}/{workflow_name}_output.png",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            tooltip="File location for saving image (supports macros like {workflow_name}, {staticfiles}, etc.)",
+        )
+        self._file_path_param.add_parameter()
         # Group for logging information.
         with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
@@ -135,6 +143,9 @@ class GenerateImage(ControlNode):
         value: Any,
     ) -> None:
         """Certain options are only available for certain models."""
+        if hasattr(self, "_file_path_param"):
+            self._file_path_param.after_value_set(parameter, value)
+
         if parameter.name == "output_format":
             if value == "jpeg":
                 self.show_parameter_by_name("output_compression")
@@ -321,12 +332,11 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
-        filename = generate_filename(
-            node_name=self.name,
-            suffix="_generated",
-            extension="png",
-        )
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), filename)
+
+        # Save using FileLocationParameter helper method
+        static_url = self._file_path_param.save(agent.output.to_bytes())
+
+        # Create URL artifact for output preview
         url_artifact = ImageUrlArtifact(value=static_url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

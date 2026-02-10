@@ -12,20 +12,16 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.file_location import FileLocation
+from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import (
-    convert_image_value_to_base64_data_uri,
-    read_image_from_file_path,
-    resolve_localhost_url_to_path,
-)
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -225,6 +221,16 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             )
         )
 
+        # Output file path configuration
+        self._output_path_param = FileLocationParameter(
+            node=self,
+            name="output_path",
+            default_value="{staticfiles}/seedream_{generation_id}_{image_index}.png",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            tooltip="Output file path template (supports {generation_id}, {image_index}, {workflow_name}, etc.)",
+        )
+        self._output_path_param.add_parameter()
+
         # OUTPUTS
         self.add_parameter(
             ParameterString(
@@ -311,6 +317,10 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update size options and parameter visibility based on parameter changes."""
+        # Update output path parameter helper text
+        if hasattr(self, "_output_path_param"):
+            self._output_path_param.after_value_set(parameter, value)
+
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
 
@@ -466,7 +476,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                     ValueError(f"{self.name}: {model} supports maximum {max_images} images, got {len(images)}")
                 )
 
-        return exceptions if exceptions else None
+        return exceptions or None
 
     def _get_parameters(self) -> dict[str, Any]:
         image = self.get_parameter_value("image")
@@ -545,71 +555,31 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         return payload
 
     async def _process_input_image(self, image_input: Any) -> str | None:
-        """Process input image and convert to base64 data URI."""
+        """Process input image and convert to base64 data URI.
+
+        Handles URLs, file paths, data URIs, ImageArtifact, and ImageUrlArtifact.
+
+        Args:
+            image_input: Image input (ImageArtifact, ImageUrlArtifact, str, or list item)
+
+        Returns:
+            Base64 data URI string, or None if input is invalid
+        """
+        import base64
+
         if not image_input:
             return None
 
-        # Extract string value from input
-        image_value = self._extract_image_value(image_input)
-        if not image_value:
+        try:
+            file_location = FileLocation.from_any(image_input, base_variables={"node_name": self.name})
+            image_bytes = await file_location.aload()
+        except Exception as e:
+            self._log(f"Failed to load data URI from input: {e}")
             return None
 
-        return await self._convert_to_base64_data_uri(image_value)
-
-    def _extract_image_value(self, image_input: Any) -> str | None:
-        """Extract string value from various image input types."""
-        if isinstance(image_input, str):
-            # Resolve localhost URLs to workspace paths
-            return resolve_localhost_url_to_path(image_input)
-
-        try:
-            # ImageUrlArtifact: .value holds URL string
-            if hasattr(image_input, "value"):
-                value = getattr(image_input, "value", None)
-                if isinstance(value, str):
-                    # Resolve localhost URLs to workspace paths
-                    return resolve_localhost_url_to_path(value)
-
-            # ImageArtifact: .base64 holds raw or data-URI
-            if hasattr(image_input, "base64"):
-                b64 = getattr(image_input, "base64", None)
-                if isinstance(b64, str) and b64:
-                    return b64
-        except Exception as e:
-            self._log(f"Failed to extract image value: {e}")
-
-        return None
-
-    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
-        """Convert image value to base64 data URI."""
-        # If it's already a data URI, return it
-        if image_value.startswith("data:image/"):
-            return image_value
-
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_image(image_value)
-
-        # Try to read as file path first (works cross-platform)
-        file_path = read_image_from_file_path(image_value, self.name)
-        if file_path:
-            return file_path
-
-        # Use utility function to handle raw base64
-        return convert_image_value_to_base64_data_uri(image_value, self.name)
-
-    async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
-
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            self._log(f"Failed to download image from URL {url}: {e}")
-        return None
+        # Encode to base64 data URI (always use PNG for simplicity)
+        b64_string = base64.b64encode(image_bytes).decode("utf-8")
+        return f"data:image/png;base64,{b64_string}"
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -649,38 +619,48 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
         Args:
             image_url: URL of the image to download
-            generation_id: Optional generation ID for filename
-            index: Index of the image in multi-image response
+            generation_id: Optional generation ID for filename traceability
+            index: Index of the image in multi-image response (0-based for API, 1-based for filename)
 
         Returns:
             ImageUrlArtifact with saved image, or None if download/save fails
         """
+        # FAILURE CASES FIRST
+        self._log(f"Downloading image {index} from URL")
         try:
-            self._log(f"Downloading image {index} from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
-            if not image_bytes:
-                self._log(f"Could not download image {index}, using provider URL")
-                return ImageUrlArtifact(value=image_url)
+            file_location = FileLocation.from_any(image_url, base_variables={"node_name": self.name})
+            image_bytes = await file_location.aload()
+        except Exception as e:
+            self._log(f"Could not download image {index}: {e}, using provider URL")
+            return ImageUrlArtifact(value=image_url)
 
-            # Convert to PNG format to enable automatic workflow metadata embedding
+        # Convert to PNG format to enable automatic workflow metadata embedding
+        try:
             pil_image = Image.open(BytesIO(image_bytes))
             png_buffer = BytesIO()
             pil_image.save(png_buffer, format="PNG")
             png_bytes = png_buffer.getvalue()
-
-            if generation_id:
-                filename = f"seedream_image_{generation_id}_{index}.png"
-            else:
-                filename = f"seedream_image_{int(time.time())}_{index}.png"
-
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(png_bytes, filename)
-            self._log(f"Saved image {index} to static storage as {filename}")
-            return ImageUrlArtifact(value=saved_url, name=filename)
-
         except Exception as e:
-            self._log(f"Failed to save image {index} from URL: {e}")
+            self._log(f"Failed to convert image {index} to PNG: {e}")
             return ImageUrlArtifact(value=image_url)
+
+        # SUCCESS PATH - Save using output path parameter with custom variables
+        # Use index+1 for 1-based filename numbering (_1, _2, _3, etc.)
+        saved_url = self._output_path_param.save(
+            png_bytes,
+            generation_id=generation_id or str(int(time.time())),
+            image_index=index + 1,
+        )
+
+        # Extract filename from URL for artifact name
+        filename = (
+            saved_url.split("/")[-1]
+            if "/" in saved_url
+            else f"seedream_image_{generation_id or 'unknown'}_{index + 1}.png"
+        )
+
+        self._log(f"Saved image {index} to static storage as {filename}")
+        return ImageUrlArtifact(value=saved_url, name=filename)
 
     def _extract_error_message(self, response_json: dict[str, Any]) -> str:
         """Extract error message from failed/errored generation response.
