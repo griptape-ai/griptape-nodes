@@ -113,7 +113,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_preview_formats(cls) -> set[str]:
-                return {"jpg"}
+                return {"webp"}
 
             @classmethod
             def get_default_preview_generator(cls) -> str:
@@ -121,7 +121,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_default_preview_format(cls) -> str:
-                return "jpg"
+                return "webp"
 
             @classmethod
             def get_default_generators(cls) -> list:
@@ -242,7 +242,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_preview_formats(cls) -> set[str]:
-                return {"jpg"}
+                return {"webp"}
 
             @classmethod
             def get_default_preview_generator(cls) -> str:
@@ -250,7 +250,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_default_preview_format(cls) -> str:
-                return "jpg"
+                return "webp"
 
             @classmethod
             def get_default_generators(cls) -> list:
@@ -285,7 +285,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_preview_formats(cls) -> set[str]:
-                return {"jpg"}
+                return {"webp"}
 
             @classmethod
             def get_default_preview_generator(cls) -> str:
@@ -293,7 +293,7 @@ class TestArtifactManager:
 
             @classmethod
             def get_default_preview_format(cls) -> str:
-                return "jpg"
+                return "webp"
 
             @classmethod
             def get_default_generators(cls) -> list:

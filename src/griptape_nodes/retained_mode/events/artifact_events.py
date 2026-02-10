@@ -25,7 +25,7 @@ class ArtifactFailureReason(StrEnum):
     UNSUPPORTED_FORMAT = "unsupported_format"  # Can't generate preview for this file type
 
     # Macro errors
-    MACRO_RESOLUTION_FAILED = "macro_resolution_failed"  # Failed to resolve MacroPath
+    MACRO_PATH_RESOLUTION_FAILED = "macro_path_resolution_failed"  # Failed to resolve MacroPath
     MISSING_VARIABLES = "missing_variables"  # Missing required macro variables
 
     # Situation errors
