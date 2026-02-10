@@ -1,5 +1,6 @@
 """FileLocationParameter - parameter component for file location UI integration."""
 
+import logging
 from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
@@ -16,36 +17,34 @@ from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
+logger = logging.getLogger("griptape_nodes")
+
 
 class FileLocationParameter:
     """Parameter component for FileLocation UI integration.
 
-    This is a UI-only component that provides:
+    This component provides:
     - Parameter creation with proper traits (FileSystemPicker, Button)
     - UI helper text updates showing resolved path preview
     - Button to create/connect ResolveFilePath nodes
+    - Simple API for getting FileLocation objects for saving
 
-    Node authors should use FileLocation directly for file operations:
+    Usage:
         >>> # In node __init__:
         >>> self._file_path_param = FileLocationParameter(
         ...     node=self,
         ...     name="file_path",
-        ...     default_value="{staticfiles}/output.png",
+        ...     situation_name="save_node_output",
+        ...     simple_default="output.png",
         ... )
         >>> self._file_path_param.add_parameter()
         >>>
-        >>> # In node process() - use FileLocation directly:
-        >>> file_path_value = self.get_parameter_value("file_path")
-        >>> file_location = FileLocation.from_value(
-        ...     file_path_value,
-        ...     base_variables={"node_name": self.name}
-        ... )
+        >>> # In node process() - get FileLocation and save:
+        >>> file_location = self._file_path_param.get_file_location()
         >>> static_url = file_location.save(data)
-        >>> # Or with extra variables:
-        >>> file_location = FileLocation.from_value(
-        ...     file_path_value,
-        ...     base_variables={"node_name": self.name, "index": i}
-        ... )
+        >>>
+        >>> # With extra variables (e.g., for multiple images):
+        >>> file_location = self._file_path_param.get_file_location(image_index=i)
         >>> static_url = file_location.save(data)
     """
 
@@ -54,7 +53,7 @@ class FileLocationParameter:
         node: BaseNode,
         name: str,
         *,
-        default_value: Any = None,
+        situation_name: str,
         allowed_modes: set[ParameterMode] | None = None,
         tooltip: str | None = None,
         **kwargs: Any,
@@ -64,21 +63,156 @@ class FileLocationParameter:
         Args:
             node: Parent node instance
             name: Parameter name
-            default_value: Default parameter value
+            situation_name: Name of the situation template (e.g., "save_node_output")
             allowed_modes: Set of allowed parameter modes (default: INPUT, PROPERTY)
             tooltip: Tooltip text for UI
             **kwargs: Additional parameter options (input_types, output_type, ui_options)
         """
         self._node = node
         self._name = name
-        self._default_value = default_value
-        self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
+        self._situation_name = situation_name
         self._tooltip = tooltip
+        self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
         self._input_types = kwargs.get("input_types") or ["FileLocation", "str"]
         self._output_type = kwargs.get("output_type") or "str"
         self._ui_options = kwargs.get("ui_options") or {}
         self._parameter: Parameter | None = None
-        self._initial_helper_text_set = False
+
+        # Get simple default filename from kwargs or use generic default
+        simple_default = kwargs.get("simple_default") or "output.png"
+
+        # Fetch situation config
+        config = self._fetch_situation_config(situation_name)
+        if config:
+            macro_template, file_policy, create_dirs = config
+            self._situation_macro = macro_template
+            self._default_value = simple_default
+            self._existing_file_policy = file_policy
+            self._create_parent_dirs = create_dirs
+        else:
+            logger.error("%s: Failed to load situation '%s', using fallback", self._node.name, situation_name)
+            self._situation_macro = "{outputs}/{file_name_base}{_index?:03}.{file_extension}"
+            self._default_value = simple_default
+            from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+
+            self._existing_file_policy = ExistingFilePolicy.CREATE_NEW
+            self._create_parent_dirs = True
+
+    def get_situation_macro(self) -> str:
+        """Get the situation macro template for use in FileLocation.from_value calls.
+
+        Returns:
+            The situation macro template string
+        """
+        return self._situation_macro
+
+    def get_base_variables(self, **extra_variables: str | int) -> dict[str, str | int]:
+        """Get base variables for FileLocation.from_value including parsed filename.
+
+        Parses the current parameter value to extract file_name_base and file_extension,
+        then merges with extra variables provided by the caller.
+
+        Args:
+            **extra_variables: Additional variables to merge (e.g., image_index, generation_id)
+
+        Returns:
+            Dictionary of variables ready for FileLocation.from_value
+        """
+        # Get the current parameter value
+        value = self._node.get_parameter_value(self._name)
+        if not value or not isinstance(value, str):
+            value = self._default_value
+
+        # Parse the simple filename to extract file_name_base and file_extension
+        file_name_base, file_extension = self._parse_simple_filename(value)
+
+        # Build base variables
+        variables: dict[str, str | int] = {
+            "node_name": self._node.name,
+            "file_name_base": file_name_base,
+            "file_extension": file_extension,
+        }
+
+        # Merge extra variables (caller's variables take precedence)
+        variables.update(extra_variables)
+
+        return variables
+
+    def get_file_location(self, **extra_variables: str | int) -> FileLocation:
+        """Get a FileLocation ready for saving files.
+
+        This is the recommended way for nodes to get a FileLocation for saving.
+        Handles both simple filenames and FileLocation objects from connections.
+
+        Args:
+            **extra_variables: Additional variables to merge (e.g., image_index, generation_id)
+
+        Returns:
+            FileLocation configured with situation macro, variables, and policies
+
+        Example:
+            >>> # In node process() method:
+            >>> file_location = self._file_path_param.get_file_location(image_index=i)
+            >>> url = file_location.save(image_bytes)
+        """
+        # Get the current parameter value
+        value = self._node.get_parameter_value(self._name)
+
+        # If value is already a FileLocation (from connection), return it
+        if isinstance(value, FileLocation):
+            # FileLocation from connection already has all configuration
+            # Extra variables are ignored in this case
+            return value
+
+        # Otherwise, build FileLocation from situation macro
+        base_variables = self.get_base_variables(**extra_variables)
+
+        return FileLocation(
+            macro_template=self._situation_macro,
+            base_variables=base_variables,
+            existing_file_policy=self._existing_file_policy,
+            create_parent_dirs=self._create_parent_dirs,
+        )
+
+    def _fetch_situation_config(self, situation_name: str) -> tuple[str, Any, bool] | None:
+        """Fetch situation and return (macro_template, existing_file_policy, create_parent_dirs).
+
+        Args:
+            situation_name: Name of situation to fetch
+
+        Returns:
+            Tuple of (macro_template, existing_file_policy, create_parent_dirs), or None if fetch fails
+        """
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+        from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetSituationRequest,
+            GetSituationResultSuccess,
+        )
+
+        request = GetSituationRequest(situation_name=situation_name)
+        result = GriptapeNodes.ProjectManager().on_get_situation_request(request)
+
+        if not isinstance(result, GetSituationResultSuccess):
+            logger.warning("%s: Failed to fetch situation '%s', using fallback", self._node.name, situation_name)
+            return None
+
+        situation = result.situation
+
+        # Map SituationFilePolicy to ExistingFilePolicy
+        policy_mapping = {
+            SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
+            SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
+            SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
+        }
+
+        existing_file_policy = policy_mapping.get(situation.policy.on_collision, ExistingFilePolicy.OVERWRITE)
+
+        return (
+            situation.macro,
+            existing_file_policy,
+            situation.policy.create_dirs,
+        )
 
     def add_parameter(self) -> None:
         """Create and add the parameter to the node with configured traits and converters."""
@@ -121,6 +255,9 @@ class FileLocationParameter:
                 )
             )
 
+        # Use ui_options as-is
+        ui_options = self._ui_options.copy()
+
         # Create the parameter
         self._parameter = Parameter(
             name=self._name,
@@ -132,40 +269,30 @@ class FileLocationParameter:
             allowed_modes=self._allowed_modes,
             converters=converters,
             traits=traits,
-            ui_options=self._ui_options,
+            ui_options=ui_options,
         )
 
         self._node.add_parameter(self._parameter)
 
-    def after_value_set(self, parameter: Parameter, value: Any) -> None:  # noqa: ARG002
-        """Update helper text when parameter value changes.
+        # Hook into node's after_incoming_connection_removed to reset value automatically
+        self._wrap_connection_removed_callback()
 
-        Args:
-            parameter: The parameter that was updated
-            value: The new value that was set
-        """
-        if parameter.name != self._name:
-            return
+    def _wrap_connection_removed_callback(self) -> None:
+        """Wrap the node's after_incoming_connection_removed to automatically reset parameter."""
+        original_callback = self._node.after_incoming_connection_removed
 
-        if not self._parameter:
-            return
+        def wrapped_callback(source_node: BaseNode, source_parameter: Parameter, target_parameter: Parameter) -> None:
+            # Call original callback first
+            result = original_callback(source_node, source_parameter, target_parameter)
 
-        # Set initial helper text if not already set
-        if not self._initial_helper_text_set:
-            self._initial_helper_text_set = True
-            preview = self.get_resolved_path_preview()
-            if preview:
-                self._parameter.update_ui_options_key("helper_text", preview)
-            return
+            # If our parameter had connection removed, reset to simple default
+            if target_parameter.name == self._name:
+                self._node.set_parameter_value(self._name, self._default_value)
 
-        # Compute and update preview
-        preview = self.get_resolved_path_preview()
-        if preview:
-            self._parameter.update_ui_options_key("helper_text", preview)
-        else:
-            ui_options = self._parameter.ui_options.copy()
-            ui_options.pop("helper_text", None)
-            self._parameter.ui_options = ui_options
+            return result
+
+        # Replace the node's method with our wrapped version
+        self._node.after_incoming_connection_removed = wrapped_callback  # type: ignore[method-assign]
 
     def _create_path_resolver_callback(
         self,
@@ -237,30 +364,59 @@ class FileLocationParameter:
         )
 
     def get_resolved_path_preview(self) -> str | None:
-        """Compute what the resolved path would be without saving (dry run).
+        """Compute what the resolved path would be (simple macro resolution).
+
+        If a FileLocation object is provided (from a connection), uses that directly.
+        Otherwise, parses the simple filename value and uses the situation macro.
+        Shows the template resolved with variables, without collision detection.
 
         Returns:
             Resolved absolute path string, or None if resolution fails
         """
-        value = self._node.get_parameter_value(self._name)
-
-        if value is None or (isinstance(value, str) and not value):
+        if not hasattr(self, "_situation_macro"):
             return None
 
-        if isinstance(value, str):
+        # Get the current parameter value
+        value = self._node.get_parameter_value(self._name) if self._parameter else None
+
+        # Determine macro template and variables
+        if isinstance(value, FileLocation):
+            # Use the FileLocation's configuration (from connection)
+            macro_template = value.macro_template
+            variables: dict[str, str | int] = dict(value.base_variables)  # Ensure correct type
+        else:
+            # Parse simple filename and use situation macro
+            if not value or not isinstance(value, str):
+                value = self._default_value
+
+            file_name_base, file_extension = self._parse_simple_filename(value)
+            macro_template = self._situation_macro
             variables: dict[str, str | int] = {
                 "node_name": self._node.name,
+                "file_name_base": file_name_base,
+                "file_extension": file_extension,
             }
 
-            parsed_macro = ParsedMacro(value)
-            resolve_request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables)
-            result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(resolve_request)
+        # Simple macro resolution (no collision detection)
+        parsed_macro = ParsedMacro(macro_template)
+        resolve_request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables=variables)
+        result = GriptapeNodes.ProjectManager().on_get_path_for_macro_request(resolve_request)
 
-            if isinstance(result, GetPathForMacroResultSuccess):
-                return str(result.absolute_path)
-            return None
-
-        if isinstance(value, FileLocation):
-            return str(value)
+        if isinstance(result, GetPathForMacroResultSuccess):
+            return str(result.absolute_path)
 
         return None
+
+    def _parse_simple_filename(self, filename: str) -> tuple[str, str]:
+        """Parse a simple filename into file_name_base and file_extension.
+
+        Args:
+            filename: Simple filename like "output.png" or "my_image.jpg"
+
+        Returns:
+            Tuple of (file_name_base, file_extension)
+        """
+        if "." in filename:
+            parts = filename.rsplit(".", 1)
+            return parts[0], parts[1]
+        return filename, "png"

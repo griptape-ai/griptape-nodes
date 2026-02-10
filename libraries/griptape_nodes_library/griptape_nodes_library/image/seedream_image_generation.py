@@ -225,9 +225,10 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         self._output_path_param = FileLocationParameter(
             node=self,
             name="output_path",
-            default_value="{staticfiles}/seedream_{generation_id}_{image_index}.png",
+            situation_name="save_node_output",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="Output file path template (supports {generation_id}, {image_index}, {workflow_name}, etc.)",
+            tooltip="Output file path template (uses 'save_node_output' situation template)",
+            simple_default="seedream_output.png",
         )
         self._output_path_param.add_parameter()
 
@@ -317,10 +318,6 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         """Update size options and parameter visibility based on parameter changes."""
-        # Update output path parameter helper text
-        if hasattr(self, "_output_path_param"):
-            self._output_path_param.after_value_set(parameter, value)
-
         if parameter.name == "model" and value in SIZE_OPTIONS:
             self._update_model_parameters(value)
 
@@ -644,15 +641,10 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             self._log(f"Failed to convert image {index} to PNG: {e}")
             return ImageUrlArtifact(value=image_url)
 
-        # Get file location with variables and save
-        output_path_value = self.get_parameter_value("output_path")
-        file_location = FileLocation.from_value(
-            output_path_value,
-            base_variables={
-                "node_name": self.name,
-                "generation_id": generation_id or str(int(time.time())),
-                "image_index": index + 1,
-            },
+        # Get file location with extra variables and save
+        file_location = self._output_path_param.get_file_location(
+            generation_id=generation_id or str(int(time.time())),
+            image_index=index + 1,
         )
         saved_url = file_location.save(png_bytes)
 

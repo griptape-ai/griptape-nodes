@@ -41,6 +41,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileResultSuccess,
     DeletionBehavior,
     DeletionOutcome,
+    DryRunWriteFileRequest,
     ExistingFilePolicy,
     FileIOFailureReason,
     FileSystemEntry,
@@ -66,6 +67,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     ResolveMacroPathResultFailure,
     ResolveMacroPathResultSuccess,
     WriteFileRequest,
+    WriteFileResultDryRun,
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
@@ -1147,8 +1149,10 @@ class OSManager:
         existing_indices = []
 
         for filepath in existing_files:
-            filename = Path(filepath).name
-            extracted_index = self._extract_index_from_filename(filename, parsed_macro, index_var_name, variables)
+            # Use full path for extraction, not just filename
+            # The template contains the full path, so we need to match against the full path
+            filepath_str = str(filepath)
+            extracted_index = self._extract_index_from_filename(filepath_str, parsed_macro, index_var_name, variables)
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
@@ -2079,6 +2083,296 @@ class OSManager:
             bytes_written=final_bytes_written,
             result_details=result_details,
         )
+
+    def on_dry_run_write_file_request(self, request: DryRunWriteFileRequest) -> ResultPayload:
+        """Handle a request to preview a file write operation without actually writing."""
+        # Resolve MacroPath → str
+        if isinstance(request.file_path, MacroPath):
+            resolution_result = self._resolve_macro_path_to_string(request.file_path)
+            if isinstance(resolution_result, MacroResolutionFailure):
+                path_display = f"{request.file_path.parsed_macro}"
+                msg = f"Attempted to preview write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
+
+                # For dry-run, return a dry-run result showing it would fail
+                return WriteFileResultDryRun(
+                    would_write_to_path=path_display,
+                    file_currently_exists=False,
+                    would_create_directories=False,
+                    would_use_indexed_filename=False,
+                    index_that_would_be_used=None,
+                    bytes_that_would_be_written=0,
+                    would_succeed=False,
+                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                    result_details=msg,
+                )
+            resolved_path_str = resolution_result
+            path_display = f"{request.file_path.parsed_macro}"
+        else:
+            # Sanitize string path
+            resolved_path_str = self.sanitize_path_string(request.file_path)
+            path_display = resolved_path_str
+
+        # Convert str → Path
+        try:
+            file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
+        except (ValueError, RuntimeError) as e:
+            msg = f"Attempted to preview write to file '{path_display}'. Failed due to invalid path: {e}"
+            return WriteFileResultDryRun(
+                would_write_to_path=path_display,
+                file_currently_exists=False,
+                would_create_directories=False,
+                would_use_indexed_filename=False,
+                index_that_would_be_used=None,
+                bytes_that_would_be_written=0,
+                would_succeed=False,
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=msg,
+            )
+        except Exception as e:
+            msg = f"Attempted to preview write to file '{path_display}'. Failed due to unexpected error: {e}"
+            return WriteFileResultDryRun(
+                would_write_to_path=path_display,
+                file_currently_exists=False,
+                would_create_directories=False,
+                would_use_indexed_filename=False,
+                index_that_would_be_used=None,
+                bytes_that_would_be_written=0,
+                would_succeed=False,
+                failure_reason=FileIOFailureReason.IO_ERROR,
+                result_details=msg,
+            )
+
+        # Normalize path
+        normalized_path = self.normalize_path_for_platform(file_path)
+
+        # Perform dry-run preview
+        return self._perform_dry_run_preview(
+            file_path=file_path,
+            normalized_path=Path(normalized_path),
+            content=request.content,
+            encoding=request.encoding,
+            append=request.append,
+            existing_file_policy=request.existing_file_policy,
+            create_parents=request.create_parents,
+            file_path_str=request.file_path,
+            path_display=path_display,
+        )
+
+    def _perform_dry_run_preview(  # noqa: PLR0913
+        self,
+        file_path: Path,
+        normalized_path: Path,
+        content: str | bytes,
+        encoding: str,
+        append: bool,
+        existing_file_policy: ExistingFilePolicy,
+        create_parents: bool,
+        file_path_str: str | MacroPath,
+        path_display: str,
+    ) -> WriteFileResultDryRun:
+        """Perform a dry-run preview of a write operation without actually writing.
+
+        Args:
+            file_path: Resolved file path
+            normalized_path: Platform-normalized path
+            content: Content that would be written
+            encoding: Text encoding for str content
+            append: Whether this would be an append operation
+            existing_file_policy: Policy for handling existing files
+            create_parents: Whether parent directories would be created
+            file_path_str: Original file path string or MacroPath
+            path_display: Display string for the path (for error messages)
+
+        Returns:
+            WriteFileResultDryRun with preview information
+        """
+        # Calculate bytes that would be written
+        bytes_to_write = len(content) if isinstance(content, bytes) else len(content.encode(encoding))
+
+        # Check current state
+        file_exists = normalized_path.exists()
+        would_create_dirs = not normalized_path.parent.exists() and create_parents
+
+        # Check permissions
+        permission_check = self._check_dry_run_permissions(
+            normalized_path=normalized_path,
+            would_create_dirs=would_create_dirs,
+        )
+        would_succeed = permission_check["would_succeed"]
+        failure_reason = permission_check["failure_reason"]
+
+        # Determine target path based on policy
+        target_path = str(file_path)
+        would_use_indexed = False
+        index_used = None
+
+        if would_succeed and existing_file_policy == ExistingFilePolicy.CREATE_NEW:
+            indexed_info = self._check_indexed_filename_for_dry_run(
+                file_path_str=file_path_str,
+                file_exists=file_exists,
+                normalized_path=normalized_path,
+            )
+            would_use_indexed = indexed_info["would_use_indexed"]
+            index_used = indexed_info["index_used"]
+            if indexed_info["target_path"] is not None:
+                target_path = indexed_info["target_path"]
+
+        elif would_succeed and existing_file_policy == ExistingFilePolicy.FAIL and file_exists:
+            would_succeed = False
+            failure_reason = FileIOFailureReason.POLICY_NO_OVERWRITE
+
+        # Check write permission on target file
+        if would_succeed and file_exists and not append and existing_file_policy == ExistingFilePolicy.OVERWRITE:
+            if not os.access(normalized_path, os.W_OK):
+                would_succeed = False
+                failure_reason = FileIOFailureReason.PERMISSION_DENIED
+
+        # Build preview message
+        preview_msg = self._build_dry_run_message(
+            would_succeed=would_succeed,
+            bytes_to_write=bytes_to_write,
+            target_path=target_path,
+            would_use_indexed=would_use_indexed,
+            index_used=index_used,
+            would_create_dirs=would_create_dirs,
+            file_exists=file_exists,
+            append=append,
+            existing_file_policy=existing_file_policy,
+            failure_reason=failure_reason,
+        )
+
+        return WriteFileResultDryRun(
+            would_write_to_path=target_path,
+            file_currently_exists=file_exists,
+            would_create_directories=would_create_dirs,
+            would_use_indexed_filename=would_use_indexed,
+            index_that_would_be_used=index_used,
+            bytes_that_would_be_written=bytes_to_write,
+            would_succeed=would_succeed,
+            failure_reason=failure_reason,
+            result_details=preview_msg,
+        )
+
+    def _check_dry_run_permissions(
+        self,
+        normalized_path: Path,
+        would_create_dirs: bool,
+    ) -> dict[str, bool | FileIOFailureReason | None]:
+        """Check if the dry-run would succeed based on permissions.
+
+        Returns:
+            Dict with "would_succeed" (bool) and "failure_reason" (FileIOFailureReason | None)
+        """
+        if would_create_dirs:
+            try:
+                # Test write permission on the closest existing parent
+                test_parent = normalized_path.parent
+                while not test_parent.exists() and test_parent != test_parent.parent:
+                    test_parent = test_parent.parent
+                if not os.access(test_parent, os.W_OK):
+                    return {"would_succeed": False, "failure_reason": FileIOFailureReason.PERMISSION_DENIED}
+            except OSError:
+                return {"would_succeed": False, "failure_reason": FileIOFailureReason.PERMISSION_DENIED}
+        elif not normalized_path.parent.exists():
+            return {"would_succeed": False, "failure_reason": FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS}
+
+        return {"would_succeed": True, "failure_reason": None}
+
+    def _check_indexed_filename_for_dry_run(
+        self,
+        file_path_str: str | MacroPath,
+        file_exists: bool,
+        normalized_path: Path,
+    ) -> dict[str, bool | int | str | None]:
+        """Check if indexed filename would be used and determine index.
+
+        Returns:
+            Dict with "would_use_indexed" (bool), "index_used" (int | None), "target_path" (str | None)
+        """
+        if not (file_exists or self._is_file_locked(normalized_path)):
+            return {"would_use_indexed": False, "index_used": None, "target_path": None}
+
+        # File exists or is locked - would use indexed filename
+        try:
+            macro_path = (
+                self._convert_str_path_to_macro_with_index(file_path_str)
+                if isinstance(file_path_str, str)
+                else file_path_str
+            )
+            parsed_macro = macro_path.parsed_macro
+            variables = macro_path.variables
+
+            # Identify index variable
+            index_info = self._identify_index_variable(parsed_macro, variables)
+            if index_info is None:
+                return {"would_use_indexed": True, "index_used": None, "target_path": None}
+
+            # Scan for next available index
+            starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
+
+            if starting_index is None:
+                return {"would_use_indexed": True, "index_used": None, "target_path": None}
+
+            # Resolve to get target path
+            secrets_manager = GriptapeNodes.SecretsManager()
+            index_vars = {**variables, index_info.info.name: starting_index}
+            candidate_str = parsed_macro.resolve(index_vars, secrets_manager)
+
+            return {"would_use_indexed": True, "index_used": starting_index, "target_path": candidate_str}
+        except Exception:
+            # If we can't determine indexed filename, just note it would be indexed
+            return {"would_use_indexed": True, "index_used": None, "target_path": None}
+
+    def _build_dry_run_message(  # noqa: PLR0913
+        self,
+        would_succeed: bool,
+        bytes_to_write: int,
+        target_path: str,
+        would_use_indexed: bool,
+        index_used: int | None,
+        would_create_dirs: bool,
+        file_exists: bool,
+        append: bool,
+        existing_file_policy: ExistingFilePolicy,
+        failure_reason: FileIOFailureReason | None,
+    ) -> str:
+        """Build human-readable dry-run preview message."""
+        if not would_succeed:
+            return f"Would fail to write to {target_path}: {failure_reason}"
+
+        msg_parts = [f"Would write {bytes_to_write} bytes to: {target_path}"]
+
+        if would_use_indexed:
+            msg_parts.append(f"(using indexed filename with index {index_used})")
+
+        if would_create_dirs:
+            msg_parts.append("(would create parent directories)")
+
+        if file_exists:
+            if append:
+                msg_parts.append("(would append to existing file)")
+            elif existing_file_policy == ExistingFilePolicy.OVERWRITE:
+                msg_parts.append("(would overwrite existing file)")
+
+        return " ".join(msg_parts)
+
+    def _is_file_locked(self, file_path: Path) -> bool:
+        """Check if a file is locked by another process.
+
+        Args:
+            file_path: Path to check
+
+        Returns:
+            True if file is locked, False otherwise
+        """
+        if not file_path.exists():
+            return False
+
+        try:
+            with portalocker.Lock(file_path, "r", timeout=0.001):
+                return False
+        except (portalocker.LockException, OSError):
+            return True
 
     def _ensure_parent_directory_ready(
         self,

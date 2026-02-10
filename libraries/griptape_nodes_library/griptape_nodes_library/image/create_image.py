@@ -8,7 +8,6 @@ from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
@@ -99,9 +98,10 @@ class GenerateImage(ControlNode):
         self._file_path_param = FileLocationParameter(
             node=self,
             name="file_path",
-            default_value="{staticfiles}/{workflow_name}_output.png",
+            situation_name="save_node_output",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="File location for saving image (supports macros like {workflow_name}, {staticfiles}, etc.)",
+            tooltip="File location for saving image (uses 'save_node_output' situation template)",
+            simple_default="output.png",
         )
         self._file_path_param.add_parameter()
         # Group for logging information.
@@ -144,9 +144,6 @@ class GenerateImage(ControlNode):
         value: Any,
     ) -> None:
         """Certain options are only available for certain models."""
-        if hasattr(self, "_file_path_param"):
-            self._file_path_param.after_value_set(parameter, value)
-
         if parameter.name == "output_format":
             if value == "jpeg":
                 self.show_parameter_by_name("output_compression")
@@ -335,8 +332,7 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         agent.run(prompt)
 
         # Get file location and save
-        file_path_value = self.get_parameter_value("file_path")
-        file_location = FileLocation.from_value(file_path_value, base_variables={"node_name": self.name})
+        file_location = self._file_path_param.get_file_location()
         static_url = file_location.save(agent.output.to_bytes())
 
         # Create URL artifact for output preview

@@ -25,7 +25,11 @@ from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.os_events import (
+    DryRunWriteFileRequest,
+    ExistingFilePolicy,
+    WriteFileResultDryRun,
+)
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -198,6 +202,24 @@ class ResolveFilePath(BaseNode):
         )
         self.add_parameter(self.resolved_path)
 
+        # Preview button and result message
+        self.preview_write_button = ParameterButton(
+            name="preview_write",
+            label="Preview Write",
+            variant="secondary",
+            icon="eye",
+            on_click=self._on_preview_write_clicked,
+        )
+        self.add_node_element(self.preview_write_button)
+
+        self.preview_result = ParameterMessage(
+            name="preview_result",
+            variant="info",
+            value="",
+            ui_options={"hide": True},
+        )
+        self.add_node_element(self.preview_result)
+
         # file_location parameter (computed output with policies)
         # This is an OUTPUT-only parameter that produces FileLocation objects
         # It doesn't need FileLocationParameter component since it never calls save/load
@@ -275,6 +297,56 @@ class ResolveFilePath(BaseNode):
         # The resolved path is already set in output by _resolve_and_update_path
 
     # Private methods for situation loading and path resolution
+
+    def _get_target_node_name(self) -> str:
+        """Get the name of the node this ResolveFilePath is connected to.
+
+        If file_location output has outgoing connections, use the first target node's name.
+        Otherwise, fall back to this node's own name.
+
+        Returns:
+            Target node name if connected, otherwise this node's name
+        """
+        from griptape_nodes.retained_mode.events.parameter_events import (
+            GetConnectionsForParameterRequest,
+            GetConnectionsForParameterResultSuccess,
+        )
+
+        request = GetConnectionsForParameterRequest(parameter_name=self.file_location.name, node_name=self.name)
+        result = GriptapeNodes.NodeManager().on_get_connections_for_parameter_request(request)
+
+        if isinstance(result, GetConnectionsForParameterResultSuccess) and result.outgoing_connections:
+            # Use the first target node's name
+            return result.outgoing_connections[0].target_node_name
+
+        # Fallback to this node's name
+        return self.name
+
+    def after_outgoing_connection(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
+        """Callback after a connection FROM this node was created.
+
+        Re-resolve the path to use the target node's name.
+        """
+        if source_parameter.name == self.file_location.name:
+            # Re-compute the FileLocation with the target node's name
+            self._resolve_and_update_path()
+
+        return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
+
+    def after_outgoing_connection_removed(
+        self, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
+    ) -> None:
+        """Callback after a connection FROM this node was removed.
+
+        Re-resolve the path to use this node's own name.
+        """
+        if source_parameter.name == self.file_location.name:
+            # Re-compute the FileLocation with this node's own name
+            self._resolve_and_update_path()
+
+        return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
 
     def _load_project_situation(self) -> None:
         """Load situation template from ProjectManager and set defaults."""
@@ -411,11 +483,11 @@ class ResolveFilePath(BaseNode):
         file_name_base = filename_path.stem
         file_extension = filename_path.suffix.lstrip(".")
 
-        # Build variable dict
+        # Build variable dict - use target node name if connected, otherwise use own name
         variables: dict[str, str | int] = {
             "file_name_base": file_name_base,
             "file_extension": file_extension,
-            "node_name": self.name,
+            "node_name": self._get_target_node_name(),
         }
 
         # Resolve the macro to get the absolute path for display in resolved_path output
@@ -507,6 +579,72 @@ class ResolveFilePath(BaseNode):
             details="Situation parameters reset to defaults",
             response=button_details,
             altered_workflow_state=True,
+        )
+
+    def _on_preview_write_clicked(
+        self,
+        button: Button,  # noqa: ARG002
+        button_details: ButtonDetailsMessagePayload,
+    ) -> NodeMessageResult:
+        """Handle Preview Write button click - shows what would happen during a write operation."""
+        resolved_path = self.get_parameter_value(self.resolved_path.name)
+
+        if not resolved_path:
+            self.preview_result.variant = "error"
+            self.preview_result.value = "No resolved path available. Please provide a filename."
+            self.preview_result.ui_options = {"hide": False}
+
+            return NodeMessageResult(
+                success=False,
+                details="No resolved path available",
+                response=button_details,
+                altered_workflow_state=False,
+            )
+
+        # Get current policy settings
+        overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
+        allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
+        existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
+
+        # Create dry-run request with test content
+        request = DryRunWriteFileRequest(
+            file_path=resolved_path,
+            content=b"test content",
+            existing_file_policy=existing_file_policy,
+            create_parents=allow_create_dirs,
+        )
+
+        # Execute dry-run
+        result = GriptapeNodes.OSManager().on_dry_run_write_file_request(request)
+
+        if not isinstance(result, WriteFileResultDryRun):
+            self.preview_result.variant = "error"
+            self.preview_result.value = "Dry-run failed unexpectedly"
+            self.preview_result.ui_options = {"hide": False}
+
+            return NodeMessageResult(
+                success=False,
+                details="Dry-run failed",
+                response=button_details,
+                altered_workflow_state=False,
+            )
+
+        # Display result
+        details_str = str(result.result_details)
+        if result.would_succeed:
+            self.preview_result.variant = "success"
+            self.preview_result.value = f"✓ {details_str}"
+        else:
+            self.preview_result.variant = "warning"
+            self.preview_result.value = f"⚠ {details_str}"
+
+        self.preview_result.ui_options = {"hide": False}
+
+        return NodeMessageResult(
+            success=True,
+            details=details_str,
+            response=button_details,
+            altered_workflow_state=False,
         )
 
     # Private methods for policy conversion
