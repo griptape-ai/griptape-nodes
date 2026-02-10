@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
@@ -1067,7 +1068,11 @@ class BaseNode(ABC):
     def get_node_dependencies(self) -> NodeDependencies | None:
         """Return the dependencies that this node has on external resources.
 
-        This method should be overridden by nodes that have dependencies on:
+        This base implementation collects library dependencies from Widget traits
+        on parameters. Subclasses should call super().get_node_dependencies() and
+        aggregate their own dependencies using NodeDependencies.aggregate_from().
+
+        This method can be overridden by nodes that have additional dependencies on:
         - Referenced workflows: Other workflows that this node calls or references
         - Static files: Files that this node reads from or requires for operation
         - Python imports: Modules or classes that this node imports beyond standard dependencies
@@ -1081,16 +1086,51 @@ class BaseNode(ABC):
 
         Example:
             def get_node_dependencies(self) -> NodeDependencies | None:
-                return NodeDependencies(
-                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
-                    static_files={"config.json", "model_weights.pkl"},
-                    imports={
-                        ImportDependency("numpy"),
-                        ImportDependency("sklearn.linear_model", "LinearRegression"),
-                        ImportDependency("custom_module", "SpecialProcessor")
-                    }
-                )
+                # Start with base class dependencies (Widget traits)
+                deps = super().get_node_dependencies()
+                if deps is None:
+                    deps = NodeDependencies()
+
+                # Add this node's specific dependencies
+                deps.referenced_workflows.update({"image_processing_workflow", "validation_workflow"})
+                deps.static_files.update({"config.json", "model_weights.pkl"})
+                deps.imports.update({
+                    ImportDependency("numpy"),
+                    ImportDependency("sklearn.linear_model", "LinearRegression"),
+                    ImportDependency("custom_module", "SpecialProcessor")
+                })
+                return deps
         """
+        # Lazy import to avoid circular dependency: library_registry imports BaseNode
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+
+        widget_libraries: set[LibraryNameAndVersion] = set()
+
+        logger.debug("Getting dependencies for node: %s", self.name)
+
+        for parameter in self.parameters:
+            widgets = parameter.find_elements_by_type(Widget)
+            for widget in widgets:
+                if widget.library:
+                    try:
+                        library = LibraryRegistry.get_library(widget.library)
+                        library_data = library.get_library_data()
+                        widget_libraries.add(
+                            LibraryNameAndVersion(
+                                library_name=library_data.name,
+                                library_version=library_data.metadata.library_version,
+                            )
+                        )
+                    except KeyError:
+                        logger.warning(
+                            "Library '%s' not found for Widget '%s'",
+                            widget.library,
+                            widget,
+                        )
+
+        if widget_libraries:
+            logger.debug("Node '%s' has widget library dependencies: %s", self.name, widget_libraries)
+            return NodeDependencies(libraries=widget_libraries)
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:

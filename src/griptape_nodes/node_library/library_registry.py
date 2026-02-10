@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field, field_validator
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_node_registration_problem import (
     DuplicateNodeRegistrationProblem,
 )
+from griptape_nodes.retained_mode.managers.fitness_problems.libraries.duplicate_widget_registration_problem import (
+    DuplicateWidgetRegistrationProblem,
+)
 from griptape_nodes.retained_mode.managers.resource_components.resource_instance import (
     Requirements,  # noqa: TC001 (putting this into type checking causes it to not be defined for Pydantic field_validator)
 )
@@ -143,6 +146,18 @@ class Setting(BaseModel):
     )  # JSON schema for the setting (including enums)
 
 
+class WidgetDefinition(BaseModel):
+    """Defines a custom UI widget provided by the library.
+
+    Widgets are pre-built ES module bundles that the frontend
+    can dynamically load to render custom parameter UI.
+    """
+
+    name: str  # Widget name (e.g., "ColorGradientPicker")
+    path: str  # Relative path to widget JS file (e.g., "widgets/ColorGradientPicker.js")
+    description: str | None = None  # Optional description for documentation
+
+
 class LibrarySchema(BaseModel):
     """Schema for a library definition file.
 
@@ -151,7 +166,7 @@ class LibrarySchema(BaseModel):
     library itself.
     """
 
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.4.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.5.0"
 
     name: str
     library_schema_version: str
@@ -163,6 +178,7 @@ class LibrarySchema(BaseModel):
     settings: list[Setting] | None = None
     is_default_library: bool | None = None
     advanced_library_path: str | None = None
+    widgets: list[WidgetDefinition] | None = None
 
 
 class LibraryRegistry(metaclass=SingletonMeta):
@@ -171,6 +187,8 @@ class LibraryRegistry(metaclass=SingletonMeta):
     _libraries: ClassVar[dict[str, Library]] = {}
     _node_aliases: ClassVar[dict[str, Library]] = {}
     _collision_node_names_to_library_names: ClassVar[dict[str, list[str]]] = {}
+    # Track registered widgets per library: {library_name: set(widget_names)}
+    _registered_widgets: ClassVar[dict[str, set[str]]] = {}
 
     @classmethod
     def generate_new_library(
@@ -198,6 +216,9 @@ class LibraryRegistry(metaclass=SingletonMeta):
         if library_name not in instance._libraries:
             msg = f"Library '{library_name}' was requested to be unregistered, but it wasn't registered in the first place."
             raise KeyError(msg)
+
+        # Clean up registered widgets for this library
+        cls.unregister_widgets_for_library(library_name)
 
         # Now delete the library from the registry.
         del instance._libraries[library_name]
@@ -236,6 +257,37 @@ class LibraryRegistry(metaclass=SingletonMeta):
                 return DuplicateNodeRegistrationProblem(class_name=node_class_name, library_name=library_data.name)
 
         return None
+
+    @classmethod
+    def register_widget_from_library(
+        cls, library_name: str, widget_name: str
+    ) -> DuplicateWidgetRegistrationProblem | None:
+        """Register a widget from a library. Returns a LibraryProblem if registration fails."""
+        instance = cls()
+
+        # Initialize the set for this library if needed
+        if library_name not in instance._registered_widgets:
+            instance._registered_widgets[library_name] = set()
+
+        # Check if widget is already registered for this library
+        if widget_name in instance._registered_widgets[library_name]:
+            logger.error(
+                "Attempted to register widget '%s' from library '%s', but a widget with that name from that library was already registered",
+                widget_name,
+                library_name,
+            )
+            return DuplicateWidgetRegistrationProblem(widget_name=widget_name, library_name=library_name)
+
+        # Register the widget
+        instance._registered_widgets[library_name].add(widget_name)
+        return None
+
+    @classmethod
+    def unregister_widgets_for_library(cls, library_name: str) -> None:
+        """Unregister all widgets for a library (used during library unload)."""
+        instance = cls()
+        if library_name in instance._registered_widgets:
+            del instance._registered_widgets[library_name]
 
     @classmethod
     def get_libraries_with_node_type(cls, node_type: str) -> list[str]:
