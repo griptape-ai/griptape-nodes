@@ -527,13 +527,15 @@ class ExecuteDagState(State):
                 "CREATING EXECUTION TASK for node '%s' - this should only happen once per node!",
                 node_reference.node_reference.name,
             )
+            # Set state BEFORE adding to task_to_node to avoid race condition
+            node_reference.node_state = NodeState.PROCESSING
+            node_reference.node_reference.state = NodeResolutionState.RESOLVING
+
             node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
             # Add a callback to set node to done when task has finished.
             context.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
             node_task.add_done_callback(lambda t: on_task_done(t))
-            node_reference.node_state = NodeState.PROCESSING
-            node_reference.node_reference.state = NodeResolutionState.RESOLVING
 
             # Send an event that this is a current data node:
 
