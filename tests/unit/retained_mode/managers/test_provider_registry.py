@@ -49,6 +49,10 @@ class TestProviderRegistry:
             def get_default_preview_format(cls) -> str:
                 return "jpg"
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         registry = ProviderRegistry()
         registry.register_provider(TestProvider)
 
@@ -77,6 +81,10 @@ class TestProviderRegistry:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         class Provider2(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -89,6 +97,10 @@ class TestProviderRegistry:
             @classmethod
             def get_preview_formats(cls) -> set[str]:
                 return {"png"}
+
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
 
         registry = ProviderRegistry()
         registry.register_provider(Provider1)
@@ -112,6 +124,10 @@ class TestProviderRegistry:
             def get_preview_formats(cls) -> set[str]:
                 return {"jpg"}
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         class LowerProvider(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -124,6 +140,10 @@ class TestProviderRegistry:
             @classmethod
             def get_preview_formats(cls) -> set[str]:
                 return {"png"}
+
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
 
         registry = ProviderRegistry()
         registry.register_provider(UpperProvider)
@@ -202,6 +222,10 @@ class TestProviderRegistry:
             def get_default_preview_format(cls) -> str:
                 return "webp"
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)
         registry.register_provider(AlternateImageProvider)
@@ -255,6 +279,10 @@ class TestProviderRegistry:
             def get_default_preview_format(cls) -> str:
                 return "jpg"
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         class TestProvider2(BaseArtifactProvider):
             @classmethod
             def get_friendly_name(cls) -> str:
@@ -275,6 +303,10 @@ class TestProviderRegistry:
             @classmethod
             def get_default_preview_format(cls) -> str:
                 return "png"
+
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
 
         registry = ProviderRegistry()
         registry.register_provider(TestProvider1)
@@ -312,6 +344,10 @@ class TestProviderRegistry:
             def get_default_preview_format(cls) -> str:
                 return "jpg"
 
+            @classmethod
+            def get_default_generators(cls) -> list:
+                return []
+
         registry = ProviderRegistry()
         registry.register_provider(ImageArtifactProvider)
         registry.register_provider(TestProvider)
@@ -329,10 +365,10 @@ class TestProviderRegistry:
 
         config_schema = registry.get_provider_config_schema(ImageArtifactProvider)
 
-        assert "artifacts.image.preview_generation.default_preview_format" in config_schema
-        assert "artifacts.image.preview_generation.default_preview_generator" in config_schema
-        assert config_schema["artifacts.image.preview_generation.default_preview_format"] == "png"
+        assert "artifacts.image.preview_generation.preview_format" in config_schema
+        assert "artifacts.image.preview_generation.preview_generator" in config_schema
+        assert config_schema["artifacts.image.preview_generation.preview_format"] == "webp"
         assert (
-            config_schema["artifacts.image.preview_generation.default_preview_generator"]
+            config_schema["artifacts.image.preview_generation.preview_generator"]
             == "Standard Thumbnail Generation"
         )
