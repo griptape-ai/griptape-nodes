@@ -2,7 +2,7 @@
 
 import logging
 
-from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.core_types import NodeMessageResult, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import (
@@ -10,11 +10,14 @@ from griptape_nodes.project import (
     ProjectFileSaveConfig,
     SaveRequest,
 )
+from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
     GetSituationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.retained_mode import RetainedMode
+from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 
 logger = logging.getLogger("griptape_nodes")
@@ -101,6 +104,30 @@ class ProjectFileParameter:
         # Generate tooltip
         tooltip = f"Filename (uses '{self._situation_name}' situation)"
 
+        # Build traits set
+        traits: set = {
+            FileSystemPicker(
+                allow_files=True,
+                allow_directories=False,
+                allow_create=True,
+            )
+        }
+
+        # Add button if parameter accepts input connections
+        if ParameterMode.INPUT in self._allowed_modes:
+            traits.add(
+                Button(
+                    icon="cog",
+                    size="icon",
+                    variant="secondary",
+                    position="before",
+                    tooltip="Create and connect a ConfigureProjectFileSave node",
+                    on_click=lambda button, button_details: self._create_configure_node_callback(
+                        button, button_details
+                    ),
+                )
+            )
+
         # Create parameter
         parameter = ParameterString(
             name=self._name,
@@ -109,13 +136,7 @@ class ProjectFileParameter:
             tooltip=tooltip,
             input_types=["ProjectFileSaveConfig", "str"],
             output_type="str",
-            traits={
-                FileSystemPicker(
-                    allow_files=True,
-                    allow_directories=False,
-                    allow_create=True,
-                )
-            },
+            traits=traits,
         )
 
         self._node.add_parameter(parameter)
@@ -230,3 +251,72 @@ class ProjectFileParameter:
             return filename, default_parts[1]
 
         return filename, "png"  # Ultimate fallback
+
+    def _create_configure_node_callback(
+        self,
+        button: Button,  # noqa: ARG002
+        button_details: ButtonDetailsMessagePayload,
+    ) -> NodeMessageResult:
+        """Create and connect a ConfigureProjectFileSave node to this parameter."""
+        node_name = self._node.name
+        if not node_name:
+            return NodeMessageResult(
+                success=False,
+                details="Cannot create configure node: node has no name",
+                response=button_details,
+                altered_workflow_state=False,
+            )
+
+        # Check if parameter already has an incoming connection
+        connections_result = RetainedMode.get_connections_for_parameter(parameter_name=self._name, node_name=node_name)
+
+        if (
+            isinstance(connections_result, GetConnectionsForParameterResultSuccess)
+            and connections_result.has_incoming_connections()
+        ):
+            return NodeMessageResult(
+                success=False,
+                details=f"{node_name}: {self._name} parameter already has an incoming connection",
+                response=button_details,
+                altered_workflow_state=False,
+            )
+
+        # Create ConfigureProjectFileSave node positioned to the left
+        create_result = RetainedMode.create_node_relative_to(
+            reference_node_name=node_name,
+            new_node_type="ConfigureProjectFileSave",
+            offset_side="left",
+            offset_x=-750,
+            offset_y=0,
+            lock=False,
+        )
+
+        if not isinstance(create_result, str):
+            return NodeMessageResult(
+                success=False,
+                details=f"{node_name}: Failed to create ConfigureProjectFileSave node",
+                response=button_details,
+                altered_workflow_state=False,
+            )
+
+        configure_node_name = create_result
+
+        # Connect ConfigureProjectFileSave.file_location to this parameter
+        connection_result = RetainedMode.connect(
+            source=f"{configure_node_name}.file_location", destination=f"{node_name}.{self._name}"
+        )
+
+        if not connection_result.succeeded():
+            return NodeMessageResult(
+                success=False,
+                details=f"{node_name}: Failed to connect {configure_node_name}.file_location to {self._name}",
+                response=button_details,
+                altered_workflow_state=True,
+            )
+
+        return NodeMessageResult(
+            success=True,
+            details=f"{node_name}: Created and connected {configure_node_name}",
+            response=button_details,
+            altered_workflow_state=True,
+        )
