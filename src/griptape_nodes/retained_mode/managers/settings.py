@@ -35,6 +35,7 @@ SYSTEM_REQUIREMENTS = Category(name="System Requirements", description="System r
 MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol server configurations")
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
+ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -264,4 +265,9 @@ class Settings(BaseModel):
         category=STATIC_SERVER,
         default_factory=lambda: f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}",
         description="Base URL for the static server. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Override this when using tunnels (ngrok, cloudflare) or reverse proxies.",
+    )
+    artifacts: dict[str, Any] = Field(
+        category=ARTIFACTS,
+        default_factory=dict,
+        description="Control how previews are generated for images and other media files",
     )

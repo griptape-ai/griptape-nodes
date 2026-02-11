@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
         ArbitraryCodeExecManager,
     )
+    from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.context_manager import ContextManager
     from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
@@ -97,12 +98,14 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _sync_manager: SyncManager
     _user_manager: UserManager
     _project_manager: ProjectManager
+    _artifact_manager: ArtifactManager
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
         from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
             ArbitraryCodeExecManager,
         )
+        from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
         from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
         from griptape_nodes.retained_mode.managers.context_manager import ContextManager
         from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
@@ -164,6 +167,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._sync_manager = SyncManager(self._event_manager, self._config_manager)
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
+            self._artifact_manager = ArtifactManager(self._event_manager)
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -341,6 +345,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ProjectManager(cls) -> ProjectManager:
         return GriptapeNodes.get_instance()._project_manager
+
+    @classmethod
+    def ArtifactManager(cls) -> ArtifactManager:
+        return GriptapeNodes.get_instance()._artifact_manager
 
     @classmethod
     def clear_data(cls) -> None:

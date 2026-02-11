@@ -62,6 +62,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileRequest,
     RenameFileResultFailure,
     RenameFileResultSuccess,
+    ResolveMacroPathRequest,
+    ResolveMacroPathResultFailure,
+    ResolveMacroPathResultSuccess,
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
@@ -317,6 +320,10 @@ class OSManager:
 
             event_manager.assign_manager_to_request_type(
                 request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
+            )
+
+            event_manager.assign_manager_to_request_type(
+                request_type=ResolveMacroPathRequest, callback=self.on_handle_resolve_macro_path_request
             )
 
             # Store event_manager for direct access during resource registration
@@ -2902,6 +2909,30 @@ class OSManager:
         return GetFileInfoResultSuccess(
             file_entry=file_entry,
             result_details=f"Successfully retrieved file info for path {request.path}",
+        )
+
+    def on_handle_resolve_macro_path_request(
+        self, request: ResolveMacroPathRequest
+    ) -> ResolveMacroPathResultSuccess | ResolveMacroPathResultFailure:
+        """Handle macro path resolution request.
+
+        Args:
+            request: The request containing macro_path to resolve
+
+        Returns:
+            Success with resolved path or failure with details
+        """
+        resolution_result = self._resolve_macro_path_to_string(request.macro_path)
+
+        if isinstance(resolution_result, MacroResolutionFailure):
+            return ResolveMacroPathResultFailure(
+                result_details=resolution_result.error_details,
+                missing_variables=resolution_result.missing_variables,
+            )
+
+        return ResolveMacroPathResultSuccess(
+            result_details="Macro path resolved successfully",
+            resolved_path=resolution_result,
         )
 
     def _validate_copy_tree_paths(
