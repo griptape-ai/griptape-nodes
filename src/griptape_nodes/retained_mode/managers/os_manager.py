@@ -765,6 +765,31 @@ class OSManager:
 
         return path_str
 
+    @staticmethod
+    def _shell_quote_unix(arg: str) -> str:
+        r"""Wrap a single argument in double quotes for Unix shell; escape \, ", $, and `."""
+        escaped = arg.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+        return '"' + escaped + '"'
+
+    @staticmethod
+    def format_command_line(args: list[str]) -> str:
+        """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
+
+        Uses double-quoted arguments on all platforms (Windows via subprocess.list2cmdline,
+        macOS/Linux via explicit double-quote escaping) so the run command is consistent.
+
+        Args:
+            args: List of command and arguments (e.g. [sys.executable, script_path]).
+
+        Returns:
+            Single string with quoted/escaped args that can be pasted into a terminal.
+        """
+        if not args:
+            return ""
+        if OSManager.is_windows():
+            return subprocess.list2cmdline(args)
+        return " ".join(OSManager._shell_quote_unix(arg) for arg in args)
+
     # ============================================================================
     # CREATE_NEW File Collision Policy - Helper Methods
     # ============================================================================

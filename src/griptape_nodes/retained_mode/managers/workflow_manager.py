@@ -4,6 +4,7 @@ import ast
 import asyncio
 import logging
 import pickle
+import platform
 import re
 import sys
 from collections import defaultdict
@@ -1005,11 +1006,12 @@ class WorkflowManager:
                 )
             )
 
-        # Success path at end
-        run_command = f"{sys.executable} {complete_file_path}"
+        # Success path at end: quote paths so run_command works on Windows (spaces in path) and when copy-pasted into a shell
+        run_command = OSManager.format_command_line([sys.executable, str(complete_file_path)])
         return GetWorkflowRunCommandResultSuccess(
             run_command=run_command,
             workflow_shape=workflow_shape,
+            engine_os=platform.system(),
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 
