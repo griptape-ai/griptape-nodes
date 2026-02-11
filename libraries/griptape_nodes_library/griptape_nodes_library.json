@@ -1880,7 +1880,7 @@
     },
     {
       "class_name": "ResolveFilePath",
-      "file_path": "griptape_nodes_library/filesystem/resolve_path.py",
+      "file_path": "griptape_nodes_library/filesystem/resolve_file_path.py",
       "metadata": {
         "category": "filesystem",
         "description": "Resolve filename to full path with macro expansion",
