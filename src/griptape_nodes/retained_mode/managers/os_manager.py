@@ -12,7 +12,7 @@ import sys
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple
+from typing import Any, ClassVar, NamedTuple, cast
 
 import aioshutil
 import portalocker
@@ -100,6 +100,27 @@ class DiskSpaceInfo:
     total: int
     used: int
     free: int
+
+
+@dataclass
+class PathValidationResult:
+    """Result of validating and resolving a file path.
+
+    Attributes:
+        success: Whether validation succeeded
+        file_path: Resolved and normalized Path (None if failed)
+        path_display: Display string for error messages
+        failure_reason: FileIOFailureReason (None if succeeded)
+        error_message: Human-readable error details (None if succeeded)
+        missing_variables: Set of missing macro variables (None unless MISSING_MACRO_VARIABLES)
+    """
+
+    success: bool
+    file_path: Path | None
+    path_display: str
+    failure_reason: FileIOFailureReason | None = None
+    error_message: str | None = None
+    missing_variables: set[str] | None = None
 
 
 class FileContentResult(NamedTuple):
@@ -527,6 +548,74 @@ class OSManager:
                 missing_variables=e.missing_variables,
                 error_details=str(e),
             )
+
+    def _validate_and_resolve_write_path(
+        self,
+        file_path_input: str | MacroPath,
+    ) -> PathValidationResult:
+        """Validate and resolve a file path for write operations.
+
+        Handles MacroPath resolution, string path sanitization, Path validation,
+        and platform normalization. Returns structured result for caller to use.
+
+        Args:
+            file_path_input: String path or MacroPath to validate
+
+        Returns:
+            PathValidationResult with either success (file_path populated) or
+            failure (failure_reason and error_message populated)
+        """
+        # SECTION A: Resolve MacroPath → str
+        if isinstance(file_path_input, MacroPath):
+            resolution_result = self._resolve_macro_path_to_string(file_path_input)
+            if isinstance(resolution_result, MacroResolutionFailure):
+                path_display = f"{file_path_input.parsed_macro}"
+                error_message = f"Failed due to missing variables: {resolution_result.error_details}"
+                return PathValidationResult(
+                    success=False,
+                    file_path=None,
+                    path_display=path_display,
+                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                    error_message=error_message,
+                    missing_variables=resolution_result.missing_variables,
+                )
+            resolved_path_str = resolution_result
+            path_display = f"{file_path_input.parsed_macro}"
+        else:
+            # Sanitize string path (removes shell escapes, quotes, etc.)
+            resolved_path_str = self.sanitize_path_string(file_path_input)
+            path_display = resolved_path_str
+
+        # SECTION B: Convert str → Path
+        try:
+            file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
+        except (ValueError, RuntimeError) as e:
+            error_message = f"Failed due to invalid path: {e}"
+            return PathValidationResult(
+                success=False,
+                file_path=None,
+                path_display=path_display,
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                error_message=error_message,
+            )
+        except Exception as e:
+            error_message = f"Failed due to unexpected error: {e}"
+            return PathValidationResult(
+                success=False,
+                file_path=None,
+                path_display=path_display,
+                failure_reason=FileIOFailureReason.IO_ERROR,
+                error_message=error_message,
+            )
+
+        # SECTION C: Normalize path
+        normalized_path = self.normalize_path_for_platform(file_path)
+
+        return PathValidationResult(
+            success=True,
+            file_path=Path(normalized_path),
+            path_display=path_display,
+        )
 
     def _validate_file_path_for_write(
         self,
@@ -1817,40 +1906,21 @@ class OSManager:
         final_bytes_written: int | None = None
         used_indexed_fallback = False
 
-        # COMMON SETUP: Resolve path for all policies
-        # Resolve MacroPath → str
-        if isinstance(request.file_path, MacroPath):
-            resolution_result = self._resolve_macro_path_to_string(request.file_path)
-            if isinstance(resolution_result, MacroResolutionFailure):
-                path_display = f"{request.file_path.parsed_macro}"
-                msg = f"Attempted to write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
-                return WriteFileResultFailure(
-                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
-                    missing_variables=resolution_result.missing_variables,
-                    result_details=msg,
-                )
-            resolved_path_str = resolution_result
-            path_display = f"{request.file_path.parsed_macro}"
-        else:
-            # Sanitize string path (removes shell escapes, quotes, etc.)
-            resolved_path_str = self.sanitize_path_string(request.file_path)
-            path_display = resolved_path_str
+        # Validate and resolve the file path
+        validation_result = self._validate_and_resolve_write_path(request.file_path)
 
-        # Convert str → Path
-        try:
-            file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Attempted to write to file '{path_display}'. Failed due to invalid path: {e}"
+        if not validation_result.success:
+            msg = f"Attempted to write to file '{validation_result.path_display}'. {validation_result.error_message}"
             return WriteFileResultFailure(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
+                failure_reason=cast("FileIOFailureReason", validation_result.failure_reason),
+                missing_variables=validation_result.missing_variables,
                 result_details=msg,
             )
-        except Exception as e:
-            msg = f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
-            return WriteFileResultFailure(
-                failure_reason=FileIOFailureReason.IO_ERROR,
-                result_details=msg,
-            )
+
+        # Extract validated path
+        file_path = cast("Path", validation_result.file_path)
+        normalized_path = file_path  # Already normalized by helper
+        path_display = validation_result.path_display
 
         # Ensure parent directory is ready
         parent_failure_reason = self._ensure_parent_directory_ready(
@@ -1869,9 +1939,6 @@ class OSManager:
                 failure_reason=parent_failure_reason,
                 result_details=msg,
             )
-
-        # Normalize path
-        normalized_path = self.normalize_path_for_platform(file_path)
 
         # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:
@@ -2086,76 +2153,37 @@ class OSManager:
 
     def on_dry_run_write_file_request(self, request: DryRunWriteFileRequest) -> ResultPayload:
         """Handle a request to preview a file write operation without actually writing."""
-        # Resolve MacroPath → str
-        if isinstance(request.file_path, MacroPath):
-            resolution_result = self._resolve_macro_path_to_string(request.file_path)
-            if isinstance(resolution_result, MacroResolutionFailure):
-                path_display = f"{request.file_path.parsed_macro}"
-                msg = f"Attempted to preview write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
+        # Validate and resolve the file path
+        validation_result = self._validate_and_resolve_write_path(request.file_path)
 
-                # For dry-run, return a dry-run result showing it would fail
-                return WriteFileResultDryRun(
-                    would_write_to_path=path_display,
-                    file_currently_exists=False,
-                    would_create_directories=False,
-                    would_use_indexed_filename=False,
-                    index_that_would_be_used=None,
-                    bytes_that_would_be_written=0,
-                    would_succeed=False,
-                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
-                    result_details=msg,
-                )
-            resolved_path_str = resolution_result
-            path_display = f"{request.file_path.parsed_macro}"
-        else:
-            # Sanitize string path
-            resolved_path_str = self.sanitize_path_string(request.file_path)
-            path_display = resolved_path_str
-
-        # Convert str → Path
-        try:
-            file_path = self._resolve_file_path(resolved_path_str, workspace_only=False)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Attempted to preview write to file '{path_display}'. Failed due to invalid path: {e}"
+        if not validation_result.success:
+            msg = f"Attempted to preview write to file '{validation_result.path_display}'. {validation_result.error_message}"
             return WriteFileResultDryRun(
-                would_write_to_path=path_display,
+                would_write_to_path=validation_result.path_display,
                 file_currently_exists=False,
                 would_create_directories=False,
                 would_use_indexed_filename=False,
                 index_that_would_be_used=None,
                 bytes_that_would_be_written=0,
                 would_succeed=False,
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details=msg,
-            )
-        except Exception as e:
-            msg = f"Attempted to preview write to file '{path_display}'. Failed due to unexpected error: {e}"
-            return WriteFileResultDryRun(
-                would_write_to_path=path_display,
-                file_currently_exists=False,
-                would_create_directories=False,
-                would_use_indexed_filename=False,
-                index_that_would_be_used=None,
-                bytes_that_would_be_written=0,
-                would_succeed=False,
-                failure_reason=FileIOFailureReason.IO_ERROR,
+                failure_reason=cast("FileIOFailureReason", validation_result.failure_reason),
                 result_details=msg,
             )
 
-        # Normalize path
-        normalized_path = self.normalize_path_for_platform(file_path)
+        # Extract validated path
+        file_path = cast("Path", validation_result.file_path)
+        normalized_path = file_path  # Already normalized by helper
 
         # Perform dry-run preview
         return self._perform_dry_run_preview(
             file_path=file_path,
-            normalized_path=Path(normalized_path),
+            normalized_path=normalized_path,
             content=request.content,
             encoding=request.encoding,
             append=request.append,
             existing_file_policy=request.existing_file_policy,
             create_parents=request.create_parents,
             file_path_str=request.file_path,
-            path_display=path_display,
         )
 
     def _perform_dry_run_preview(  # noqa: PLR0913
@@ -2164,11 +2192,11 @@ class OSManager:
         normalized_path: Path,
         content: str | bytes,
         encoding: str,
+        *,
         append: bool,
         existing_file_policy: ExistingFilePolicy,
         create_parents: bool,
         file_path_str: str | MacroPath,
-        path_display: str,
     ) -> WriteFileResultDryRun:
         """Perform a dry-run preview of a write operation without actually writing.
 
@@ -2181,7 +2209,6 @@ class OSManager:
             existing_file_policy: Policy for handling existing files
             create_parents: Whether parent directories would be created
             file_path_str: Original file path string or MacroPath
-            path_display: Display string for the path (for error messages)
 
         Returns:
             WriteFileResultDryRun with preview information
@@ -2198,13 +2225,13 @@ class OSManager:
             normalized_path=normalized_path,
             would_create_dirs=would_create_dirs,
         )
-        would_succeed = permission_check["would_succeed"]
-        failure_reason = permission_check["failure_reason"]
+        would_succeed = cast("bool", permission_check["would_succeed"])
+        failure_reason = cast("FileIOFailureReason | None", permission_check["failure_reason"])
 
         # Determine target path based on policy
         target_path = str(file_path)
         would_use_indexed = False
-        index_used = None
+        index_used: int | None = None
 
         if would_succeed and existing_file_policy == ExistingFilePolicy.CREATE_NEW:
             indexed_info = self._check_indexed_filename_for_dry_run(
@@ -2212,20 +2239,25 @@ class OSManager:
                 file_exists=file_exists,
                 normalized_path=normalized_path,
             )
-            would_use_indexed = indexed_info["would_use_indexed"]
-            index_used = indexed_info["index_used"]
+            would_use_indexed = cast("bool", indexed_info["would_use_indexed"])
+            index_used = cast("int | None", indexed_info["index_used"])
             if indexed_info["target_path"] is not None:
-                target_path = indexed_info["target_path"]
+                target_path = cast("str", indexed_info["target_path"])
 
         elif would_succeed and existing_file_policy == ExistingFilePolicy.FAIL and file_exists:
             would_succeed = False
             failure_reason = FileIOFailureReason.POLICY_NO_OVERWRITE
 
         # Check write permission on target file
-        if would_succeed and file_exists and not append and existing_file_policy == ExistingFilePolicy.OVERWRITE:
-            if not os.access(normalized_path, os.W_OK):
-                would_succeed = False
-                failure_reason = FileIOFailureReason.PERMISSION_DENIED
+        if (
+            would_succeed
+            and file_exists
+            and not append
+            and existing_file_policy == ExistingFilePolicy.OVERWRITE
+            and not os.access(normalized_path, os.W_OK)
+        ):
+            would_succeed = False
+            failure_reason = FileIOFailureReason.PERMISSION_DENIED
 
         # Build preview message
         preview_msg = self._build_dry_run_message(
@@ -2256,6 +2288,7 @@ class OSManager:
     def _check_dry_run_permissions(
         self,
         normalized_path: Path,
+        *,
         would_create_dirs: bool,
     ) -> dict[str, bool | FileIOFailureReason | None]:
         """Check if the dry-run would succeed based on permissions.
@@ -2281,6 +2314,7 @@ class OSManager:
     def _check_indexed_filename_for_dry_run(
         self,
         file_path_str: str | MacroPath,
+        *,
         file_exists: bool,
         normalized_path: Path,
     ) -> dict[str, bool | int | str | None]:
@@ -2317,14 +2351,15 @@ class OSManager:
             secrets_manager = GriptapeNodes.SecretsManager()
             index_vars = {**variables, index_info.info.name: starting_index}
             candidate_str = parsed_macro.resolve(index_vars, secrets_manager)
-
-            return {"would_use_indexed": True, "index_used": starting_index, "target_path": candidate_str}
         except Exception:
             # If we can't determine indexed filename, just note it would be indexed
             return {"would_use_indexed": True, "index_used": None, "target_path": None}
+        else:
+            return {"would_use_indexed": True, "index_used": starting_index, "target_path": candidate_str}
 
     def _build_dry_run_message(  # noqa: PLR0913
         self,
+        *,
         would_succeed: bool,
         bytes_to_write: int,
         target_path: str,
