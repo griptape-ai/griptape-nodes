@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from griptape_nodes.retained_mode.events.os_events import (
     FileIOFailureReason,
@@ -21,6 +21,9 @@ class FileLoader:
     Loads files from any backend: local paths, HTTP URLs, S3 buckets,
     Griptape Cloud, or data URIs. Uses OSManager's unified ReadFileRequest system.
 
+    Handles artifacts automatically - if you pass an ImageArtifact or ImageUrlArtifact,
+    it will extract the .value attribute.
+
     For WRITING files, use OSManager directly (all saves go to local filesystem).
 
     Examples:
@@ -32,16 +35,25 @@ class FileLoader:
         loader = FileLoader(location="https://example.com/image.png")
         image_data = await loader.read()
 
-        # S3 bucket
-        loader = FileLoader(location="s3://bucket/key.txt")
-        s3_data = await loader.read()
+        # Artifact (extracts .value automatically)
+        artifact = ImageUrlArtifact(value="https://example.com/image.png")
+        loader = FileLoader(location=artifact)
+        image_data = await loader.read()
 
         # Data URI
         loader = FileLoader(location="data:image/png;base64,...")
         decoded_data = await loader.read()
     """
 
-    location: str  # "/path/to/file", "s3://bucket/key", "https://...", etc.
+    location: str | Any  # "/path/to/file", "https://...", artifact with .value, etc.
+
+    def __post_init__(self) -> None:
+        """Extract value from artifacts if needed."""
+        # Handle artifacts (ImageArtifact, ImageUrlArtifact, etc.)
+        if hasattr(self.location, "value"):
+            self.location = self.location.value  # type: ignore[union-attr]
+        # Convert to string
+        self.location = str(self.location)
 
     async def read(self, timeout: float = 120.0) -> bytes:  # noqa: ASYNC109, ARG002
         """Read bytes from location using OSManager's unified read system.

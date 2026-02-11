@@ -7,8 +7,10 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import (
     ExistingFilePolicy,
+    Project,
     ProjectFileSaveConfig,
     SaveRequest,
+    SaveResult,
 )
 from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
@@ -47,18 +49,15 @@ class ProjectFileParameter:
         ... )
         >>> self._file_param.add_parameter()
         >>>
-        >>> # In node process() - create save request and save:
-        >>> from griptape_nodes.project import Project
-        >>> project = Project()
-        >>> request = self._file_param.create_save_request(data=image_bytes)
-        >>> result = await project.save(request)
+        >>> # In node process() - simple save:
+        >>> result = await self._file_param.save(data=image_bytes)
         >>>
         >>> # With extra variables (e.g., for multiple images):
-        >>> request = self._file_param.create_save_request(
+        >>> result = await self._file_param.save(
         ...     data=image_bytes,
-        ...     image_index=i
+        ...     image_index=i,
+        ...     generation_id=gen_id
         ... )
-        >>> result = await project.save(request)
     """
 
     def __init__(
@@ -194,6 +193,22 @@ class ProjectFileParameter:
             policy=policy,
             create_dirs=create_dirs,
         )
+
+    async def save(self, data: bytes, **extra_vars: str | int) -> SaveResult:
+        """Build SaveRequest and save to project.
+
+        Convenience method that combines create_save_request() and Project.save().
+
+        Args:
+            data: Bytes to save
+            **extra_vars: Additional variables (e.g., image_index=0, generation_id=123)
+
+        Returns:
+            SaveResult with path and metadata
+        """
+        request = self.create_save_request(data=data, **extra_vars)
+        project = Project()
+        return await project.save(request)
 
     def _fetch_situation_config(self, situation_name: str) -> tuple[str, ExistingFilePolicy, bool] | None:
         """Fetch situation and return (macro_template, policy, create_dirs).

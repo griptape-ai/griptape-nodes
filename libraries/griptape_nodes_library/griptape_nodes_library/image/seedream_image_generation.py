@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.project import Project
+from griptape_nodes.file import FileLoader
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -567,9 +567,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             return None
 
         try:
-            # Load using Project (handles artifacts automatically)
-            project = Project()
-            image_bytes = await project.load(image_input)
+            # Load using FileLoader (handles artifacts automatically)
+            image_bytes = await FileLoader(location=image_input).read()
         except Exception as e:
             self._log(f"Failed to load image from input: {e}")
             return None
@@ -625,9 +624,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         # FAILURE CASES FIRST
         self._log(f"Downloading image {index} from URL")
         try:
-            # Download using Project
-            project = Project()
-            image_bytes = await project.load(image_url)
+            # Download using FileLoader
+            image_bytes = await FileLoader(location=image_url).read()
         except Exception as e:
             self._log(f"Could not download image {index}: {e}, using provider URL")
             return ImageUrlArtifact(value=image_url)
@@ -642,14 +640,12 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             self._log(f"Failed to convert image {index} to PNG: {e}")
             return ImageUrlArtifact(value=image_url)
 
-        # Create save request with extra variables and save
-        project = Project()
-        save_request = self._output_path_param.create_save_request(
+        # Save using parameter utility
+        save_result = await self._output_path_param.save(
             data=png_bytes,
             generation_id=generation_id or str(int(time.time())),
             image_index=index + 1,
         )
-        save_result = await project.save(save_request)
 
         # Extract filename from URL for artifact name
         filename = save_result.path.name
