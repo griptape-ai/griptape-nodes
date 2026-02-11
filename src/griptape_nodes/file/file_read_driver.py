@@ -1,4 +1,4 @@
-"""Loader driver interface for reading files from various sources."""
+"""File read driver interface for reading files from various sources."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 
-class LoaderDriver(ABC):
-    """Abstract loader driver for reading files from different backends.
+class FileReadDriver(ABC):
+    """Abstract file read driver for reading files from different backends.
 
     Each driver handles a specific type of location (local paths, HTTP URLs,
     S3 buckets, cloud URLs, data URIs). Drivers are registered with
-    LoaderDriverRegistry and selected based on the location format.
+    FileReadDriverRegistry and selected based on the location format.
 
-    LoaderDrivers are READ-ONLY. For writing files, use OSManager directly
+    FileReadDrivers are READ-ONLY. For writing files, use OSManager directly
     (all saves go to local filesystem).
     """
 
@@ -77,30 +77,30 @@ class LoaderDriver(ABC):
         """
 
 
-class LoaderDriverNotFoundError(Exception):
-    """No loader driver found for the given location."""
+class FileReadDriverNotFoundError(Exception):
+    """No file read driver found for the given location."""
 
 
-class LoaderDriverRegistry:
-    """Singleton registry for loader drivers.
+class FileReadDriverRegistry:
+    """Singleton registry for file read drivers.
 
     Drivers are registered in order of specificity (most specific first).
-    LocalLoaderDriver should be registered last as it matches all absolute paths.
+    LocalFileReadDriver should be registered last as it matches all absolute paths.
     """
 
-    _drivers: ClassVar[list[LoaderDriver]] = []
+    _drivers: ClassVar[list[FileReadDriver]] = []
 
     @classmethod
-    def register(cls, driver: LoaderDriver) -> None:
-        """Register a loader driver (order matters - first match wins).
+    def register(cls, driver: FileReadDriver) -> None:
+        """Register a file read driver (order matters - first match wins).
 
         Args:
-            driver: The loader driver to register
+            driver: The file read driver to register
         """
         cls._drivers.append(driver)
 
     @classmethod
-    def get_driver(cls, location: str) -> LoaderDriver:
+    def get_driver(cls, location: str) -> FileReadDriver:
         """Get first driver that can handle this location.
 
         Args:
@@ -110,17 +110,17 @@ class LoaderDriverRegistry:
             The first driver that can handle this location
 
         Raises:
-            LoaderDriverNotFoundError: No driver can handle this location
+            FileReadDriverNotFoundError: No driver can handle this location
         """
         for driver in cls._drivers:
             if driver.can_handle(location):
                 return driver
 
         msg = (
-            f"No loader driver found for location: {location}. "
+            f"No file read driver found for location: {location}. "
             f"Registered drivers: {[type(d).__name__ for d in cls._drivers]}"
         )
-        raise LoaderDriverNotFoundError(msg)
+        raise FileReadDriverNotFoundError(msg)
 
     @classmethod
     def clear(cls) -> None:

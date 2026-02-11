@@ -1,4 +1,4 @@
-"""Loader driver for Griptape Cloud asset locations."""
+"""File read driver for Griptape Cloud asset locations."""
 
 import os
 from urllib.parse import urljoin
@@ -6,21 +6,21 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-from griptape_nodes.file.loader_driver import LoaderDriver
+from griptape_nodes.file.file_read_driver import FileReadDriver
 
 # HTTP status code threshold for success
 _HTTP_SUCCESS_THRESHOLD = 400
 
 
-class GriptapeCloudLoaderDriver(LoaderDriver):
-    """Read-only loader driver for Griptape Cloud asset locations.
+class GriptapeCloudFileReadDriver(FileReadDriver):
+    """Read-only file read driver for Griptape Cloud asset locations.
 
     Handles locations matching: https://cloud.griptape.ai/buckets/{id}/assets/{path}
     Reads files via signed URLs. For writing files, use storage drivers directly.
     """
 
     def __init__(self, bucket_id: str, api_key: str, base_url: str = "https://cloud.griptape.ai") -> None:
-        """Initialize GriptapeCloudLoaderDriver.
+        """Initialize GriptapeCloudFileReadDriver.
 
         Args:
             bucket_id: Griptape Cloud bucket ID
@@ -33,14 +33,14 @@ class GriptapeCloudLoaderDriver(LoaderDriver):
         self.headers = {"Authorization": f"Bearer {api_key}"}
 
     @classmethod
-    def create_from_env(cls) -> "GriptapeCloudLoaderDriver | None":
+    def create_from_env(cls) -> "GriptapeCloudFileReadDriver | None":
         """Create driver from environment variables if available.
 
         Checks for GT_CLOUD_BUCKET_ID and GT_CLOUD_API_KEY environment variables.
         If both are present, creates and returns a driver instance.
 
         Returns:
-            GriptapeCloudLoaderDriver instance if credentials available, None otherwise
+            GriptapeCloudFileReadDriver instance if credentials available, None otherwise
         """
         bucket_id = os.environ.get("GT_CLOUD_BUCKET_ID")
         api_key = os.environ.get("GT_CLOUD_API_KEY")

@@ -1,27 +1,27 @@
-"""Loader driver implementations for reading files from various sources."""
+"""File read driver implementations for reading files from various sources."""
 
-from griptape_nodes.file.drivers.data_uri_loader_driver import DataUriLoaderDriver
-from griptape_nodes.file.drivers.griptape_cloud_loader_driver import GriptapeCloudLoaderDriver
-from griptape_nodes.file.drivers.http_loader_driver import HttpLoaderDriver
-from griptape_nodes.file.drivers.local_loader_driver import LocalLoaderDriver
-from griptape_nodes.file.loader_driver import LoaderDriverRegistry
+from griptape_nodes.file.drivers.data_uri_file_read_driver import DataUriFileReadDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
+from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
+from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
+from griptape_nodes.file.file_read_driver import FileReadDriverRegistry
 
 # Register core drivers on import
 # Order matters: most specific first, local last (fallback)
-LoaderDriverRegistry.register(HttpLoaderDriver())
-LoaderDriverRegistry.register(DataUriLoaderDriver())
+FileReadDriverRegistry.register(HttpFileReadDriver())
+FileReadDriverRegistry.register(DataUriFileReadDriver())
 
-# Register GriptapeCloudLoaderDriver if credentials available
-cloud_driver = GriptapeCloudLoaderDriver.create_from_env()
+# Register GriptapeCloudFileReadDriver if credentials available
+cloud_driver = GriptapeCloudFileReadDriver.create_from_env()
 if cloud_driver:
-    LoaderDriverRegistry.register(cloud_driver)
+    FileReadDriverRegistry.register(cloud_driver)
 
-# LocalLoaderDriver must be registered LAST (matches all absolute paths)
-LoaderDriverRegistry.register(LocalLoaderDriver())
+# LocalFileReadDriver must be registered LAST (matches all absolute paths)
+FileReadDriverRegistry.register(LocalFileReadDriver())
 
 __all__ = [
-    "DataUriLoaderDriver",
-    "GriptapeCloudLoaderDriver",
-    "HttpLoaderDriver",
-    "LocalLoaderDriver",
+    "DataUriFileReadDriver",
+    "GriptapeCloudFileReadDriver",
+    "HttpFileReadDriver",
+    "LocalFileReadDriver",
 ]

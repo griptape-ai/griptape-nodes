@@ -25,6 +25,7 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.file.file_read_driver import FileReadDriverNotFoundError, FileReadDriverRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -1660,61 +1661,124 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: PLR0911
-        """Handle a request to read file contents with automatic text/binary detection."""
-        # Validate request and get file path
+    async def _read_via_driver(self, location: str) -> ReadFileResultSuccess | ReadFileResultFailure:
+        """Read file using FileReadDriver system.
+
+        Driver handles validation (existence, permissions, format).
+        OSManager only adds basic metadata enrichment.
+
+        Args:
+            location: Location string (URL, data URI, cloud path, or local path)
+
+        Returns:
+            ReadFileResultSuccess with content and metadata, or ReadFileResultFailure
+        """
         try:
-            file_path, _file_path_str = self._validate_read_file_request(request)
+            # Ensure drivers are registered (triggers driver registration on import)
+            from griptape_nodes.file import drivers  # noqa: F401
+
+            # Get appropriate driver
+            driver = FileReadDriverRegistry.get_driver(location)
+
+            # Driver validates and reads
+            content = await driver.read(location, timeout=120.0)
+
+            # Add basic metadata
+            file_size = len(content)
+            mime_type = self._detect_mime_type_from_location(location)
+            is_text = self._is_text_content(content, mime_type)
+            encoding = "utf-8" if is_text else None
+
+            return ReadFileResultSuccess(
+                content=content,
+                file_size=file_size,
+                mime_type=mime_type,
+                encoding=encoding,
+                compression_encoding=None,
+                result_details="File read successfully.",
+            )
+        except FileReadDriverNotFoundError:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=f"No driver found for location: {location}",
+            )
         except FileNotFoundError as e:
-            msg = f"File not found: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=str(e))
         except PermissionError as e:
-            msg = f"Permission denied: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Invalid path: {e}"
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=str(e))
+        except IsADirectoryError as e:
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=str(e))
+        except Exception as e:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR, result_details=f"Error reading from {location}: {e}"
+            )
+
+    def _detect_mime_type_from_location(self, location: str) -> str:
+        """Detect MIME type from location string.
+
+        Args:
+            location: URL, data URI, or file path
+
+        Returns:
+            MIME type string (default: "text/plain")
+        """
+        if location.startswith("data:"):
+            # Extract MIME type from data URI (e.g., "data:image/png;base64,...")
+            if ";" in location:
+                mime_part = location.split(";")[0].replace("data:", "")
+                return mime_part if mime_part else "text/plain"
+            return "text/plain"
+
+        # Use mimetypes module for URLs and paths
+        mime_type, _ = mimetypes.guess_type(location, strict=True)
+        return mime_type if mime_type else "text/plain"
+
+    def _is_text_content(self, content: bytes, mime_type: str) -> bool:
+        """Check if content is text based on MIME type and content analysis.
+
+        Args:
+            content: File content as bytes
+            mime_type: MIME type string
+
+        Returns:
+            True if content should be treated as text
+        """
+        # Check MIME type first
+        if mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml")):
+            return True
+
+        # For binary MIME types, return False
+        if mime_type.startswith(("image/", "audio/", "video/", "application/octet-stream")):
+            return False
+
+        # For unknown types, try detecting from content
+        try:
+            content.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            return False
+        else:
+            return True
+
+    async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
+        """Handle a request to read file contents with automatic text/binary detection.
+
+        All file reading is delegated to FileReadDriver system.
+        """
+        # Get location string from request
+        if request.file_entry is not None:
+            location = request.file_entry.path
+        elif request.file_path is not None:
+            location = request.file_path
+        else:
+            msg = "Either file_path or file_entry must be provided"
             logger.error(msg)
             return ReadFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error validating path: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
-        # Read file content
-        try:
-            result = self._read_file_content(file_path, request)
-        except PermissionError as e:
-            msg = f"Permission denied for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except IsADirectoryError:
-            msg = f"Path is a directory, not a file: {file_path}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
-        except UnicodeDecodeError as e:
-            msg = f"Encoding error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.ENCODING_ERROR, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-        except Exception as e:
-            msg = f"Unexpected error reading file {file_path}: {type(e).__name__}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+        # Sanitize path string (basic cleanup)
+        location = self.sanitize_path_string(location)
 
-        # SUCCESS PATH - Only reached if no exceptions occurred
-        return ReadFileResultSuccess(
-            content=result.content,
-            file_size=result.file_size,
-            mime_type=result.mime_type,
-            encoding=result.encoding,
-            compression_encoding=result.compression_encoding,
-            result_details="File read successfully.",
-        )
+        # Read via driver system (driver handles all validation and I/O)
+        return await self._read_via_driver(location)
 
     def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
         """Read file content and return FileContentResult with all file information."""
