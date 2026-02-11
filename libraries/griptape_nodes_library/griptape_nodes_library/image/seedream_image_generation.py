@@ -228,7 +228,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             situation_name="save_node_output",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="Output file path template (uses 'save_node_output' situation template)",
-            simple_default="seedream_output.png",
+            filename="seedream_output.png",
         )
         self._output_path_param.add_parameter()
 

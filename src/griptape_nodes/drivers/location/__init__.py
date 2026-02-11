@@ -12,8 +12,6 @@ Built-in drivers:
 Custom drivers can be registered via LocationDriverRegistry.register_driver().
 """
 
-import os
-
 from griptape_nodes.drivers.location.base_location_driver import BaseLocationDriver
 from griptape_nodes.drivers.location.data_uri_driver import DataUriDriver
 from griptape_nodes.drivers.location.file_path_driver import FilePathDriver
@@ -25,12 +23,8 @@ from griptape_nodes.drivers.location.location_driver_registry import LocationDri
 LocationDriverRegistry.register_driver(DataUriDriver())
 LocationDriverRegistry.register_driver(HttpDriver())
 
-# GTC driver - only register if credentials available
-bucket_id = os.environ.get("GT_CLOUD_BUCKET_ID")
-api_key = os.environ.get("GT_CLOUD_API_KEY")
-base_url = os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-if bucket_id and api_key:
-    LocationDriverRegistry.register_driver(GriptapeCloudDriver(bucket_id, api_key, base_url))
+# GTC driver - conditionally register if credentials available
+GriptapeCloudDriver.register_if_available()
 
 # File path driver MUST BE LAST (fallback)
 LocationDriverRegistry.register_driver(FilePathDriver())

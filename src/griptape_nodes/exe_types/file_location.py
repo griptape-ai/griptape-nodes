@@ -179,7 +179,7 @@ class FileLocation:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FileLocation":
-        """Deserialize FileLocation from workflow load with backward compatibility.
+        """Deserialize FileLocation from workflow load.
 
         Args:
             data: Dictionary with serialized FileLocation data
@@ -187,18 +187,6 @@ class FileLocation:
         Returns:
             FileLocation instance
         """
-        # Backward compatibility: convert old format (resolved_path) to new format (macro_template + variables)
-        if "resolved_path" in data and "macro_template" not in data:
-            # Old format: just use the resolved path as a literal template
-            resolved_path = data["resolved_path"]
-            return cls(
-                macro_template=resolved_path,
-                base_variables={},
-                existing_file_policy=ExistingFilePolicy(data["existing_file_policy"]),
-                create_parent_dirs=data.get("create_parent_dirs", True),
-            )
-
-        # New format
         return cls(
             macro_template=data["macro_template"],
             base_variables=data["base_variables"],

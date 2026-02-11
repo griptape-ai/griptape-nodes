@@ -1,5 +1,6 @@
 """Driver for Griptape Cloud asset locations."""
 
+import os
 from urllib.parse import urljoin
 
 import httpx
@@ -28,6 +29,22 @@ class GriptapeCloudDriver(BaseLocationDriver):
         self.api_key = api_key
         self.base_url = base_url
         self.headers = {"Authorization": f"Bearer {api_key}"}
+
+    @classmethod
+    def register_if_available(cls) -> None:
+        """Register driver if credentials are available in environment.
+
+        Checks for GT_CLOUD_BUCKET_ID and GT_CLOUD_API_KEY environment variables.
+        If both are present, creates and registers a driver instance.
+        """
+        from griptape_nodes.drivers.location.location_driver_registry import LocationDriverRegistry
+
+        bucket_id = os.environ.get("GT_CLOUD_BUCKET_ID")
+        api_key = os.environ.get("GT_CLOUD_API_KEY")
+        base_url = os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
+
+        if bucket_id and api_key:
+            LocationDriverRegistry.register_driver(cls(bucket_id, api_key, base_url))
 
     def can_handle(self, location: str) -> bool:
         """Check if location is a Griptape Cloud asset URL.

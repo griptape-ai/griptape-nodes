@@ -4,13 +4,17 @@ import logging
 from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
@@ -35,7 +39,7 @@ class FileLocationParameter:
         ...     node=self,
         ...     name="file_path",
         ...     situation_name="save_node_output",
-        ...     simple_default="output.png",
+        ...     filename="output.png",
         ... )
         >>> self._file_path_param.add_parameter()
         >>>
@@ -78,23 +82,21 @@ class FileLocationParameter:
         self._ui_options = kwargs.get("ui_options") or {}
         self._parameter: Parameter | None = None
 
-        # Get simple default filename from kwargs or use generic default
-        simple_default = kwargs.get("simple_default") or "output.png"
+        # Get default filename from kwargs or use generic default
+        filename = kwargs.get("filename") or "output.png"
 
         # Fetch situation config
         config = self._fetch_situation_config(situation_name)
         if config:
             macro_template, file_policy, create_dirs = config
             self._situation_macro = macro_template
-            self._default_value = simple_default
+            self._default_value = filename
             self._existing_file_policy = file_policy
             self._create_parent_dirs = create_dirs
         else:
             logger.error("%s: Failed to load situation '%s', using fallback", self._node.name, situation_name)
             self._situation_macro = "{outputs}/{file_name_base}{_index?:03}.{file_extension}"
-            self._default_value = simple_default
-            from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-
+            self._default_value = filename
             self._existing_file_policy = ExistingFilePolicy.CREATE_NEW
             self._create_parent_dirs = True
 
@@ -183,13 +185,6 @@ class FileLocationParameter:
         Returns:
             Tuple of (macro_template, existing_file_policy, create_parent_dirs), or None if fetch fails
         """
-        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
-        from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetSituationRequest,
-            GetSituationResultSuccess,
-        )
-
         request = GetSituationRequest(situation_name=situation_name)
         result = GriptapeNodes.ProjectManager().on_get_situation_request(request)
 

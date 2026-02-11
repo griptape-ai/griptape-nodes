@@ -101,7 +101,7 @@ class GenerateImage(ControlNode):
             situation_name="save_node_output",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="File location for saving image (uses 'save_node_output' situation template)",
-            simple_default="output.png",
+            filename="output.png",
         )
         self._file_path_param.add_parameter()
         # Group for logging information.
