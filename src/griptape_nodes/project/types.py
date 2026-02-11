@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 
 
-class ExistingFilePolicy(str, Enum):
+class ExistingFilePolicy(Enum):
     """Policy for handling existing files during save operations."""
 
     CREATE_NEW = "CREATE_NEW"  # Auto-increment index to find next available filename
@@ -37,10 +37,10 @@ class SaveResult:
 
 
 @dataclass
-class ProjectFileConfig:
-    """Configuration for file saving (output from ResolveFilePath node).
+class ProjectFileSaveConfig:
+    """Configuration for file saving (output from ConfigureProjectFileSave node).
 
-    This allows ResolveFilePath to output custom configuration that
+    This allows ConfigureProjectFileSave to output custom configuration that
     save nodes can use to override default situation settings.
     """
 

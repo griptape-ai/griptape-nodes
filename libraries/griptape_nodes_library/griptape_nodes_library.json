@@ -1879,7 +1879,7 @@
       }
     },
     {
-      "class_name": "ResolveFilePath",
+      "class_name": "ConfigureProjectFileSave",
       "file_path": "griptape_nodes_library/filesystem/resolve_file_path.py",
       "metadata": {
         "category": "filesystem",

@@ -1,4 +1,4 @@
-"""ResolveFilePath Node - Standalone path resolution with macro expansion.
+"""ConfigureProjectFileSave Node - Standalone path resolution with macro expansion.
 
 This node handles:
 - Project template macro resolution
@@ -24,7 +24,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.project import ExistingFilePolicy, ProjectFileConfig
+from griptape_nodes.project import ExistingFilePolicy, ProjectFileSaveConfig
 from griptape_nodes.retained_mode.events.os_events import (
     DryRunWriteFileRequest,
     WriteFileResultDryRun,
@@ -79,7 +79,7 @@ class ClassifiedPath:
     macro_form: str | None = None
 
 
-class ResolveFilePath(BaseNode):
+class ConfigureProjectFileSave(BaseNode):
     """Node for resolving file paths with macro expansion and project template integration.
 
     This node handles path resolution and outputs a fully resolved path string.
@@ -223,23 +223,23 @@ class ResolveFilePath(BaseNode):
         self.add_node_element(self.preview_result)
 
         # file_location parameter (computed output with policies)
-        # This is an OUTPUT-only parameter that produces ProjectFileConfig objects
-        # It doesn't need ProjectFileConfigParameter component since it never calls save/load
+        # This is an OUTPUT-only parameter that produces ProjectFileSaveConfig objects
+        # It doesn't need ProjectFileSaveConfigParameter component since it never calls save/load
         def _normalize_file_location(value: Any) -> Any:
-            """Normalize ProjectFileConfig values for output."""
+            """Normalize ProjectFileSaveConfig values for output."""
             if value is None:
                 return None
-            if isinstance(value, ProjectFileConfig):
+            if isinstance(value, ProjectFileSaveConfig):
                 return value
             if isinstance(value, dict):
-                return ProjectFileConfig(**value)
+                return ProjectFileSaveConfig(**value)
             return value
 
         self.file_location = Parameter(
             name="file_location",
-            type="ProjectFileConfig",
-            input_types=["ProjectFileConfig"],
-            output_type="ProjectFileConfig",
+            type="ProjectFileSaveConfig",
+            input_types=["ProjectFileSaveConfig"],
+            output_type="ProjectFileSaveConfig",
             default_value=None,
             allowed_modes={ParameterMode.OUTPUT},
             tooltip="Complete file location with path and save policies",
@@ -301,7 +301,7 @@ class ResolveFilePath(BaseNode):
     # Private methods for situation loading and path resolution
 
     def _get_target_node_name(self) -> str:
-        """Get the name of the node this ResolveFilePath is connected to.
+        """Get the name of the node this ConfigureProjectFileSave is connected to.
 
         If file_location output has outgoing connections, use the first target node's name.
         Otherwise, fall back to this node's own name.
@@ -332,7 +332,7 @@ class ResolveFilePath(BaseNode):
         Re-resolve the path to use the target node's name.
         """
         if source_parameter.name == self.file_location.name:
-            # Re-compute the ProjectFileConfig with the target node's name
+            # Re-compute the ProjectFileSaveConfig with the target node's name
             self._resolve_and_update_path()
 
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
@@ -345,7 +345,7 @@ class ResolveFilePath(BaseNode):
         Re-resolve the path to use this node's own name.
         """
         if source_parameter.name == self.file_location.name:
-            # Re-compute the ProjectFileConfig with this node's own name
+            # Re-compute the ProjectFileSaveConfig with this node's own name
             self._resolve_and_update_path()
 
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
@@ -445,21 +445,21 @@ class ResolveFilePath(BaseNode):
             normalized_path=str(resolved),
         )
 
-    def _create_file_location(self, macro_template: str, _variables: dict[str, str | int]) -> ProjectFileConfig:
-        """Create ProjectFileConfig from macro template, variables, and current policies.
+    def _create_file_location(self, macro_template: str, _variables: dict[str, str | int]) -> ProjectFileSaveConfig:
+        """Create ProjectFileSaveConfig from macro template, variables, and current policies.
 
         Args:
             macro_template: The macro template string
             variables: Variables for macro resolution
 
         Returns:
-            ProjectFileConfig object with template, variables, and configured policies
+            ProjectFileSaveConfig object with template, variables, and configured policies
         """
         overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
         existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
 
-        return ProjectFileConfig(
+        return ProjectFileSaveConfig(
             macro_template=macro_template,
             policy=existing_file_policy,
             create_dirs=allow_create_dirs,

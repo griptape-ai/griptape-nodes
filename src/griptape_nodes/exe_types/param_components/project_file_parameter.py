@@ -7,7 +7,7 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import (
     ExistingFilePolicy,
-    ProjectFileConfig,
+    ProjectFileSaveConfig,
     SaveRequest,
 )
 from griptape_nodes.retained_mode.events.project_events import (
@@ -107,7 +107,7 @@ class ProjectFileParameter:
             default_value=self._default_filename,
             allowed_modes=self._allowed_modes,
             tooltip=tooltip,
-            input_types=["ProjectFileConfig", "str"],
+            input_types=["ProjectFileSaveConfig", "str"],
             output_type="str",
             traits={
                 FileSystemPicker(
@@ -133,9 +133,9 @@ class ProjectFileParameter:
         # Get parameter value
         value = self._node.get_parameter_value(self._name)
 
-        # Check if value is a ProjectFileConfig from ResolveFilePath node
-        if isinstance(value, ProjectFileConfig):
-            # Use custom configuration from ResolveFilePath
+        # Check if value is a ProjectFileSaveConfig from ConfigureProjectFileSave node
+        if isinstance(value, ProjectFileSaveConfig):
+            # Use custom configuration from ConfigureProjectFileSave
             macro_template = value.macro_template
             policy = value.policy
             create_dirs = value.create_dirs

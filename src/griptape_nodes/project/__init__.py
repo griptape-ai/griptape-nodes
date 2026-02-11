@@ -3,7 +3,7 @@
 from griptape_nodes.project.project import Project
 from griptape_nodes.project.types import (
     ExistingFilePolicy,
-    ProjectFileConfig,
+    ProjectFileSaveConfig,
     SaveRequest,
     SaveResult,
 )
@@ -11,7 +11,7 @@ from griptape_nodes.project.types import (
 __all__ = [
     "ExistingFilePolicy",
     "Project",
-    "ProjectFileConfig",
+    "ProjectFileSaveConfig",
     "SaveRequest",
     "SaveResult",
 ]
