@@ -8,8 +8,11 @@ import httpx
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.file.loader_driver import LoaderDriver
 
+# HTTP status code threshold for success
+_HTTP_SUCCESS_THRESHOLD = 400
 
-class CloudLoaderDriver(LoaderDriver):
+
+class GriptapeCloudLoaderDriver(LoaderDriver):
     """Read-only loader driver for Griptape Cloud asset locations.
 
     Handles locations matching: https://cloud.griptape.ai/buckets/{id}/assets/{path}
@@ -17,7 +20,7 @@ class CloudLoaderDriver(LoaderDriver):
     """
 
     def __init__(self, bucket_id: str, api_key: str, base_url: str = "https://cloud.griptape.ai") -> None:
-        """Initialize CloudLoaderDriver.
+        """Initialize GriptapeCloudLoaderDriver.
 
         Args:
             bucket_id: Griptape Cloud bucket ID
@@ -30,14 +33,14 @@ class CloudLoaderDriver(LoaderDriver):
         self.headers = {"Authorization": f"Bearer {api_key}"}
 
     @classmethod
-    def create_from_env(cls) -> "CloudLoaderDriver | None":
+    def create_from_env(cls) -> "GriptapeCloudLoaderDriver | None":
         """Create driver from environment variables if available.
 
         Checks for GT_CLOUD_BUCKET_ID and GT_CLOUD_API_KEY environment variables.
         If both are present, creates and returns a driver instance.
 
         Returns:
-            CloudLoaderDriver instance if credentials available, None otherwise
+            GriptapeCloudLoaderDriver instance if credentials available, None otherwise
         """
         bucket_id = os.environ.get("GT_CLOUD_BUCKET_ID")
         api_key = os.environ.get("GT_CLOUD_API_KEY")
@@ -59,7 +62,7 @@ class CloudLoaderDriver(LoaderDriver):
         """
         return GriptapeCloudStorageDriver.is_cloud_asset_url(location, self.base_url)
 
-    async def read(self, location: str, timeout: float) -> bytes:
+    async def read(self, location: str, timeout: float) -> bytes:  # noqa: ASYNC109
         """Download file from Griptape Cloud storage.
 
         Args:
@@ -113,7 +116,7 @@ class CloudLoaderDriver(LoaderDriver):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(api_url, json={"method": "GET"}, headers=self.headers, timeout=10.0)
-                return response.status_code < 400
+                return response.status_code < _HTTP_SUCCESS_THRESHOLD
         except (httpx.HTTPError, Exception):
             return False
 

@@ -13,6 +13,7 @@ from griptape_nodes.exe_types.param_components.project_file_parameter import Pro
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.project import Project
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
@@ -101,7 +102,6 @@ class GenerateImage(ControlNode):
             situation="save_node_output",
             default_filename="output.png",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            tooltip="File location for saving image (uses 'save_node_output' situation template)",
         )
         self._file_path_param.add_parameter()
         # Group for logging information.
@@ -332,8 +332,9 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         agent.run(prompt)
 
         # Create save request and save using Project
+        project = Project()
         save_request = self._file_path_param.create_save_request(data=agent.output.to_bytes())
-        save_result = await GriptapeNodes.Project().save(save_request)
+        save_result = await project.save(save_request)
 
         # Create URL artifact for output preview
         url_artifact = ImageUrlArtifact(value=save_result.url)

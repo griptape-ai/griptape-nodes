@@ -5,10 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.file.file_loader import FileLoader
@@ -65,11 +62,19 @@ class Project:
     - UI (that's ProjectFileParameter's job)
 
     Usage:
-        project = GriptapeNodes.Project()
+        project = Project()
         result = await project.save(SaveRequest(...))
     """
 
-    os_manager: OSManager  # Injected dependency
+    def _get_os_manager(self) -> Any:
+        """Get OSManager from GriptapeNodes singleton.
+
+        Returns:
+            OSManager instance from GriptapeNodes singleton
+        """
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        return GriptapeNodes.OSManager()
 
     async def save(self, request: SaveRequest) -> SaveResult:
         """Save file using project configuration.
@@ -121,7 +126,7 @@ class Project:
         )
 
         # 5. Execute via OSManager
-        result = self.os_manager.on_write_file_request(write_request)
+        result = self._get_os_manager().on_write_file_request(write_request)
 
         # 6. Handle result
         if isinstance(result, WriteFileResultFailure):
@@ -170,7 +175,7 @@ class Project:
         """
         # Handle artifacts (ImageArtifact, ImageUrlArtifact, etc.)
         if hasattr(location, "value"):
-            location = location.value
+            location = location.value  # type: ignore[union-attr]
 
         # Convert to string if not already
         location = str(location)
@@ -220,7 +225,7 @@ class Project:
         )
 
         # Execute via OSManager
-        result = self.os_manager.on_dry_run_write_file_request(dry_run_request)
+        result = self._get_os_manager().on_dry_run_write_file_request(dry_run_request)
 
         if not isinstance(result, WriteFileResultDryRun):
             msg = f"Unexpected result type: {type(result)}"
@@ -350,10 +355,10 @@ class Project:
             msg = "No current project set - cannot resolve macros for load"
             raise RuntimeError(msg)
 
-        project_info = result.project_info
+        project_info = result.project_info  # type: ignore[union-attr]
 
         # Build resolution bag with builtin variables
-        resolution_bag = self._get_builtin_resolution_bag(variable_infos, project_info)
+        resolution_bag = self._get_builtin_resolution_bag(list(variable_infos), project_info)
 
         # Resolve macro
         secrets_manager = project_manager._secrets_manager

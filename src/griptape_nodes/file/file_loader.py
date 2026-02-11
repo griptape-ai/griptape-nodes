@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from griptape_nodes.file import drivers  # noqa: F401 - Triggers driver registration
 from griptape_nodes.file.loader_driver import LoaderDriverRegistry
 
 
@@ -37,7 +38,7 @@ class FileLoader:
 
     location: str  # "/path/to/file", "s3://bucket/key", "https://...", etc.
 
-    async def read(self, timeout: float = 120.0) -> bytes:
+    async def read(self, timeout: float = 120.0) -> bytes:  # noqa: ASYNC109
         """Read bytes from location.
 
         Args:

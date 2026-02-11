@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from griptape_nodes.file.loader_driver import LoaderDriver
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 class LocalLoaderDriver(LoaderDriver):
@@ -27,12 +26,12 @@ class LocalLoaderDriver(LoaderDriver):
         path = Path(location)
         return path.is_absolute()
 
-    async def read(self, location: str, timeout: float) -> bytes:
+    async def read(self, location: str, _timeout: float) -> bytes:
         """Read file from local filesystem.
 
         Args:
             location: Absolute file path
-            timeout: Ignored for local files
+            _timeout: Ignored for local files
 
         Returns:
             File contents as bytes
@@ -51,13 +50,16 @@ class LocalLoaderDriver(LoaderDriver):
             msg = f"Path is a directory, not a file: {location}"
             raise IsADirectoryError(msg)
 
+        # Lazy import required: circular dependency between this module and GriptapeNodes
+        # file_loader imports drivers at module level, which instantiates this driver
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
         # Get OS Manager for path normalization
         os_manager = GriptapeNodes.OSManager()
         normalized_path = os_manager.normalize_path_for_platform(path)
 
         # Read file
-        with open(normalized_path, "rb") as f:
-            return f.read()
+        return Path(normalized_path).read_bytes()
 
     async def exists(self, location: str) -> bool:
         """Check if file exists on local filesystem.

@@ -21,14 +21,16 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
     ParameterMode,
 )
-from griptape_nodes.exe_types.file_location import FileLocation
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.project import ExistingFilePolicy, ProjectFileConfig
 from griptape_nodes.retained_mode.events.os_events import (
     DryRunWriteFileRequest,
-    ExistingFilePolicy,
     WriteFileResultDryRun,
+)
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy as OSExistingFilePolicy,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -221,23 +223,23 @@ class ResolveFilePath(BaseNode):
         self.add_node_element(self.preview_result)
 
         # file_location parameter (computed output with policies)
-        # This is an OUTPUT-only parameter that produces FileLocation objects
-        # It doesn't need FileLocationParameter component since it never calls save/load
+        # This is an OUTPUT-only parameter that produces ProjectFileConfig objects
+        # It doesn't need ProjectFileConfigParameter component since it never calls save/load
         def _normalize_file_location(value: Any) -> Any:
-            """Normalize FileLocation values for output."""
+            """Normalize ProjectFileConfig values for output."""
             if value is None:
                 return None
-            if isinstance(value, FileLocation):
+            if isinstance(value, ProjectFileConfig):
                 return value
             if isinstance(value, dict):
-                return FileLocation.from_dict(value)
+                return ProjectFileConfig(**value)
             return value
 
         self.file_location = Parameter(
             name="file_location",
-            type="FileLocation",
-            input_types=["FileLocation"],
-            output_type="FileLocation",
+            type="ProjectFileConfig",
+            input_types=["ProjectFileConfig"],
+            output_type="ProjectFileConfig",
             default_value=None,
             allowed_modes={ParameterMode.OUTPUT},
             tooltip="Complete file location with path and save policies",
@@ -330,7 +332,7 @@ class ResolveFilePath(BaseNode):
         Re-resolve the path to use the target node's name.
         """
         if source_parameter.name == self.file_location.name:
-            # Re-compute the FileLocation with the target node's name
+            # Re-compute the ProjectFileConfig with the target node's name
             self._resolve_and_update_path()
 
         return super().after_outgoing_connection(source_parameter, target_node, target_parameter)
@@ -343,7 +345,7 @@ class ResolveFilePath(BaseNode):
         Re-resolve the path to use this node's own name.
         """
         if source_parameter.name == self.file_location.name:
-            # Re-compute the FileLocation with this node's own name
+            # Re-compute the ProjectFileConfig with this node's own name
             self._resolve_and_update_path()
 
         return super().after_outgoing_connection_removed(source_parameter, target_node, target_parameter)
@@ -443,25 +445,24 @@ class ResolveFilePath(BaseNode):
             normalized_path=str(resolved),
         )
 
-    def _create_file_location(self, macro_template: str, variables: dict[str, str | int]) -> FileLocation:
-        """Create FileLocation from macro template, variables, and current policies.
+    def _create_file_location(self, macro_template: str, _variables: dict[str, str | int]) -> ProjectFileConfig:
+        """Create ProjectFileConfig from macro template, variables, and current policies.
 
         Args:
             macro_template: The macro template string
             variables: Variables for macro resolution
 
         Returns:
-            FileLocation object with template, variables, and configured policies
+            ProjectFileConfig object with template, variables, and configured policies
         """
         overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
         existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
 
-        return FileLocation(
+        return ProjectFileConfig(
             macro_template=macro_template,
-            base_variables=variables,
-            existing_file_policy=existing_file_policy,
-            create_parent_dirs=allow_create_dirs,
+            policy=existing_file_policy,
+            create_dirs=allow_create_dirs,
         )
 
     def _handle_relative_path(self, classified: ClassifiedPath) -> None:
@@ -606,11 +607,19 @@ class ResolveFilePath(BaseNode):
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
         existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
 
+        # Convert to OS-level policy for DryRunWriteFileRequest
+        os_policy_mapping = {
+            ExistingFilePolicy.CREATE_NEW: OSExistingFilePolicy.CREATE_NEW,
+            ExistingFilePolicy.OVERWRITE: OSExistingFilePolicy.OVERWRITE,
+            ExistingFilePolicy.FAIL: OSExistingFilePolicy.FAIL,
+        }
+        os_existing_file_policy = os_policy_mapping[existing_file_policy]
+
         # Create dry-run request with test content
         request = DryRunWriteFileRequest(
             file_path=resolved_path,
             content=b"test content",
-            existing_file_policy=existing_file_policy,
+            existing_file_policy=os_existing_file_policy,
             create_parents=allow_create_dirs,
         )
 

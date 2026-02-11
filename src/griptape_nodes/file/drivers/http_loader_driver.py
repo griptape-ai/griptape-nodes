@@ -4,6 +4,9 @@ import httpx
 
 from griptape_nodes.file.loader_driver import LoaderDriver
 
+# HTTP status code threshold for success
+_HTTP_SUCCESS_THRESHOLD = 400
+
 
 class HttpLoaderDriver(LoaderDriver):
     """Read-only loader driver for HTTP/HTTPS locations.
@@ -23,7 +26,7 @@ class HttpLoaderDriver(LoaderDriver):
         """
         return location.startswith(("http://", "https://"))
 
-    async def read(self, location: str, timeout: float) -> bytes:
+    async def read(self, location: str, timeout: float) -> bytes:  # noqa: ASYNC109
         """Download file from HTTP/HTTPS URL.
 
         Args:
@@ -57,7 +60,7 @@ class HttpLoaderDriver(LoaderDriver):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.head(location, timeout=10.0)
-                return response.status_code < 400
+                return response.status_code < _HTTP_SUCCESS_THRESHOLD
         except (httpx.HTTPError, Exception):
             return False
 

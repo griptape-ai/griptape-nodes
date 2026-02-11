@@ -1,12 +1,10 @@
 """ProjectFileParameter - parameter component for project-aware file saving."""
 
 import logging
-from typing import Any
-
-from griptape_nodes.exe_types.parameters import ParameterString
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import (
     ExistingFilePolicy,
     ProjectFileConfig,
@@ -47,15 +45,17 @@ class ProjectFileParameter:
         >>> self._file_param.add_parameter()
         >>>
         >>> # In node process() - create save request and save:
+        >>> from griptape_nodes.project import Project
+        >>> project = Project()
         >>> request = self._file_param.create_save_request(data=image_bytes)
-        >>> result = await GriptapeNodes.Project().save(request)
+        >>> result = await project.save(request)
         >>>
         >>> # With extra variables (e.g., for multiple images):
         >>> request = self._file_param.create_save_request(
         ...     data=image_bytes,
         ...     image_index=i
         ... )
-        >>> result = await GriptapeNodes.Project().save(request)
+        >>> result = await project.save(request)
     """
 
     def __init__(
@@ -63,11 +63,9 @@ class ProjectFileParameter:
         node: BaseNode,
         name: str,
         situation: str,
-        default_filename: str = "output.png",
         *,
+        default_filename: str = "output.png",
         allowed_modes: set[ParameterMode] | None = None,
-        tooltip: str | None = None,
-        **kwargs: Any,
     ) -> None:
         """Initialize with situation context.
 
@@ -77,15 +75,12 @@ class ProjectFileParameter:
             situation: Situation name (e.g., "save_node_output")
             default_filename: Default filename if parameter is empty
             allowed_modes: Set of allowed parameter modes (default: INPUT, PROPERTY)
-            tooltip: Tooltip text for UI (overrides auto-generated tooltip)
-            **kwargs: Additional parameter options
         """
         self._node = node
         self._name = name
         self._situation_name = situation
         self._default_filename = default_filename
         self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
-        self._tooltip = tooltip
 
         # Fetch situation configuration
         config = self._fetch_situation_config(situation)
@@ -104,7 +99,7 @@ class ProjectFileParameter:
     def add_parameter(self) -> None:
         """Create and add parameter to node with FileSystemPicker trait."""
         # Generate tooltip
-        tooltip = self._tooltip or f"Filename (uses '{self._situation_name}' situation)"
+        tooltip = f"Filename (uses '{self._situation_name}' situation)"
 
         # Create parameter
         parameter = ParameterString(

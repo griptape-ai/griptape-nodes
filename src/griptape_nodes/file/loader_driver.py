@@ -35,7 +35,7 @@ class LoaderDriver(ABC):
         """
 
     @abstractmethod
-    async def read(self, location: str, timeout: float) -> bytes:
+    async def read(self, location: str, timeout: float) -> bytes:  # noqa: ASYNC109
         """Read bytes from location.
 
         Args:

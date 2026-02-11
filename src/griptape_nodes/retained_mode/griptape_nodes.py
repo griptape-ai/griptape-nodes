@@ -9,7 +9,6 @@ import semver
 
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
-from griptape_nodes.project import Project
 from griptape_nodes.retained_mode.events.app_events import (
     EngineHeartbeatRequest,
     EngineHeartbeatResultFailure,
@@ -100,7 +99,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _user_manager: UserManager
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
-    _project: Project
 
     def __init__(self) -> None:  # noqa: PLR0915
         from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
@@ -170,10 +168,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
             self._user_manager = UserManager(self._secrets_manager)
             self._project_manager = ProjectManager(self._event_manager, self._config_manager, self._secrets_manager)
             self._artifact_manager = ArtifactManager(self._event_manager)
-            self._project = Project(os_manager=self._os_manager)
-
-            # Register storage drivers
-            self._register_storage_drivers()
 
             # Assign handlers now that these are created.
             self._event_manager.assign_manager_to_request_type(
@@ -355,37 +349,6 @@ class GriptapeNodes(metaclass=SingletonMeta):
     @classmethod
     def ArtifactManager(cls) -> ArtifactManager:
         return GriptapeNodes.get_instance()._artifact_manager
-
-    @classmethod
-    def Project(cls) -> Project:
-        return GriptapeNodes.get_instance()._project
-
-    def _register_storage_drivers(self) -> None:
-        """Register storage drivers in order of specificity.
-
-        Drivers are registered from most specific to most general.
-        LocalStorageDriver must be last as it matches all absolute paths.
-        """
-        from griptape_nodes.file.drivers.cloud_storage_driver import CloudStorageDriver
-        from griptape_nodes.file.drivers.data_uri_storage_driver import (
-            DataUriStorageDriver,
-        )
-        from griptape_nodes.file.drivers.http_storage_driver import HttpStorageDriver
-        from griptape_nodes.file.drivers.local_storage_driver import LocalStorageDriver
-        from griptape_nodes.file.storage_driver import DriverRegistry
-
-        # Register in order: most specific first, local last (fallback)
-        DriverRegistry.register(HttpStorageDriver())
-        DriverRegistry.register(DataUriStorageDriver())
-
-        # Register CloudStorageDriver if credentials available
-        cloud_driver = CloudStorageDriver.create_from_env()
-        if cloud_driver:
-            DriverRegistry.register(cloud_driver)
-            logger.info("Registered CloudStorageDriver (credentials found in environment)")
-
-        # Register LocalStorageDriver last (fallback for all absolute paths)
-        DriverRegistry.register(LocalStorageDriver())
 
     @classmethod
     def clear_data(cls) -> None:

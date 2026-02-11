@@ -23,12 +23,12 @@ class DataUriLoaderDriver(LoaderDriver):
         """
         return location.startswith("data:")
 
-    async def read(self, location: str, timeout: float) -> bytes:
+    async def read(self, location: str, _timeout: float) -> bytes:
         """Decode data URI to bytes.
 
         Args:
             location: Data URI string (e.g., "data:image/png;base64,...")
-            timeout: Ignored for data URIs (no network operation)
+            _timeout: Ignored for data URIs (no network operation)
 
         Returns:
             Decoded bytes
@@ -63,9 +63,10 @@ class DataUriLoaderDriver(LoaderDriver):
         """
         try:
             await self.read(location, 0)
-            return True
         except (ValueError, Exception):
             return False
+        else:
+            return True
 
     def get_size(self, location: str) -> int:
         """Get decoded size of data URI.
