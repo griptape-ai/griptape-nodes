@@ -32,7 +32,7 @@ class ProviderRegistry:
 
         Raises:
             ValueError: If provider with same friendly name already registered
-            Exception: If provider class methods fail
+            RuntimeError: If provider class methods fail
         """
         provider_name = provider_class.__name__
 
@@ -42,7 +42,7 @@ class ProviderRegistry:
             supported_formats = provider_class.get_supported_formats()
         except Exception as e:
             msg = f"Attempted to register artifact provider {provider_name}. Failed due to: class method access error - {e}"
-            raise Exception(msg) from e  # noqa: TRY002
+            raise RuntimeError(msg) from e
 
         # FAILURE CASE: Check for duplicate friendly name
         friendly_name_lower = friendly_name.lower()
@@ -96,14 +96,15 @@ class ProviderRegistry:
             Cached singleton instance of the provider
 
         Raises:
-            Exception: If provider instantiation fails
+            RuntimeError: If provider instantiation fails
         """
         if provider_class not in self._provider_instances:
             try:
                 self._provider_instances[provider_class] = provider_class(registry=self)
             except Exception as e:
                 logger.error("Failed to instantiate provider %s: %s", provider_class.__name__, e)
-                raise
+                msg = f"Failed to instantiate provider {provider_class.__name__}: {e}"
+                raise RuntimeError(msg) from e
 
         return self._provider_instances[provider_class]
 
