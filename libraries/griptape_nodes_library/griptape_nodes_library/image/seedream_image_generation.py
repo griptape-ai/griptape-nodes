@@ -12,13 +12,13 @@ from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.file_location import FileLocation
-from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -222,13 +222,13 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         )
 
         # Output file path configuration
-        self._output_path_param = FileLocationParameter(
+        self._output_path_param = ProjectFileParameter(
             node=self,
             name="output_path",
-            situation_name="save_node_output",
+            situation="save_node_output",
+            default_filename="seedream_output.png",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="Output file path template (uses 'save_node_output' situation template)",
-            filename="seedream_output.png",
         )
         self._output_path_param.add_parameter()
 
@@ -568,10 +568,10 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             return None
 
         try:
-            file_location = FileLocation.from_value(image_input, base_variables={"node_name": self.name})
-            image_bytes = await file_location.aload()
+            # Load using ProjectFileManager (handles artifacts automatically)
+            image_bytes = await GriptapeNodes.Project().load(image_input)
         except Exception as e:
-            self._log(f"Failed to load data URI from input: {e}")
+            self._log(f"Failed to load image from input: {e}")
             return None
 
         # Encode to base64 data URI (always use PNG for simplicity)
@@ -625,8 +625,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         # FAILURE CASES FIRST
         self._log(f"Downloading image {index} from URL")
         try:
-            file_location = FileLocation.from_value(image_url, base_variables={"node_name": self.name})
-            image_bytes = await file_location.aload()
+            # Download using ProjectFileManager
+            image_bytes = await GriptapeNodes.Project().load(image_url)
         except Exception as e:
             self._log(f"Could not download image {index}: {e}, using provider URL")
             return ImageUrlArtifact(value=image_url)
@@ -641,22 +641,19 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             self._log(f"Failed to convert image {index} to PNG: {e}")
             return ImageUrlArtifact(value=image_url)
 
-        # Get file location with extra variables and save
-        file_location = self._output_path_param.get_file_location(
+        # Create save request with extra variables and save
+        save_request = self._output_path_param.create_save_request(
+            data=png_bytes,
             generation_id=generation_id or str(int(time.time())),
             image_index=index + 1,
         )
-        saved_url = file_location.save(png_bytes)
+        save_result = await GriptapeNodes.Project().save(save_request)
 
         # Extract filename from URL for artifact name
-        filename = (
-            saved_url.split("/")[-1]
-            if "/" in saved_url
-            else f"seedream_image_{generation_id or 'unknown'}_{index + 1}.png"
-        )
+        filename = save_result.path.name
 
         self._log(f"Saved image {index} to static storage as {filename}")
-        return ImageUrlArtifact(value=saved_url, name=filename)
+        return ImageUrlArtifact(value=save_result.url, name=filename)
 
     def _extract_error_message(self, response_json: dict[str, Any]) -> str:
         """Extract error message from failed/errored generation response.

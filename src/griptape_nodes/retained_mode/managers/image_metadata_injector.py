@@ -31,7 +31,6 @@ from griptape_nodes.retained_mode.events.node_events import (
     SerializeNodeToCommandsRequest,
     SerializeNodeToCommandsResultSuccess,
 )
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -88,6 +87,9 @@ def _serialize_node(node_name: str) -> str | None:
     Returns:
         JSON string of serialized node commands, or None if serialization fails
     """
+    # Lazy import to avoid circular dependency with griptape_nodes
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     serialize_request = SerializeNodeToCommandsRequest(
         node_name=node_name,
     )
@@ -109,6 +111,9 @@ def _serialize_flow(flow_name: str | None = None) -> str | None:
     Returns:
         Base64-encoded pickle string of serialized flow commands, or None if serialization fails
     """
+    # Lazy import to avoid circular dependency with griptape_nodes
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     # Validation: Check if we have a flow context
     if flow_name is None and not GriptapeNodes.ContextManager().has_current_flow():
         logger.warning("Cannot serialize flow: no current flow context available")
@@ -149,6 +154,9 @@ def _collect_parameter_values(node_name: str) -> dict[str, Any] | None:
     Returns:
         Dictionary of parameter names to serialized values, or None if collection fails
     """
+    # Lazy import to avoid circular dependency with griptape_nodes
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     # Failure case: Attempt to get node object
     obj_mgr = GriptapeNodes.ObjectManager()
     try:
@@ -228,6 +236,9 @@ def collect_workflow_metadata() -> dict[str, str]:
     Returns:
         Dictionary of metadata key-value pairs, may be empty if no context available
     """
+    # Lazy import to avoid circular dependency with griptape_nodes
+    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
     metadata = {}
 
     # Add save timestamp (always available)
@@ -255,6 +266,7 @@ def collect_workflow_metadata() -> dict[str, str]:
             metadata[f"{METADATA_NAMESPACE}flow_name"] = flow.name
 
             # Get resolving nodes (currently running nodes) from flow_state
+            # Note: GriptapeNodes already imported at function start
             flow_manager = GriptapeNodes.FlowManager()
             _, resolving_nodes, _ = flow_manager.flow_state(flow)
 

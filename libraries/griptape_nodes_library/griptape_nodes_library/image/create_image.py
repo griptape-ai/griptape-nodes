@@ -9,7 +9,7 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
-from griptape_nodes.exe_types.param_components.file_location_parameter import FileLocationParameter
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
@@ -95,13 +95,13 @@ class GenerateImage(ControlNode):
                 settable=False,  # Ensures this serializes on save, but don't let user set it.
             )
         )
-        self._file_path_param = FileLocationParameter(
+        self._file_path_param = ProjectFileParameter(
             node=self,
             name="file_path",
-            situation_name="save_node_output",
+            situation="save_node_output",
+            default_filename="output.png",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="File location for saving image (uses 'save_node_output' situation template)",
-            filename="output.png",
         )
         self._file_path_param.add_parameter()
         # Group for logging information.
@@ -328,14 +328,14 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
-    def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
+    async def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
 
-        # Get file location and save
-        file_location = self._file_path_param.get_file_location()
-        static_url = file_location.save(agent.output.to_bytes())
+        # Create save request and save using Project
+        save_request = self._file_path_param.create_save_request(data=agent.output.to_bytes())
+        save_result = await GriptapeNodes.Project().save(save_request)
 
         # Create URL artifact for output preview
-        url_artifact = ImageUrlArtifact(value=static_url)
+        url_artifact = ImageUrlArtifact(value=save_result.url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)
