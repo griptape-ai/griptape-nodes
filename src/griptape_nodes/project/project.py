@@ -63,7 +63,7 @@ class Project:
 
     Usage:
         project = Project()
-        result = await project.save(SaveRequest(...))
+        result = project.save(SaveRequest(...))
     """
 
     def _get_os_manager(self) -> Any:
@@ -76,7 +76,7 @@ class Project:
 
         return GriptapeNodes.OSManager()
 
-    async def save(self, request: SaveRequest) -> SaveResult:
+    def save(self, request: SaveRequest) -> SaveResult:
         """Save file using project configuration.
 
         Flow:
@@ -188,7 +188,7 @@ class Project:
         file = FileLoader(location=location)
         return await file.read(timeout)
 
-    async def preview_save(self, request: SaveRequest) -> SaveResult:
+    def preview_save(self, request: SaveRequest) -> SaveResult:
         """Preview what would happen during save without actually writing.
 
         Performs all steps except the actual file write:

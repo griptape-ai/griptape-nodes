@@ -641,7 +641,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             return ImageUrlArtifact(value=image_url)
 
         # Save using parameter utility
-        save_result = await self._output_path_param.save(
+        save_result = self._output_path_param.save(
             data=png_bytes,
             generation_id=generation_id or str(int(time.time())),
             image_index=index + 1,

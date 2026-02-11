@@ -50,10 +50,10 @@ class ProjectFileParameter:
         >>> self._file_param.add_parameter()
         >>>
         >>> # In node process() - simple save:
-        >>> result = await self._file_param.save(data=image_bytes)
+        >>> result = self._file_param.save(data=image_bytes)
         >>>
         >>> # With extra variables (e.g., for multiple images):
-        >>> result = await self._file_param.save(
+        >>> result = self._file_param.save(
         ...     data=image_bytes,
         ...     image_index=i,
         ...     generation_id=gen_id
@@ -194,7 +194,7 @@ class ProjectFileParameter:
             create_dirs=create_dirs,
         )
 
-    async def save(self, data: bytes, **extra_vars: str | int) -> SaveResult:
+    def save(self, data: bytes, **extra_vars: str | int) -> SaveResult:
         """Build SaveRequest and save to project.
 
         Convenience method that combines create_save_request() and Project.save().
@@ -208,7 +208,7 @@ class ProjectFileParameter:
         """
         request = self.create_save_request(data=data, **extra_vars)
         project = Project()
-        return await project.save(request)
+        return project.save(request)
 
     def _fetch_situation_config(self, situation_name: str) -> tuple[str, ExistingFilePolicy, bool] | None:
         """Fetch situation and return (macro_template, policy, create_dirs).

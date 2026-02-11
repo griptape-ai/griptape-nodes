@@ -328,13 +328,13 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
         return super().after_incoming_connection_removed(source_node, source_parameter, target_parameter)
 
-    async def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
+    def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
 
         # Create save request and save using Project
         project = Project()
         save_request = self._file_path_param.create_save_request(data=agent.output.to_bytes())
-        save_result = await project.save(save_request)
+        save_result = project.save(save_request)
 
         # Create URL artifact for output preview
         url_artifact = ImageUrlArtifact(value=save_result.url)
