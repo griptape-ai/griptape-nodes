@@ -12,15 +12,12 @@ from griptape_nodes.project import (
     SaveRequest,
     SaveResult,
 )
+from griptape_nodes.project.situation_utils import fetch_situation_config
 from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
-from griptape_nodes.retained_mode.events.project_events import (
-    GetSituationRequest,
-    GetSituationResultSuccess,
-)
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
+from griptape_nodes.utils.path_utils import parse_filename_components
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -85,12 +82,11 @@ class ProjectFileParameter:
         self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
         # Fetch situation configuration
-        config = self._fetch_situation_config(situation)
+        config = fetch_situation_config(situation, node_name=self._node.name)
         if config:
-            macro_template, policy, create_dirs = config
-            self._macro_template = macro_template
-            self._policy = policy
-            self._create_dirs = create_dirs
+            self._macro_template = config.macro_template
+            self._policy = config.policy
+            self._create_dirs = config.create_dirs
         else:
             # Fallback configuration
             logger.error("%s: Failed to load situation '%s', using fallback configuration", self._node.name, situation)
@@ -177,7 +173,11 @@ class ProjectFileParameter:
             else:
                 # Fallback: create variables from filename
                 filename = str(extra_vars.get("file_name_base", self._default_filename))
-                file_name_base, file_extension = self._parse_filename(filename)
+                # Get default extension from default_filename
+                default_extension = parse_filename_components(self._default_filename)[1]
+                file_name_base, file_extension = parse_filename_components(
+                    filename, default_extension=default_extension
+                )
                 variables = {
                     "file_name_base": file_name_base,
                     "file_extension": file_extension,
@@ -197,7 +197,9 @@ class ProjectFileParameter:
                 filename = self._default_filename
 
             # Parse filename into variables
-            file_name_base, file_extension = self._parse_filename(filename)
+            # Get default extension from default_filename
+            default_extension = parse_filename_components(self._default_filename)[1]
+            file_name_base, file_extension = parse_filename_components(filename, default_extension=default_extension)
 
             # Build complete variables dict
             variables = {
@@ -231,63 +233,6 @@ class ProjectFileParameter:
         request = self.create_save_request(data=data, **extra_vars)
         project = Project()
         return project.save(request)
-
-    def _fetch_situation_config(self, situation_name: str) -> tuple[str, ExistingFilePolicy, bool] | None:
-        """Fetch situation and return (macro_template, policy, create_dirs).
-
-        Args:
-            situation_name: Name of situation to fetch
-
-        Returns:
-            Tuple of configuration, or None if fetch fails
-        """
-        request = GetSituationRequest(situation_name=situation_name)
-        result = GriptapeNodes.ProjectManager().on_get_situation_request(request)
-
-        if not isinstance(result, GetSituationResultSuccess):
-            logger.warning("%s: Failed to fetch situation '%s'", self._node.name, situation_name)
-            return None
-
-        situation = result.situation
-
-        # Map policy from situation to ExistingFilePolicy
-        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
-
-        policy_mapping = {
-            SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
-            SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
-            SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
-        }
-
-        policy = policy_mapping.get(situation.policy.on_collision, ExistingFilePolicy.CREATE_NEW)
-        create_dirs = situation.policy.create_dirs
-
-        return situation.macro, policy, create_dirs
-
-    def _parse_filename(self, filename: str) -> tuple[str, str]:
-        """Parse filename into base and extension.
-
-        Examples:
-        - "image.png" → ("image", "png")
-        - "output.tar.gz" → ("output.tar", "gz")
-        - "test" → ("test", "png")  # default extension from self._default_filename
-
-        Args:
-            filename: Filename to parse
-
-        Returns:
-            Tuple of (base, extension)
-        """
-        if "." in filename:
-            parts = filename.rsplit(".", 1)
-            return parts[0], parts[1]
-
-        # No extension - use default extension from default_filename
-        if "." in self._default_filename:
-            default_parts = self._default_filename.rsplit(".", 1)
-            return filename, default_parts[1]
-
-        return filename, "png"  # Ultimate fallback
 
     def _create_configure_node_callback(
         self,

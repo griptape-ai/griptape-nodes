@@ -13,7 +13,6 @@ from enum import StrEnum
 from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.project_templates import SituationFilePolicy
 from griptape_nodes.exe_types.core_types import (
     NodeMessageResult,
     Parameter,
@@ -25,12 +24,17 @@ from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import ExistingFilePolicy, ProjectFileSaveConfig
+from griptape_nodes.project.policy_constants import (
+    EXISTING_TO_OS_POLICY,
+    POLICY_UI_CREATE_NEW,
+    POLICY_UI_FAIL,
+    POLICY_UI_OVERWRITE,
+    SITUATION_POLICY_TO_UI_STRING,
+    UI_STRING_TO_EXISTING_POLICY,
+)
 from griptape_nodes.retained_mode.events.os_events import (
     DryRunWriteFileRequest,
     WriteFileResultDryRun,
-)
-from griptape_nodes.retained_mode.events.os_events import (
-    ExistingFilePolicy as OSExistingFilePolicy,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -49,11 +53,10 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
-
-# String constants for file policy UI strings
-POLICY_STRING_CREATE_NEW = "create new file"
-POLICY_STRING_OVERWRITE = "overwrite existing file"
-POLICY_STRING_FAIL = "fail if file exists"
+# Alias UI string constants for backward compatibility
+POLICY_STRING_CREATE_NEW = POLICY_UI_CREATE_NEW
+POLICY_STRING_OVERWRITE = POLICY_UI_OVERWRITE
+POLICY_STRING_FAIL = POLICY_UI_FAIL
 
 
 class PathResolutionScenario(StrEnum):
@@ -371,7 +374,7 @@ class ConfigureProjectFileSave(BaseNode):
         )
 
         # Convert enum to UI string for overwrite_policy
-        policy_ui_string = self._policy_to_ui_string(result.situation.policy.on_collision)
+        policy_ui_string = SITUATION_POLICY_TO_UI_STRING.get(result.situation.policy.on_collision, POLICY_UI_CREATE_NEW)
         self.set_parameter_value(
             self.overwrite_policy.name,
             policy_ui_string,
@@ -457,7 +460,7 @@ class ConfigureProjectFileSave(BaseNode):
         """
         overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
-        existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
+        existing_file_policy = UI_STRING_TO_EXISTING_POLICY.get(overwrite_policy_ui, ExistingFilePolicy.OVERWRITE)
 
         return ProjectFileSaveConfig(
             macro_template=macro_template,
@@ -606,15 +609,10 @@ class ConfigureProjectFileSave(BaseNode):
         # Get current policy settings
         overwrite_policy_ui = self.get_parameter_value(self.overwrite_policy.name)
         allow_create_dirs = self.get_parameter_value(self.allow_creating_intermediate_dirs.name)
-        existing_file_policy = self._ui_string_to_policy(overwrite_policy_ui)
+        existing_file_policy = UI_STRING_TO_EXISTING_POLICY.get(overwrite_policy_ui, ExistingFilePolicy.OVERWRITE)
 
         # Convert to OS-level policy for DryRunWriteFileRequest
-        os_policy_mapping = {
-            ExistingFilePolicy.CREATE_NEW: OSExistingFilePolicy.CREATE_NEW,
-            ExistingFilePolicy.OVERWRITE: OSExistingFilePolicy.OVERWRITE,
-            ExistingFilePolicy.FAIL: OSExistingFilePolicy.FAIL,
-        }
-        os_existing_file_policy = os_policy_mapping[existing_file_policy]
+        os_existing_file_policy = EXISTING_TO_OS_POLICY[existing_file_policy]
 
         # Create dry-run request with test content
         request = DryRunWriteFileRequest(
@@ -656,23 +654,3 @@ class ConfigureProjectFileSave(BaseNode):
             response=button_details,
             altered_workflow_state=False,
         )
-
-    # Private methods for policy conversion
-
-    def _policy_to_ui_string(self, policy: SituationFilePolicy) -> str:
-        """Convert SituationFilePolicy enum to UI string."""
-        mapping = {
-            SituationFilePolicy.CREATE_NEW: POLICY_STRING_CREATE_NEW,
-            SituationFilePolicy.OVERWRITE: POLICY_STRING_OVERWRITE,
-            SituationFilePolicy.FAIL: POLICY_STRING_FAIL,
-        }
-        return mapping.get(policy, POLICY_STRING_CREATE_NEW)
-
-    def _ui_string_to_policy(self, ui_string: str) -> ExistingFilePolicy:
-        """Convert UI string to ExistingFilePolicy enum."""
-        mapping = {
-            POLICY_STRING_CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
-            POLICY_STRING_OVERWRITE: ExistingFilePolicy.OVERWRITE,
-            POLICY_STRING_FAIL: ExistingFilePolicy.FAIL,
-        }
-        return mapping.get(ui_string, ExistingFilePolicy.OVERWRITE)

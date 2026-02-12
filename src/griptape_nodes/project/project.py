@@ -10,6 +10,7 @@ from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.file.file_loader import FileLoader
+from griptape_nodes.project.policy_constants import EXISTING_TO_OS_POLICY
 from griptape_nodes.project.types import (
     ExistingFilePolicy,
     SaveRequest,
@@ -21,9 +22,6 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultDryRun,
     WriteFileResultFailure,
     WriteFileResultSuccess,
-)
-from griptape_nodes.retained_mode.events.os_events import (
-    ExistingFilePolicy as OSExistingFilePolicy,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     GetCurrentProjectRequest,
@@ -140,12 +138,7 @@ class Project:
         macro_path = MacroPath(parsed_macro=parsed_macro, variables=merged_variables)
 
         # 3. Map policy to OSManager enum
-        policy_map = {
-            ExistingFilePolicy.CREATE_NEW: OSExistingFilePolicy.CREATE_NEW,
-            ExistingFilePolicy.OVERWRITE: OSExistingFilePolicy.OVERWRITE,
-            ExistingFilePolicy.FAIL: OSExistingFilePolicy.FAIL,
-        }
-        os_policy = policy_map[request.policy]
+        os_policy = EXISTING_TO_OS_POLICY[request.policy]
 
         # 4. Create WriteFileRequest
         write_request = WriteFileRequest(
@@ -259,12 +252,7 @@ class Project:
         macro_path = MacroPath(parsed_macro=parsed_macro, variables=merged_variables)
 
         # Map policy to OSManager enum
-        policy_map = {
-            ExistingFilePolicy.CREATE_NEW: OSExistingFilePolicy.CREATE_NEW,
-            ExistingFilePolicy.OVERWRITE: OSExistingFilePolicy.OVERWRITE,
-            ExistingFilePolicy.FAIL: OSExistingFilePolicy.FAIL,
-        }
-        os_policy = policy_map[request.policy]
+        os_policy = EXISTING_TO_OS_POLICY[request.policy]
 
         # Create DryRunWriteFileRequest
         dry_run_request = DryRunWriteFileRequest(
