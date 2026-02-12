@@ -2173,9 +2173,12 @@ class LibraryManager:
         """
         engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
         if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            logger.warning("Failed to get engine version for compatibility check, allowing operation to proceed")
             return True, ""
 
-        current_engine_version = f"{engine_version_result.major}.5.{engine_version_result.patch}"
+        current_engine_version = (
+            f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        )
 
         if not required_engine_version:
             return True, current_engine_version
@@ -3653,27 +3656,6 @@ class LibraryManager:
         if await asyncio.to_thread(is_monorepo, library_dir):
             details = f"Cannot update Library '{library_name}'. Repository contains multiple libraries and must be updated manually."
             return UpdateLibraryResultFailure(result_details=details)
-
-        # Check engine version compatibility before updating
-        try:
-            git_remote = await asyncio.to_thread(get_git_remote, library_dir)
-            git_ref = await asyncio.to_thread(get_current_ref, library_dir)
-            if git_remote:
-                ref_to_check = git_ref or "HEAD"
-                version_info = await asyncio.to_thread(clone_and_get_library_version, git_remote, ref_to_check)
-                is_compatible, current_engine_version = self._check_engine_version_compatibility(
-                    version_info.engine_version
-                )
-                if not is_compatible:
-                    details = (
-                        f"Cannot update Library '{library_name}'. "
-                        f"The update requires engine version {version_info.engine_version} "
-                        f"but the current engine version is {current_engine_version}. "
-                        f"Please update your engine first."
-                    )
-                    return UpdateLibraryResultFailure(result_details=details)
-        except (GitRemoteError, GitRefError, GitCloneError):
-            pass  # If we can't check compatibility, allow the update to proceed
 
         # Perform git update (auto-detects branch vs tag workflow)
         try:
