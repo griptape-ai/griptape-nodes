@@ -767,8 +767,12 @@ class OSManager:
 
     @staticmethod
     def _shell_quote_windows(arg: str) -> str:
-        r"""Wrap a single argument in double quotes for Windows; escape \ and \"."""
-        escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+        r"""Wrap a single argument in double quotes for Windows; escape " as \", double trailing \."""
+        escaped = arg.replace('"', '\\"')
+        # Double trailing backslashes so the closing " is not interpreted as escaped
+        n_trailing = len(escaped) - len(escaped.rstrip("\\"))
+        if n_trailing:
+            escaped = escaped.rstrip("\\") + "\\" * (2 * n_trailing)
         return '"' + escaped + '"'
 
     @staticmethod
