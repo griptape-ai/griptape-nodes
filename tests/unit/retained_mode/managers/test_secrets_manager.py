@@ -156,9 +156,7 @@ class TestSecretsManager:
             config_manager = ConfigManager()
             config_manager.workspace_path = workspace_path
 
-            with patch.object(
-                config_manager, "get_config_value", return_value=["KEY1", "KEY2"]
-            ):
+            with patch.object(config_manager, "get_config_value", return_value=["KEY1", "KEY2"]):
                 secrets_manager = SecretsManager(config_manager)
                 result = secrets_manager.secrets_to_register
 
