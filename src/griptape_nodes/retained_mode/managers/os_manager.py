@@ -1001,6 +1001,32 @@ class OSManager:
 
         return None
 
+    def _handle_parent_directory_failure(
+        self,
+        parent_failure_reason: FileIOFailureReason,
+        candidate_path: Path,
+    ) -> WriteFileResultFailure:
+        """Create failure result for parent directory errors.
+
+        Args:
+            parent_failure_reason: The failure reason from _ensure_parent_directory_ready
+            candidate_path: The file path that failed
+
+        Returns:
+            WriteFileResultFailure with appropriate error message
+        """
+        match parent_failure_reason:
+            case FileIOFailureReason.PERMISSION_DENIED:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+            case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+            case _:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+        return WriteFileResultFailure(
+            failure_reason=parent_failure_reason,
+            result_details=msg,
+        )
+
     def _scan_for_next_suffix_index(self, file_path: Path) -> int:
         """Scan existing suffix-indexed files and return next available index.
 
@@ -1028,19 +1054,17 @@ class OSManager:
         glob_path = Path(glob_pattern)
         existing_files = list(glob_path.parent.glob(glob_path.name))
 
-        existing_indices = []
-        for filepath in existing_files:
-            extracted_index = self._extract_suffix_index(
-                filepath.name,
-                file_parts.basename,
-                file_parts.extension,
-            )
-            if extracted_index is not None:
-                existing_indices.append(extracted_index)
+        # Extract indices from existing files
+        existing_indices = [
+            idx
+            for filepath in existing_files
+            if (idx := self._extract_suffix_index(filepath.name, file_parts.basename, file_parts.extension)) is not None
+        ]
 
         if not existing_indices:
             return 1
 
+        # Fill gaps in sequence
         existing_indices.sort()
         for i in range(1, max(existing_indices) + 1):
             if i not in existing_indices:
@@ -1080,17 +1104,7 @@ class OSManager:
                 create_parents=request.create_parents,
             )
             if parent_failure_reason is not None:
-                match parent_failure_reason:
-                    case FileIOFailureReason.PERMISSION_DENIED:
-                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                    case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                    case _:
-                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                return WriteFileResultFailure(
-                    failure_reason=parent_failure_reason,
-                    result_details=msg,
-                )
+                return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
             candidate_normalized = self.normalize_path_for_platform(candidate_path)
 
