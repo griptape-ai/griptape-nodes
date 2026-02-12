@@ -5,7 +5,6 @@ import logging
 import mimetypes
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
@@ -411,7 +410,7 @@ class OSManager:
 
         # Success path at the end - compute final path and return
         if resolved is not None and resolved.special_path is not None:
-            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
+            extra_parts: list[str] = resolved.remaining_parts or []
             if extra_parts:
                 final_path = resolved.special_path / Path(*extra_parts)
             else:
@@ -783,6 +782,9 @@ class OSManager:
             return ""
         if OSManager.is_windows():
             return subprocess.list2cmdline(args)
+
+        import shlex
+
         return " ".join(shlex.quote(arg) for arg in args)
 
     # ============================================================================
