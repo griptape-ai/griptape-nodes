@@ -457,7 +457,7 @@ class TestGeneratePreview:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self, mock_project: None) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager instance with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -761,7 +761,7 @@ class TestGetPreviewForArtifact:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self, mock_project: None) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -770,9 +770,7 @@ class TestGetPreviewForArtifact:
         return manager
 
     @pytest.fixture
-    def generated_preview_with_metadata(
-        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
-    ) -> Path:
+    def generated_preview_with_metadata(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> Path:
         """Generate a preview with metadata for testing retrieval."""
         import asyncio
 
