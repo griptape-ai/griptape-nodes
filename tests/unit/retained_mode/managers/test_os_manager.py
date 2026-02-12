@@ -1319,3 +1319,265 @@ class TestCreateNewFilePolicy:
         assert isinstance(result, WriteFileResultSuccess)
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
+
+
+class TestDecomposeSourcePath:
+    """Test OSManager.decompose_source_path() for preview path generation.
+
+    These tests verify the path decomposition logic outlined in the preview path
+    generation plan, covering all 15 scenarios including workspace files, external
+    files, Windows drives, macOS volumes, Linux mounts, and UNC paths.
+    """
+
+    def test_workspace_file_root_level(self) -> None:
+        """Test workspace file at root level (no subdirectories)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Users/james/workspace/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path is None
+        assert result.source_file_name == "photo.png"
+
+    def test_workspace_file_single_subdir(self) -> None:
+        """Test workspace file in single subdirectory (Scenario 1)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Users/james/workspace/images/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "images"
+        assert result.source_file_name == "photo.png"
+
+    def test_workspace_file_nested_subdirs(self) -> None:
+        """Test workspace file in nested subdirectories (Scenario 2)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Users/james/workspace/images/subdir/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "images/subdir"
+        assert result.source_file_name == "photo.png"
+
+    def test_workspace_file_outputs_dir(self) -> None:
+        """Test workspace file in outputs directory (Scenario 3)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Users/james/workspace/outputs/render.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "outputs"
+        assert result.source_file_name == "render.png"
+
+    def test_unix_absolute_path_single_subdir(self) -> None:
+        """Test Unix absolute path with single subdirectory (Scenario 4)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/tmp/external.png")  # noqa: S108
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "tmp"
+        assert result.source_file_name == "external.png"
+
+    def test_unix_absolute_path_nested_subdirs(self) -> None:
+        """Test Unix absolute path with nested subdirectories (Scenario 5)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/tmp/project/images/photo.png")  # noqa: S108
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "tmp/project/images"
+        assert result.source_file_name == "photo.png"
+
+    def test_unix_root_level_file(self) -> None:
+        """Test Unix root-level file (Scenario 6)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/external.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path is None
+        assert result.source_file_name == "external.png"
+
+    def test_windows_drive_c(self) -> None:
+        """Test Windows C: drive path (Scenario 11)."""
+        workspace = Path("/Users/james/workspace")
+        # Simulate Windows path
+        source = Path("C:/temp/external.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "C"
+        assert result.source_relative_path == "temp"
+        assert result.source_file_name == "external.png"
+
+    def test_windows_drive_q(self) -> None:
+        """Test Windows Q: drive path (Scenario 12)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("Q:/temp/external.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "Q"
+        assert result.source_relative_path == "temp"
+        assert result.source_file_name == "external.png"
+
+    def test_windows_drive_case_insensitive(self) -> None:
+        """Test Windows drive letter is case-insensitive."""
+        workspace = Path("/Users/james/workspace")
+        source_lower = Path("c:/temp/file.txt")
+        source_upper = Path("C:/temp/file.txt")
+
+        result_lower = OSManager.decompose_source_path(source_lower, workspace)
+        result_upper = OSManager.decompose_source_path(source_upper, workspace)
+
+        # Both should normalize to uppercase
+        assert result_lower.drive_volume_mount == "C"
+        assert result_upper.drive_volume_mount == "C"
+
+    def test_macos_volume_basic(self) -> None:
+        """Test macOS external volume (Scenario 13)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Volumes/Backup/files/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "Volumes/Backup"
+        assert result.source_relative_path == "files"
+        assert result.source_file_name == "photo.png"
+
+    def test_macos_volume_root_level(self) -> None:
+        """Test macOS volume with file at root."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Volumes/Backup/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "Volumes/Backup"
+        assert result.source_relative_path is None
+        assert result.source_file_name == "photo.png"
+
+    def test_macos_volume_nested_subdirs(self) -> None:
+        """Test macOS volume with nested subdirectories."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Volumes/Backup/projects/2024/images/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "Volumes/Backup"
+        assert result.source_relative_path == "projects/2024/images"
+        assert result.source_file_name == "photo.png"
+
+    def test_linux_mount_mnt(self) -> None:
+        """Test Linux /mnt/ mount (Scenario 14)."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/mnt/backup/files/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "mnt/backup"
+        assert result.source_relative_path == "files"
+        assert result.source_file_name == "photo.png"
+
+    def test_linux_mount_media(self) -> None:
+        """Test Linux /media/ mount."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/media/usb/documents/file.pdf")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "media/usb"
+        assert result.source_relative_path == "documents"
+        assert result.source_file_name == "file.pdf"
+
+    def test_linux_mount_root_level(self) -> None:
+        """Test Linux mount with file at root."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/mnt/backup/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "mnt/backup"
+        assert result.source_relative_path is None
+        assert result.source_file_name == "photo.png"
+
+    def test_windows_unc_path_root_level(self) -> None:
+        """Test Windows UNC path with file at share root (Scenario 15)."""
+        workspace = Path("/Users/james/workspace")
+        # UNC paths start with //
+        source = Path("//server/share/photo.png")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "server/share"
+        assert result.source_relative_path is None
+        assert result.source_file_name == "photo.png"
+
+    def test_windows_unc_path_with_subdirs(self) -> None:
+        """Test Windows UNC path with subdirectories."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("//server/share/documents/2024/report.pdf")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "server/share"
+        assert result.source_relative_path == "documents/2024"
+        assert result.source_file_name == "report.pdf"
+
+    def test_windows_long_path_prefix_stripped(self) -> None:
+        r"""Test Windows long path prefix (\\?\) is stripped before decomposition."""
+        workspace = Path("/Users/james/workspace")
+        # Simulate long path with \\?\ prefix
+        source = Path("//?/C:/very/long/path/file.txt")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        # Should strip prefix and decompose as normal C: path
+        assert result.drive_volume_mount == "C"
+        assert result.source_relative_path == "very/long/path"
+        assert result.source_file_name == "file.txt"
+
+    def test_windows_long_unc_prefix_stripped(self) -> None:
+        r"""Test Windows long UNC prefix (\\?\UNC\) is stripped."""
+        workspace = Path("/Users/james/workspace")
+        # Simulate long UNC path with \\?\UNC\ prefix
+        source = Path("//?/UNC/server/share/file.txt")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        # Should strip prefix and decompose as normal UNC path
+        assert result.drive_volume_mount == "server/share"
+        assert result.source_relative_path is None
+        assert result.source_file_name == "file.txt"
+
+    def test_complex_filename_preserved(self) -> None:
+        """Test that complex filenames with multiple extensions are preserved."""
+        workspace = Path("/Users/james/workspace")
+        source = Path("/Users/james/workspace/output/archive.tar.gz")
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount is None
+        assert result.source_relative_path == "output"
+        assert result.source_file_name == "archive.tar.gz"
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific path handling test")
+    def test_backslashes_normalized(self) -> None:
+        r"""Test that backslashes in paths are normalized to forward slashes."""
+        workspace = Path("/Users/james/workspace")
+        # Path with backslashes
+        source_str = "C:\\Users\\james\\Documents\\file.txt"
+        source = Path(source_str)
+
+        result = OSManager.decompose_source_path(source, workspace)
+
+        assert result.drive_volume_mount == "C"
+        assert result.source_relative_path == "Users/james/Documents"
+        assert result.source_file_name == "file.txt"

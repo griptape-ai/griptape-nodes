@@ -148,6 +148,20 @@ class FilenameParts(NamedTuple):
     extension: str
 
 
+class DecomposedPath(NamedTuple):
+    """Components of a decomposed source path for preview generation.
+
+    Attributes:
+        drive_volume_mount: Optional drive/volume/mount (e.g., "C", "Volumes/Backup")
+        source_relative_path: Optional subdirectories (e.g., "images/subdir")
+        source_file_name: Filename with extension (e.g., "photo.png")
+    """
+
+    drive_volume_mount: str | None
+    source_relative_path: str | None
+    source_file_name: str
+
+
 class WindowsSpecialFolderError(OSError):
     """Raised when Windows Shell API (SHGetFolderPathW) fails for a special folder.
 
@@ -218,6 +232,21 @@ class OSManager:
         "music": 0x000D,  # CSIDL_MYMUSIC
     }
 
+    # Path decomposition pattern strings (single source of truth)
+    _WINDOWS_DRIVE_MATCH_PATTERN = r"^([A-Z]):"
+    _WINDOWS_DRIVE_STRIP_PATTERN = r"^[A-Z]:/"
+    _WINDOWS_UNC_MATCH_PATTERN = r"^//([^/]+)/([^/]+)(?:/(.+))?$"
+    _MACOS_VOLUME_MATCH_PATTERN = r"^/Volumes/([^/]+)"
+    _MACOS_VOLUME_STRIP_PATTERN = r"^/Volumes/[^/]+/?"
+    _LINUX_MOUNT_MATCH_PATTERN = r"^/(mnt|media)/([^/]+)"
+    _LINUX_MOUNT_STRIP_PATTERN = r"^/(mnt|media)/[^/]+/?"
+
+    # Path decomposition patterns (compiled once for performance)
+    WINDOWS_DRIVE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_WINDOWS_DRIVE_MATCH_PATTERN, re.IGNORECASE)
+    WINDOWS_UNC_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_WINDOWS_UNC_MATCH_PATTERN)
+    MACOS_VOLUME_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_MACOS_VOLUME_MATCH_PATTERN)
+    LINUX_MOUNT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_LINUX_MOUNT_MATCH_PATTERN)
+
     @staticmethod
     def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
         r"""Parse a path string into normalized parts for special folder detection.
@@ -253,6 +282,121 @@ class OSManager:
                 normalized = normalized[len(userprofile) :].lstrip("/\\")
         parts = [p.lower() for p in normalized.split("/") if p]
         return parts
+
+    @staticmethod
+    def decompose_source_path(  # noqa: C901, PLR0912
+        absolute_path: Path,
+        workspace_dir: Path,
+    ) -> DecomposedPath:
+        r"""Decompose source path into semantic components for preview path generation.
+
+        This function breaks down a file path into three components:
+        - Drive/volume/mount identifier (optional): For Windows drives, macOS volumes, Linux mounts
+        - Subdirectories (optional): Directory path between the root/drive and the filename
+        - Filename (required): The actual file name with extension
+
+        Cross-platform support: This method detects path patterns from all platforms (Windows drives,
+        macOS volumes, Linux mounts, UNC paths) regardless of the current OS. This is necessary because
+        preview paths must be consistently decomposed even when a project created on one platform is
+        opened on another (e.g., a Windows path "C:\temp\file.txt" stored in project metadata must
+        be correctly decomposed when opened on macOS).
+
+        Args:
+            absolute_path: Source file path to decompose (should be absolute)
+            workspace_dir: Workspace directory for relative path detection.
+                          If path is within workspace, drive/volume component is omitted.
+
+        Returns:
+            DecomposedPath with three components
+        """
+        # Extract filename first (always present)
+        source_file_name = absolute_path.name
+
+        # Convert path to string for pattern matching
+        path_str = str(absolute_path)
+
+        # Normalize path - convert backslashes to forward slashes
+        normalized_path = path_str.replace("\\", "/")
+
+        # Strip Windows long path prefix (\\?\ or \\?\UNC\) if present
+        # This ensures paths written with normalize_path_for_platform can be decomposed correctly
+        if normalized_path.upper().startswith("//?/UNC/"):
+            # Windows long UNC path: \\?\UNC\server\share → //server/share
+            normalized_path = "//" + normalized_path[8:]
+        elif normalized_path.startswith("//?/"):
+            # Windows long path: \\?\C:\path → C:/path
+            normalized_path = normalized_path[4:]
+
+        # Initialize result variables
+        drive_volume_mount: str | None = None
+        source_relative_path: str | None = None
+
+        # Check for UNC paths (Windows network paths like \\server\share\file.txt)
+        unc_match = OSManager.WINDOWS_UNC_PATTERN.match(normalized_path)
+        if unc_match:
+            server = unc_match.group(1)
+            share = unc_match.group(2)
+            remainder = unc_match.group(3)
+
+            drive_volume_mount = f"{server}/{share}"
+
+            if remainder:
+                remainder_parts = remainder.split("/")
+                if len(remainder_parts) > 1:
+                    source_relative_path = "/".join(remainder_parts[:-1])
+
+        # Check if path is within workspace (only if not UNC and workspace_dir provided)
+        elif workspace_dir and absolute_path.is_relative_to(workspace_dir):
+            relative_to_workspace = absolute_path.relative_to(workspace_dir)
+
+            if relative_to_workspace.parent != Path():
+                source_relative_path = relative_to_workspace.parent.as_posix()
+
+        # Path is outside workspace - detect drive/volume/mount prefix
+        else:
+            remaining_path = normalized_path
+
+            # Check for Windows drive letter (C:, D:, etc.)
+            drive_match = OSManager.WINDOWS_DRIVE_PATTERN.match(normalized_path)
+            if drive_match:
+                drive_volume_mount = drive_match.group(1).upper()
+                remaining_path = re.sub(
+                    OSManager._WINDOWS_DRIVE_STRIP_PATTERN, "", normalized_path, flags=re.IGNORECASE
+                )
+
+            # Check for macOS volume (/Volumes/VolumeName)
+            elif normalized_path.startswith("/Volumes/"):
+                volume_match = OSManager.MACOS_VOLUME_PATTERN.match(normalized_path)
+                if volume_match:
+                    volume_name = volume_match.group(1)
+                    drive_volume_mount = f"Volumes/{volume_name}"
+                    remaining_path = re.sub(OSManager._MACOS_VOLUME_STRIP_PATTERN, "", normalized_path)
+
+            # Check for Linux mounts (/mnt/mountname or /media/mountname)
+            elif OSManager.LINUX_MOUNT_PATTERN.match(normalized_path):
+                mount_match = OSManager.LINUX_MOUNT_PATTERN.match(normalized_path)
+                if mount_match:
+                    mount_type = mount_match.group(1)
+                    mount_name = mount_match.group(2)
+                    drive_volume_mount = f"{mount_type}/{mount_name}"
+                    remaining_path = re.sub(OSManager._LINUX_MOUNT_STRIP_PATTERN, "", normalized_path)
+
+            # Unix/Linux absolute paths (starting with /)
+            elif normalized_path.startswith("/"):
+                remaining_path = normalized_path.lstrip("/")
+
+            # Extract subdirectories from remaining path
+            if remaining_path:
+                parts = remaining_path.split("/")
+                if len(parts) > 1:
+                    source_relative_path = "/".join(parts[:-1])
+
+        # SUCCESS PATH: Return decomposed components
+        return DecomposedPath(
+            drive_volume_mount=drive_volume_mount,
+            source_relative_path=source_relative_path,
+            source_file_name=source_file_name,
+        )
 
     def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult | None:
         """Resolve Windows special folder from path parts.

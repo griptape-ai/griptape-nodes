@@ -405,6 +405,37 @@ class TestGeneratePreview:
             yield Path(tmpdir)
 
     @pytest.fixture
+    def mock_project(self, temp_dir: Path) -> None:
+        """Set up a real project in ProjectManager with temp_dir as workspace."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        # Get ProjectManager singleton
+        project_manager = GriptapeNodes.ProjectManager()
+
+        # Parse macros for the template
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = project_manager._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = project_manager._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with temp_dir as workspace
+        project_info = ProjectInfo(
+            project_id="test_project",
+            project_file_path=temp_dir / "project.yml",
+            project_base_dir=temp_dir,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Load the project into ProjectManager
+        project_manager._successfully_loaded_project_templates["test_project"] = project_info
+        project_manager._current_project_id = "test_project"
+
+    @pytest.fixture
     def test_image_path(self, temp_dir: Path) -> Path:
         """Create a real test image file for preview generation.
 
@@ -426,7 +457,7 @@ class TestGeneratePreview:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:
         """Create ArtifactManager instance with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -452,7 +483,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file exists
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -483,7 +514,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file exists
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -575,7 +606,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview dimensions respect constraints
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
 
         with Image.open(str(preview_path)) as preview_img:
@@ -602,7 +633,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file has correct extension
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -631,7 +662,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview was created
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -653,7 +684,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Read metadata and deserialize with Pydantic
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         # Metadata is named after source file, not preview
         metadata_path = preview_dir / f"{test_image_path.name}.json"
 
@@ -682,6 +713,37 @@ class TestGetPreviewForArtifact:
             yield Path(tmpdir)
 
     @pytest.fixture
+    def mock_project(self, temp_dir: Path) -> None:
+        """Set up a real project in ProjectManager with temp_dir as workspace."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        # Get ProjectManager singleton
+        project_manager = GriptapeNodes.ProjectManager()
+
+        # Parse macros for the template
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = project_manager._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = project_manager._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with temp_dir as workspace
+        project_info = ProjectInfo(
+            project_id="test_project",
+            project_file_path=temp_dir / "project.yml",
+            project_base_dir=temp_dir,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Load the project into ProjectManager
+        project_manager._successfully_loaded_project_templates["test_project"] = project_info
+        project_manager._current_project_id = "test_project"
+
+    @pytest.fixture
     def test_image_path(self, temp_dir: Path) -> Path:
         """Create a real test image file."""
         image_path = temp_dir / "test_source.jpg"
@@ -699,7 +761,7 @@ class TestGetPreviewForArtifact:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:
         """Create ArtifactManager with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -725,8 +787,9 @@ class TestGetPreviewForArtifact:
         result = asyncio.run(artifact_manager.on_handle_generate_preview_request(request))
         assert isinstance(result, GeneratePreviewResultSuccess)
 
-        preview_dir = test_image_path.parent / "nodes_previews"
-        return preview_dir / f"{test_image_path.name}.webp"
+        # Return the actual preview path from the result
+        assert isinstance(result.paths_to_preview, str)
+        return Path(result.paths_to_preview)
 
     @pytest.mark.usefixtures("generated_preview_with_metadata")
     def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
@@ -793,7 +856,7 @@ class TestGetPreviewForArtifact:
         import asyncio
 
         # Corrupt the metadata file (named after source file, not preview)
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
         metadata_path.write_text("{ invalid json }")
 
@@ -819,7 +882,7 @@ class TestGetPreviewForArtifact:
         import asyncio
 
         # Write metadata with missing field (named after source file)
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
         incomplete_metadata = {
             "version": "0.1.0",

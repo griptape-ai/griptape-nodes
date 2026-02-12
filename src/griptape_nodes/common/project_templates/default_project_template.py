@@ -28,7 +28,7 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "previews": DirectoryDefinition(
             name="previews",
-            path_macro="previews",
+            path_macro=".griptape-nodes-previews",
         ),
     },
     environment={},
@@ -75,8 +75,8 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
         ),
         "save_preview": SituationTemplate(
             name="save_preview",
-            description="Generate preview/thumbnail",
-            macro="{previews}/{original_file_path}",
+            description="Generate preview/thumbnail with preserved directory hierarchy",
+            macro="{previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}",
             policy=SituationPolicy(
                 on_collision=SituationFilePolicy.OVERWRITE,
                 create_dirs=True,

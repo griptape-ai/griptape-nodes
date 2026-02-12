@@ -4,11 +4,12 @@ import json
 import logging
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import semver
 from pydantic import BaseModel, ValidationError
 
+from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewFromDefaultsRequest,
@@ -57,6 +58,14 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultSuccess,
 )
+from griptape_nodes.retained_mode.events.project_events import (
+    GetCurrentProjectRequest,
+    GetCurrentProjectResultSuccess,
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
@@ -65,8 +74,21 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     ProviderRegistry,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class ResolvedPreviewPath(NamedTuple):
+    """Resolved preview path components.
+
+    Attributes:
+        destination_dir: Directory where preview should be saved
+        file_name: Preview filename with extension
+    """
+
+    destination_dir: Path
+    file_name: str
 
 
 class PreviewMetadata(BaseModel):
@@ -264,10 +286,16 @@ class ArtifactManager:
         else:
             preview_format = provider_class.get_default_preview_format()
 
-        # Calculate destination path using nodes_previews pattern
+        # FAILURE CASE: Resolve preview path using project situation template
         source_path_obj = Path(source_path)
-        destination_dir = source_path_obj.parent / "nodes_previews"
-        preview_file_name = f"{source_path_obj.name}.{preview_format}"
+        try:
+            resolved_path = self._resolve_preview_path(source_path, preview_format)
+            destination_dir = resolved_path.destination_dir
+            preview_file_name = resolved_path.file_name
+        except RuntimeError as e:
+            return GeneratePreviewResultFailure(
+                result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {e}"
+            )
 
         # FAILURE CASE: Call provider and get returned filenames
         try:
@@ -447,10 +475,16 @@ class ArtifactManager:
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: provider '{request.artifact_provider_name}' not found"
             )
 
-        # Calculate metadata path
-        source_path_obj = Path(source_path)
-        destination_dir = source_path_obj.parent / "nodes_previews"
-        metadata_path = str(destination_dir / f"{source_path_obj.name}.json")
+        # FAILURE CASE: Calculate metadata path using same logic as preview path (metadata uses .json extension)
+        try:
+            resolved_path = self._resolve_preview_path(source_path, "json")
+            destination_dir = resolved_path.destination_dir
+            metadata_file_name = resolved_path.file_name
+            metadata_path = str(destination_dir / metadata_file_name)
+        except RuntimeError as e:
+            return GetPreviewForArtifactResultFailure(
+                result_details=f"Attempted to get preview for '{source_path}'. Failed due to: {e}"
+            )
 
         # Check if metadata file exists
         metadata_info_request = GetFileInfoRequest(path=metadata_path, workspace_only=False)
@@ -1080,4 +1114,73 @@ class ArtifactManager:
         return (
             metadata.preview_generator_name == current_generator_name
             and metadata.preview_generator_parameters == current_generator_params
+        )
+
+    def _resolve_preview_path(
+        self,
+        source_path: str,
+        preview_format: str,
+    ) -> ResolvedPreviewPath:
+        """Resolve preview path using project situation template.
+
+        Args:
+            source_path: Absolute path to source file
+            preview_format: Preview file extension (e.g., "webp", "json")
+
+        Returns:
+            ResolvedPreviewPath with destination_dir and file_name
+
+        Raises:
+            RuntimeError: If project not loaded, situation not found, or path resolution fails
+        """
+        # Get current project
+        get_project_request = GetCurrentProjectRequest()
+        project_result = GriptapeNodes.handle_request(get_project_request)
+
+        if not isinstance(project_result, GetCurrentProjectResultSuccess):
+            msg = "No current project loaded"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        workspace_dir = project_result.project_info.project_base_dir
+
+        # Decompose source path into components
+        source_path_obj = Path(source_path)
+        decomposed = OSManager.decompose_source_path(source_path_obj, workspace_dir)
+
+        # Get save_preview situation template
+        get_situation_request = GetSituationRequest(situation_name="save_preview")
+        get_situation_result = GriptapeNodes.handle_request(get_situation_request)
+
+        if not isinstance(get_situation_result, GetSituationResultSuccess):
+            msg = "save_preview situation not found in project template"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        # Build variables dict for macro resolution
+        variables: dict[str, str | int] = {
+            "source_file_name": decomposed.source_file_name,
+            "preview_format": preview_format,
+        }
+        if decomposed.drive_volume_mount:
+            variables["drive_volume_mount"] = decomposed.drive_volume_mount
+        if decomposed.source_relative_path:
+            variables["source_relative_path"] = decomposed.source_relative_path
+
+        # Resolve macro to get preview path
+        situation = get_situation_result.situation
+        parsed_macro = ParsedMacro(situation.macro)
+        path_request = GetPathForMacroRequest(
+            parsed_macro=parsed_macro,
+            variables=variables,
+        )
+        path_result = GriptapeNodes.handle_request(path_request)
+
+        if not isinstance(path_result, GetPathForMacroResultSuccess):
+            msg = f"Failed to resolve preview path macro: {path_result.result_details}"
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        # Return destination directory and filename
+        full_preview_path = path_result.absolute_path
+        return ResolvedPreviewPath(
+            destination_dir=full_preview_path.parent,
+            file_name=full_preview_path.name,
         )
