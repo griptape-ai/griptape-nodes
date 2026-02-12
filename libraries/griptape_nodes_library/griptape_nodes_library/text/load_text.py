@@ -50,7 +50,7 @@ class LoadText(ControlNode):
 
     def process(self) -> None:
         # Get the selected file
-        text_path = self.parameter_values["path"]
+        text_path = self.get_parameter_value("path")
 
         # Load file content based on extension
         ext = os.path.splitext(text_path)[1]  # noqa: PTH122
