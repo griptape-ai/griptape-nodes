@@ -223,8 +223,6 @@ class BaseArtifactProvider(ABC):
         Args:
             preview_generator_class: The preview generator class to register
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Register with registry
         self._registry.register_preview_generator_with_provider(self.__class__, preview_generator_class)
 
@@ -232,8 +230,9 @@ class BaseArtifactProvider(ABC):
         config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
             self.__class__, preview_generator_class
         )
-        for key, default_value in config_schema.items():
-            GriptapeNodes.ConfigManager().set_config_value(key, default_value)
+        for _key, _default_value in config_schema.items():
+            # GriptapeNodes.ConfigManager().set_config_value(key, default_value)  # TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931  # noqa: ERA001
+            pass
 
     @classmethod
     def get_preview_generator_config_schema(
