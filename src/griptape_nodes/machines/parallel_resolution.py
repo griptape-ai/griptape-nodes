@@ -63,7 +63,6 @@ class ParallelResolutionContext:
         self.workflow_state = WorkflowState.NO_ERROR
         self.dag_builder = dag_builder
         self.last_resolved_node = None
-        self.last_resolved_node = None
         self.node_priority_queue = NodePriorityQueue(self)
 
         # Initialize execution fields
@@ -99,7 +98,6 @@ class ParallelResolutionContext:
             self.workflow_state = WorkflowState.NO_ERROR
             self.error_message = None
             self.task_to_node.clear()
-            self.last_resolved_node = None
             self.last_resolved_node = None
 
         # Reset task counter
@@ -161,6 +159,8 @@ class ExecuteDagState(State):
         current_node.state = NodeResolutionState.RESOLVED
         # Track this as the last resolved node
         context.last_resolved_node = current_node
+        # Mark the priority queue as needing recalculation
+        context.node_priority_queue.mark_priorities_stale()
         # Serialization can be slow so only do it if the user wants debug details.
         if logger.level <= logging.DEBUG:
             logger.debug(
@@ -327,7 +327,7 @@ class ExecuteDagState(State):
             can_queue = context.dag_builder.can_queue_control_node(dag_node)
             if can_queue:
                 dag_node.node_state = NodeState.QUEUED
-                context.node_priority_queue.add_node(node_name)
+                context.node_priority_queue.add_node(dag_node)
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -533,13 +533,13 @@ class ExecuteDagState(State):
                         # BaseIterativeEndNode already exists in DAG, just get reference and queue it
                         end_node_reference = context.dag_builder.node_to_reference[end_loop_node.name]
                         end_node_reference.node_state = NodeState.QUEUED
-                        context.node_priority_queue.add_node(end_loop_node.name)
+                        context.node_priority_queue.add_node(end_node_reference)
                         node_reference = end_node_reference
                     else:
                         # BaseIterativeEndNode not in DAG yet (backwards compatibility), add it
                         end_node_reference = context.dag_builder.add_node(end_loop_node)
                         end_node_reference.node_state = NodeState.QUEUED
-                        context.node_priority_queue.add_node(end_loop_node.name)
+                        context.node_priority_queue.add_node(end_node_reference)
                         node_reference = end_node_reference
 
             def on_task_done(task: asyncio.Task) -> None:
