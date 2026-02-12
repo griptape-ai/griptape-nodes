@@ -1034,6 +1034,159 @@ class OSManager:
 
         return None
 
+    def _handle_parent_directory_failure(
+        self,
+        parent_failure_reason: FileIOFailureReason,
+        candidate_path: Path,
+    ) -> WriteFileResultFailure:
+        """Create failure result for parent directory errors.
+
+        Args:
+            parent_failure_reason: The failure reason from _ensure_parent_directory_ready
+            candidate_path: The file path that failed
+
+        Returns:
+            WriteFileResultFailure with appropriate error message
+        """
+        match parent_failure_reason:
+            case FileIOFailureReason.PERMISSION_DENIED:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+            case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+            case _:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+        return WriteFileResultFailure(
+            failure_reason=parent_failure_reason,
+            result_details=msg,
+        )
+
+    def _find_next_index_with_gap_fill(self, existing_indices: list[int]) -> int:
+        """Find next available index using fill-gaps strategy.
+
+        Args:
+            existing_indices: List of existing indices
+
+        Returns:
+            Next available index (1-based)
+
+        Examples:
+            [] -> 1
+            [1, 2, 3] -> 4
+            [1, 3, 4] -> 2 (fills gap)
+        """
+        if not existing_indices:
+            return 1
+
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
+
+        return max(existing_indices) + 1
+
+    def _scan_for_next_suffix_index(self, file_path: Path) -> int:
+        """Scan existing suffix-indexed files and return next available index.
+
+        Uses suffix injection strategy to find files like "render_1.png", "render_2.png", etc.
+        Returns the next available index using fill-gaps strategy.
+
+        Args:
+            file_path: Base file path (e.g., "/path/to/render.png")
+
+        Returns:
+            Next available index (1-based)
+
+        Examples:
+            No existing files: returns 1
+            Files [render_1.png, render_2.png]: returns 3
+            Files [render_1.png, render_3.png]: returns 2 (fills gap)
+        """
+        file_parts = self._parse_filename_parts(file_path)
+        glob_pattern = self._build_suffix_glob_pattern(
+            file_parts.directory,
+            file_parts.basename,
+            file_parts.extension,
+        )
+
+        glob_path = Path(glob_pattern)
+        existing_files = list(glob_path.parent.glob(glob_path.name))
+
+        # Extract indices from existing files
+        existing_indices = [
+            idx
+            for filepath in existing_files
+            if (idx := self._extract_suffix_index(filepath.name, file_parts.basename, file_parts.extension)) is not None
+        ]
+
+        return self._find_next_index_with_gap_fill(existing_indices)
+
+    def _write_with_suffix_injection(
+        self,
+        file_path: Path,
+        request: WriteFileRequest,
+        path_display: str | Path,
+    ) -> WriteFileResultSuccess | WriteFileResultFailure:
+        """Write file using suffix injection strategy (render.png -> render_1.png, render_2.png, etc.).
+
+        Args:
+            file_path: Base file path to write to
+            request: The write request
+            path_display: Path for display in error messages
+
+        Returns:
+            WriteFileResultSuccess or WriteFileResultFailure
+        """
+        file_parts = self._parse_filename_parts(file_path)
+        start_idx = self._scan_for_next_suffix_index(file_path)
+
+        for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
+            if file_parts.extension:
+                candidate_filename = f"{file_parts.basename}_{idx}{file_parts.extension}"
+            else:
+                candidate_filename = f"{file_parts.basename}_{idx}"
+
+            candidate_path = file_parts.directory / candidate_filename
+
+            parent_failure_reason = self._ensure_parent_directory_ready(
+                candidate_path,
+                create_parents=request.create_parents,
+            )
+            if parent_failure_reason is not None:
+                return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
+
+            candidate_normalized = self.normalize_path_for_platform(candidate_path)
+
+            result = self._attempt_file_write(
+                normalized_path=Path(candidate_normalized),
+                content=request.content,
+                encoding=request.encoding,
+                mode="x",
+                file_path_display=candidate_path,
+                fail_if_file_exists=False,
+                fail_if_file_locked=False,
+            )
+
+            if result.failure_reason is not None:
+                return WriteFileResultFailure(
+                    failure_reason=result.failure_reason,
+                    result_details=result.error_message,  # type: ignore[arg-type]
+                )
+
+            if result.bytes_written is not None:
+                msg = f"File written to indexed path: {candidate_path} (original path '{path_display}' already existed)"
+                return WriteFileResultSuccess(
+                    final_file_path=str(candidate_path),
+                    bytes_written=result.bytes_written,
+                    result_details=ResultDetails(message=msg, level=logging.WARNING),
+                )
+
+        attempted_count = MAX_INDEXED_CANDIDATES
+        msg = f"Attempted to write to file '{path_display}'. Failed after trying {attempted_count} indexed candidates"
+        return WriteFileResultFailure(
+            failure_reason=FileIOFailureReason.IO_ERROR,
+            result_details=msg,
+        )
+
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
 
@@ -1152,20 +1305,7 @@ class OSManager:
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
-        if not existing_indices:
-            # No existing indexed files - start at 1
-            return 1
-
-        # Sort indices to find first gap
-        existing_indices.sort()
-
-        # Find first gap starting from 1
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i  # Found a gap
-
-        # No gaps - use max + 1
-        return max(existing_indices) + 1
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""
@@ -1954,11 +2094,8 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
-                            result_details=msg,
-                        )
+                        # All variables resolved - fall back to suffix injection strategy
+                        return self._write_with_suffix_injection(file_path, request, path_display)
 
                     # We have a macro with one and only one index variable on it. The heuristic here is:
                     # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have
@@ -2017,17 +2154,7 @@ class OSManager:
                             create_parents=request.create_parents,
                         )
                         if parent_failure_reason is not None:
-                            match parent_failure_reason:
-                                case FileIOFailureReason.PERMISSION_DENIED:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                case _:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                            return WriteFileResultFailure(
-                                failure_reason=parent_failure_reason,
-                                result_details=msg,
-                            )
+                            return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
