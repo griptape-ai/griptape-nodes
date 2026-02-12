@@ -743,8 +743,8 @@ class ArtifactManager:
                 provider_class, request.preview_generator_class
             )
             for key, default_value in config_schema.items():
-                config_request = SetConfigValueRequest(category_and_key=key, value=default_value)
-                GriptapeNodes.handle_request(config_request)
+                SetConfigValueRequest(category_and_key=key, value=default_value)
+                # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -914,8 +914,8 @@ class ArtifactManager:
         config_schema = self._registry.get_provider_config_schema(provider_class)
 
         for key, default_value in config_schema.items():
-            request = SetConfigValueRequest(category_and_key=key, value=default_value)
-            GriptapeNodes.handle_request(request)
+            SetConfigValueRequest(category_and_key=key, value=default_value)
+            # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
 
         # Register default preview generators and their settings WITHOUT instantiating provider
         for preview_generator_class in provider_class.get_default_generators():
@@ -931,8 +931,8 @@ class ArtifactManager:
                 provider_class, preview_generator_class
             )
             for key, default_value in config_schema.items():
-                request = SetConfigValueRequest(category_and_key=key, value=default_value)
-                GriptapeNodes.handle_request(request)
+                SetConfigValueRequest(category_and_key=key, value=default_value)
+                # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
 
     def _get_default_params_for_generator(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict[str, Any]:
         """Get default parameter values for a preview generator.
