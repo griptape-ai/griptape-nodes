@@ -57,7 +57,9 @@ class IncompatibleEngineVersionCheck(LibraryVersionCompatibilityCheck):
         if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
             return []
 
-        current_version_str = f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        current_version_str = (
+            f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        )
 
         return [
             LibraryVersionCompatibilityIssue(
