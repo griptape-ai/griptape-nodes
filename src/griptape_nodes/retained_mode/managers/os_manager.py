@@ -5,6 +5,7 @@ import logging
 import mimetypes
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -766,39 +767,23 @@ class OSManager:
         return path_str
 
     @staticmethod
-    def _shell_quote_windows(arg: str) -> str:
-        r"""Wrap a single argument in double quotes for Windows; escape " as \", double trailing \."""
-        escaped = arg.replace('"', '\\"')
-        # Double trailing backslashes so the closing " is not interpreted as escaped
-        n_trailing = len(escaped) - len(escaped.rstrip("\\"))
-        if n_trailing:
-            escaped = escaped.rstrip("\\") + "\\" * (2 * n_trailing)
-        return '"' + escaped + '"'
-
-    @staticmethod
-    def _shell_quote_unix(arg: str) -> str:
-        r"""Wrap a single argument in double quotes for Unix shell; escape \, ", $, and `."""
-        escaped = arg.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
-        return '"' + escaped + '"'
-
-    @staticmethod
     def format_command_line(args: list[str]) -> str:
         """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
 
-        Always wraps each argument in double quotes on all platforms so the run command
-        is safe for paths with spaces and consistent on Windows, macOS, and Linux.
+        Uses subprocess.list2cmdline on Windows and shlex.quote on Unix; quotes are added
+        only when required for correct parsing (e.g. paths with spaces).
 
         Args:
             args: List of command and arguments (e.g. [sys.executable, script_path]).
 
         Returns:
-            Single string with quoted/escaped args that can be pasted into a terminal.
+            Single string that can be pasted into a terminal.
         """
         if not args:
             return ""
         if OSManager.is_windows():
-            return " ".join(OSManager._shell_quote_windows(arg) for arg in args)
-        return " ".join(OSManager._shell_quote_unix(arg) for arg in args)
+            return subprocess.list2cmdline(args)
+        return " ".join(shlex.quote(arg) for arg in args)
 
     # ============================================================================
     # CREATE_NEW File Collision Policy - Helper Methods
