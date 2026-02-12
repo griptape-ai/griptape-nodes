@@ -483,6 +483,65 @@ class WriteFileResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class WriteFileResultDryRun(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Dry-run preview of file write operation (no file written).
+
+    Attributes:
+        would_write_to_path: The absolute path where file would be written
+        file_currently_exists: Whether the file exists at this path
+        would_create_directories: Whether parent directories would need to be created
+        would_use_indexed_filename: Whether CREATE_NEW policy would use indexed filename (e.g., file_1.txt)
+        index_that_would_be_used: The index number that would be used (None if not using indexed filename)
+        bytes_that_would_be_written: Number of bytes that would be written
+        would_succeed: Whether the operation would succeed based on current state
+        failure_reason: If would_succeed=False, why the operation would fail
+        result_details: Human-readable preview message (inherited from ResultPayloadSuccess)
+    """
+
+    would_write_to_path: str
+    file_currently_exists: bool
+    would_create_directories: bool
+    would_use_indexed_filename: bool
+    index_that_would_be_used: int | None
+    bytes_that_would_be_written: int
+    would_succeed: bool
+    failure_reason: FileIOFailureReason | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class DryRunWriteFileRequest(RequestPayload):
+    """Preview what would happen during a file write operation without actually writing.
+
+    Use when: Testing file write operations, validating paths before writing,
+    showing users what will happen, debugging file write issues.
+
+    Args:
+        file_path: Path to the file to write (str for direct path, MacroPath for macro resolution)
+        content: Content to write (str for text files, bytes for binary files)
+        encoding: Text encoding for str content (default: 'utf-8', ignored for bytes)
+        append: If True, preview append operation; if False, use existing_file_policy (default: False)
+        existing_file_policy: How to handle existing files when append=False:
+            - "overwrite": Replace file content (default)
+            - "fail": Return failure if file exists
+            - "create_new": Create new file with auto-incrementing index (e.g., file_1.txt, file_2.txt)
+        create_parents: If True, create parent directories if missing (default: True)
+
+    Results: WriteFileResultDryRun
+
+    Note: This is a read-only operation that simulates WriteFileRequest without modifying the filesystem.
+    """
+
+    file_path: str | MacroPath
+    content: str | bytes
+    encoding: str = "utf-8"  # Ignored for bytes
+    append: bool = False
+    existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+    create_parents: bool = True
+
+
+@dataclass
+@PayloadRegistry.register
 class CopyTreeRequest(RequestPayload):
     """Copy an entire directory tree from source to destination.
 

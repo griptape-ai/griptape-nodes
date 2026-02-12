@@ -9,14 +9,15 @@ from griptape.tasks import PromptImageGenerationTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.project import Project
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
-from griptape_nodes_library.utils.file_utils import generate_filename
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
@@ -95,6 +96,14 @@ class GenerateImage(ControlNode):
                 settable=False,  # Ensures this serializes on save, but don't let user set it.
             )
         )
+        self._file_path_param = ProjectFileParameter(
+            node=self,
+            name="file_path",
+            situation="save_node_output",
+            default_filename="output.png",
+            allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+        )
+        self._file_path_param.add_parameter()
         # Group for logging information.
         with ParameterGroup(name="Logs") as logs_group:
             Parameter(name="include_details", type="bool", default_value=False, tooltip="Include extra details.")
@@ -321,12 +330,13 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
 
     def _create_image(self, agent: GtAgent, prompt: BaseArtifact | str) -> None:
         agent.run(prompt)
-        filename = generate_filename(
-            node_name=self.name,
-            suffix="_generated",
-            extension="png",
-        )
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(agent.output.to_bytes(), filename)
-        url_artifact = ImageUrlArtifact(value=static_url)
+
+        # Create save request and save using Project
+        project = Project()
+        save_request = self._file_path_param.create_save_request(data=agent.output.to_bytes())
+        save_result = project.save(save_request)
+
+        # Create URL artifact for output preview
+        url_artifact = ImageUrlArtifact(value=save_result.url)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

@@ -56,3 +56,27 @@ def get_workspace_relative_path(path: Path, base_directory: Path) -> Path:
     """
     absolute_path = resolve_workspace_path(path, base_directory)
     return absolute_path.relative_to(base_directory.resolve())
+
+
+def parse_filename_components(filename: str, default_extension: str = "png") -> tuple[str, str]:
+    """Parse filename into base and extension using pathlib.
+
+    Args:
+        filename: Filename to parse
+        default_extension: Extension to use if filename has none
+
+    Returns:
+        Tuple of (base, extension)
+
+    Example:
+        >>> parse_filename_components("image.png")
+        ("image", "png")
+        >>> parse_filename_components("output.tar.gz")
+        ("output.tar", "gz")
+        >>> parse_filename_components("test")
+        ("test", "png")
+    """
+    path = Path(filename)
+    if path.suffix:
+        return path.stem, path.suffix.lstrip(".")
+    return str(path), default_extension
