@@ -1027,6 +1027,30 @@ class OSManager:
             result_details=msg,
         )
 
+    def _find_next_index_with_gap_fill(self, existing_indices: list[int]) -> int:
+        """Find next available index using fill-gaps strategy.
+
+        Args:
+            existing_indices: List of existing indices
+
+        Returns:
+            Next available index (1-based)
+
+        Examples:
+            [] -> 1
+            [1, 2, 3] -> 4
+            [1, 3, 4] -> 2 (fills gap)
+        """
+        if not existing_indices:
+            return 1
+
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
+
+        return max(existing_indices) + 1
+
     def _scan_for_next_suffix_index(self, file_path: Path) -> int:
         """Scan existing suffix-indexed files and return next available index.
 
@@ -1061,16 +1085,7 @@ class OSManager:
             if (idx := self._extract_suffix_index(filepath.name, file_parts.basename, file_parts.extension)) is not None
         ]
 
-        if not existing_indices:
-            return 1
-
-        # Fill gaps in sequence
-        existing_indices.sort()
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i
-
-        return max(existing_indices) + 1
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     def _write_with_suffix_injection(
         self,
@@ -1257,20 +1272,7 @@ class OSManager:
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
-        if not existing_indices:
-            # No existing indexed files - start at 1
-            return 1
-
-        # Sort indices to find first gap
-        existing_indices.sort()
-
-        # Find first gap starting from 1
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i  # Found a gap
-
-        # No gaps - use max + 1
-        return max(existing_indices) + 1
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""
@@ -2218,17 +2220,7 @@ class OSManager:
                             create_parents=request.create_parents,
                         )
                         if parent_failure_reason is not None:
-                            match parent_failure_reason:
-                                case FileIOFailureReason.PERMISSION_DENIED:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                case _:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                            return WriteFileResultFailure(
-                                failure_reason=parent_failure_reason,
-                                result_details=msg,
-                            )
+                            return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
