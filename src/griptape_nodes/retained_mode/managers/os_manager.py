@@ -84,6 +84,9 @@ from griptape_nodes.retained_mode.managers.resource_types.compute_resource impor
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 
+# File is not in static directory (or not a local file), create small preview
+from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+
 console = Console()
 
 # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
@@ -1582,14 +1585,17 @@ class OSManager:
         else:
             return True
 
-    async def _read_via_driver(self, location: str) -> ReadFileResultSuccess | ReadFileResultFailure:
+    async def _read_via_driver(
+        self, location: str, request: ReadFileRequest
+    ) -> ReadFileResultSuccess | ReadFileResultFailure:
         """Read file using FileReadDriver system.
 
         Driver handles validation (existence, permissions, format).
-        OSManager only adds basic metadata enrichment.
+        OSManager adds metadata enrichment and thumbnail generation for images.
 
         Args:
             location: Location string (URL, data URI, cloud path, or local path)
+            request: ReadFileRequest containing options like should_transform_image_content_to_thumbnail
 
         Returns:
             ReadFileResultSuccess with content and metadata, or ReadFileResultFailure
@@ -1607,10 +1613,16 @@ class OSManager:
             is_text = self._is_text_content(content, mime_type)
             encoding = "utf-8" if is_text else None
 
+            # Handle image thumbnail generation (if requested)
+            if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
+                content = self._generate_thumbnail_from_image_content(content, location, mime_type)
+                # Thumbnail returns a string (URL or data URI), not bytes
+                decoded_content: str | bytes = content
+                encoding = None
             # Decode text content to str (API contract: text files return str, binary returns bytes)
-            if is_text and encoding:
+            elif is_text and encoding:
                 try:
-                    decoded_content: str | bytes = content.decode(encoding)
+                    decoded_content = content.decode(encoding)
                 except UnicodeDecodeError:
                     # If decoding fails, fall back to binary
                     decoded_content = content
@@ -1661,7 +1673,7 @@ class OSManager:
         location = self.sanitize_path_string(location)
 
         # Read via driver system (driver handles all validation and I/O)
-        return await self._read_via_driver(location)
+        return await self._read_via_driver(location, request)
 
     def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
         """Read file content and return FileContentResult with all file information."""
@@ -1727,43 +1739,62 @@ class OSManager:
 
         return content, None
 
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
-        """Handle image content by creating previews or returning static URLs."""
+    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
+        """Handle image content by creating previews or returning static URLs.
+
+        Args:
+            content: Image bytes
+            file_path: File location (Path object, local path string, URL, or data URI)
+            mime_type: Image MIME type
+
+        Returns:
+            URL string (http://localhost:8124/workspace/...) or data URI
+        """
         # Store original bytes for preview creation
         original_image_bytes = content
 
-        # Check if file is already in the static files directory
-        config_manager = GriptapeNodes.ConfigManager()
-        static_dir = config_manager.workspace_path
-
+        # Check if file is already in the static files directory (only for local paths)
         try:
-            # Check if file is within the static files directory
-            file_relative_to_static = file_path.relative_to(static_dir)
-            # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
-            msg = f"Image already in workspace directory, returning URL: {static_url}"
-            logger.debug(msg)
-        except ValueError:
-            # File is not in static directory, create small preview
-            from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+            # Convert to Path object if it's a string
+            path_obj = Path(file_path) if isinstance(file_path, str) else file_path
 
-            preview_data_url = create_image_preview_from_bytes(
-                original_image_bytes,  # type: ignore[arg-type]
-                max_width=200,
-                max_height=200,
-                quality=85,
-                image_format="WEBP",
-            )
+            # Only check workspace directory for absolute local paths
+            if path_obj.is_absolute():
+                config_manager = GriptapeNodes.ConfigManager()
+                static_dir = config_manager.workspace_path
 
-            if preview_data_url:
-                logger.debug("Image preview created (file not moved)")
-                return preview_data_url
-            # Fallback to data URL if preview creation fails
-            data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
-            logger.debug("Fallback to full image data URL")
-            return data_url
-        else:
-            return static_url
+                try:
+                    # Check if file is within the static files directory
+                    file_relative_to_static = path_obj.relative_to(static_dir)
+                except ValueError:
+                    # File is not in static directory, continue to preview creation
+                    pass
+                else:
+                    # File is in static directory, construct URL directly
+                    static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+                    msg = f"Image already in workspace directory, returning URL: {static_url}"
+                    logger.debug(msg)
+                    return static_url
+        except (ValueError, OSError, TypeError):
+            # Not a valid local path (might be URL or data URI), continue to preview
+            pass
+
+        preview_data_url = create_image_preview_from_bytes(
+            original_image_bytes,  # type: ignore[arg-type]
+            max_width=200,
+            max_height=200,
+            quality=85,
+            image_format="WEBP",
+        )
+
+        if preview_data_url:
+            logger.debug("Image preview created (file not moved)")
+            return preview_data_url
+
+        # Fallback to data URL if preview creation fails
+        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        logger.debug("Fallback to full image data URL")
+        return data_url
 
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""
