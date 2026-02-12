@@ -766,6 +766,12 @@ class OSManager:
         return path_str
 
     @staticmethod
+    def _shell_quote_windows(arg: str) -> str:
+        r"""Wrap a single argument in double quotes for Windows; escape \ and \"."""
+        escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+        return '"' + escaped + '"'
+
+    @staticmethod
     def _shell_quote_unix(arg: str) -> str:
         r"""Wrap a single argument in double quotes for Unix shell; escape \, ", $, and `."""
         escaped = arg.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
@@ -775,8 +781,8 @@ class OSManager:
     def format_command_line(args: list[str]) -> str:
         """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
 
-        Uses double-quoted arguments on all platforms (Windows via subprocess.list2cmdline,
-        macOS/Linux via explicit double-quote escaping) so the run command is consistent.
+        Always wraps each argument in double quotes on all platforms so the run command
+        is safe for paths with spaces and consistent on Windows, macOS, and Linux.
 
         Args:
             args: List of command and arguments (e.g. [sys.executable, script_path]).
@@ -787,7 +793,7 @@ class OSManager:
         if not args:
             return ""
         if OSManager.is_windows():
-            return subprocess.list2cmdline(args)
+            return " ".join(OSManager._shell_quote_windows(arg) for arg in args)
         return " ".join(OSManager._shell_quote_unix(arg) for arg in args)
 
     # ============================================================================
