@@ -1001,6 +1001,130 @@ class OSManager:
 
         return None
 
+    def _scan_for_next_suffix_index(self, file_path: Path) -> int:
+        """Scan existing suffix-indexed files and return next available index.
+
+        Uses suffix injection strategy to find files like "render_1.png", "render_2.png", etc.
+        Returns the next available index using fill-gaps strategy.
+
+        Args:
+            file_path: Base file path (e.g., "/path/to/render.png")
+
+        Returns:
+            Next available index (1-based)
+
+        Examples:
+            No existing files: returns 1
+            Files [render_1.png, render_2.png]: returns 3
+            Files [render_1.png, render_3.png]: returns 2 (fills gap)
+        """
+        file_parts = self._parse_filename_parts(file_path)
+        glob_pattern = self._build_suffix_glob_pattern(
+            file_parts.directory,
+            file_parts.basename,
+            file_parts.extension,
+        )
+
+        glob_path = Path(glob_pattern)
+        existing_files = list(glob_path.parent.glob(glob_path.name))
+
+        existing_indices = []
+        for filepath in existing_files:
+            extracted_index = self._extract_suffix_index(
+                filepath.name,
+                file_parts.basename,
+                file_parts.extension,
+            )
+            if extracted_index is not None:
+                existing_indices.append(extracted_index)
+
+        if not existing_indices:
+            return 1
+
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
+
+        return max(existing_indices) + 1
+
+    def _write_with_suffix_injection(
+        self,
+        file_path: Path,
+        request: WriteFileRequest,
+        path_display: str | Path,
+    ) -> WriteFileResultSuccess | WriteFileResultFailure:
+        """Write file using suffix injection strategy (render.png -> render_1.png, render_2.png, etc.).
+
+        Args:
+            file_path: Base file path to write to
+            request: The write request
+            path_display: Path for display in error messages
+
+        Returns:
+            WriteFileResultSuccess or WriteFileResultFailure
+        """
+        file_parts = self._parse_filename_parts(file_path)
+        start_idx = self._scan_for_next_suffix_index(file_path)
+
+        for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
+            if file_parts.extension:
+                candidate_filename = f"{file_parts.basename}_{idx}{file_parts.extension}"
+            else:
+                candidate_filename = f"{file_parts.basename}_{idx}"
+
+            candidate_path = file_parts.directory / candidate_filename
+
+            parent_failure_reason = self._ensure_parent_directory_ready(
+                candidate_path,
+                create_parents=request.create_parents,
+            )
+            if parent_failure_reason is not None:
+                match parent_failure_reason:
+                    case FileIOFailureReason.PERMISSION_DENIED:
+                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+                    case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+                    case _:
+                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+                return WriteFileResultFailure(
+                    failure_reason=parent_failure_reason,
+                    result_details=msg,
+                )
+
+            candidate_normalized = self.normalize_path_for_platform(candidate_path)
+
+            result = self._attempt_file_write(
+                normalized_path=Path(candidate_normalized),
+                content=request.content,
+                encoding=request.encoding,
+                mode="x",
+                file_path_display=candidate_path,
+                fail_if_file_exists=False,
+                fail_if_file_locked=False,
+            )
+
+            if result.failure_reason is not None:
+                return WriteFileResultFailure(
+                    failure_reason=result.failure_reason,
+                    result_details=result.error_message,  # type: ignore[arg-type]
+                )
+
+            if result.bytes_written is not None:
+                msg = f"File written to indexed path: {candidate_path} (original path '{path_display}' already existed)"
+                return WriteFileResultSuccess(
+                    final_file_path=str(candidate_path),
+                    bytes_written=result.bytes_written,
+                    result_details=ResultDetails(message=msg, level=logging.WARNING),
+                )
+
+        attempted_count = MAX_INDEXED_CANDIDATES
+        msg = f"Attempted to write to file '{path_display}'. Failed after trying {attempted_count} indexed candidates"
+        return WriteFileResultFailure(
+            failure_reason=FileIOFailureReason.IO_ERROR,
+            result_details=msg,
+        )
+
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
 
@@ -2021,221 +2145,110 @@ class OSManager:
 
                     if index_info is None:
                         # All variables resolved - fall back to suffix injection strategy
-                        # Parse the filename into components
-                        file_parts = self._parse_filename_parts(file_path)
+                        return self._write_with_suffix_injection(file_path, request, path_display)
 
-                        # Build glob pattern: "render.png" -> "render_*.png"
-                        glob_pattern = self._build_suffix_glob_pattern(
-                            file_parts.directory,
-                            file_parts.basename,
-                            file_parts.extension,
+                    # We have a macro with one and only one index variable on it. The heuristic here is:
+                    # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have
+                    #    ganked it while we were attempting to write to it.
+                    # 2. Try candidates in sequence until we find one that works, or fail if we've tried too many times.
+                    # Note: The user could have specified using the index value as a DIRECTORY,
+                    # so it's not always output_1, output_2, etc. It could be run_1/output.png, run_2/output.png, etc.
+
+                    # Scan for starting index
+                    starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
+
+                    # Try indexed candidates on-demand (up to max attempts)
+                    secrets_manager = GriptapeNodes.SecretsManager()
+                    start_idx = starting_index if starting_index is not None else 1
+                    attempted_count = 0
+
+                    for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
+                        attempted_count += 1
+
+                        # Step 1: Resolve macro with current index
+                        try:
+                            index_vars = {**variables, index_info.info.name: idx}
+                            candidate_str = parsed_macro.resolve(index_vars, secrets_manager)
+                        except MacroResolutionError as e:
+                            msg = f"Attempted to write to file '{path_display}'. Failed due to unable to resolve path template with index {idx}: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                                result_details=msg,
+                            )
+                        except Exception as e:
+                            msg = f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                result_details=msg,
+                            )
+
+                        # Step 2: Resolve file path
+                        try:
+                            candidate_path = self._resolve_file_path(candidate_str, workspace_only=False)
+                        except (ValueError, RuntimeError) as e:
+                            msg = f"Attempted to write to file '{candidate_str}'. Failed due to invalid path: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.INVALID_PATH,
+                                result_details=msg,
+                            )
+                        except Exception as e:
+                            msg = f"Attempted to write to file '{candidate_str}'. Failed due to unexpected error: {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                result_details=msg,
+                            )
+
+                        # Ensure parent directory for this candidate
+                        parent_failure_reason = self._ensure_parent_directory_ready(
+                            candidate_path,
+                            create_parents=request.create_parents,
                         )
-
-                        # Scan existing files matching pattern
-                        glob_path = Path(glob_pattern)
-                        existing_files = list(glob_path.parent.glob(glob_path.name))
-
-                        # Extract indices from filenames
-                        existing_indices = []
-                        for filepath in existing_files:
-                            filename = filepath.name
-                            extracted_index = self._extract_suffix_index(
-                                filename,
-                                file_parts.basename,
-                                file_parts.extension,
-                            )
-                            if extracted_index is not None:
-                                existing_indices.append(extracted_index)
-
-                        # Find first available index (fill gaps)
-                        if not existing_indices:
-                            next_index = 1
-                        else:
-                            existing_indices.sort()
-                            next_index = None
-                            for i in range(1, max(existing_indices) + 1):
-                                if i not in existing_indices:
-                                    next_index = i
-                                    break
-                            if next_index is None:
-                                next_index = max(existing_indices) + 1
-
-                        # Try indexed candidates until success
-                        start_idx = next_index
-                        attempted_count = 0
-
-                        for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
-                            attempted_count += 1
-
-                            # Build candidate filename
-                            if file_parts.extension:
-                                candidate_filename = f"{file_parts.basename}_{idx}{file_parts.extension}"
-                            else:
-                                candidate_filename = f"{file_parts.basename}_{idx}"
-
-                            candidate_path = file_parts.directory / candidate_filename
-
-                            # Ensure parent directory for this candidate
-                            parent_failure_reason = self._ensure_parent_directory_ready(
-                                candidate_path,
-                                create_parents=request.create_parents,
-                            )
-                            if parent_failure_reason is not None:
-                                match parent_failure_reason:
-                                    case FileIOFailureReason.PERMISSION_DENIED:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                    case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                    case _:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                                return WriteFileResultFailure(
-                                    failure_reason=parent_failure_reason,
-                                    result_details=msg,
-                                )
-
-                            # Normalize path
-                            candidate_normalized = self.normalize_path_for_platform(candidate_path)
-
-                            # Attempt write with exclusive creation
-                            result = self._attempt_file_write(
-                                normalized_path=Path(candidate_normalized),
-                                content=request.content,
-                                encoding=request.encoding,
-                                mode="x",
-                                file_path_display=candidate_path,
-                                fail_if_file_exists=False,
-                                fail_if_file_locked=False,
-                            )
-
-                            # Handle result
-                            if result.failure_reason is not None:
-                                return WriteFileResultFailure(
-                                    failure_reason=result.failure_reason,
-                                    result_details=result.error_message,  # type: ignore[arg-type]
-                                )
-
-                            if result.bytes_written is not None:
-                                # Success!
-                                final_file_path = candidate_path
-                                final_bytes_written = result.bytes_written
-                                used_indexed_fallback = True
-                                break
-
-                        # If we got here without breaking, all candidates were taken
-                        if final_file_path is None:
-                            msg = f"Attempted to write to file '{path_display}'. Failed after trying {attempted_count} indexed candidates"
+                        if parent_failure_reason is not None:
+                            match parent_failure_reason:
+                                case FileIOFailureReason.PERMISSION_DENIED:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+                                case _:
+                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
                             return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.IO_ERROR,
+                                failure_reason=parent_failure_reason,
                                 result_details=msg,
                             )
 
-                    else:
-                        # We have a macro with one and only one index variable on it. The heuristic here is:
-                        # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have
-                        #    ganked it while we were attempting to write to it.
-                        # 2. Try candidates in sequence until we find one that works, or fail if we've tried too many times.
-                        # Note: The user could have specified using the index value as a DIRECTORY,
-                        # so it's not always output_1, output_2, etc. It could be run_1/output.png, run_2/output.png, etc.
+                        normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
-                        # Scan for starting index
-                        starting_index = self._scan_for_next_available_index(parsed_macro, variables, index_info)
-
-                        # Try indexed candidates on-demand (up to max attempts)
-                        secrets_manager = GriptapeNodes.SecretsManager()
-                        start_idx = starting_index if starting_index is not None else 1
-                        attempted_count = 0
-
-                        for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
-                            attempted_count += 1
-
-                            # Step 1: Resolve macro with current index
-                            try:
-                                index_vars = {**variables, index_info.info.name: idx}
-                                candidate_str = parsed_macro.resolve(index_vars, secrets_manager)
-                            except MacroResolutionError as e:
-                                msg = f"Attempted to write to file '{path_display}'. Failed due to unable to resolve path template with index {idx}: {e}"
-                                return WriteFileResultFailure(
-                                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
-                                    result_details=msg,
-                                )
-                            except Exception as e:
-                                msg = (
-                                    f"Attempted to write to file '{path_display}'. Failed due to unexpected error: {e}"
-                                )
-                                return WriteFileResultFailure(
-                                    failure_reason=FileIOFailureReason.IO_ERROR,
-                                    result_details=msg,
-                                )
-
-                            # Step 2: Resolve file path
-                            try:
-                                candidate_path = self._resolve_file_path(candidate_str, workspace_only=False)
-                            except (ValueError, RuntimeError) as e:
-                                msg = f"Attempted to write to file '{candidate_str}'. Failed due to invalid path: {e}"
-                                return WriteFileResultFailure(
-                                    failure_reason=FileIOFailureReason.INVALID_PATH,
-                                    result_details=msg,
-                                )
-                            except Exception as e:
-                                msg = (
-                                    f"Attempted to write to file '{candidate_str}'. Failed due to unexpected error: {e}"
-                                )
-                                return WriteFileResultFailure(
-                                    failure_reason=FileIOFailureReason.IO_ERROR,
-                                    result_details=msg,
-                                )
-
-                            # Ensure parent directory for this candidate
-                            parent_failure_reason = self._ensure_parent_directory_ready(
-                                candidate_path,
-                                create_parents=request.create_parents,
-                            )
-                            if parent_failure_reason is not None:
-                                match parent_failure_reason:
-                                    case FileIOFailureReason.PERMISSION_DENIED:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                    case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                    case _:
-                                        msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                                return WriteFileResultFailure(
-                                    failure_reason=parent_failure_reason,
-                                    result_details=msg,
-                                )
-
-                            normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
-
-                            # Try to write this indexed candidate using helper
-                            result = self._attempt_file_write(
-                                normalized_path=Path(normalized_candidate_path),
-                                content=request.content,
-                                encoding=request.encoding,
-                                mode="x",
-                                file_path_display=candidate_path,
-                                fail_if_file_exists=False,  # Try next candidate
-                                fail_if_file_locked=False,  # Try next candidate
-                            )
-                            if result.failure_reason is not None:
-                                # error_message is guaranteed to be set when failure_reason is set
-                                return WriteFileResultFailure(
-                                    failure_reason=result.failure_reason,
-                                    result_details=result.error_message,  # type: ignore[arg-type]
-                                )
-                            if result.bytes_written is not None:
-                                # Success with indexed path!
-                                final_file_path = candidate_path
-                                final_bytes_written = result.bytes_written
-                                used_indexed_fallback = True
-                                break
-                            # else: continue to next candidate
-
-                        # Check if we exhausted all indexed candidates
-                        if final_file_path is None:
-                            msg = f"Attempted to write to file '{path_display}'. Failed due to could not find available filename after trying {attempted_count} candidates"
+                        # Try to write this indexed candidate using helper
+                        result = self._attempt_file_write(
+                            normalized_path=Path(normalized_candidate_path),
+                            content=request.content,
+                            encoding=request.encoding,
+                            mode="x",
+                            file_path_display=candidate_path,
+                            fail_if_file_exists=False,  # Try next candidate
+                            fail_if_file_locked=False,  # Try next candidate
+                        )
+                        if result.failure_reason is not None:
+                            # error_message is guaranteed to be set when failure_reason is set
                             return WriteFileResultFailure(
-                                failure_reason=FileIOFailureReason.IO_ERROR,
-                                result_details=msg,
+                                failure_reason=result.failure_reason,
+                                result_details=result.error_message,  # type: ignore[arg-type]
                             )
+                        if result.bytes_written is not None:
+                            # Success with indexed path!
+                            final_file_path = candidate_path
+                            final_bytes_written = result.bytes_written
+                            used_indexed_fallback = True
+                            break
+                        # else: continue to next candidate
+
+                    # Check if we exhausted all indexed candidates
+                    if final_file_path is None:
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to could not find available filename after trying {attempted_count} candidates"
+                        return WriteFileResultFailure(
+                            failure_reason=FileIOFailureReason.IO_ERROR,
+                            result_details=msg,
+                        )
 
         # SUCCESS PATH: All three policies converge here
         if final_file_path is None or final_bytes_written is None:
