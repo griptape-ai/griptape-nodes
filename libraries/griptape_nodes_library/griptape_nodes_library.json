@@ -28,7 +28,7 @@
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
     "library_version": "0.63.4",
-    "engine_version": "0.80.0",
+    "engine_version": "0.71.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
