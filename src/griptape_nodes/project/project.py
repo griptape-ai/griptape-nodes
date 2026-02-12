@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,8 @@ from griptape_nodes.retained_mode.managers.image_metadata_injector import (
     inject_workflow_metadata_if_image,
 )
 from griptape_nodes.utils.path_utils import resolve_workspace_path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -104,9 +107,37 @@ class Project:
             file_name=request.macro_template,  # Uses template for extension detection
         )
 
-        # 2. Create MacroPath for OSManager
+        # 2. Create MacroPath for OSManager with merged builtin and user variables
         parsed_macro = ParsedMacro(request.macro_template)
-        macro_path = MacroPath(parsed_macro=parsed_macro, variables=request.variables)
+
+        # DEBUG: Log the macro template
+        logger.info("Project.save() - macro_template: %s", request.macro_template)
+        logger.info("Project.save() - user variables: %s", request.variables)
+
+        # Get project info for builtin variable resolution
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        project_manager = GriptapeNodes.ProjectManager()
+        result = project_manager.on_get_current_project_request(GetCurrentProjectRequest())
+
+        if not hasattr(result, "project_info"):
+            msg = "No current project set - cannot resolve macros for save"
+            raise RuntimeError(msg)
+
+        project_info = result.project_info  # type: ignore[union-attr]
+
+        # Get builtin variables (outputs, workflow_name, workspace_dir, etc.)
+        variable_infos = parsed_macro.get_variables()
+        builtin_variables = self._get_builtin_resolution_bag(list(variable_infos), project_info)
+
+        # Merge builtin variables with user-provided variables (user variables take precedence)
+        merged_variables = {**builtin_variables, **request.variables}
+
+        # DEBUG: Log merged variables
+        logger.info("Project.save() - builtin variables: %s", builtin_variables)
+        logger.info("Project.save() - merged variables: %s", merged_variables)
+
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables=merged_variables)
 
         # 3. Map policy to OSManager enum
         policy_map = {
@@ -203,9 +234,29 @@ class Project:
         Returns:
             SaveResult with path and metadata (no file written)
         """
-        # Create MacroPath for OSManager
+        # Create MacroPath for OSManager with merged builtin and user variables
         parsed_macro = ParsedMacro(request.macro_template)
-        macro_path = MacroPath(parsed_macro=parsed_macro, variables=request.variables)
+
+        # Get project info for builtin variable resolution
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        project_manager = GriptapeNodes.ProjectManager()
+        result = project_manager.on_get_current_project_request(GetCurrentProjectRequest())
+
+        if not hasattr(result, "project_info"):
+            msg = "No current project set - cannot resolve macros for preview"
+            raise RuntimeError(msg)
+
+        project_info = result.project_info  # type: ignore[union-attr]
+
+        # Get builtin variables (outputs, workflow_name, workspace_dir, etc.)
+        variable_infos = parsed_macro.get_variables()
+        builtin_variables = self._get_builtin_resolution_bag(list(variable_infos), project_info)
+
+        # Merge builtin variables with user-provided variables (user variables take precedence)
+        merged_variables = {**builtin_variables, **request.variables}
+
+        macro_path = MacroPath(parsed_macro=parsed_macro, variables=merged_variables)
 
         # Map policy to OSManager enum
         policy_map = {

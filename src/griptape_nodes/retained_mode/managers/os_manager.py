@@ -570,7 +570,7 @@ class OSManager:
         if isinstance(file_path_input, MacroPath):
             resolution_result = self._resolve_macro_path_to_string(file_path_input)
             if isinstance(resolution_result, MacroResolutionFailure):
-                path_display = f"{file_path_input.parsed_macro}"
+                path_display = file_path_input.parsed_macro.template
                 error_message = f"Failed due to missing variables: {resolution_result.error_details}"
                 return PathValidationResult(
                     success=False,
@@ -581,7 +581,7 @@ class OSManager:
                     missing_variables=resolution_result.missing_variables,
                 )
             resolved_path_str = resolution_result
-            path_display = f"{file_path_input.parsed_macro}"
+            path_display = file_path_input.parsed_macro.template
         else:
             # Sanitize string path (removes shell escapes, quotes, etc.)
             resolved_path_str = self.sanitize_path_string(file_path_input)
@@ -2072,6 +2072,11 @@ class OSManager:
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 
+                    # DEBUG logging
+                    logger.info("CREATE_NEW fallback - macro template: %s", parsed_macro.template)
+                    logger.info("CREATE_NEW fallback - variables: %s", variables)
+                    logger.info("CREATE_NEW fallback - normalized_path: %s", normalized_path)
+
                     # Identify index variable
                     try:
                         index_info = self._identify_index_variable(parsed_macro, variables)
@@ -2089,11 +2094,34 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
-                        return WriteFileResultFailure(
-                            failure_reason=FileIOFailureReason.INVALID_PATH,
-                            result_details=msg,
-                        )
+                        # All variables resolved - use suffix injection fallback
+                        # Convert resolved path to MacroPath with required {_index} variable
+                        # This handles cases where all variables (including optional ones) are resolved
+                        logger.info("Suffix injection fallback - all variables resolved")
+                        logger.info("Suffix injection fallback - converting: %s", normalized_path)
+                        resolved_path_str = normalized_path.as_posix()
+                        macro_path = self._convert_str_path_to_macro_with_index(resolved_path_str)
+                        parsed_macro = macro_path.parsed_macro
+                        variables = macro_path.variables
+                        logger.info("Suffix injection fallback - new template: %s", parsed_macro.template)
+                        logger.info("Suffix injection fallback - new variables: %s", variables)
+
+                        # Re-identify index variable (should find {_index} now)
+                        try:
+                            index_info = self._identify_index_variable(parsed_macro, variables)
+                        except ValueError as e:
+                            msg = f"Attempted to write to file '{path_display}'. Failed due to {e}"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.INVALID_PATH,
+                                result_details=msg,
+                            )
+
+                        if index_info is None:
+                            msg = f"Attempted to write to file '{path_display}'. Failed due to suffix injection fallback did not produce index variable"
+                            return WriteFileResultFailure(
+                                failure_reason=FileIOFailureReason.INVALID_PATH,
+                                result_details=msg,
+                            )
 
                     # We have a macro with one and only one index variable on it. The heuristic here is:
                     # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have

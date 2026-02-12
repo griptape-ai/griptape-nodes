@@ -47,3 +47,4 @@ class ProjectFileSaveConfig:
     macro_template: str
     policy: ExistingFilePolicy
     create_dirs: bool
+    variables: dict[str, str | int] | None = None

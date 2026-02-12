@@ -1,10 +1,10 @@
 """ProjectFileParameter - parameter component for project-aware file saving."""
 
 import logging
+from typing import Any
 
-from griptape_nodes.exe_types.core_types import NodeMessageResult, ParameterMode
+from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.project import (
     ExistingFilePolicy,
     Project,
@@ -127,15 +127,26 @@ class ProjectFileParameter:
                 )
             )
 
-        # Create parameter
-        parameter = ParameterString(
+        # Custom converter that handles both ProjectFileSaveConfig and string inputs
+        def _normalize_file_path_input(value: Any) -> Any:
+            """Normalize file path input - preserve ProjectFileSaveConfig, convert others to string."""
+            if value is None:
+                return None
+            if isinstance(value, ProjectFileSaveConfig):
+                return value
+            return str(value)
+
+        # Create parameter - use generic Parameter (not ParameterString) to avoid auto-stringification
+        parameter = Parameter(
             name=self._name,
+            type="str",
             default_value=self._default_filename,
             allowed_modes=self._allowed_modes,
             tooltip=tooltip,
             input_types=["ProjectFileSaveConfig", "str"],
             output_type="str",
             traits=traits,
+            converters=[_normalize_file_path_input],
         )
 
         self._node.add_parameter(parameter)
@@ -160,10 +171,21 @@ class ProjectFileParameter:
             policy = value.policy
             create_dirs = value.create_dirs
 
-            # Parse filename from first extra_var if available, otherwise use default
-            filename = str(extra_vars.get("file_name_base", self._default_filename))
+            # If ConfigureProjectFileSave provided variables, use those
+            if value.variables:
+                variables = {**value.variables, **extra_vars}
+            else:
+                # Fallback: create variables from filename
+                filename = str(extra_vars.get("file_name_base", self._default_filename))
+                file_name_base, file_extension = self._parse_filename(filename)
+                variables = {
+                    "file_name_base": file_name_base,
+                    "file_extension": file_extension,
+                    "node_name": self._node.name,
+                    **extra_vars,
+                }
         else:
-            # Use situation configuration
+            # Use situation configuration and create variables
             macro_template = self._macro_template
             policy = self._policy
             create_dirs = self._create_dirs
@@ -174,16 +196,16 @@ class ProjectFileParameter:
             else:
                 filename = self._default_filename
 
-        # Parse filename into variables
-        file_name_base, file_extension = self._parse_filename(filename)
+            # Parse filename into variables
+            file_name_base, file_extension = self._parse_filename(filename)
 
-        # Build complete variables dict
-        variables = {
-            "file_name_base": file_name_base,
-            "file_extension": file_extension,
-            "node_name": self._node.name,
-            **extra_vars,
-        }
+            # Build complete variables dict
+            variables = {
+                "file_name_base": file_name_base,
+                "file_extension": file_extension,
+                "node_name": self._node.name,
+                **extra_vars,
+            }
 
         # Return SaveRequest with configuration
         return SaveRequest(

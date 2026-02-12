@@ -42,7 +42,7 @@ class LocalFileReadDriver(FileReadDriver):
         path = Path(location)
         return path.is_absolute()
 
-    async def read(self, location: str, _timeout: float) -> bytes:
+    async def read(self, location: str, timeout: float) -> bytes:  # noqa: ARG002, ASYNC109
         """Read file from local filesystem with validation.
 
         Performs:
@@ -55,7 +55,7 @@ class LocalFileReadDriver(FileReadDriver):
 
         Args:
             location: File path (absolute, relative, or with ~)
-            _timeout: Ignored for local files
+            timeout: Ignored for local files
 
         Returns:
             File contents as bytes

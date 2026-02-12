@@ -445,7 +445,7 @@ class ConfigureProjectFileSave(BaseNode):
             normalized_path=str(resolved),
         )
 
-    def _create_file_location(self, macro_template: str, _variables: dict[str, str | int]) -> ProjectFileSaveConfig:
+    def _create_file_location(self, macro_template: str, variables: dict[str, str | int]) -> ProjectFileSaveConfig:
         """Create ProjectFileSaveConfig from macro template, variables, and current policies.
 
         Args:
@@ -463,6 +463,7 @@ class ConfigureProjectFileSave(BaseNode):
             macro_template=macro_template,
             policy=existing_file_policy,
             create_dirs=allow_create_dirs,
+            variables=variables,
         )
 
     def _handle_relative_path(self, classified: ClassifiedPath) -> None:
