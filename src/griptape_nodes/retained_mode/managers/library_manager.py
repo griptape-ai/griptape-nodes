@@ -1352,6 +1352,8 @@ class LibraryManager:
                         EvaluateLibraryFitnessRequest(schema=metadata_result.library_schema)
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
+                        library_info.fitness = evaluate_result.fitness
+                        library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)
 
