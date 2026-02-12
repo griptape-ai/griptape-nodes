@@ -14,7 +14,7 @@ def normalize_secrets_to_register(value: list[str] | dict[str, str] | None) -> d
     if value is None:
         return {}
     if isinstance(value, list):
-        return {name: "" for name in value}
+        return dict.fromkeys(value, "")
     if isinstance(value, dict):
         return value
     return {}
