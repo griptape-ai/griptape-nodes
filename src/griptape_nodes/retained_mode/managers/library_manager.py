@@ -28,6 +28,7 @@ from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.file.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -194,7 +195,6 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
-from griptape_nodes.utils.path_utils import resolve_workspace_path
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 

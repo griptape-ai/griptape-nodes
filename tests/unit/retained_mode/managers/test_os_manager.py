@@ -209,12 +209,11 @@ class TestReadFileRequest:
 
     def test_read_text_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully reading a text file."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("Test content")
 
         request = ReadFileRequest(file_path=str(file_path))
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultSuccess)
         assert result.content == "Test content"
@@ -222,13 +221,12 @@ class TestReadFileRequest:
 
     def test_read_binary_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully reading a binary file."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.bin"
         content = b"\x00\x01\x02\x03"
         file_path.write_bytes(content)
 
         request = ReadFileRequest(file_path=str(file_path))
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultSuccess)
         # Binary files might be returned as base64 or bytes
@@ -236,40 +234,37 @@ class TestReadFileRequest:
 
     def test_read_file_not_found(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test reading non-existent file returns FILE_NOT_FOUND."""
-        os_manager = griptape_nodes.OSManager()
         request = ReadFileRequest(file_path=str(temp_dir / "nonexistent.txt"))
 
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
 
     def test_read_file_permission_denied(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test reading file without permission."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("Content")
 
         request = ReadFileRequest(file_path=str(file_path))
 
         # Mock the file operation to raise PermissionError
-        with patch.object(Path, "open", side_effect=PermissionError("Permission denied")):
-            result = os_manager.on_read_file_request(request)
+        with patch.object(Path, "read_bytes", side_effect=PermissionError("Permission denied")):
+            result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
 
     def test_read_file_invalid_path(self, griptape_nodes: GriptapeNodes) -> None:
-        """Test reading with invalid path - empty resolves to directory."""
-        os_manager = griptape_nodes.OSManager()
-        # Empty path resolves to directory, which isn't a file
+        """Test reading with invalid path - empty string."""
+        # Empty path is not absolute, so no driver can handle it
         request = ReadFileRequest(file_path="")
 
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
-        # FILE_NOT_FOUND is returned when path exists but is not a file
-        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+        # INVALID_PATH is returned when no driver can handle the location
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
 
 
 class TestCreateFileRequest:
