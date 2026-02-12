@@ -148,3 +148,35 @@ class TestSecretsManager:
 
                     # SECRET_C: only in global, should use global
                     assert secrets_manager.get_secret("SECRET_C") == "global_c"
+
+    def test_secrets_to_register_with_list_format(self) -> None:
+        """Test that list format is normalized to dict with empty defaults."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_path = Path(temp_dir)
+            config_manager = ConfigManager()
+            config_manager.workspace_path = workspace_path
+
+            with patch.object(
+                config_manager, "get_config_value", return_value=["KEY1", "KEY2"]
+            ):
+                secrets_manager = SecretsManager(config_manager)
+                result = secrets_manager.secrets_to_register
+
+                assert result == {"KEY1": "", "KEY2": ""}
+
+    def test_secrets_to_register_with_dict_format(self) -> None:
+        """Test that dict format preserves default values."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_path = Path(temp_dir)
+            config_manager = ConfigManager()
+            config_manager.workspace_path = workspace_path
+
+            with patch.object(
+                config_manager,
+                "get_config_value",
+                return_value={"KEY1": "default1", "KEY2": "", "KEY3": "default3"},
+            ):
+                secrets_manager = SecretsManager(config_manager)
+                result = secrets_manager.secrets_to_register
+
+                assert result == {"KEY1": "default1", "KEY2": "", "KEY3": "default3"}
