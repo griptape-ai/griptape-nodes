@@ -410,7 +410,7 @@ class OSManager:
 
         # Success path at the end - compute final path and return
         if resolved is not None and resolved.special_path is not None:
-            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
+            extra_parts: list[str] = resolved.remaining_parts or []
             if extra_parts:
                 final_path = resolved.special_path / Path(*extra_parts)
             else:
@@ -764,6 +764,28 @@ class OSManager:
             return f"\\\\?\\{path_str}"
 
         return path_str
+
+    @staticmethod
+    def format_command_line(args: list[str]) -> str:
+        """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
+
+        Uses subprocess.list2cmdline on Windows and shlex.quote on Unix; quotes are added
+        only when required for correct parsing (e.g. paths with spaces).
+
+        Args:
+            args: List of command and arguments (e.g. [sys.executable, script_path]).
+
+        Returns:
+            Single string that can be pasted into a terminal.
+        """
+        if not args:
+            return ""
+        if OSManager.is_windows():
+            return subprocess.list2cmdline(args)
+
+        import shlex
+
+        return " ".join(shlex.quote(arg) for arg in args)
 
     # ============================================================================
     # CREATE_NEW File Collision Policy - Helper Methods
