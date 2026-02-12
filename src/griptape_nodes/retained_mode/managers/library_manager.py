@@ -170,7 +170,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
-from griptape_nodes.utils.dict_utils import merge_dicts
+from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
     GitCloneError,
@@ -1491,10 +1491,21 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
                                 else:
+                                    # Normalize secrets_to_register before merge (handles list/dict format mismatch)
+                                    library_contents = dict(library_data_setting.contents)
+                                    existing_contents = dict(get_category_result.contents)
+                                    if "secrets_to_register" in library_contents:
+                                        library_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            library_contents["secrets_to_register"]
+                                        )
+                                    if "secrets_to_register" in existing_contents:
+                                        existing_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            existing_contents["secrets_to_register"]
+                                        )
                                     # Merge with existing category
                                     existing_category_contents = merge_dicts(
-                                        library_data_setting.contents,
-                                        get_category_result.contents,
+                                        library_contents,
+                                        existing_contents,
                                         add_keys=True,
                                         merge_lists=True,
                                     )
