@@ -26,10 +26,10 @@ class NodeHeuristic(ABC):
         self._weight = value
 
     @abstractmethod
-    def calculate_priority(self, dag_node: DagNode, *args) -> float:
+    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
         pass
 
-    def calculate_priorities_batch(self, dag_nodes: list[DagNode], *args) -> dict[str, float]:
+    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
         """Calculate priorities for multiple nodes at once.
 
         Default implementation calls calculate_priority for each node.
@@ -37,16 +37,17 @@ class NodeHeuristic(ABC):
 
         Args:
             dag_nodes: List of nodes to calculate priorities for
-            *args: Additional arguments passed to calculate_priority
+            **kwargs: Additional arguments passed to calculate_priority
 
         Returns:
             Dictionary mapping node names to priority scores
         """
-        return {node.node_reference.name: self.calculate_priority(node, *args) for node in dag_nodes}
+        return {node.node_reference.name: self.calculate_priority(node, **kwargs) for node in dag_nodes}
 
 
 class DistanceToNode(NodeHeuristic):
-    def calculate_priority(self, dag_node: DagNode, previous_executed_node: DagNode | None) -> float:
+    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
+        previous_executed_node = kwargs.get("previous_executed_node")
         if previous_executed_node is None:
             return 50.0 * self._weight
 
@@ -75,9 +76,8 @@ class DistanceToNode(NodeHeuristic):
 
         return score * self._weight
 
-    def calculate_priorities_batch(
-        self, dag_nodes: list[DagNode], previous_executed_node: DagNode | None
-    ) -> dict[str, float]:
+    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
+        previous_executed_node = kwargs.get("previous_executed_node")
         if previous_executed_node is None:
             return {node.node_reference.name: 50.0 * self._weight for node in dag_nodes}
 
@@ -112,7 +112,7 @@ class DistanceToNode(NodeHeuristic):
 
 
 class TopLeftToBottomRight(NodeHeuristic):
-    def calculate_priority(self, dag_node: DagNode) -> float:
+    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
         current_pos = dag_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
         current_reading_order = current_pos["y"] + current_pos["x"]
 
@@ -286,6 +286,9 @@ class NodePriorityQueue:
         if not self._queued_nodes:
             return
 
+        if len(self._queued_nodes) == 1:
+            return
+
         # Look up DagNodes from context only during reorder
         dag_nodes = [self._context.node_to_reference[name] for name in self._queued_nodes]
 
@@ -298,11 +301,7 @@ class NodePriorityQueue:
         combined_priorities: dict[str, float] = {node.node_reference.name: 0.0 for node in dag_nodes}
 
         for heuristic in self._heuristics:
-            if isinstance(heuristic, (DistanceToNode, HasConnectionFromPrevious)):
-                scores = heuristic.calculate_priorities_batch(dag_nodes, previous_executed_node)
-            else:
-                scores = heuristic.calculate_priorities_batch(dag_nodes)
-
+            scores = heuristic.calculate_priorities_batch(dag_nodes, previous_executed_node=previous_executed_node)
             for node_name, score in scores.items():
                 combined_priorities[node_name] += score
 
