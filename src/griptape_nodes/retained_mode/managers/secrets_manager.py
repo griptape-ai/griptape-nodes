@@ -151,19 +151,12 @@ class SecretsManager:
         for source, fetch in search_order:
             value = fetch()
             if value is not None:
-                # Only the key name is logged, not the secret value
-                logger.debug(
-                    "Secret '%s' found in '%s'", secret_name, source
-                )  # codeql[py/clear-text-logging-sensitive-data]
+                logger.debug("Secret '%s' found in '%s'", secret_name, source)
                 return value
-            # Only the key name is logged, not the secret value
-            logger.debug(
-                "Secret '%s' not found in '%s'", secret_name, source
-            )  # codeql[py/clear-text-logging-sensitive-data]
+            logger.debug("Secret '%s' not found in '%s'", secret_name, source)
 
         if should_error_on_not_found:
-            # Only the key name is logged, not the secret value
-            logger.error("Secret '%s' not found", secret_name)  # codeql[py/clear-text-logging-sensitive-data]
+            logger.error("Secret '%s' not found", secret_name)
         return value
 
     def set_secret(self, secret_name: str, secret_value: str) -> None:
