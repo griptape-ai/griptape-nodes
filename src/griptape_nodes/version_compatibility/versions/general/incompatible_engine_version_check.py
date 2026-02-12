@@ -40,16 +40,15 @@ class IncompatibleEngineVersionCheck(LibraryVersionCompatibilityCheck):
             engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
             if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
                 return False
-
             current_engine_version = semver.VersionInfo(
                 engine_version_result.major,
                 engine_version_result.minor,
                 engine_version_result.patch,
             )
-
-            return library_engine_version > current_engine_version
         except Exception:
             return False
+        else:
+            return library_engine_version > current_engine_version
 
     def check_library(self, library_data: LibrarySchema) -> list[LibraryVersionCompatibilityIssue]:
         """Return UNUSABLE issue for libraries requiring a newer engine version."""
