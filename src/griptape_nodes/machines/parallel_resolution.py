@@ -14,6 +14,7 @@ from griptape_nodes.exe_types.node_types import (
 from griptape_nodes.exe_types.type_validator import TypeValidator
 from griptape_nodes.machines.dag_builder import NodeState
 from griptape_nodes.machines.fsm import FSM, State, WorkflowState
+from griptape_nodes.machines.node_priority_queue import NodePriorityQueue
 from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
@@ -46,8 +47,10 @@ class ParallelResolutionContext:
     error_message: str | None
     workflow_state: WorkflowState
     # Execution fields
-    async_semaphore: asyncio.Semaphore
+    max_nodes_in_parallel: int
+    running_tasks_count: int
     task_to_node: dict[asyncio.Task, DagNode]
+    node_priority_queue: NodePriorityQueue
     dag_builder: DagBuilder | None
     last_resolved_node: BaseNode | None  # Track the last node that was resolved
 
@@ -61,10 +64,11 @@ class ParallelResolutionContext:
         self.dag_builder = dag_builder
         self.last_resolved_node = None
         self.last_resolved_node = None
+        self.node_priority_queue = NodePriorityQueue(self)
 
         # Initialize execution fields
-        max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
-        self.async_semaphore = asyncio.Semaphore(max_nodes_in_parallel)
+        self.max_nodes_in_parallel = max_nodes_in_parallel if max_nodes_in_parallel is not None else 5
+        self.running_tasks_count = 0
         self.task_to_node = {}
 
     @property
@@ -98,6 +102,13 @@ class ParallelResolutionContext:
             self.last_resolved_node = None
             self.last_resolved_node = None
 
+        # Reset task counter
+        self.running_tasks_count = 0
+
+        # Clear the priority queue when resetting
+        # Create a new instance to ensure clean state
+        self.node_priority_queue = NodePriorityQueue(self)
+
         # Clear DAG builder state to allow re-adding nodes on subsequent runs
         if self.dag_builder:
             self.dag_builder.clear()
@@ -121,6 +132,9 @@ class ExecuteDagState(State):
     @staticmethod
     async def handle_done_nodes(context: ParallelResolutionContext, done_node: DagNode, network_name: str) -> None:
         current_node = done_node.node_reference
+
+        # Remove the node from the priority queue now that it's done
+        context.node_priority_queue.remove_node(current_node.name)
 
         # Check if node was already resolved (shouldn't happen)
         if current_node.state == NodeResolutionState.RESOLVED and not current_node.lock:
@@ -313,6 +327,7 @@ class ExecuteDagState(State):
             can_queue = context.dag_builder.can_queue_control_node(dag_node)
             if can_queue:
                 dag_node.node_state = NodeState.QUEUED
+                context.node_priority_queue.add_node(node_name)
 
     @staticmethod
     async def collect_values_from_upstream_nodes(node_reference: DagNode) -> None:
@@ -357,7 +372,7 @@ class ExecuteDagState(State):
                     raise RuntimeError(msg)
 
     @staticmethod
-    def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str], set[str]]:
+    def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str]]:
         networks = context.networks
         leaf_nodes = set()
         for network in networks.values():
@@ -368,7 +383,6 @@ class ExecuteDagState(State):
             network_leaf_nodes = [n for n in network.nodes() if network.in_degree(n) == 0]
             leaf_nodes.update(network_leaf_nodes)
         canceled_nodes = set()
-        queued_nodes = set()
         for node in leaf_nodes:
             node_reference = context.node_to_reference[node]
             # If the node is locked, mark it as done so it skips execution
@@ -378,10 +392,7 @@ class ExecuteDagState(State):
             node_state = node_reference.node_state
             if node_state == NodeState.CANCELED:
                 canceled_nodes.add(node)
-            elif node_state == NodeState.QUEUED:
-                queued_nodes.add(node)
-
-        return canceled_nodes, queued_nodes, leaf_nodes
+        return canceled_nodes, leaf_nodes
 
     @staticmethod
     async def pop_done_states(context: ParallelResolutionContext) -> None:
@@ -417,10 +428,9 @@ class ExecuteDagState(State):
                 ExecuteDagState._try_queue_waiting_node(context, leaf_node)
 
     @staticmethod
-    async def execute_node(current_node: DagNode, semaphore: asyncio.Semaphore) -> None:
-        async with semaphore:
-            executor = GriptapeNodes.FlowManager().node_executor
-            await executor.execute(current_node.node_reference)
+    async def execute_node(current_node: DagNode) -> None:
+        executor = GriptapeNodes.FlowManager().node_executor
+        await executor.execute(current_node.node_reference)
 
     @staticmethod
     async def on_enter(context: ParallelResolutionContext) -> type[State] | None:
@@ -448,7 +458,7 @@ class ExecuteDagState(State):
         # Check and see if there are leaf nodes that are cancelled.
         # Reinitialize leaf nodes since maybe we changed things up.
         # We removed nodes from the network. There may be new leaf nodes.
-        canceled_nodes, queued_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
+        canceled_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
         # We have no more leaf nodes. Quit early.
         if not leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
@@ -458,17 +468,28 @@ class ExecuteDagState(State):
             # Set state to workflow complete.
             context.workflow_state = WorkflowState.CANCELED
             return DagCompleteState
-        # Are there any in the queued state?
-        for node in queued_nodes:
-            # Process all queued nodes - the async semaphore will handle concurrency limits
+        # Create tasks only while we have capacity
+        while context.running_tasks_count < context.max_nodes_in_parallel:
+            # Get next highest priority node
+            node = context.node_priority_queue.get_next_node()
+            if node is None:
+                break  # No more nodes to process
+
+            # Increment counter BEFORE any await points
+            context.running_tasks_count += 1
+
             node_reference = context.node_to_reference[node]
+
             # Skip BaseIterativeEndNode as it's handled by loop execution flow
             if isinstance(node_reference.node_reference, BaseIterativeEndNode):
+                context.running_tasks_count -= 1  # Decrement since we're skipping
                 continue
+
             # Collect parameter values from upstream nodes before executing
             try:
                 await ExecuteDagState.collect_values_from_upstream_nodes(node_reference)
             except Exception as e:
+                context.running_tasks_count -= 1  # Decrement on error
                 logger.exception("Error collecting parameter values for node '%s'", node_reference.node_reference.name)
                 context.error_message = (
                     f"Parameter passthrough failed for node '{node_reference.node_reference.name}': {e}"
@@ -481,6 +502,7 @@ class ExecuteDagState(State):
             node_reference.node_reference.parameter_output_values.silent_clear()
             exceptions = node_reference.node_reference.validate_before_node_run()
             if exceptions:
+                context.running_tasks_count -= 1  # Decrement on error
                 msg = f"Node '{node_reference.node_reference.name}' encountered problems: {exceptions}"
                 logger.error("Canceling flow run. %s", msg)
                 context.error_message = msg
@@ -495,6 +517,7 @@ class ExecuteDagState(State):
                 # Set start node to DONE! even if it isn't truly done lolllll.
                 node_reference.node_state = NodeState.DONE
                 if end_loop_node is None:
+                    context.running_tasks_count -= 1  # Decrement on error
                     msg = (
                         f"Cannot have a Start Loop Node without an End Loop Node: {node_reference.node_reference.name}"
                     )
@@ -510,11 +533,13 @@ class ExecuteDagState(State):
                         # BaseIterativeEndNode already exists in DAG, just get reference and queue it
                         end_node_reference = context.dag_builder.node_to_reference[end_loop_node.name]
                         end_node_reference.node_state = NodeState.QUEUED
+                        context.node_priority_queue.add_node(end_loop_node.name)
                         node_reference = end_node_reference
                     else:
                         # BaseIterativeEndNode not in DAG yet (backwards compatibility), add it
                         end_node_reference = context.dag_builder.add_node(end_loop_node)
                         end_node_reference.node_state = NodeState.QUEUED
+                        context.node_priority_queue.add_node(end_loop_node.name)
                         node_reference = end_node_reference
 
             def on_task_done(task: asyncio.Task) -> None:
@@ -531,7 +556,7 @@ class ExecuteDagState(State):
             node_reference.node_state = NodeState.PROCESSING
             node_reference.node_reference.state = NodeResolutionState.RESOLVING
 
-            node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference, context.async_semaphore))
+            node_task = asyncio.create_task(ExecuteDagState.execute_node(node_reference))
             # Add a callback to set node to done when task has finished.
             context.task_to_node[node_task] = node_reference
             node_reference.task_reference = node_task
@@ -546,6 +571,10 @@ class ExecuteDagState(State):
         # Wait for a task to finish - only if there are tasks running
         if context.task_to_node:
             done, _ = await asyncio.wait(context.task_to_node.keys(), return_when=asyncio.FIRST_COMPLETED)
+
+            # Decrement counter for completed tasks
+            context.running_tasks_count -= len(done)
+
             # Check for task exceptions and handle them properly
             for task in done:
                 if task.cancelled():
@@ -582,6 +611,8 @@ class ErrorState(State):
             # Cancel all nodes that haven't yet begun processing.
             if node.node_state == NodeState.QUEUED:
                 node.node_state = NodeState.CANCELED
+                # Remove from priority queue since it's being canceled
+                context.node_priority_queue.remove_node(node.node_reference.name)
 
         # Shut down and cancel all threads/tasks that haven't yet ran. Currently running ones will not be affected.
         # Cancel async tasks
