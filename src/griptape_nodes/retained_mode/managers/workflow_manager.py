@@ -4,7 +4,6 @@ import ast
 import asyncio
 import logging
 import pickle
-import platform
 import re
 import sys
 from collections import defaultdict
@@ -1011,7 +1010,7 @@ class WorkflowManager:
         return GetWorkflowRunCommandResultSuccess(
             run_command=run_command,
             workflow_shape=workflow_shape,
-            engine_os=platform.system(),
+            engine_os=GriptapeNodes.OSManager()._get_platform_name(),
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 

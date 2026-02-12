@@ -408,7 +408,7 @@ class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadS
     Args:
         run_command: Full command string; paths are quoted only when required (e.g. spaces), e.g. python.exe workflow.py or "C:\...\python.exe" "C:\...\workflow.py"
         workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node)
-        engine_os: Operating system where the engine is running (e.g. Windows, Darwin, Linux)
+        engine_os: Platform StrEnum value where the engine is running (windows, darwin, linux)
     """
 
     run_command: str
