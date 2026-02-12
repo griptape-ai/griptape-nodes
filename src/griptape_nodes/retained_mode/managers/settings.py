@@ -114,9 +114,9 @@ class AppInitializationComplete(BaseModel):
         description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
     )
     workflows_to_register: list[str] = Field(default_factory=list)
-    secrets_to_register: list[str] = Field(
-        default_factory=lambda: ["HF_TOKEN", "GT_CLOUD_API_KEY"],
-        description="Core secrets to register in the secrets manager. Library-specific secrets are registered automatically from library settings.",
+    secrets_to_register: list[str] | dict[str, str] = Field(
+        default_factory=lambda: {"HF_TOKEN": "", "GT_CLOUD_API_KEY": ""},
+        description="Core secrets to register. Can be a list of secret names (default to empty values) or a dict mapping names to default values. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
     projects_to_register: list[str] = Field(
