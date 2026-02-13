@@ -843,6 +843,7 @@ class LibraryManager:
             library_name = existing_schema.name
             library_metadata = existing_schema.metadata
             categories = existing_schema.categories
+            widgets = existing_schema.widgets
 
             # Update schema version to latest
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
@@ -918,6 +919,7 @@ class LibraryManager:
             ]
             library_name = LibraryManager.SANDBOX_LIBRARY_NAME
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
+            widgets = None  # Fresh schemas have no widgets defined yet
 
         # Create the library schema (now using variables set by either path)
         library_schema = LibrarySchema(
@@ -926,6 +928,7 @@ class LibraryManager:
             metadata=library_metadata,
             categories=categories,
             nodes=node_definitions,
+            widgets=widgets,
         )
 
         # Sandbox libraries are never git repositories - always set to None
@@ -2871,6 +2874,7 @@ class LibraryManager:
             metadata=library_schema.metadata,
             categories=library_schema.categories,
             nodes=actual_node_definitions,
+            widgets=library_schema.widgets,
         )
 
         # Save the schema with real class names back to disk
