@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pydantic import Field
-
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionPayload,
@@ -66,11 +64,11 @@ class AddParameterToNodeRequest(RequestPayload):
     input_types: list[str] | None = None
     output_type: str | None = None
     ui_options: dict | None = None
-    mode_allowed_input: bool = Field(default=True)
-    mode_allowed_property: bool = Field(default=True)
-    mode_allowed_output: bool = Field(default=True)
-    is_user_defined: bool = Field(default=True)
-    settable: bool = Field(default=True)
+    mode_allowed_input: bool = field(default=True)
+    mode_allowed_property: bool = field(default=True)
+    mode_allowed_output: bool = field(default=True)
+    is_user_defined: bool = field(default=True)
+    settable: bool = field(default=True)
     parent_container_name: str | None = None
     parent_element_name: str | None = None
     # initial_setup prevents unnecessary work when we are loading a workflow from a file.
@@ -364,6 +362,7 @@ class AlterParameterDetailsRequest(RequestPayload):
         input_types: New list of accepted input types
         output_type: New output type when used as output
         default_value: New default value
+        clear_default_value: If True, clear the parameter default (set to None)
         tooltip: New general tooltip text
         tooltip_as_input: New tooltip when used as input
         tooltip_as_property: New tooltip when used as property
@@ -386,6 +385,7 @@ class AlterParameterDetailsRequest(RequestPayload):
     input_types: list[str] | None = None
     output_type: str | None = None
     default_value: Any | None = None
+    clear_default_value: bool = False
     tooltip: str | list[dict] | None = None
     tooltip_as_input: str | list[dict] | None = None
     tooltip_as_property: str | list[dict] | None = None
@@ -424,6 +424,7 @@ class AlterParameterDetailsRequest(RequestPayload):
             "input_types",
             "output_type",
             "default_value",
+            "clear_default_value",
             "tooltip",
             "tooltip_as_input",
             "tooltip_as_property",

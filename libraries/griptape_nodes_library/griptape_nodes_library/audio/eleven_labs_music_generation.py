@@ -192,7 +192,7 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the Eleven Labs music result and set output parameters."""
         # Check if we received raw audio bytes (v2 API returns raw bytes for music generation)
-        audio_bytes_raw = result_json.get("audio_bytes")
+        audio_bytes_raw = result_json.get("raw_bytes")
         if audio_bytes_raw:
             audio_bytes = audio_bytes_raw
             self._log("Received raw audio bytes from API")

@@ -15,7 +15,11 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.node_library.library_registry import LibraryMetadata, LibrarySchema, NodeMetadata
+    from griptape_nodes.node_library.library_registry import (
+        LibraryMetadata,
+        LibrarySchema,
+        NodeMetadata,
+    )
     from griptape_nodes.retained_mode.managers.fitness_problems.libraries import LibraryProblem
     from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
@@ -462,6 +466,19 @@ class GetLibraryMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFail
     """Library metadata retrieval failed. Common causes: library not found, library not loaded."""
 
 
+@dataclass
+class WidgetInfo:
+    """Information about a custom UI widget for the frontend.
+
+    This is included in library info responses so the frontend can
+    dynamically load widgets from libraries.
+    """
+
+    name: str  # Widget name (e.g., "ColorGradientPicker")
+    bundle_url: str  # Full URL where the widget bundle can be fetched
+    description: str | None = None  # Optional description
+
+
 # "Jumbo" event for getting all things say, a GUI might want w/r/t a Library.
 @dataclass
 @PayloadRegistry.register
@@ -486,11 +503,13 @@ class GetAllInfoForLibraryResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSu
         library_metadata_details: Library metadata and version information
         category_details: All categories available in the library
         node_type_name_to_node_metadata_details: Complete node metadata for each node type
+        widgets: Custom UI widgets provided by the library (if any)
     """
 
     library_metadata_details: GetLibraryMetadataResultSuccess
     category_details: ListCategoriesInLibraryResultSuccess
     node_type_name_to_node_metadata_details: dict[str, GetNodeMetadataFromLibraryResultSuccess]
+    widgets: list[WidgetInfo] | None = None
 
 
 @dataclass

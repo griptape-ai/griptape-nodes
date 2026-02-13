@@ -129,6 +129,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     UpdateLibraryRequest,
     UpdateLibraryResultFailure,
     UpdateLibraryResultSuccess,
+    WidgetInfo,
 )
 from griptape_nodes.retained_mode.events.object_events import ClearAllObjectStateRequest
 from griptape_nodes.retained_mode.events.os_events import (
@@ -169,7 +170,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
-from griptape_nodes.utils.dict_utils import merge_dicts
+from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
     GitCloneError,
@@ -1351,6 +1352,8 @@ class LibraryManager:
                         EvaluateLibraryFitnessRequest(schema=metadata_result.library_schema)
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
+                        library_info.fitness = evaluate_result.fitness
+                        library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)
 
@@ -1490,10 +1493,21 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
                                 else:
+                                    # Normalize secrets_to_register before merge (handles list/dict format mismatch)
+                                    library_contents = dict(library_data_setting.contents)
+                                    existing_contents = dict(get_category_result.contents)
+                                    if "secrets_to_register" in library_contents:
+                                        library_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            library_contents["secrets_to_register"]
+                                        )
+                                    if "secrets_to_register" in existing_contents:
+                                        existing_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            existing_contents["secrets_to_register"]
+                                        )
                                     # Merge with existing category
                                     existing_category_contents = merge_dicts(
-                                        library_data_setting.contents,
-                                        get_category_result.contents,
+                                        library_contents,
+                                        existing_contents,
                                         add_keys=True,
                                         merge_lists=True,
                                     )
@@ -1893,10 +1907,10 @@ class LibraryManager:
         await self._libraries_loading_complete.wait()
         return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
-    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911
+    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
         # Does this library exist?
         try:
-            LibraryRegistry.get_library(name=request.library)
+            library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get all library info for a Library named '{request.library}'. Failed because no Library with that name was registered."
             result = GetAllInfoForLibraryResultFailure(result_details=details)
@@ -1953,11 +1967,42 @@ class LibraryManager:
             # Put it into the map.
             node_type_name_to_node_metadata_details[node_type_name] = node_metadata_result_success
 
+        # Build widget info list if the library has widgets
+        widgets_info: list[WidgetInfo] | None = None
+        library_data = library.get_library_data()
+        if library_data.widgets:
+            logger.info(
+                "Library '%s' has %d widget(s), building widget info",
+                request.library,
+                len(library_data.widgets),
+            )
+            # Get the static server base URL for constructing absolute bundle URLs
+            static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            widgets_info = []
+            for widget_def in library_data.widgets:
+                # Construct the full URL for this widget
+                # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/widgets/{path}
+                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                logger.debug(
+                    "Widget '%s' from library '%s': bundle_url=%s",
+                    widget_def.name,
+                    request.library,
+                    bundle_url,
+                )
+                widgets_info.append(
+                    WidgetInfo(
+                        name=widget_def.name,
+                        bundle_url=bundle_url,
+                        description=widget_def.description,
+                    )
+                )
+
         details = f"Successfully got all library info for a Library named '{request.library}'."
         result = GetAllInfoForLibraryResultSuccess(
             library_metadata_details=library_metadata_result_success,
             category_details=list_categories_result_success,
             node_type_name_to_node_metadata_details=node_type_name_to_node_metadata_details,
+            widgets=widgets_info,
             result_details=details,
         )
         return result
@@ -2113,6 +2158,40 @@ class LibraryManager:
         while current.__cause__ is not None:
             current = current.__cause__
         return current
+
+    @staticmethod
+    def _check_engine_version_compatibility(required_engine_version: str) -> tuple[bool, str]:
+        """Check if a required engine version is compatible with the current engine.
+
+        Args:
+            required_engine_version: The engine version required by the library.
+
+        Returns:
+            A tuple of (is_compatible, current_engine_version).
+            is_compatible is True if required_engine_version <= current_engine_version.
+            If version comparison fails, returns (True, current_engine_version) to allow the operation.
+        """
+        engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            logger.warning("Failed to get engine version for compatibility check, allowing operation to proceed")
+            return True, ""
+
+        current_engine_version = (
+            f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        )
+
+        if not required_engine_version:
+            return True, current_engine_version
+
+        try:
+            required_ver = Version.parse(required_engine_version)
+            current_ver = Version.parse(current_engine_version)
+            is_compatible = required_ver <= current_ver
+        except ValueError:
+            # If version parsing fails, assume compatible
+            return True, current_engine_version
+        else:
+            return is_compatible, current_engine_version
 
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
@@ -2429,7 +2508,18 @@ class LibraryManager:
         # Collect results
         return dict(task.result() for task in tasks)
 
-    async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
+    async def on_app_initialization_complete(self, payload: AppInitializationComplete) -> None:
+        if payload.skip_library_loading:
+            # Register all secrets even in headless mode
+            GriptapeNodes.SecretsManager().register_all_secrets()
+
+            # Still need to tell WorkflowManager to register workflows
+            # Pass the specific workflows if provided, otherwise it will scan workspace
+            GriptapeNodes.WorkflowManager().on_libraries_initialization_complete(
+                workflows_to_register=payload.workflows_to_register
+            )
+            return
+
         # Automatically migrate old XDG library paths from config
         # TODO: Remove https://github.com/griptape-ai/griptape-nodes/issues/3348
         self._migrate_old_xdg_library_paths()
@@ -2663,6 +2753,15 @@ class LibraryManager:
 
             # If we got here, at least one node came in.
             any_nodes_loaded_successfully = True
+
+        # Register widgets and check for duplicates
+        if library_data.widgets:
+            for widget_def in library_data.widgets:
+                widget_problem = LibraryRegistry.register_widget_from_library(
+                    library_name=library_data.name, widget_name=widget_def.name
+                )
+                if widget_problem is not None:
+                    library_info.problems.append(widget_problem)
 
         # Call the after_library_nodes_loaded callback if available
         if advanced_library:
@@ -2984,7 +3083,38 @@ class LibraryManager:
         )
         return ReloadAllLibrariesResultSuccess(result_details=ResultDetails(message=details, level=logging.INFO))
 
-    def discover_libraries_request(  # noqa: C901
+    def _create_library_info_entry(self, file_path_str: str, *, is_sandbox: bool) -> None:
+        """Create a LibraryInfo entry for a discovered library.
+
+        Loads metadata if possible and creates the entry in the appropriate lifecycle state.
+        Only creates the entry if it doesn't already exist in tracking.
+        """
+        if file_path_str in self._library_file_path_to_info:
+            return
+
+        metadata_result = self.load_library_metadata_from_file_request(
+            LoadLibraryMetadataFromFileRequest(file_path=file_path_str)
+        )
+
+        library_name = None
+        library_version = None
+        lifecycle_state = LibraryManager.LibraryLifecycleState.DISCOVERED
+
+        if isinstance(metadata_result, LoadLibraryMetadataFromFileResultSuccess):
+            library_name = metadata_result.library_schema.name
+            library_version = metadata_result.library_schema.metadata.library_version
+            lifecycle_state = LibraryManager.LibraryLifecycleState.METADATA_LOADED
+
+        self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
+            lifecycle_state=lifecycle_state,
+            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
+            library_path=file_path_str,
+            is_sandbox=is_sandbox,
+            library_name=library_name,
+            library_version=library_version,
+        )
+
+    def discover_libraries_request(
         self,
         request: DiscoverLibrariesRequest,
     ) -> DiscoverLibrariesResultSuccess | DiscoverLibrariesResultFailure:
@@ -3035,16 +3165,8 @@ class LibraryManager:
                         seen_libraries.add(sandbox_json_path)
                         discovered_libraries.append(DiscoveredLibrary(path=sandbox_json_path, is_sandbox=True))
 
-                    # Create minimal LibraryInfo entry in discovered state if not already tracked
-                    if sandbox_json_path_str not in self._library_file_path_to_info:
-                        self._library_file_path_to_info[sandbox_json_path_str] = LibraryManager.LibraryInfo(
-                            lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
-                            fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                            library_path=sandbox_json_path_str,
-                            is_sandbox=True,
-                            library_name=None,
-                            library_version=None,
-                        )
+                    # Create LibraryInfo entry for the sandbox library
+                    self._create_library_info_entry(sandbox_json_path_str, is_sandbox=True)
 
         # Add all regular libraries from config
         for file_path in config_library_paths:
@@ -3055,19 +3177,8 @@ class LibraryManager:
                 seen_libraries.add(file_path)
                 discovered_libraries.append(DiscoveredLibrary(path=file_path, is_sandbox=False))
 
-            # Skip if already tracked
-            if file_path_str in self._library_file_path_to_info:
-                continue
-
-            # Create minimal LibraryInfo entry in discovered state
-            self._library_file_path_to_info[file_path_str] = LibraryManager.LibraryInfo(
-                lifecycle_state=LibraryManager.LibraryLifecycleState.DISCOVERED,
-                fitness=LibraryManager.LibraryFitness.NOT_EVALUATED,
-                library_path=file_path_str,
-                is_sandbox=False,
-                library_name=None,
-                library_version=None,
-            )
+            # Create LibraryInfo entry for the library
+            self._create_library_info_entry(file_path_str, is_sandbox=False)
 
         # Success path at the end
         return DiscoverLibrariesResultSuccess(
@@ -3368,6 +3479,21 @@ class LibraryManager:
 
         except ValueError as e:
             details = f"Failed to parse version strings for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Check engine version compatibility
+        library_required_engine_version = version_info.engine_version
+        is_compatible, current_engine_version = self._check_engine_version_compatibility(
+            library_required_engine_version
+        )
+
+        if not is_compatible:
+            details = (
+                f"Cannot update Library '{library_name}'. "
+                f"The update requires engine version {library_required_engine_version} "
+                f"but the current engine version is {current_engine_version}. "
+                f"Please update your engine first."
+            )
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update} ({update_reason})"

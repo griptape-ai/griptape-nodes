@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import asyncio
+import base64
 import json
 import logging
 import math
-import os
 import time
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -23,6 +20,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.video_utils import get_video_duration
 
 logger = logging.getLogger("griptape_nodes")
@@ -53,7 +51,7 @@ STATUS_CANCELED = "CANCELED"
 STATUS_UNKNOWN = "UNKNOWN"
 
 
-class WanAnimateGeneration(SuccessFailureNode):
+class WanAnimateGeneration(GriptapeProxyNode):
     """Generate animated videos from images using WAN Animate models via Griptape model proxy.
 
     WAN Animate models combine a source image with a reference video to create animations.
@@ -94,12 +92,6 @@ class WanAnimateGeneration(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Generate animated videos from images using WAN Animate models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Model selection
         self.add_parameter(
@@ -198,47 +190,14 @@ class WanAnimateGeneration(SuccessFailureNode):
         return exceptions if exceptions else None
 
     async def aprocess(self) -> None:
-        await self._process()
+        await self._process_generation()
 
-    async def _process(self) -> None:
-        # Clear execution status at the start
-        self._clear_execution_status()
-
-        # Validate API key
+    async def _process_generation(self) -> None:
         try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Get parameters
-        params = await self._get_parameters()
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        # Build and submit request
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with generation.",
-                )
-                return
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers, params["duration"])
-
-        # Cleanup uploaded artifacts
-        self._public_image_url_parameter.delete_uploaded_artifact()
-        self._public_video_url_parameter.delete_uploaded_artifact()
+            await super()._process_generation()
+        finally:
+            self._public_image_url_parameter.delete_uploaded_artifact()
+            self._public_video_url_parameter.delete_uploaded_artifact()
 
     async def _get_parameters(self) -> dict[str, Any]:
         # Get the original video URL before uploading to calculate duration
@@ -252,8 +211,8 @@ class WanAnimateGeneration(SuccessFailureNode):
         return {
             "model": self.get_parameter_value("model"),
             "mode": self.get_parameter_value("mode"),
-            "image_url": self._public_image_url_parameter.get_public_url_for_parameter(),
-            "video_url": self._public_video_url_parameter.get_public_url_for_parameter(),
+            "image_input": self.get_parameter_value("image_url"),
+            "video_input": self.get_parameter_value("video_url"),
             "duration": duration,
         }
 
@@ -265,53 +224,27 @@ class WanAnimateGeneration(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str:
-        post_url = urljoin(self._proxy_base, f"models/{params['model']}")
-        payload = self._build_payload(params)
+    def _get_api_model_id(self) -> str:
+        return self.get_parameter_value("model") or ""
 
-        logger.debug("Submitting request to proxy model=%s", params["model"])
+    async def _build_payload(self) -> dict[str, Any]:
+        params = await self._get_parameters()
 
-        async with httpx.AsyncClient() as client:
-            post_resp = await client.post(post_url, json=payload, headers=headers, timeout=60)
+        image_url = await self._prepare_image_data_url_async(params["image_input"])
+        if not image_url:
+            msg = "Failed to process input image"
+            raise ValueError(msg)
 
-        if post_resp.status_code >= HTTP_ERROR_STATUS:
-            self._set_safe_defaults()
-            logger.debug(
-                "Proxy POST error status=%s headers=%s body=%s",
-                post_resp.status_code,
-                dict(post_resp.headers),
-                post_resp.text,
-            )
-            try:
-                error_json = post_resp.json()
-                error_msg = error_json.get("error", "")
-                provider_response = error_json.get("provider_response", "")
-                msg_parts = [p for p in [error_msg, provider_response] if p]
-                msg = " - ".join(msg_parts) if msg_parts else self._extract_error_details(error_json)
-            except Exception:
-                msg = f"Proxy POST error: {post_resp.status_code} - {post_resp.text}"
-            raise RuntimeError(msg)
+        video_url = await self._prepare_video_data_url_async(params["video_input"])
+        if not video_url:
+            msg = "Failed to process input video"
+            raise ValueError(msg)
 
-        post_json = post_resp.json()
-        generation_id = str(post_json.get("generation_id") or "")
-        provider_response = post_json.get("provider_response")
-
-        self.parameter_output_values["generation_id"] = generation_id
-        self.parameter_output_values["provider_response"] = provider_response
-
-        if generation_id:
-            logger.debug("Submitted. generation_id=%s", generation_id)
-        else:
-            logger.debug("No generation_id returned from POST response")
-
-        return generation_id
-
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         # Build payload matching proxy expected format
         payload = {
             "input": {
-                "image_url": params["image_url"],
-                "video_url": params["video_url"],
+                "image_url": image_url,
+                "video_url": video_url,
             },
             "parameters": {
                 "mode": params["mode"],
@@ -321,71 +254,109 @@ class WanAnimateGeneration(SuccessFailureNode):
 
         return payload
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str], video_duration: int) -> None:
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        pending_start_time = time.monotonic()
-        running_start_time = None
-        last_json = None
-        attempt = 0
-        poll_interval_s = 5.0
-        pending_timeout_s = 30.0
-        running_timeout_s = video_duration * 30.0
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+        status = self._extract_status(result_json) or STATUS_UNKNOWN
+        if status in {STATUS_FAILED, STATUS_CANCELED}:
+            self.parameter_output_values["video"] = None
+            error_details = self._extract_error_message(result_json)
+            self._set_status_results(was_successful=False, result_details=error_details)
+            return
 
-        async with httpx.AsyncClient() as client:
-            while True:
-                try:
-                    get_resp = await client.get(get_url, headers=headers, timeout=60)
-                    get_resp.raise_for_status()
-                    last_json = get_resp.json()
-                    self.parameter_output_values["provider_response"] = last_json
-                except Exception as exc:
-                    logger.debug("GET generation failed: %s", exc)
-                    error_msg = f"Failed to poll generation status: {exc}"
-                    self._set_status_results(was_successful=False, result_details=error_msg)
-                    self._handle_failure_exception(RuntimeError(error_msg))
-                    return
+        await self._handle_completion(result_json, generation_id)
 
-                attempt += 1
-                status = self._extract_status(last_json) or STATUS_UNKNOWN
-                logger.info("Polling attempt #%s status=%s", attempt, status)
+    async def _prepare_image_data_url_async(self, image_input: Any) -> str | None:
+        if not image_input:
+            return None
 
-                if status == STATUS_PENDING and time.monotonic() - pending_start_time > pending_timeout_s:
-                    self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                    logger.debug("Polling timed out waiting for generation to start")
-                    self._set_status_results(
-                        was_successful=False,
-                        result_details=f"Video generation timed out after {pending_timeout_s} seconds waiting for generation to start.",
-                    )
-                    return
+        image_url = self._coerce_image_url_or_data_uri(image_input)
+        if not image_url:
+            return None
 
-                if status == STATUS_RUNNING:
-                    if not running_start_time:
-                        running_start_time = time.monotonic()
-                    if running_start_time and time.monotonic() - running_start_time > running_timeout_s:
-                        self.parameter_output_values["video"] = self._extract_video_url(last_json)
-                        logger.debug("Polling timed out waiting for result")
-                        self._set_status_results(
-                            was_successful=False,
-                            result_details=f"Video generation timed out after {int(running_timeout_s)} seconds of processing.",
-                        )
-                        return
+        if image_url.startswith("data:image/"):
+            return image_url
 
-                if status in {STATUS_FAILED, STATUS_CANCELED}:
-                    provider_resp = last_json.get("provider_response") if last_json else {}
-                    error_code = provider_resp.get("code") if isinstance(provider_resp, dict) else None
-                    error_message = provider_resp.get("message") if isinstance(provider_resp, dict) else None
-                    log_parts = [p for p in [error_code, error_message] if p]
-                    logger.error("Generation failed: %s", " - ".join(log_parts) or status)
-                    self.parameter_output_values["video"] = None
-                    error_details = self._extract_error_details(last_json)
-                    self._set_status_results(was_successful=False, result_details=error_details)
-                    return
+        if image_url.startswith(("http://", "https://")):
+            return await self._inline_external_url_async(image_url, "image/jpeg")
 
-                if status == STATUS_SUCCEEDED:
-                    await self._handle_completion(last_json, generation_id)
-                    return
+        return image_url
 
-                await asyncio.sleep(poll_interval_s)
+    async def _prepare_video_data_url_async(self, video_input: Any) -> str | None:
+        if not video_input:
+            return None
+
+        video_url = self._coerce_video_url_or_data_uri(video_input)
+        if not video_url:
+            return None
+
+        if video_url.startswith("data:video/"):
+            return video_url
+
+        if video_url.startswith(("http://", "https://")):
+            return await self._inline_external_url_async(video_url, "video/mp4")
+
+        return video_url
+
+    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=20)
+                resp.raise_for_status()
+        except (httpx.HTTPError, httpx.TimeoutException) as e:
+            logger.debug("%s failed to inline URL: %s", self.name, e)
+            return None
+        else:
+            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
+            if not content_type.startswith(("image/", "video/")):
+                content_type = default_content_type
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            logger.debug("URL converted to base64 data URI for proxy")
+            return f"data:{content_type};base64,{b64}"
+
+    @staticmethod
+    def _coerce_image_url_or_data_uri(val: Any) -> str | None:
+        if val is None:
+            return None
+
+        if isinstance(val, str):
+            v = val.strip()
+            if not v:
+                return None
+            return v if v.startswith(("http://", "https://", "data:image/")) else f"data:image/png;base64,{v}"
+
+        try:
+            v = getattr(val, "value", None)
+            if isinstance(v, str) and v.startswith(("http://", "https://", "data:image/")):
+                return v
+            b64 = getattr(val, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
+        except AttributeError:
+            pass
+
+        return None
+
+    @staticmethod
+    def _coerce_video_url_or_data_uri(val: Any) -> str | None:
+        if val is None:
+            return None
+
+        if isinstance(val, str):
+            v = val.strip()
+            if not v:
+                return None
+            return v if v.startswith(("http://", "https://", "data:video/")) else f"data:video/mp4;base64,{v}"
+
+        try:
+            v = getattr(val, "value", None)
+            if isinstance(v, str) and v.startswith(("http://", "https://", "data:video/")):
+                return v
+            b64 = getattr(val, "base64", None)
+            if isinstance(b64, str) and b64:
+                return b64 if b64.startswith("data:video/") else f"data:video/mp4;base64,{b64}"
+        except AttributeError:
+            pass
+
+        return None
 
     async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
         extracted_url = self._extract_video_url(last_json)
@@ -430,7 +401,7 @@ class WanAnimateGeneration(SuccessFailureNode):
                 result_details="Video generated successfully. Using provider URL (could not download video bytes).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response."""
         if not response_json:
             return "Generation failed with no error details provided by API."

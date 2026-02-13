@@ -2,7 +2,16 @@ from unittest.mock import ANY
 
 import pytest  # type: ignore[reportMissingImports]
 
-from griptape_nodes.exe_types.core_types import BaseNodeElement, Parameter, ParameterGroup
+from griptape_nodes.exe_types.core_types import (
+    BadgeData,
+    BaseNodeElement,
+    NodeMessagePayload,
+    Parameter,
+    ParameterGroup,
+)
+
+# No badge by default; elements send badge: null until set_badge() is called.
+NO_BADGE = None
 
 
 class TestBaseNodeElement:
@@ -46,16 +55,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -63,12 +75,14 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
                                     "element_type": "BaseNodeElement",
                                     "parent_group_name": "group1",
+                                    "badge": NO_BADGE,
                                     "children": [],
                                 }
                             ],
@@ -79,11 +93,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -112,6 +128,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },
@@ -127,16 +144,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -144,17 +164,20 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [
                                 {
                                     "element_id": "leaf1",
                                     "element_type": "BaseNodeElement",
                                     "parent_group_name": "group1",
+                                    "badge": NO_BADGE,
                                     "children": [
                                         {
                                             "element_id": "leaf3",
                                             "element_type": "BaseNodeElement",
                                             "parent_group_name": None,
+                                            "badge": NO_BADGE,
                                             "children": [],
                                         },
                                     ],
@@ -167,11 +190,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -200,6 +225,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },
@@ -231,16 +257,19 @@ class TestBaseNodeElement:
             "element_id": ANY,
             "element_type": "BaseNodeElement",
             "parent_group_name": None,
+            "badge": NO_BADGE,
             "children": [
                 {
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": ANY,
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -248,6 +277,7 @@ class TestBaseNodeElement:
                             "element_type": "ParameterGroup",
                             "name": "group1",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "ui_options": {},
                             "children": [],
                         },
@@ -257,11 +287,13 @@ class TestBaseNodeElement:
                     "element_id": ANY,
                     "element_type": "BaseNodeElement",
                     "parent_group_name": None,
+                    "badge": NO_BADGE,
                     "children": [
                         {
                             "element_id": "leaf2",
                             "element_type": "BaseNodeElement",
                             "parent_group_name": None,
+                            "badge": NO_BADGE,
                             "children": [],
                         },
                         {
@@ -290,6 +322,7 @@ class TestBaseNodeElement:
                             "ui_options": {},
                             "parent_container_name": None,
                             "parent_element_name": None,
+                            "badge": NO_BADGE,
                         },
                     ],
                 },
@@ -301,6 +334,93 @@ class TestBaseNodeElement:
             assert ui
             assert ui.get_current() == ui
         assert ui.get_current() is None
+
+
+class TestBadgeData:
+    def test_to_dict_includes_icon_and_color_when_set(self) -> None:
+        badge = BadgeData(
+            variant="info",
+            message="Drop files here",
+            icon="upload-cloud",
+            color="#3b82f6",
+        )
+        result = badge.to_dict()
+        assert result["variant"] == "info"
+        assert result["message"] == "Drop files here"
+        assert result["icon"] == "upload-cloud"
+        assert result["color"] == "#3b82f6"
+
+    def test_to_dict_omits_icon_and_color_when_not_set(self) -> None:
+        badge = BadgeData(variant="info", message="Info message")
+        result = badge.to_dict()
+        assert "icon" not in result
+        assert "color" not in result
+
+    def test_set_badge_with_icon_and_color(self) -> None:
+        element = BaseNodeElement()
+        element.set_badge(
+            variant="info",
+            message="Upload",
+            icon="upload-cloud",
+            color="#3b82f6",
+        )
+        badge = element.get_badge()
+        assert badge is not None
+        assert badge.variant == "info"
+        assert badge.icon == "upload-cloud"
+        assert badge.color == "#3b82f6"
+        assert badge.to_dict()["icon"] == "upload-cloud"
+        assert badge.to_dict()["color"] == "#3b82f6"
+
+    def test_apply_badge_from_message_data_with_icon_and_color(self) -> None:
+        element = BaseNodeElement()
+        element.set_badge(variant="info", message="Initial")
+        payload = NodeMessagePayload(
+            data={
+                "variant": "info",
+                "message": "Updated",
+                "icon": "upload-cloud",
+                "color": "#3b82f6",
+            }
+        )
+        result = element.on_message_received("set_badge", payload)
+        assert result is not None
+        assert result.success is True
+        badge = element.get_badge()
+        assert badge is not None
+        assert badge.message == "Updated"
+        assert badge.icon == "upload-cloud"
+        assert badge.color == "#3b82f6"
+
+    def test_parameter_with_badge_icon_and_color(self) -> None:
+        badge = BadgeData(
+            variant="info",
+            message="Drop files here",
+            icon="upload-cloud",
+            color="#3b82f6",
+        )
+        param = Parameter(
+            name="test",
+            input_types=["str"],
+            type="str",
+            output_type="str",
+            tooltip="test",
+            badge=badge,
+        )
+        badge_result = param.get_badge()
+        assert badge_result is not None
+        assert badge_result.icon == "upload-cloud"
+        assert badge_result.color == "#3b82f6"
+        assert badge_result.to_dict()["icon"] == "upload-cloud"
+        assert badge_result.to_dict()["color"] == "#3b82f6"
+
+    def test_set_badge_with_color(self) -> None:
+        """set_badge accepts color (hex, rgb, etc.)."""
+        element = BaseNodeElement()
+        element.set_badge(variant="info", color="#3b82f6")
+        badge = element.get_badge()
+        assert badge is not None
+        assert badge.color == "#3b82f6"
 
 
 class TestParameterGroup:

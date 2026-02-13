@@ -377,6 +377,52 @@ class LoadWorkflowMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFa
 
 
 @dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandRequest(RequestPayload):
+    """Get a command-line string to run a workflow using the engine's Python.
+
+    Use when: Showing users how to run a workflow from a terminal, copying a run command,
+    scripting workflow execution from the command line.
+
+    Provide workflow_name (from registry), file_path (path to workflow file), or neither to use
+    the workflow in the current context.
+
+    Args:
+        workflow_name: Name of the workflow in the registry (optional if file_path or current context)
+        file_path: Path to the workflow file, relative to workspace or absolute (optional if workflow_name or current context)
+
+    Results: GetWorkflowRunCommandResultSuccess (with run_command) | GetWorkflowRunCommandResultFailure
+    """
+
+    workflow_name: str | None = None
+    file_path: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    r"""Workflow run command retrieved successfully.
+
+    Only returned when the workflow has Start and End nodes. When absent, the request fails with GetWorkflowRunCommandResultFailure.
+
+    Args:
+        run_command: Full command string; paths are quoted only when required (e.g. spaces), e.g. python.exe workflow.py or "C:\...\python.exe" "C:\...\workflow.py"
+        workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node)
+        engine_os: Platform StrEnum value where the engine is running (windows, darwin, linux)
+    """
+
+    run_command: str
+    workflow_shape: WorkflowShape
+    engine_os: str
+
+
+@dataclass
+@PayloadRegistry.register
+class GetWorkflowRunCommandResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Workflow run command retrieval failed. Common causes: neither workflow_name nor file_path provided, workflow not found, file not found."""
+
+
+@dataclass
 class PublishWorkflowRegisteredEventData:
     """Data specific to registering a PublishWorkflowRequest event handler."""
 

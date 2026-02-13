@@ -10,12 +10,11 @@ from griptape.artifacts.url_artifact import UrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMessage
+from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.retained_mode.events.config_events import GetConfigValueRequest, GetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.secrets_events import GetSecretValueRequest, GetSecretValueResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 
 
 class PublicArtifactUrlParameter:
@@ -94,29 +93,13 @@ class PublicArtifactUrlParameter:
         return default
 
     def add_input_parameters(self) -> None:
-        self._node.add_node_element(
-            ParameterMessage(
-                name=f"artifact_url_parameter_message_{self._parameter.name}",
-                title="Media Upload",
-                variant="warning",
-                value=self.get_help_message(),
-                traits={
-                    Button(
-                        full_width=True,
-                        on_click=self._onparameter_message_button_click,
-                    )
-                },
-                button_text="Hide this message",
-            )
-        )
         self._node.add_parameter(self._parameter)
-
-    def _onparameter_message_button_click(
-        self,
-        button: Button,  # noqa: ARG002
-        button_payload: ButtonDetailsMessagePayload,  # noqa: ARG002
-    ) -> NodeMessageResult | None:
-        self._node.hide_message_by_name(f"artifact_url_parameter_message_{self._parameter.name}")
+        self._parameter.set_badge(
+            variant="cloud-upload",
+            title="Media Upload",
+            message=self.get_help_message(),
+            hide_clear_button=False,
+        )
 
     def get_help_message(self) -> str:
         return (

@@ -96,26 +96,27 @@ class TestCloneAndGetLibraryVersion:
     def test_clone_and_get_library_version_calls_sparse_checkout(self) -> None:
         """Test that clone_and_get_library_version delegates to sparse_checkout_library_json."""
         with patch("griptape_nodes.utils.library_utils.sparse_checkout_library_json") as mock_sparse:
-            mock_sparse.return_value = ("1.0.0", "abc123def456", Path("/tmp/test.json"))  # noqa: S108
+            mock_sparse.return_value = ("1.0.0", "abc123def456", {"metadata": {"engine_version": "0.70.0"}})
 
             result = clone_and_get_library_version("https://github.com/user/repo.git")
 
             mock_sparse.assert_called_once_with("https://github.com/user/repo.git", ref="HEAD")
-            assert result == ("1.0.0", "abc123def456")
+            assert result == ("1.0.0", "abc123def456", "0.70.0")
 
-    def test_clone_and_get_library_version_returns_only_version_and_commit(self) -> None:
-        """Test that clone_and_get_library_version returns only version and commit, not path."""
+    def test_clone_and_get_library_version_returns_version_commit_and_engine_version(self) -> None:
+        """Test that clone_and_get_library_version returns version, commit, and engine_version."""
         with patch("griptape_nodes.utils.library_utils.sparse_checkout_library_json") as mock_sparse:
-            mock_sparse.return_value = ("2.5.1", "def789ghi012", Path("/tmp/nested/test.json"))  # noqa: S108
+            mock_sparse.return_value = ("2.5.1", "def789ghi012", {"metadata": {"engine_version": "0.71.0"}})
 
             result = clone_and_get_library_version("https://github.com/user/repo.git")
 
-            # Verify returns tuple of (version, commit) only
-            assert result == ("2.5.1", "def789ghi012")
+            # Verify returns tuple of (version, commit, engine_version)
+            assert result == ("2.5.1", "def789ghi012", "0.71.0")
             assert isinstance(result, tuple)
-            version, commit = result
+            version, commit, engine_version = result
             assert version == "2.5.1"
             assert commit == "def789ghi012"
+            assert engine_version == "0.71.0"
 
     def test_clone_and_get_library_version_propagates_errors(self) -> None:
         """Test that errors from sparse_checkout_library_json are propagated."""

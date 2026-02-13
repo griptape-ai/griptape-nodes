@@ -37,6 +37,7 @@ from griptape_nodes.retained_mode.events.parameter_events import (
     RemoveParameterFromNodeRequest,
 )
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
@@ -302,6 +303,50 @@ class BaseNode(ABC):
         target_parameter: Parameter,  # noqa: ARG002,
     ) -> bool:
         """Callback to confirm allowing a Connection going OUT of this Node."""
+        return True
+
+    @classmethod
+    def allow_incoming_connection_by_class(
+        cls,
+        source_node_class: type[BaseNode] | None,  # noqa: ARG003
+        source_parameter_name: str | None,  # noqa: ARG003
+        target_parameter_name: str,  # noqa: ARG003
+    ) -> bool:
+        """Class-level validation for incoming connections (no instantiation required).
+
+        This method is called during serialization when node instances don't exist yet.
+        Override this method in subclasses to restrict connections based on node type.
+
+        Args:
+            source_node_class: Class of the source node (may be None if unknown)
+            source_parameter_name: Output name of the source parameter (may be None if unknown)
+            target_parameter_name: Input name of the target parameter
+
+        Returns:
+            True if the connection is allowed, False otherwise
+        """
+        return True
+
+    @classmethod
+    def allow_outgoing_connection_by_class(
+        cls,
+        target_node_class: type[BaseNode],  # noqa: ARG003
+        source_parameter_name: str,  # noqa: ARG003
+        target_parameter_name: str | None,  # noqa: ARG003
+    ) -> bool:
+        """Class-level validation for outgoing connections (no instantiation required).
+
+        This method is called during serialization when node instances don't exist yet.
+        Override this method in subclasses to restrict connections based on node type.
+
+        Args:
+            target_node_class: Class of the target node
+            source_parameter_name: Output name of the source parameter
+            target_parameter_name: Input name of the target parameter (may be None if unknown)
+
+        Returns:
+            True if the connection is allowed, False otherwise
+        """
         return True
 
     def before_incoming_connection(
@@ -1023,7 +1068,11 @@ class BaseNode(ABC):
     def get_node_dependencies(self) -> NodeDependencies | None:
         """Return the dependencies that this node has on external resources.
 
-        This method should be overridden by nodes that have dependencies on:
+        This base implementation collects library dependencies from Widget traits
+        on parameters. Subclasses should call super().get_node_dependencies() and
+        aggregate their own dependencies using NodeDependencies.aggregate_from().
+
+        This method can be overridden by nodes that have additional dependencies on:
         - Referenced workflows: Other workflows that this node calls or references
         - Static files: Files that this node reads from or requires for operation
         - Python imports: Modules or classes that this node imports beyond standard dependencies
@@ -1037,16 +1086,51 @@ class BaseNode(ABC):
 
         Example:
             def get_node_dependencies(self) -> NodeDependencies | None:
-                return NodeDependencies(
-                    referenced_workflows={"image_processing_workflow", "validation_workflow"},
-                    static_files={"config.json", "model_weights.pkl"},
-                    imports={
-                        ImportDependency("numpy"),
-                        ImportDependency("sklearn.linear_model", "LinearRegression"),
-                        ImportDependency("custom_module", "SpecialProcessor")
-                    }
-                )
+                # Start with base class dependencies (Widget traits)
+                deps = super().get_node_dependencies()
+                if deps is None:
+                    deps = NodeDependencies()
+
+                # Add this node's specific dependencies
+                deps.referenced_workflows.update({"image_processing_workflow", "validation_workflow"})
+                deps.static_files.update({"config.json", "model_weights.pkl"})
+                deps.imports.update({
+                    ImportDependency("numpy"),
+                    ImportDependency("sklearn.linear_model", "LinearRegression"),
+                    ImportDependency("custom_module", "SpecialProcessor")
+                })
+                return deps
         """
+        # Lazy import to avoid circular dependency: library_registry imports BaseNode
+        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
+
+        widget_libraries: set[LibraryNameAndVersion] = set()
+
+        logger.debug("Getting dependencies for node: %s", self.name)
+
+        for parameter in self.parameters:
+            widgets = parameter.find_elements_by_type(Widget)
+            for widget in widgets:
+                if widget.library:
+                    try:
+                        library = LibraryRegistry.get_library(widget.library)
+                        library_data = library.get_library_data()
+                        widget_libraries.add(
+                            LibraryNameAndVersion(
+                                library_name=library_data.name,
+                                library_version=library_data.metadata.library_version,
+                            )
+                        )
+                    except KeyError:
+                        logger.warning(
+                            "Library '%s' not found for Widget '%s'",
+                            widget.library,
+                            widget,
+                        )
+
+        if widget_libraries:
+            logger.debug("Node '%s' has widget library dependencies: %s", self.name, widget_libraries)
+            return NodeDependencies(libraries=widget_libraries)
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:

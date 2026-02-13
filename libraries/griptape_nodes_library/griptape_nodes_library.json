@@ -1,38 +1,36 @@
 {
   "name": "Griptape Nodes Library",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.6.0",
   "settings": [
     {
       "description": "API keys required by nodes in this library",
       "category": "app_events.on_app_initialization_complete",
       "contents": {
-        "secrets_to_register": [
-          "OPENAI_API_KEY",
-          "ANTHROPIC_API_KEY",
-          "COHERE_API_KEY",
-          "GROK_API_KEY",
-          "GROQ_API_KEY",
-          "NVIDIA_API_KEY",
-          "AWS_ACCESS_KEY_ID",
-          "AWS_SECRET_ACCESS_KEY",
-          "AWS_DEFAULT_REGION",
-          "GOOGLE_API_KEY",
-          "GOOGLE_API_SEARCH_ID",
-          "EXA_API_KEY",
-          "ELEVEN_LABS_API_KEY"
-        ]
+        "secrets_to_register": {
+          "OPENAI_API_KEY": "",
+          "ANTHROPIC_API_KEY": "",
+          "COHERE_API_KEY": "",
+          "GROK_API_KEY": "",
+          "GROQ_API_KEY": "",
+          "NVIDIA_API_KEY": "",
+          "AWS_ACCESS_KEY_ID": "",
+          "AWS_SECRET_ACCESS_KEY": "",
+          "AWS_DEFAULT_REGION": "",
+          "GOOGLE_API_KEY": "",
+          "GOOGLE_API_SEARCH_ID": "",
+          "EXA_API_KEY": "",
+          "ELEVEN_LABS_API_KEY": "",
+          "OPENBLAS_NUM_THREADS": "1"
+        }
       }
     }
   ],
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.60.4",
-    "engine_version": "0.71.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "library_version": "0.63.5",
+    "engine_version": "0.74.0",
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
@@ -730,6 +728,28 @@
         "display_name": "Seedance Video Generation",
         "icon": "Sparkles",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "GrokVideoGeneration",
+      "file_path": "griptape_nodes_library/video/grok_video_generation.py",
+      "metadata": {
+        "category": "video",
+        "description": "Generate videos using Grok models via Griptape model proxy",
+        "display_name": "Grok Video Generation",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "GrokVideoEdit",
+      "file_path": "griptape_nodes_library/video/grok_video_edit.py",
+      "metadata": {
+        "category": "video",
+        "description": "Edit videos using Grok models via Griptape model proxy",
+        "display_name": "Grok Video Edit",
+        "icon": "Sparkles",
+        "group": "edit"
       }
     },
     {
@@ -1604,6 +1624,28 @@
       }
     },
     {
+      "class_name": "GrokImageGeneration",
+      "file_path": "griptape_nodes_library/image/grok_image_generation.py",
+      "metadata": {
+        "category": "image",
+        "description": "Generate images using Grok models via Griptape model proxy",
+        "display_name": "Grok Image Generation",
+        "group": "create",
+        "icon": "Sparkles"
+      }
+    },
+    {
+      "class_name": "GrokImageEdit",
+      "file_path": "griptape_nodes_library/image/grok_image_edit.py",
+      "metadata": {
+        "category": "image",
+        "description": "Edit images using Grok models via Griptape model proxy",
+        "display_name": "Grok Image Edit",
+        "group": "edit",
+        "icon": "Sparkles"
+      }
+    },
+    {
       "class_name": "FluxImageGeneration",
       "file_path": "griptape_nodes_library/image/flux_image_generation.py",
       "metadata": {
@@ -1708,6 +1750,16 @@
         "category": "image",
         "description": "Invert a full image (creates a negative).",
         "display_name": "Invert Image",
+        "group": "edit"
+      }
+    },
+    {
+      "class_name": "SetColorToTransparent",
+      "file_path": "griptape_nodes_library/image/set_color_to_transparent.py",
+      "metadata": {
+        "category": "image",
+        "description": "Replace a specific color in an image with transparency",
+        "display_name": "Set Color to Transparent",
         "group": "edit"
       }
     },
@@ -1848,6 +1900,28 @@
         "description": "Save an image to a file",
         "display_name": "Save Image",
         "icon": "image-down",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "WriteImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/write_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Write custom key-value metadata to PNG images using PNG text chunks",
+        "display_name": "Write Image Metadata",
+        "icon": "tag",
+        "group": "Input/Output"
+      }
+    },
+    {
+      "class_name": "ReadImageMetadataNode",
+      "file_path": "griptape_nodes_library/image/read_image_metadata.py",
+      "metadata": {
+        "category": "image",
+        "description": "Read custom metadata from images (EXIF for JPEG/TIFF/MPO, PNG chunks for PNG)",
+        "display_name": "Read Image Metadata",
+        "icon": "tag",
         "group": "Input/Output"
       }
     },
@@ -2000,7 +2074,7 @@
         "category": "misc",
         "description": "Create a group node to organize your workflow",
         "display_name": "Group",
-        "icon": "vault",
+        "icon": "group",
         "group": "create",
         "is_node_group": true
       }

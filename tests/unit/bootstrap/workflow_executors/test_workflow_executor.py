@@ -1,8 +1,7 @@
 """Unit tests for WorkflowExecutor class."""
 
-import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest  # type: ignore[reportMissingImports]
 
@@ -74,64 +73,43 @@ class TestWorkflowExecutor:
             {"input": "data"}, StorageBackend.LOCAL, extra_param="test_value", another_param=42
         )
 
-    @patch("asyncio.run")
-    def test_run_calls_asyncio_run_with_arun(self, mock_asyncio_run: MagicMock) -> None:
-        """Test that run method calls asyncio.run with arun coroutine."""
+    def test_run_calls_arun_with_correct_parameters(self) -> None:
+        """Test that run method calls arun with correct parameters."""
         executor = ConcreteWorkflowExecutor()
 
         # Call the synchronous run method
         executor.run({"input": "data"})
 
-        # Verify asyncio.run was called once
-        mock_asyncio_run.assert_called_once()
+        # Verify arun was called with correct parameters
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.LOCAL)
 
-        # Get the coroutine that was passed to asyncio.run
-        call_args = mock_asyncio_run.call_args[0]
-        assert len(call_args) == 1
-        coroutine = call_args[0]
-
-        # Verify it's a coroutine
-        assert asyncio.iscoroutine(coroutine)
-
-        # Clean up the coroutine to avoid warnings
-        coroutine.close()
-
-    @patch("asyncio.run")
-    def test_run_with_custom_storage_backend(self, mock_asyncio_run: MagicMock) -> None:
+    def test_run_with_custom_storage_backend(self) -> None:
         """Test run method with custom storage backend."""
         executor = ConcreteWorkflowExecutor()
 
         executor.run({"input": "data"}, StorageBackend.GTC)
 
-        mock_asyncio_run.assert_called_once()
+        # Verify arun was called with correct storage backend
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.GTC)
 
-        # Clean up the coroutine
-        call_args = mock_asyncio_run.call_args[0]
-        coroutine = call_args[0]
-        coroutine.close()
-
-    @patch("asyncio.run")
-    def test_run_with_kwargs(self, mock_asyncio_run: MagicMock) -> None:
+    def test_run_with_kwargs(self) -> None:
         """Test run method with additional keyword arguments."""
         executor = ConcreteWorkflowExecutor()
 
         executor.run({"input": "data"}, StorageBackend.LOCAL, extra_param="test_value")
 
-        mock_asyncio_run.assert_called_once()
-
-        # Clean up the coroutine
-        call_args = mock_asyncio_run.call_args[0]
-        coroutine = call_args[0]
-        coroutine.close()
+        # Verify arun was called with correct parameters including kwargs
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.LOCAL, extra_param="test_value")
 
     def test_run_returns_none(self) -> None:
         """Test that run method returns None."""
         executor = ConcreteWorkflowExecutor()
 
-        with patch("asyncio.run") as mock_asyncio_run:
-            mock_asyncio_run.return_value = None
-            result = executor.run({"input": "data"})
-            assert result is None
+        # Just call run() directly - arun_mock is already an AsyncMock that returns None
+        result = executor.run({"input": "data"})
+
+        assert result is None
+        executor.arun_mock.assert_called_once_with({"input": "data"}, StorageBackend.LOCAL)
 
     def test_output_property_can_be_set(self) -> None:
         """Test that output property can be set and retrieved."""

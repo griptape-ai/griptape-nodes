@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import base64
-import json as _json
+import json
 import logging
-import os
-from contextlib import suppress
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -27,6 +22,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -41,7 +37,7 @@ MODEL_MAPPING = {
 }
 
 
-class Veo3VideoGeneration(SuccessFailureNode):
+class Veo3VideoGeneration(GriptapeProxyNode):
     """Generate a video using Google's Veo3 model via Griptape Cloud model proxy.
 
     Inputs:
@@ -75,12 +71,6 @@ class Veo3VideoGeneration(SuccessFailureNode):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/v2/")
 
         # INPUTS / PROPERTIES
         self.add_parameter(
@@ -286,7 +276,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Set initial parameter visibility based on default model
         self._initialize_parameter_visibility()
 
-    def _get_api_model_id(self, friendly_name: str) -> str:
+    def _map_api_model_id(self, friendly_name: str) -> str:
         """Map friendly model name to API model ID."""
         return MODEL_MAPPING.get(friendly_name, friendly_name)
 
@@ -318,7 +308,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
     def _update_parameter_visibility_for_model(self, model_id: str) -> None:
         """Update parameter visibility based on selected model."""
         # Map friendly name to API model ID for comparison
-        api_model_id = self._get_api_model_id(model_id)
+        api_model_id = self._map_api_model_id(model_id)
 
         # last_frame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
         if api_model_id in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
@@ -365,65 +355,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 self.hide_parameter_by_name(param_name)
 
     def _log(self, message: str) -> None:
-        with suppress(Exception):
-            logger.info(message)
+        logger.info(message)
 
-    async def aprocess(self) -> None:
-        """Main async processing entry point."""
-        await self._process()
-
-    async def _process(self) -> None:
-        """Core processing logic with three phases: submit, poll, fetch."""
-        # Phase 0: Clear execution status
-        self._clear_execution_status()
-
-        # Preprocess seed parameter
+    async def _process_generation(self) -> None:
         self._seed_parameter.preprocess()
-
-        # Phase 0.5: Validate API key
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Get parameters
-        params = self._get_parameters()
-
-        # Validate model-specific parameter support
-        try:
-            self._validate_model_parameters(params)
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-
-        # Phase 1: Submit request to get generation_id
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API",
-                )
-                return
-        except RuntimeError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Phase 2 & 3: Poll for completion and fetch result
-        await self._poll_and_fetch(generation_id, headers)
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         generate_audio = self.get_parameter_value("generate_audio")
@@ -459,13 +395,9 @@ class Veo3VideoGeneration(SuccessFailureNode):
             "sample_count": sample_count,
         }
 
-    def _validate_api_key(self) -> str:
-        api_key = GriptapeNodes.SecretsManager().get_secret(self.API_KEY_NAME)
-        if not api_key:
-            self._set_safe_defaults()
-            msg = f"{self.name} is missing {self.API_KEY_NAME}. Ensure it's set in the environment/config."
-            raise ValueError(msg)
-        return api_key
+    def _get_api_model_id(self) -> str:
+        model_id = self.get_parameter_value("model_id") or "Veo 3.1"
+        return self._map_api_model_id(model_id)
 
     def _validate_model_parameters(self, params: dict[str, Any]) -> None:
         """Validate that parameters are supported by the selected model.
@@ -474,7 +406,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
         """
         model_id = params["model_id"]
         # Map friendly name to API model ID for validation
-        api_model_id = self._get_api_model_id(model_id)
+        api_model_id = self._map_api_model_id(model_id)
 
         # lastFrame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
         if params.get("last_frame") and api_model_id not in [
@@ -603,50 +535,10 @@ class Veo3VideoGeneration(SuccessFailureNode):
         else:
             return {"bytesBase64Encoded": base64_data, "mimeType": mime_type}
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        """Phase 1: Submit generation request and get generation_id."""
-        model_id = params["model_id"]
-        # Map friendly model name to API model ID
-        api_model_id = self._get_api_model_id(model_id)
-        payload = self._build_payload(params)
+    async def _build_payload(self) -> dict[str, Any]:  # noqa: C901, PLR0912
+        params = self._get_parameters()
+        self._validate_model_parameters(params)
 
-        # Construct v2 proxy URL with API model ID
-        proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
-
-        logger.info("%s: Submitting generation request for model: %s", self.name, model_id)
-
-        # Log full request at debug level
-        self._log_request(proxy_url, headers, payload)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    proxy_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                response_json = response.json()
-        except httpx.HTTPStatusError as e:
-            # Extract error details from response
-            error_msg = self._extract_error_from_response(e.response)
-            raise RuntimeError(error_msg) from e
-        except Exception as e:
-            error_msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(error_msg) from e
-
-        # Extract generation_id
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            logger.info("%s: Submitted, generation_id=%s", self.name, generation_id)
-            return str(generation_id)
-
-        logger.warning("%s: No generation_id in response", self.name)
-        return None
-
-    def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:  # noqa: C901, PLR0912
         # Build instances object with prompt
         instance: dict[str, Any] = {"prompt": params["prompt"]}
 
@@ -744,14 +636,13 @@ class Veo3VideoGeneration(SuccessFailureNode):
                 return red
 
         dbg_headers = {**headers, "Authorization": "Bearer ***"}
-        with suppress(Exception):
-            logger.debug(
-                "%s: POST %s\nheaders=%s\nbody=%s",
-                self.name,
-                url,
-                dbg_headers,
-                _json.dumps(_sanitize_body(payload), indent=2),
-            )
+        logger.debug(
+            "%s: POST %s\nheaders=%s\nbody=%s",
+            self.name,
+            url,
+            dbg_headers,
+            json.dumps(_sanitize_body(payload), indent=2),
+        )
 
     def _sanitize_base64_image_dict(self, image_dict: dict[str, str]) -> dict[str, str]:
         """Sanitize base64 image dict for logging by redacting the base64 data."""
@@ -780,115 +671,11 @@ class Veo3VideoGeneration(SuccessFailureNode):
         else:
             return sanitized
 
-    async def _poll_and_fetch(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Phase 2 & 3: Poll for completion, then fetch result."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 120  # 10 minutes with 5s intervals
-        poll_interval = 5
-
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    logger.debug(
-                        "%s: Polling attempt #%s for generation %s",
-                        self.name,
-                        attempt + 1,
-                        generation_id,
-                    )
-
-                    # Poll for status
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
-                    result_json = response.json()
-
-                    # Update provider_response with latest polling data
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-
-                    # Log status at info level
-                    logger.info(
-                        "%s: Generation status: %s (attempt %s/%s)", self.name, status, attempt + 1, max_attempts
-                    )
-
-                    # Log full response body at debug level
-                    logger.debug(
-                        "%s: Generation status response:\n%s",
-                        self.name,
-                        _json.dumps(result_json, indent=2),
-                    )
-
-                    if status == "COMPLETED":
-                        # Fetch final result
-                        await self._fetch_result(generation_id, headers, client)
-                        return
-
-                    if status in ["FAILED", "ERRORED"]:
-                        logger.error("%s: Generation failed: %s", self.name, status)
-                        self._set_safe_defaults()
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    # Still processing (QUEUED or RUNNING)
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    logger.error(
-                        "%s: HTTP error while polling: %s",
-                        self.name,
-                        e.response.status_code,
-                    )
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        self._set_status_results(
-                            was_successful=False,
-                            result_details=f"Polling failed: HTTP {e.response.status_code}",
-                        )
-                        return
-                except Exception as e:
-                    logger.error("%s: Polling error: %s", self.name, e)
-                    if attempt == max_attempts - 1:
-                        self._set_safe_defaults()
-                        self._set_status_results(
-                            was_successful=False,
-                            result_details=f"Polling failed: {e}",
-                        )
-                        return
-
-            # Timeout reached
-            logger.error("%s: Polling timed out", self.name)
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Generation timed out after {max_attempts * poll_interval}s",
-            )
-
-    async def _fetch_result(
-        self,
-        generation_id: str,
-        headers: dict[str, str],
-        client: httpx.AsyncClient,
-    ) -> None:
-        """Phase 3: Fetch final result from /result endpoint.
-
-        The v2 API returns JSON with base64-encoded video(s) in response.videos[] array.
-        """
-        result_url = urljoin(self._proxy_base, f"generations/{generation_id}/result")
-        logger.info("%s: Fetching final result for generation: %s", self.name, generation_id)
-
-        # Fetch the result
-        result_json = await self._fetch_result_json(result_url, headers, client)
-        if result_json is None:
-            return
-
-        # Check for RAI rejection
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         rai_filtered_count = result_json.get("response", {}).get("raiMediaFilteredCount", 0)
         if rai_filtered_count > 0:
             logger.warning("%s: %s video(s) filtered by RAI", self.name, rai_filtered_count)
 
-        # Extract videos array from response
         videos_array = result_json.get("response", {}).get("videos", [])
         if not videos_array:
             logger.warning("%s: No videos in result", self.name)
@@ -899,10 +686,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
             return
 
-        # Process all videos
         video_artifacts = self._process_videos_from_result(videos_array, generation_id)
-
-        # Check if we got any videos
         if not video_artifacts:
             logger.warning("%s: No videos could be processed", self.name)
             self._set_safe_defaults()
@@ -912,51 +696,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             )
             return
 
-        # Set output parameters
         self._set_video_output_parameters(video_artifacts)
-
-    async def _fetch_result_json(
-        self,
-        result_url: str,
-        headers: dict[str, str],
-        client: httpx.AsyncClient,
-    ) -> dict[str, Any] | None:
-        """Fetch result JSON from the API.
-
-        Returns the JSON response or None if an error occurred.
-        """
-        try:
-            response = await client.get(result_url, headers=headers, timeout=300)
-            response.raise_for_status()
-            result_json = response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "%s: HTTP error fetching result: %s",
-                self.name,
-                e.response.status_code,
-            )
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Failed to fetch result: HTTP {e.response.status_code}",
-            )
-            return None
-        except Exception as e:
-            logger.error("%s: Error fetching result: %s", self.name, e)
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Failed to fetch result: {e}",
-            )
-            return None
-        else:
-            logger.info("%s: Result fetched successfully", self.name)
-            logger.debug(
-                "%s: Result response:\n%s",
-                self.name,
-                _json.dumps(self._sanitize_result_json(result_json), indent=2),
-            )
-            return result_json
 
     def _process_videos_from_result(
         self,
@@ -1034,7 +774,7 @@ class Veo3VideoGeneration(SuccessFailureNode):
             result_details=result_message,
         )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract detailed error message from API response.
 
         The v2 API provides errors in status_detail field.
@@ -1045,26 +785,26 @@ class Veo3VideoGeneration(SuccessFailureNode):
         # Check v2 API status_detail first (for FAILED/ERROR statuses)
         status_detail = response_json.get("status_detail")
         if status_detail:
-            return f"{self.name}: Generation failed\n\n{_json.dumps(status_detail, indent=2)}"
+            return f"{self.name}: Generation failed\n\n{json.dumps(status_detail, indent=2)}"
 
         # Check top-level error field
         top_level_error = response_json.get("error")
         if top_level_error:
             if isinstance(top_level_error, dict):
-                return f"{self.name}: {_json.dumps(top_level_error, indent=2)}"
+                return f"{self.name}: {json.dumps(top_level_error, indent=2)}"
             return f"{self.name}: {top_level_error}"
 
         # Final fallback
         status = self._extract_status(response_json) or "unknown"
         return f"{self.name}: Generation failed with status '{status}'"
 
-    def _extract_error_from_response(self, response: httpx.Response) -> str:
-        """Extract error message from HTTP error response."""
-        try:
-            error_json = response.json()
-            return self._extract_error_details(error_json)
-        except Exception:
-            return f"{self.name}: API error: {response.status_code} - {response.text}"
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            return
+
+        super()._handle_payload_build_error(e)
 
     def _set_safe_defaults(self) -> None:
         """Set safe default values for all outputs on error."""

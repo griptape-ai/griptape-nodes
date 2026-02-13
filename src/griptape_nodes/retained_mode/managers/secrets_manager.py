@@ -24,6 +24,7 @@ from griptape_nodes.retained_mode.events.secrets_events import (
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import SECRETS_TO_REGISTER_KEY
+from griptape_nodes.utils.dict_utils import normalize_secrets_to_register
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -53,22 +54,21 @@ class SecretsManager:
     def workspace_env_path(self) -> Path:
         return self.config_manager.workspace_path / ".env"
 
+    @property
+    def secrets_to_register(self) -> dict[str, str]:
+        """Get secrets_to_register as a dict, normalizing list format to dict."""
+        value = self.config_manager.get_config_value(SECRETS_TO_REGISTER_KEY, default={})
+        return normalize_secrets_to_register(value)
+
     def register_all_secrets(self) -> None:
         """Register all secrets from config and library settings.
 
         This should be called after libraries are loaded and their settings
         are merged into the config.
         """
-        secret_names = set()
-
-        secrets_to_register = self.config_manager.get_config_value(SECRETS_TO_REGISTER_KEY, default=[])
-
-        secret_names.update(secrets_to_register)
-
-        # Register each secret (create blank entry if doesn't exist)
-        for secret_name in secret_names:
+        for secret_name, default_value in self.secrets_to_register.items():
             if self.get_secret(secret_name, should_error_on_not_found=False) is None:
-                self.set_secret(secret_name, "")
+                self.set_secret(secret_name, default_value)
 
     def on_handle_get_secret_request(self, request: GetSecretValueRequest) -> ResultPayload:
         secret_key = SecretsManager._apply_secret_name_compliance(request.key)

@@ -18,7 +18,8 @@ class ForEachEndNode(BaseIterativeEndNode):
     def __init__(self, name: str, metadata: dict[Any, Any] | None = None) -> None:
         super().__init__(name, metadata)
 
-    def _get_compatible_start_classes(self) -> set[type]:
+    @classmethod
+    def _get_compatible_start_classes(cls) -> set[type]:
         """Return the set of Start node classes that this End node can connect to."""
         from griptape_nodes_library.execution.for_each_start import ForEachStartNode
 

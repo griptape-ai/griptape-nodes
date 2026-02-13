@@ -8,7 +8,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, TypeVar, get_args
 
 from pydantic import BaseModel
 
@@ -53,6 +53,55 @@ type ElementMessageCallback = Callable[[str, "NodeMessagePayload | None"], "Node
 
 T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
+
+# Badge variant type for element badge (aligned with ParameterMessage.VariantType, excluding "none")
+BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload"]
+VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
+
+
+@dataclass
+class BadgeData:
+    """Serializable badge data for BaseNodeElement.
+
+    Used to display badge indicators (info, warning, error, success, etc.) on
+    parameters and groups. All subclasses of BaseNodeElement inherit badge
+    and can use get_badge(), set_badge(), clear_badge(), and dismiss_badge().
+
+    Attributes:
+        variant: Badge style (e.g. info, warning, error, success).
+        title: Optional short title for the badge.
+        message: Badge message body.
+        icon: Optional Lucide icon name (e.g. "upload-cloud"); when set, overrides variant's default icon.
+        color: Optional badge color; can be hex (e.g. "#3b82f6"), rgb (e.g. "rgb(59, 130, 246)"), etc. Overrides variant's default.
+        hide: When True, the badge indicator is hidden in the UI.
+        hide_clear_button: When True, the clear/dismiss button is hidden; when False,
+            the button is shown so the user can dismiss the badge (e.g. via clear_badge_display).
+    """
+
+    variant: BadgeVariantType = "info"
+    title: str | None = None
+    message: str = ""
+    icon: str | None = None
+    color: str | None = None
+    hide: bool = False
+    hide_clear_button: bool = True
+
+    _parent_element: Any = field(default=None, repr=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a serializable dictionary suitable for events and element serialization."""
+        result: dict[str, Any] = {
+            "variant": self.variant,
+            "title": self.title,
+            "message": self.message,
+            "hide": self.hide,
+            "hide_clear_button": self.hide_clear_button,
+        }
+        if self.icon is not None:
+            result["icon"] = self.icon
+        if self.color is not None:
+            result["color"] = self.color
+        return result
 
 
 # Types of Modes provided for Parameters
@@ -236,6 +285,7 @@ class BaseNodeElement:
     _stack: ClassVar[list[BaseNodeElement]] = []
     _parent: BaseNodeElement | None = field(default=None)
     _node_context: BaseNode | None = field(default=None)
+    _badge: BadgeData | None = field(default=None)
 
     @property
     def children(self) -> list[BaseNodeElement]:
@@ -270,6 +320,71 @@ class BaseNodeElement:
     def get_changes(self) -> dict[str, Any]:
         return self._changes
 
+    # --- Badge (discoverable by all subclasses) ---
+    # Message types for frontend: clear_badge, get_badge, set_badge, clear_badge_display
+
+    def get_badge(self) -> BadgeData | None:
+        """Return current badge, or None if cleared; use .to_dict() when a serializable dict is needed."""
+        return self._badge
+
+    def set_badge(  # noqa: PLR0913
+        self,
+        variant: BadgeVariantType | None = None,
+        title: str | None = None,
+        message: str | None = None,
+        *,
+        icon: str | None = None,
+        color: str | None = None,
+        hide: bool | None = None,
+        hide_clear_button: bool | None = None,
+    ) -> None:
+        """Set badge fields; only provided arguments are updated. No kwargs so badge is discoverable.
+
+        color can be hex (e.g. "#3b82f6"), rgb (e.g. "rgb(59, 130, 246)"), etc.
+        """
+        if self._badge is None:
+            self._badge = BadgeData()
+        self._badge._parent_element = self
+        if variant is not None:
+            self._badge.variant = variant
+        if title is not None:
+            self._badge.title = title
+        if message is not None:
+            self._badge.message = message
+        if icon is not None:
+            self._badge.icon = icon
+        if color is not None:
+            self._badge.color = color
+        if hide is not None:
+            self._badge.hide = hide
+        if hide_clear_button is not None:
+            self._badge.hide_clear_button = hide_clear_button
+        self._changes["badge"] = self._badge.to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def clear_badge(self) -> None:
+        """Set badge to None (cleared)."""
+        self._badge = None
+        self._changes["badge"] = None
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def dismiss_badge(self) -> None:
+        """Hide the badge indicator (hide=True). Frontend can send clear_badge_display to trigger this."""
+        if self._badge is None:
+            return
+        self._badge.hide = True
+        self._changes["badge"] = self._badge.to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
     @staticmethod
     def emits_update_on_write(func: Callable) -> Callable:
         """Decorator for properties that should track changes and emit events."""
@@ -283,6 +398,8 @@ class BaseNodeElement:
                 # Track change if different
                 if old_value != new_value:
                     self._changes[func.__name__] = new_value
+                    # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+                    # Only when attached to a node and not already in the list (avoids duplicate events).
                     if self._node_context is not None and self not in self._node_context._tracked_parameters:
                         self._node_context._tracked_parameters.append(self)
                 return result
@@ -315,6 +432,11 @@ class BaseNodeElement:
         complete_dict = self.to_dict()
         if "ui_options" in complete_dict:
             self._changes["ui_options"] = complete_dict["ui_options"]
+        # Also handle trait_ui_options for traits
+        if "trait_ui_options" in complete_dict:
+            self._changes["trait_ui_options"] = complete_dict["trait_ui_options"]
+        if "badge" in complete_dict:
+            self._changes["badge"] = complete_dict["badge"]
 
         event_data.update(self._changes)
         # Publish the event
@@ -343,10 +465,12 @@ class BaseNodeElement:
               ]
             }
         """
+        badge = self.get_badge()
         return {
             "element_id": self.element_id,
             "element_type": self.__class__.__name__,
             "parent_group_name": self.parent_group_name,
+            "badge": badge.to_dict() if badge is not None else None,
             "children": [child.to_dict() for child in self._children],
         }
 
@@ -454,12 +578,89 @@ class BaseNodeElement:
         }
         return event_data
 
+    def _apply_badge_from_message_data(self, data: dict) -> None:  # noqa: C901
+        """Apply badge fields from a message data dict and track change."""
+        if self._badge is None:
+            self._badge = BadgeData()
+        self._badge._parent_element = self
+        if "variant" in data:
+            val = data["variant"]
+            if val in VALID_BADGE_VARIANTS:
+                self._badge.variant = val
+            else:
+                msg = f"{self.__class__.__name__} received invalid badge variant {val}; using 'info'. Valid: {sorted(VALID_BADGE_VARIANTS)}"
+                logger.error(msg)
+                self._badge.variant = "info"
+        if "title" in data:
+            self._badge.title = data["title"]
+        if "message" in data:
+            self._badge.message = data["message"]
+        if "icon" in data:
+            self._badge.icon = data["icon"]
+        if "color" in data:
+            self._badge.color = data["color"]
+        if "hide" in data:
+            self._badge.hide = data["hide"]
+        if "hide_clear_button" in data:
+            self._badge.hide_clear_button = data["hide_clear_button"]
+        self._changes["badge"] = self._badge.to_dict()
+        # Batch UI updates: add to node's tracked list so emit_parameter_changes() sends our _changes later.
+        # Only when attached to a node and not already in the list (avoids duplicate events).
+        if self._node_context is not None and self not in self._node_context._tracked_parameters:
+            self._node_context._tracked_parameters.append(self)
+
+    def _on_badge_message_received(
+        self, message_type: str, message: NodeMessagePayload | None
+    ) -> NodeMessageResult | None:
+        """Handle badge-related messages; return result if handled, None otherwise."""
+        msg_lower = message_type.lower()
+        match msg_lower:
+            case "clear_badge":
+                self.clear_badge()
+                return NodeMessageResult(
+                    success=True,
+                    details="Badge cleared",
+                    response=None,
+                    altered_workflow_state=False,
+                )
+            case "get_badge":
+                badge = self.get_badge()
+                badge_dict = badge.to_dict() if badge is not None else None
+                return NodeMessageResult(
+                    success=True,
+                    details="Badge retrieved",
+                    response=NodeMessagePayload(data=badge_dict),
+                    altered_workflow_state=False,
+                )
+            case "set_badge":
+                if message is not None and hasattr(message, "data") and isinstance(message.data, dict):
+                    self._apply_badge_from_message_data(message.data)
+                badge = self.get_badge()
+                badge_dict = badge.to_dict() if badge is not None else None
+                return NodeMessageResult(
+                    success=True,
+                    details="Badge updated",
+                    response=NodeMessagePayload(data=badge_dict),
+                    altered_workflow_state=False,
+                )
+            case "clear_badge_display":
+                self.dismiss_badge()
+                return NodeMessageResult(
+                    success=True,
+                    details="Badge dismissed",
+                    response=None,
+                    altered_workflow_state=False,
+                )
+            case _:
+                # Not a badge message; return None so caller can delegate to other handlers (e.g. on_click).
+                return None
+
     def on_message_received(self, message_type: str, message: NodeMessagePayload | None) -> NodeMessageResult | None:
         """Virtual method for handling messages sent to this element.
 
-        Attempts to delegate to child elements first. If any child handles the message
-        (returns non-None), that result is returned immediately. Otherwise, falls back
-        to default behavior (return None).
+        Handles badge messages (clear_badge, get_badge, set_badge, clear_badge_display)
+        on this element. Then attempts to delegate to child elements. If any child handles
+        the message (returns non-None), that result is returned immediately.
 
         Args:
             message_type: String indicating the message type for parsing
@@ -468,15 +669,13 @@ class BaseNodeElement:
         Returns:
             NodeMessageResult | None: Result if handled, None if no handler available
         """
-        # Try to delegate to all children first
-        # NOTE: This returns immediately on the first child that accepts the message (returns non-None).
-        # In the future, we may need to expand this to handle multiple children processing the same message.
+        badge_result = self._on_badge_message_received(message_type, message)
+        if badge_result is not None:
+            return badge_result
         for child in self._children:
             result = child.on_message_received(message_type, message)
             if result is not None:
                 return result
-
-        # No child handled it, return None (indicating no handler)
         return None
 
     def get_node(self) -> BaseNode | None:
@@ -556,6 +755,7 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "docs": "Documentation",
         "help": "Help",
         "note": "Note",
+        "cloud-upload": "Upload",
         "none": "",
     }
 
@@ -570,11 +770,14 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "docs": "book-open",
         "help": "help-circle",
         "note": "sticky-note",
+        "cloud-upload": "cloud-upload",
         "none": "",
     }
 
     # Create a type alias using the keys from DEFAULT_TITLES
-    type VariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+    type VariantType = Literal[
+        "info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload", "none"
+    ]
     type ButtonAlignType = Literal["full-width", "left", "center", "right"]
     type ButtonVariantType = Literal["default", "destructive", "outline", "secondary", "ghost", "link"]
 
@@ -915,6 +1118,8 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
         *,
         collapsed: bool = False,
         user_defined: bool = False,
+        badge: BadgeData
+        | None = None,  # Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
         **kwargs,
     ):
         super().__init__(name=name, **kwargs)
@@ -929,6 +1134,17 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
 
         self._ui_options = ui_options
         self.user_defined = user_defined
+
+        if badge is not None:
+            self.set_badge(
+                variant=badge.variant,
+                title=badge.title,
+                message=badge.message,
+                icon=badge.icon,
+                color=badge.color,
+                hide=badge.hide,
+                hide_clear_button=badge.hide_clear_button,
+            )
 
     @property
     def ui_options(self) -> dict:
@@ -1237,6 +1453,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         parent_element_name: str | None = None,
+        badge: BadgeData
+        | None = None,  # Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -1334,6 +1552,16 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 # Add a trait as a child
                 # UI options are now traits! sorry!
                 self.add_child(created)
+        if badge is not None:
+            self.set_badge(
+                variant=badge.variant,
+                title=badge.title,
+                message=badge.message,
+                icon=badge.icon,
+                color=badge.color,
+                hide=badge.hide,
+                hide_clear_button=badge.hide_clear_button,
+            )
         self.type = type
         self.input_types = input_types
         self.output_type = output_type

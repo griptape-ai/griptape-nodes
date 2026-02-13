@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import asyncio
-import json as _json
+import json
 import logging
-import os
 import time
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
@@ -24,6 +20,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
+from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import (
     convert_image_value_to_base64_data_uri,
     read_image_from_file_path,
@@ -277,7 +274,7 @@ STATUS_FAILED = "Failed"
 STATUS_ERROR = "Error"
 
 
-class TopazImageEnhance(SuccessFailureNode):
+class TopazImageEnhance(GriptapeProxyNode):
     """Enhance images using Topaz Labs models via Griptape model proxy.
 
     Inputs:
@@ -301,12 +298,6 @@ class TopazImageEnhance(SuccessFailureNode):
         super().__init__(**kwargs)
         self.category = "API Nodes"
         self.description = "Enhance images using Topaz Labs models via Griptape model proxy"
-
-        # Compute API base once
-        base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
-        base_slash = base if base.endswith("/") else base + "/"
-        api_base = urljoin(base_slash, "api/")
-        self._proxy_base = urljoin(api_base, "proxy/")
 
         # Operation selection
         self.add_parameter(
@@ -839,51 +830,8 @@ class TopazImageEnhance(SuccessFailureNode):
         if parameter.name == "model" and value:
             self._update_visible_params_for_model(value)
 
-    async def aprocess(self) -> None:
-        await self._process()
-
-    async def _process(self) -> None:
-        self._clear_execution_status()
-
-        try:
-            params = self._get_parameters()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        try:
-            api_key = self._validate_api_key()
-        except ValueError as e:
-            self._set_safe_defaults()
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-
-        operation = params["operation"]
-        model = params["model"]
-        self._log(f"Processing image with Topaz {operation} using {model}")
-
-        # Submit request to get generation ID
-        try:
-            generation_id = await self._submit_request(params, headers)
-            if not generation_id:
-                self._set_safe_defaults()
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="No generation_id returned from API. Cannot proceed with processing.",
-                )
-                return
-        except RuntimeError as e:
-            self._set_status_results(was_successful=False, result_details=str(e))
-            self._handle_failure_exception(e)
-            return
-
-        # Poll for result
-        await self._poll_for_result(generation_id, headers)
+    async def _process_generation(self) -> None:
+        await super()._process_generation()
 
     def _get_parameters(self) -> dict[str, Any]:
         operation = self.get_parameter_value("operation") or "enhance"
@@ -915,44 +863,13 @@ class TopazImageEnhance(SuccessFailureNode):
             raise ValueError(msg)
         return api_key
 
-    async def _submit_request(self, params: dict[str, Any], headers: dict[str, str]) -> str | None:
-        payload = await self._build_payload(params)
-        operation = params["operation"]
-        proxy_url = urljoin(self._proxy_base, f"models/topaz-{operation}")
+    def _get_api_model_id(self) -> str:
+        operation = self.get_parameter_value("operation") or "enhance"
+        return f"topaz-{operation}"
 
-        self._log(f"Submitting request to Griptape model proxy for topaz-{operation}")
-        self._log_request(payload)
+    async def _build_payload(self) -> dict[str, Any]:
+        params = self._get_parameters()
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(proxy_url, json=payload, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_json = response.json()
-                self._log("Request submitted successfully")
-        except httpx.HTTPStatusError as e:
-            self._log(f"HTTP error: {e.response.status_code} - {e.response.text}")
-            try:
-                error_json = e.response.json()
-                error_details = self._extract_error_details(error_json)
-                msg = f"{error_details}"
-            except Exception:
-                msg = f"API error: {e.response.status_code} - {e.response.text}"
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            self._log(f"Request failed: {e}")
-            msg = f"{self.name} request failed: {e}"
-            raise RuntimeError(msg) from e
-
-        # Extract generation_id from response
-        generation_id = response_json.get("generation_id")
-        if generation_id:
-            self.parameter_output_values["generation_id"] = str(generation_id)
-            self._log(f"Submitted. generation_id={generation_id}")
-            return str(generation_id)
-        self._log("No generation_id returned from POST response")
-        return None
-
-    async def _build_payload(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "model": params["model"],
             "output_format": params["output_format"],
@@ -1062,81 +979,25 @@ class TopazImageEnhance(SuccessFailureNode):
                     b64_len = len(parts[1]) if len(parts) > 1 else 0
                     sanitized_payload["image"] = f"{header},<base64 data length={b64_len}>"
 
-            self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
+            self._log(f"Request payload: {json.dumps(sanitized_payload, indent=2)}")
 
-    async def _poll_for_result(self, generation_id: str, headers: dict[str, str]) -> None:
-        """Poll the generations endpoint until ready."""
-        get_url = urljoin(self._proxy_base, f"generations/{generation_id}")
-        max_attempts = 120  # 10 minutes with 5s intervals
-        poll_interval = 5
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
+        image_bytes = result_json.get("raw_bytes")
+        if isinstance(image_bytes, (bytes, bytearray)):
+            await self._handle_binary_image_response(bytes(image_bytes))
+            return
 
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_attempts):
-                try:
-                    self._log(f"Polling attempt #{attempt + 1} for generation {generation_id}")
-                    response = await client.get(get_url, headers=headers, timeout=60)
-                    response.raise_for_status()
+        sample_url = result_json.get("result", {}).get("sample")
+        if sample_url:
+            await self._save_image_from_url(sample_url)
+            return
 
-                    # Check if response is binary image data (JPEG starts with 0xff 0xd8)
-                    content_type = response.headers.get("content-type", "")
-                    if content_type.startswith("image/") or (response.content and response.content[:2] == b"\xff\xd8"):
-                        self._log("Received binary image data directly from API")
-                        await self._handle_binary_image_response(response.content)
-                        return
-
-                    result_json = response.json()
-
-                    self.parameter_output_values["provider_response"] = result_json
-
-                    status = result_json.get("status", "unknown")
-                    self._log(f"Status: {status}")
-
-                    if status == "Ready":
-                        sample_url = result_json.get("result", {}).get("sample")
-                        if sample_url:
-                            await self._handle_success(result_json, sample_url)
-                        else:
-                            self._log("No sample URL found in ready result")
-                            self._set_safe_defaults()
-                            self._set_status_results(
-                                was_successful=False,
-                                result_details="Processing completed but no image URL was found in the response.",
-                            )
-                        return
-                    if status in [STATUS_FAILED, STATUS_ERROR]:
-                        self._log(f"Processing failed with status: {status}")
-                        self._set_safe_defaults()
-                        error_details = self._extract_error_details(result_json)
-                        self._set_status_results(was_successful=False, result_details=error_details)
-                        return
-
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(poll_interval)
-
-                except httpx.HTTPStatusError as e:
-                    self._log(f"HTTP error while polling: {e.response.status_code} - {e.response.text}")
-                    self._set_safe_defaults()
-                    error_msg = f"Failed to poll generation status: HTTP {e.response.status_code}"
-                    self._set_status_results(was_successful=False, result_details=error_msg)
-                    return
-                except Exception as e:
-                    self._log(f"Error while polling: {e}")
-                    self._set_safe_defaults()
-                    error_msg = f"Failed to poll generation status: {e}"
-                    self._set_status_results(was_successful=False, result_details=error_msg)
-                    return
-
-            self._log("Polling timed out waiting for result")
-            self._set_safe_defaults()
-            self._set_status_results(
-                was_successful=False,
-                result_details=f"Image processing timed out after {max_attempts * poll_interval} seconds waiting for result.",
-            )
-
-    async def _handle_success(self, response: dict[str, Any], image_url: str) -> None:
-        """Handle successful processing result."""
-        self.parameter_output_values["provider_response"] = response
-        await self._save_image_from_url(image_url)
+        self._log("No sample URL found in result")
+        self._set_safe_defaults()
+        self._set_status_results(
+            was_successful=False,
+            result_details="Processing completed but no image URL was found in the response.",
+        )
 
     async def _handle_binary_image_response(self, image_bytes: bytes) -> None:
         """Handle binary image data returned directly from the API."""
@@ -1185,7 +1046,7 @@ class TopazImageEnhance(SuccessFailureNode):
                 result_details=f"Image processed successfully. Using provider URL (could not save to static storage: {e}).",
             )
 
-    def _extract_error_details(self, response_json: dict[str, Any] | None) -> str:
+    def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response."""
         if not response_json:
             return "Processing failed with no error details provided by API."
@@ -1212,6 +1073,20 @@ class TopazImageEnhance(SuccessFailureNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["image_output"] = None
+
+    def _handle_payload_build_error(self, e: Exception) -> None:
+        if isinstance(e, ValueError):
+            self._set_safe_defaults()
+            self._set_status_results(was_successful=False, result_details=str(e))
+            self._handle_failure_exception(e)
+            return
+
+        super()._handle_payload_build_error(e)
+
+    def _handle_api_key_validation_error(self, e: ValueError) -> None:
+        self._set_safe_defaults()
+        self._set_status_results(was_successful=False, result_details=str(e))
+        self._handle_failure_exception(e)
 
     @staticmethod
     async def _download_bytes_from_url(url: str) -> bytes | None:

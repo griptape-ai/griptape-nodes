@@ -134,6 +134,79 @@ async def _delete_static_file(file_path: str) -> dict:
         return {"message": f"File {file_path} deleted successfully"}
 
 
+async def _serve_library_widget(library_name: str, file_path: str) -> FileResponse:
+    """Serve a widget bundle file from a library.
+
+    Widgets are pre-built ES module bundles that libraries can provide
+    for custom parameter UI rendering in the frontend.
+
+    Args:
+        library_name: Name of the library containing the widget
+        file_path: Relative path to the widget bundle within the library directory
+
+    Returns:
+        FileResponse containing the JavaScript bundle
+
+    Raises:
+        HTTPException: If library not found, file not found, or path traversal detected
+    """
+    library_manager = GriptapeNodes.LibraryManager()
+
+    # Find the library's directory by looking up its info
+    library_info = library_manager.get_library_info_by_library_name(library_name)
+    if library_info is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Failed to load widget '{file_path}': library '{library_name}' not found",
+        )
+    library_dir = Path(library_info.library_path).parent
+
+    # Construct full path to the widget file
+    full_path = library_dir / file_path
+
+    # Security: Ensure the resolved path is within the library directory
+    try:
+        resolved_path = full_path.resolve()
+        resolved_library_dir = library_dir.resolve()
+        if not resolved_path.is_relative_to(resolved_library_dir):
+            logger.warning(
+                "Path traversal attempt detected while loading widget from library '%s': %s",
+                library_name,
+                file_path,
+            )
+            raise HTTPException(status_code=403, detail="Access denied")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied") from None
+
+    # Check if file exists
+    if not resolved_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Widget file '{file_path}' not found in library '{library_name}'",
+        )
+
+    if not resolved_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Widget path '{file_path}' in library '{library_name}' is not a file",
+        )
+
+    # Determine content type based on file extension
+    content_type = "application/javascript"
+    if file_path.endswith(".css"):
+        content_type = "text/css"
+    elif file_path.endswith(".json"):
+        content_type = "application/json"
+
+    return FileResponse(
+        path=resolved_path,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+        },
+    )
+
+
 async def _serve_external_file(file_path: str) -> FileResponse:
     """Serve a file from outside the workspace.
 
@@ -175,6 +248,13 @@ def start_static_server() -> None:
     app.add_api_route("/static-uploads/{file_path_prefix:path}", _list_static_files, methods=["GET"])
     app.add_api_route("/static-uploads/", _list_static_files, methods=["GET"])
     app.add_api_route("/static-files/{file_path:path}", _delete_static_file, methods=["DELETE"])
+    # Route for serving widget bundles from libraries
+    # The file_path is relative to the library directory (e.g., "widgets/dist/MyWidget.js")
+    app.add_api_route(
+        "/api/libraries/{library_name}/widgets/{file_path:path}",
+        _serve_library_widget,
+        methods=["GET"],
+    )
     app.add_api_route("/external/{file_path:path}", _serve_external_file, methods=["GET"])
 
     # Build CORS allowed origins list
@@ -182,7 +262,10 @@ def start_static_server() -> None:
         os.getenv("GRIPTAPE_NODES_UI_BASE_URL", "https://app.nodes.griptape.ai"),
         "https://app.nodes-staging.griptape.ai",
         "https://app-nightly.nodes.griptape.ai",
+        "https://editor.nodes.griptape.ai",
+        "https://editor-nightly.nodes.griptape.ai",
         "http://localhost:5173",
+        "http://localhost:5174",
         GriptapeNodes.ConfigManager().get_config_value("static_server_base_url"),
     ]
 
@@ -193,6 +276,7 @@ def start_static_server() -> None:
         allow_credentials=True,
         allow_methods=["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
+        allow_private_network=True,  # Required for Starlette 0.51+ to allow localhost access from public origins
     )
 
     # Mount static files
