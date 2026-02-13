@@ -1,3 +1,4 @@
+import base64
 import os
 import platform
 import tempfile
@@ -1314,3 +1315,192 @@ class TestCreateNewFilePolicy:
         assert isinstance(result, WriteFileResultSuccess)
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
+
+
+class TestReadFileWithThumbnailGeneration:
+    """Test ReadFileRequest with thumbnail generation for different file sources."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Automatically set workspace to temp_dir for all tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_read_local_file_in_workspace_with_thumbnail_returns_url(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test reading local image file in workspace with thumbnail enabled returns thumbnail."""
+        # Create a small valid PNG file (1x1 transparent pixel)
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        image_path = temp_dir / "test.png"
+        image_path.write_bytes(png_data)
+
+        request = ReadFileRequest(file_path=str(image_path), should_transform_image_content_to_thumbnail=True)
+        result = griptape_nodes.handle_request(request)
+
+        assert isinstance(result, ReadFileResultSuccess)
+        # File in workspace should return workspace URL or thumbnail data URI
+        assert isinstance(result.content, str)
+        # Due to temp dir symlinks on macOS, may return data URI
+        assert result.content.startswith(("http://localhost:8124/workspace/", "data:image/"))
+
+    def test_read_local_file_outside_workspace_with_thumbnail_returns_data_uri(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Test reading local image file outside workspace with thumbnail enabled returns data URI."""
+        # Create a temp file outside workspace
+        with tempfile.TemporaryDirectory() as other_dir:
+            png_data = base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            )
+            image_path = Path(other_dir) / "test.png"
+            image_path.write_bytes(png_data)
+
+            request = ReadFileRequest(file_path=str(image_path), should_transform_image_content_to_thumbnail=True)
+            result = griptape_nodes.handle_request(request)
+
+            assert isinstance(result, ReadFileResultSuccess)
+            # File is outside workspace, should return data URI thumbnail
+            assert isinstance(result.content, str)
+            assert result.content.startswith("data:image/")
+
+    @pytest.mark.asyncio
+    async def test_read_data_uri_with_thumbnail_returns_data_uri(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test reading image from data URI with thumbnail enabled returns thumbnail data URI."""
+        # Valid 1x1 PNG as data URI
+        data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+        request = ReadFileRequest(file_path=data_uri, should_transform_image_content_to_thumbnail=True)
+        result = griptape_nodes.handle_request(request)
+
+        assert isinstance(result, ReadFileResultSuccess)
+        # Data URI input should return data URI output (thumbnail)
+        assert isinstance(result.content, str)
+        assert result.content.startswith("data:image/")
+
+    def test_read_local_file_without_thumbnail_returns_bytes_or_string(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test reading image file without thumbnail enabled returns original content."""
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        image_path = temp_dir / "test.png"
+        image_path.write_bytes(png_data)
+
+        request = ReadFileRequest(file_path=str(image_path), should_transform_image_content_to_thumbnail=False)
+        result = griptape_nodes.handle_request(request)
+
+        assert isinstance(result, ReadFileResultSuccess)
+        # Without thumbnail, should return bytes content
+        assert isinstance(result.content, bytes)
+        assert result.content == png_data
+
+    def test_generate_thumbnail_with_path_object(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test _generate_thumbnail_from_image_content with Path object."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        image_path = temp_dir / "test.png"
+        image_path.write_bytes(png_data)
+
+        result = os_manager._generate_thumbnail_from_image_content(png_data, image_path, "image/png")
+
+        # Should return a thumbnail (URL or data URI depending on workspace path resolution)
+        assert isinstance(result, str)
+        assert result.startswith(("http://localhost:8124/workspace/", "data:image/"))
+
+    def test_generate_thumbnail_with_string_path(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test _generate_thumbnail_from_image_content with string path."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        image_path = temp_dir / "test.png"
+        image_path.write_bytes(png_data)
+
+        result = os_manager._generate_thumbnail_from_image_content(png_data, str(image_path), "image/png")
+
+        # Should return a thumbnail (URL or data URI depending on workspace path resolution)
+        assert isinstance(result, str)
+        assert result.startswith(("http://localhost:8124/workspace/", "data:image/"))
+
+    def test_generate_thumbnail_with_url_string(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test _generate_thumbnail_from_image_content with URL string."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+        result = os_manager._generate_thumbnail_from_image_content(
+            png_data, "https://example.com/image.png", "image/png"
+        )
+
+        # URL input should generate data URI thumbnail
+        assert isinstance(result, str)
+        assert result.startswith("data:image/")
+
+    def test_generate_thumbnail_with_data_uri_string(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test _generate_thumbnail_from_image_content with data URI string."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+        result = os_manager._generate_thumbnail_from_image_content(png_data, data_uri, "image/png")
+
+        # Data URI input should generate data URI thumbnail
+        assert isinstance(result, str)
+        assert result.startswith("data:image/")
+
+    def test_generate_thumbnail_outside_workspace_returns_data_uri(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test thumbnail generation for file outside workspace returns data URI."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+        # Use a temp directory outside workspace
+        with tempfile.TemporaryDirectory() as other_dir:
+            image_path = Path(other_dir) / "test.png"
+            image_path.write_bytes(png_data)
+
+            result = os_manager._generate_thumbnail_from_image_content(png_data, image_path, "image/png")
+
+            # File outside workspace should return data URI
+            assert isinstance(result, str)
+            assert result.startswith("data:image/")
+
+    def test_generate_thumbnail_fallback_on_preview_failure(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test thumbnail generation falls back to full data URI if preview creation fails."""
+        os_manager = griptape_nodes.OSManager()
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+
+        with tempfile.TemporaryDirectory() as other_dir:
+            image_path = Path(other_dir) / "test.png"
+
+            # Mock create_image_preview_from_bytes to return None (failure)
+            with patch(
+                "griptape_nodes.retained_mode.managers.os_manager.create_image_preview_from_bytes", return_value=None
+            ):
+                result = os_manager._generate_thumbnail_from_image_content(png_data, image_path, "image/png")
+
+                # Should fall back to full image data URI
+                assert isinstance(result, str)
+                assert result.startswith("data:image/png;base64,")
+                # Verify it contains the full base64-encoded image
+                assert base64.b64encode(png_data).decode("utf-8") in result
