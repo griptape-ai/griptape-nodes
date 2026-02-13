@@ -24,6 +24,10 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.file.drivers.data_uri_file_read_driver import DataUriFileReadDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
+from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
+from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
 from griptape_nodes.file.file_read_driver import FileReadDriverNotFoundError, FileReadDriverRegistry
 from griptape_nodes.file.path_utils import path_needs_expansion
 from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
@@ -348,11 +352,6 @@ class OSManager:
         Registers drivers in order of specificity (most specific first).
         LocalFileReadDriver is registered last as the fallback (matches all absolute paths).
         """
-        from griptape_nodes.file.drivers.data_uri_file_read_driver import DataUriFileReadDriver
-        from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
-        from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
-        from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
-
         # Register core drivers (order matters: most specific first, local last)
         FileReadDriverRegistry.register(HttpFileReadDriver())
         FileReadDriverRegistry.register(DataUriFileReadDriver())

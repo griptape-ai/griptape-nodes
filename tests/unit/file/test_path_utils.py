@@ -1,6 +1,7 @@
 """Unit tests for path_utils utilities."""
 
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pytest
 from griptape_nodes.file.path_utils import (
     expand_path,
     normalize_path_for_platform,
+    parse_file_uri,
     path_needs_expansion,
     resolve_file_path,
     resolve_path_safely,
@@ -235,3 +237,90 @@ class TestResolveFilePath:
         result = resolve_file_path("relative/file.txt", tmp_path)
         assert result.is_absolute()
         assert str(result).startswith(str(tmp_path))
+
+
+class TestParseFileUri:
+    """Tests for parse_file_uri function."""
+
+    def test_parse_unix_absolute_path(self) -> None:
+        """Test parsing Unix absolute path file URI."""
+        uri = "file:///path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file.txt"
+
+    def test_parse_localhost_uri(self) -> None:
+        """Test parsing file URI with localhost."""
+        uri = "file://localhost/path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file.txt"
+
+    def test_parse_localhost_case_insensitive(self) -> None:
+        """Test that localhost is case-insensitive."""
+        uri = "file://LOCALHOST/path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file.txt"
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_parse_windows_absolute_path(self) -> None:
+        """Test parsing Windows absolute path file URI."""
+        uri = "file:///C:/Users/test/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "C:/Users/test/file.txt"
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_parse_windows_path_with_localhost(self) -> None:
+        """Test parsing Windows path with localhost."""
+        uri = "file://localhost/C:/Users/test/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "C:/Users/test/file.txt"
+
+    def test_parse_with_percent_encoding(self) -> None:
+        """Test parsing file URI with percent-encoded characters."""
+        uri = "file:///path/to/file%20with%20spaces.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file with spaces.txt"
+
+    def test_parse_with_special_chars(self) -> None:
+        """Test parsing file URI with special characters."""
+        uri = "file:///path/to/file%21%40%23.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file!@#.txt"
+
+    def test_rejects_remote_host(self) -> None:
+        """Test that file URIs with non-localhost hosts are rejected."""
+        uri = "file://remote-server/path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result is None
+
+    def test_rejects_non_file_scheme(self) -> None:
+        """Test that non-file:// URIs are rejected."""
+        uri = "http://example.com/file.txt"
+        result = parse_file_uri(uri)
+        assert result is None
+
+    def test_rejects_https_scheme(self) -> None:
+        """Test that https:// URIs are rejected."""
+        uri = "https://example.com/file.txt"
+        result = parse_file_uri(uri)
+        assert result is None
+
+    def test_returns_none_for_regular_path(self) -> None:
+        """Test that regular paths (not file:// URIs) return None."""
+        result = parse_file_uri("/regular/path/file.txt")
+        assert result is None
+
+    def test_returns_none_for_relative_path(self) -> None:
+        """Test that relative paths return None."""
+        result = parse_file_uri("relative/path/file.txt")
+        assert result is None
+
+    def test_returns_none_for_empty_string(self) -> None:
+        """Test that empty string returns None."""
+        result = parse_file_uri("")
+        assert result is None
+
+    def test_parse_uri_with_nested_directories(self) -> None:
+        """Test parsing file URI with nested directories."""
+        uri = "file:///very/deeply/nested/directory/structure/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/very/deeply/nested/directory/structure/file.txt"

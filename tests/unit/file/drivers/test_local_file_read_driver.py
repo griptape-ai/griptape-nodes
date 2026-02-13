@@ -1,10 +1,12 @@
 """Unit tests for LocalFileReadDriver."""
 
+import platform
 from pathlib import Path
 
 import pytest
 
 from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
+from griptape_nodes.file.path_utils import parse_file_uri
 
 
 class TestLocalFileReadDriver:
@@ -123,3 +125,154 @@ class TestLocalFileReadDriver:
 
         content = await driver.read(str(binary_file), timeout=10.0)
         assert content == binary_content
+
+
+class TestLocalFileReadDriverFileURI:
+    """Tests for LocalFileReadDriver file:// URI support."""
+
+    @pytest.fixture
+    def driver(self) -> LocalFileReadDriver:
+        """Create a LocalFileReadDriver instance."""
+        return LocalFileReadDriver()
+
+    def test_parse_file_uri_unix_absolute(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test parsing Unix absolute path file URI."""
+        uri = "file:///path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file.txt"
+
+    def test_parse_file_uri_localhost(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test parsing file URI with localhost."""
+        uri = "file://localhost/path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file.txt"
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_parse_file_uri_windows_absolute(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test parsing Windows absolute path file URI."""
+        uri = "file:///C:/Users/test/file.txt"
+        result = parse_file_uri(uri)
+        assert result == "C:/Users/test/file.txt"
+
+    def test_parse_file_uri_with_percent_encoding(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test parsing file URI with percent-encoded characters."""
+        uri = "file:///path/to/file%20with%20spaces.txt"
+        result = parse_file_uri(uri)
+        assert result == "/path/to/file with spaces.txt"
+
+    def test_parse_file_uri_rejects_remote_host(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test that file URIs with non-localhost hosts are rejected."""
+        uri = "file://remote-server/path/to/file.txt"
+        result = parse_file_uri(uri)
+        assert result is None
+
+    def test_parse_file_uri_rejects_non_file_scheme(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test that non-file:// URIs are rejected."""
+        uri = "http://example.com/file.txt"
+        result = parse_file_uri(uri)
+        assert result is None
+
+    def test_parse_file_uri_returns_none_for_regular_path(self, driver: LocalFileReadDriver) -> None:  # noqa: ARG002
+        """Test that regular paths (not file:// URIs) return None."""
+        result = parse_file_uri("/regular/path/file.txt")
+        assert result is None
+
+    def test_can_handle_file_uri_unix(self, driver: LocalFileReadDriver) -> None:
+        """Test that driver handles Unix file:// URIs."""
+        uri = "file:///path/to/file.txt"
+        assert driver.can_handle(uri) is True
+
+    def test_can_handle_file_uri_localhost(self, driver: LocalFileReadDriver) -> None:
+        """Test that driver handles localhost file:// URIs."""
+        uri = "file://localhost/path/to/file.txt"
+        assert driver.can_handle(uri) is True
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_can_handle_file_uri_windows(self, driver: LocalFileReadDriver) -> None:
+        """Test that driver handles Windows file:// URIs."""
+        uri = "file:///C:/Users/test/file.txt"
+        assert driver.can_handle(uri) is True
+
+    def test_can_handle_rejects_remote_file_uri(self, driver: LocalFileReadDriver) -> None:
+        """Test that driver rejects file:// URIs with remote hosts."""
+        uri = "file://remote-server/path/to/file.txt"
+        assert driver.can_handle(uri) is False
+
+    @pytest.mark.asyncio
+    async def test_read_file_uri(self, driver: LocalFileReadDriver, temp_file: Path) -> None:
+        """Test reading file via file:// URI."""
+        # Convert path to file:// URI
+        file_uri = temp_file.as_uri()
+
+        content = await driver.read(file_uri, timeout=10.0)
+        assert content == b"test content"
+
+    @pytest.mark.asyncio
+    async def test_read_file_uri_with_spaces(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
+        """Test reading file with spaces in name via file:// URI."""
+        file_with_spaces = tmp_path / "test file.txt"
+        file_with_spaces.write_text("content with spaces")
+
+        file_uri = file_with_spaces.as_uri()
+
+        content = await driver.read(file_uri, timeout=10.0)
+        assert content == b"content with spaces"
+
+    @pytest.mark.asyncio
+    async def test_read_file_uri_not_found(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
+        """Test reading non-existent file via file:// URI raises FileNotFoundError."""
+        nonexistent = tmp_path / "nonexistent.txt"
+        file_uri = nonexistent.as_uri()
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            await driver.read(file_uri, timeout=10.0)
+        assert "File not found" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_read_invalid_file_uri(self, driver: LocalFileReadDriver) -> None:
+        """Test reading file with invalid file:// URI raises ValueError."""
+        invalid_uri = "file://remote-server/path/to/file.txt"
+
+        with pytest.raises(ValueError, match="Invalid file:// URI"):
+            await driver.read(invalid_uri, timeout=10.0)
+
+    @pytest.mark.asyncio
+    async def test_exists_file_uri(self, driver: LocalFileReadDriver, temp_file: Path) -> None:
+        """Test exists with file:// URI for existing file."""
+        file_uri = temp_file.as_uri()
+        assert await driver.exists(file_uri) is True
+
+    @pytest.mark.asyncio
+    async def test_exists_file_uri_nonexistent(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
+        """Test exists with file:// URI for non-existent file."""
+        nonexistent = tmp_path / "nonexistent.txt"
+        file_uri = nonexistent.as_uri()
+        assert await driver.exists(file_uri) is False
+
+    @pytest.mark.asyncio
+    async def test_exists_invalid_file_uri(self, driver: LocalFileReadDriver) -> None:
+        """Test exists with invalid file:// URI returns False."""
+        invalid_uri = "file://remote-server/path/to/file.txt"
+        assert await driver.exists(invalid_uri) is False
+
+    def test_get_size_file_uri(self, driver: LocalFileReadDriver, temp_file: Path) -> None:
+        """Test get_size with file:// URI."""
+        file_uri = temp_file.as_uri()
+        size = driver.get_size(file_uri)
+        assert size == len("test content")
+
+    def test_get_size_file_uri_not_found(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
+        """Test get_size with file:// URI for non-existent file raises FileNotFoundError."""
+        nonexistent = tmp_path / "nonexistent.txt"
+        file_uri = nonexistent.as_uri()
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            driver.get_size(file_uri)
+        assert "File not found" in str(exc_info.value)
+
+    def test_get_size_invalid_file_uri(self, driver: LocalFileReadDriver) -> None:
+        """Test get_size with invalid file:// URI raises ValueError."""
+        invalid_uri = "file://remote-server/path/to/file.txt"
+
+        with pytest.raises(ValueError, match="Invalid file:// URI"):
+            driver.get_size(invalid_uri)
