@@ -1352,6 +1352,8 @@ class LibraryManager:
                         EvaluateLibraryFitnessRequest(schema=metadata_result.library_schema)
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
+                        library_info.fitness = evaluate_result.fitness
+                        library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)
 
@@ -2156,6 +2158,40 @@ class LibraryManager:
         while current.__cause__ is not None:
             current = current.__cause__
         return current
+
+    @staticmethod
+    def _check_engine_version_compatibility(required_engine_version: str) -> tuple[bool, str]:
+        """Check if a required engine version is compatible with the current engine.
+
+        Args:
+            required_engine_version: The engine version required by the library.
+
+        Returns:
+            A tuple of (is_compatible, current_engine_version).
+            is_compatible is True if required_engine_version <= current_engine_version.
+            If version comparison fails, returns (True, current_engine_version) to allow the operation.
+        """
+        engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            logger.warning("Failed to get engine version for compatibility check, allowing operation to proceed")
+            return True, ""
+
+        current_engine_version = (
+            f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        )
+
+        if not required_engine_version:
+            return True, current_engine_version
+
+        try:
+            required_ver = Version.parse(required_engine_version)
+            current_ver = Version.parse(current_engine_version)
+            is_compatible = required_ver <= current_ver
+        except ValueError:
+            # If version parsing fails, assume compatible
+            return True, current_engine_version
+        else:
+            return is_compatible, current_engine_version
 
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
@@ -3443,6 +3479,21 @@ class LibraryManager:
 
         except ValueError as e:
             details = f"Failed to parse version strings for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Check engine version compatibility
+        library_required_engine_version = version_info.engine_version
+        is_compatible, current_engine_version = self._check_engine_version_compatibility(
+            library_required_engine_version
+        )
+
+        if not is_compatible:
+            details = (
+                f"Cannot update Library '{library_name}'. "
+                f"The update requires engine version {library_required_engine_version} "
+                f"but the current engine version is {current_engine_version}. "
+                f"Please update your engine first."
+            )
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update} ({update_reason})"
