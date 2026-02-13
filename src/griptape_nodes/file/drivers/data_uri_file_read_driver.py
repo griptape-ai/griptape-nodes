@@ -63,7 +63,7 @@ class DataUriFileReadDriver(BaseFileReadDriver):
         """
         try:
             await self.read(location, 0)
-        except (ValueError, Exception):
+        except Exception:
             return False
         else:
             return True

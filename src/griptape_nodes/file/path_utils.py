@@ -6,6 +6,7 @@ Comprehensive path handling utilities including:
 - Path resolution (relative paths, cross-platform)
 - Path normalization (Windows long paths, etc.)
 - Workspace operations (relative path conversions)
+- file:// URI parsing
 
 These utilities provide consistent path handling across the codebase
 and are used by OSManager, FileReadDrivers, and workspace managers.
@@ -15,6 +16,65 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+
+def parse_file_uri(location: str) -> str | None:
+    """Parse file:// URI and return local path, or None if not a valid file URI.
+
+    Supports:
+    - file:///path/to/file (Unix absolute path)
+    - file://localhost/path/to/file (localhost)
+    - file:///C:/path/to/file (Windows absolute path)
+
+    Rejects:
+    - file://hostname/path (non-localhost network paths)
+
+    Args:
+        location: Location string to parse
+
+    Returns:
+        Local file path if valid file:// URI, None otherwise
+
+    Examples:
+        parse_file_uri("file:///path/to/file.txt")
+        -> "/path/to/file.txt"
+
+        parse_file_uri("file://localhost/path/to/file.txt")
+        -> "/path/to/file.txt"
+
+        parse_file_uri("file:///C:/Users/test/file.txt")
+        -> "C:/Users/test/file.txt"
+
+        parse_file_uri("file:///path/with%20spaces.txt")
+        -> "/path/with spaces.txt"
+
+        parse_file_uri("file://remote-server/path")
+        -> None
+    """
+    if not location.startswith("file://"):
+        return None
+
+    parsed = urlparse(location)
+
+    if parsed.scheme != "file":
+        return None
+
+    # Reject non-localhost network paths
+    if parsed.netloc and parsed.netloc.lower() not in ("", "localhost"):
+        return None
+
+    # Get the path component and decode percent-encoding
+    path = unquote(parsed.path)
+
+    # Windows paths in file:// URIs have format file:///C:/path
+    # Unix paths have format file:///path
+    # The path component includes the leading slash, so we need to handle Windows specially
+    if path.startswith("/") and len(path) > 2 and path[2] == ":":  # noqa: PLR2004
+        # Windows path like /C:/Users/... -> C:/Users/...
+        path = path[1:]
+
+    return path
 
 
 def sanitize_path_string(path: str | Path) -> str:
