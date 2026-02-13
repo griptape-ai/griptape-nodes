@@ -72,6 +72,8 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
         - generation_id (str): Generation ID from the API
         - provider_response (dict): Verbatim response from the model proxy
         - thumbnail (ImageArtifact): Generated thumbnail image
+        - splat_100k (SplatUrlArtifact): 100k splat asset
+        - splat_500k (SplatUrlArtifact): 500k splat asset
         - splat_full_res (SplatUrlArtifact): Full resolution splat asset
         - caption (str): Generated caption text
         - was_successful (bool): Whether the generation succeeded
@@ -232,12 +234,57 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
 
         self.add_parameter(
             Parameter(
+                name="splat_100k",
+                tooltip="100k splat asset",
+                type="SplatUrlArtifact",
+                output_type="SplatUrlArtifact",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={
+                    "display_name": "100k",
+                    "display": "splat",
+                    "pulse_on_run": True,
+                    "clickable_file_browser": False,
+                    "expander": True,
+                    "is_full_width": False,
+                },
+                settable=False,
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
+                name="splat_500k",
+                tooltip="500k splat asset",
+                type="SplatUrlArtifact",
+                output_type="SplatUrlArtifact",
+                allowed_modes={ParameterMode.OUTPUT},
+                ui_options={
+                    "display_name": "500k",
+                    "display": "splat",
+                    "pulse_on_run": True,
+                    "clickable_file_browser": False,
+                    "expander": True,
+                    "is_full_width": False,
+                },
+                settable=False,
+            )
+        )
+
+        self.add_parameter(
+            Parameter(
                 name="splat_full_res",
                 tooltip="Full resolution splat asset",
                 type="SplatUrlArtifact",
                 output_type="SplatUrlArtifact",
                 allowed_modes={ParameterMode.OUTPUT},
-                ui_options={"display": "splat", "pulse_on_run": True, "clickable_file_browser": False},
+                ui_options={
+                    "display_name": "full",
+                    "display": "splat",
+                    "pulse_on_run": True,
+                    "clickable_file_browser": False,
+                    "expander": True,
+                    "is_full_width": False,
+                },
                 settable=False,
             )
         )
@@ -431,17 +478,29 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
 
         caption_text = assets.get("caption") if isinstance(assets, dict) else None
 
-        splat_url = None
+        splat_100k_url = None
+        splat_500k_url = None
+        splat_full_res_url = None
         if isinstance(assets, dict):
             splats = assets.get("splats", {})
             if isinstance(splats, dict):
                 spz_urls = splats.get("spz_urls", {})
                 if isinstance(spz_urls, dict):
-                    splat_url = spz_urls.get("full_res")
+                    splat_100k_url = spz_urls.get("100k")
+                    splat_500k_url = spz_urls.get("500k")
+                    splat_full_res_url = spz_urls.get("full_res")
 
         self.parameter_output_values["thumbnail"] = await self._build_thumbnail_artifact(thumbnail_url)
+        self.parameter_output_values["splat_100k"] = (
+            SplatUrlArtifact(value=splat_100k_url) if isinstance(splat_100k_url, str) and splat_100k_url else None
+        )
+        self.parameter_output_values["splat_500k"] = (
+            SplatUrlArtifact(value=splat_500k_url) if isinstance(splat_500k_url, str) and splat_500k_url else None
+        )
         self.parameter_output_values["splat_full_res"] = (
-            SplatUrlArtifact(value=splat_url) if isinstance(splat_url, str) and splat_url else None
+            SplatUrlArtifact(value=splat_full_res_url)
+            if isinstance(splat_full_res_url, str) and splat_full_res_url
+            else None
         )
         if isinstance(caption_text, str):
             self.parameter_output_values["caption"] = caption_text
@@ -457,6 +516,8 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
 
     def _set_safe_defaults(self) -> None:
         self.parameter_output_values["thumbnail"] = None
+        self.parameter_output_values["splat_100k"] = None
+        self.parameter_output_values["splat_500k"] = None
         self.parameter_output_values["splat_full_res"] = None
         self.parameter_output_values["caption"] = ""
 
