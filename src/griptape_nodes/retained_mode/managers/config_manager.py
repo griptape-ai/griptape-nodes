@@ -414,16 +414,19 @@ class ConfigManager:
     def on_handle_get_config_schema_request(self, request: GetConfigSchemaRequest) -> ResultPayload:  # noqa: ARG002
         """Handle request to get the configuration schema with current values and library settings.
 
-        This method returns a clean structure with three main components:
+        This method returns a clean structure with four main components:
         1. base_schema: Core settings schema from Pydantic Settings model with categories
         2. library_schemas: Library-specific schemas from definition files (preserves enums)
-        3. current_values: All current configuration values from merged config
+        3. artifact_schemas: Dynamically generated artifact provider schemas (enums, types, defaults)
+        4. current_values: All current configuration values from merged config
 
         The approach separates concerns for frontend flexibility and simplicity.
         Library settings with explicit schemas (including enums) are preserved, while
         libraries without schemas get simple object types.
         """
         try:
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
             # Get base settings schema and current values
             base_schema = Settings.model_json_schema()
             current_values = self.merged_config.copy()
@@ -431,14 +434,18 @@ class ConfigManager:
             # Get library schemas
             library_schemas = LibraryRegistry.get_all_library_schemas()
 
+            # Get artifact schemas (dynamically generated from registered providers/generators)
+            artifact_schemas = GriptapeNodes.ArtifactManager().get_artifact_schemas()
+
             # Return clean structure
             schema_with_defaults = {
                 "base_schema": base_schema,
                 "library_schemas": library_schemas,
+                "artifact_schemas": artifact_schemas,
                 "current_values": current_values,
             }
 
-            result_details = "Successfully returned the configuration schema with default values and library settings."
+            result_details = "Successfully returned the configuration schema with default values, library settings, and artifact schemas."
             return GetConfigSchemaResultSuccess(schema=schema_with_defaults, result_details=result_details)
         except Exception as e:
             result_details = f"Failed to generate configuration schema: {e}"

@@ -50,7 +50,7 @@ class LoadDictionary(ControlNode):
 
     def process(self) -> None:
         # Get the selected file
-        text_path = self.parameter_values["file_path"]
+        text_path = self.get_parameter_value("file_path")
 
         # Load file content based on extension
         text_data = TextLoader().load(text_path)

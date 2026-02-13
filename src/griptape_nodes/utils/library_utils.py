@@ -22,6 +22,7 @@ class LibraryVersionInfo(NamedTuple):
 
     library_version: str
     commit_sha: str
+    engine_version: str
 
 
 # Mapping of old XDG library names to their git URLs
@@ -54,7 +55,7 @@ def is_monorepo(library_path: Path) -> bool:
 
 
 def clone_and_get_library_version(remote_url: str, ref: str = "HEAD") -> LibraryVersionInfo:
-    """Fetch library version and commit SHA using sparse checkout for efficiency.
+    """Fetch library version, commit SHA, and engine version using sparse checkout for efficiency.
 
     Uses sparse checkout to download only the library JSON file instead of the entire repository,
     significantly reducing bandwidth and time for update checks.
@@ -64,13 +65,14 @@ def clone_and_get_library_version(remote_url: str, ref: str = "HEAD") -> Library
         ref: The git reference (branch, tag, or commit SHA) to check. Defaults to "HEAD".
 
     Returns:
-        LibraryVersionInfo: Library version and commit SHA from the repository.
+        LibraryVersionInfo: Library version, commit SHA, and engine version from the repository.
 
     Raises:
         GitCloneError: If sparse checkout fails or library metadata is invalid.
     """
-    library_version, commit_sha, _library_data = sparse_checkout_library_json(remote_url, ref=ref)
-    return LibraryVersionInfo(library_version=library_version, commit_sha=commit_sha)
+    library_version, commit_sha, library_data = sparse_checkout_library_json(remote_url, ref=ref)
+    engine_version = library_data.get("metadata", {}).get("engine_version", "")
+    return LibraryVersionInfo(library_version=library_version, commit_sha=commit_sha, engine_version=engine_version)
 
 
 def filter_old_xdg_library_paths(library_paths: list[str]) -> tuple[list[str], set[str]]:

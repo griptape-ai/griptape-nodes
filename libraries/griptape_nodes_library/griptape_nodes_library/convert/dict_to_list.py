@@ -80,5 +80,5 @@ class DictToList(DataNode):
 
     def process(self) -> None:
         """Process the node by extracting keys and values from the dictionary."""
-        self.parameter_output_values["keys"] = self.parameter_values["keys"]
-        self.parameter_output_values["values"] = self.parameter_values["values"]
+        self.parameter_output_values["keys"] = self.get_parameter_value("keys")
+        self.parameter_output_values["values"] = self.get_parameter_value("values")

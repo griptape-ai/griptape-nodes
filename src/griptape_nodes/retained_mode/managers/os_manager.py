@@ -62,6 +62,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     RenameFileRequest,
     RenameFileResultFailure,
     RenameFileResultSuccess,
+    ResolveMacroPathRequest,
+    ResolveMacroPathResultFailure,
+    ResolveMacroPathResultSuccess,
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
@@ -319,6 +322,10 @@ class OSManager:
                 request_type=GetFileInfoRequest, callback=self.on_get_file_info_request
             )
 
+            event_manager.assign_manager_to_request_type(
+                request_type=ResolveMacroPathRequest, callback=self.on_handle_resolve_macro_path_request
+            )
+
             # Store event_manager for direct access during resource registration
             self._event_manager = event_manager
 
@@ -403,7 +410,7 @@ class OSManager:
 
         # Success path at the end - compute final path and return
         if resolved is not None and resolved.special_path is not None:
-            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
+            extra_parts: list[str] = resolved.remaining_parts or []
             if extra_parts:
                 final_path = resolved.special_path / Path(*extra_parts)
             else:
@@ -757,6 +764,28 @@ class OSManager:
             return f"\\\\?\\{path_str}"
 
         return path_str
+
+    @staticmethod
+    def format_command_line(args: list[str]) -> str:
+        """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
+
+        Uses subprocess.list2cmdline on Windows and shlex.quote on Unix; quotes are added
+        only when required for correct parsing (e.g. paths with spaces).
+
+        Args:
+            args: List of command and arguments (e.g. [sys.executable, script_path]).
+
+        Returns:
+            Single string that can be pasted into a terminal.
+        """
+        if not args:
+            return ""
+        if OSManager.is_windows():
+            return subprocess.list2cmdline(args)
+
+        import shlex
+
+        return " ".join(shlex.quote(arg) for arg in args)
 
     # ============================================================================
     # CREATE_NEW File Collision Policy - Helper Methods
@@ -2902,6 +2931,30 @@ class OSManager:
         return GetFileInfoResultSuccess(
             file_entry=file_entry,
             result_details=f"Successfully retrieved file info for path {request.path}",
+        )
+
+    def on_handle_resolve_macro_path_request(
+        self, request: ResolveMacroPathRequest
+    ) -> ResolveMacroPathResultSuccess | ResolveMacroPathResultFailure:
+        """Handle macro path resolution request.
+
+        Args:
+            request: The request containing macro_path to resolve
+
+        Returns:
+            Success with resolved path or failure with details
+        """
+        resolution_result = self._resolve_macro_path_to_string(request.macro_path)
+
+        if isinstance(resolution_result, MacroResolutionFailure):
+            return ResolveMacroPathResultFailure(
+                result_details=resolution_result.error_details,
+                missing_variables=resolution_result.missing_variables,
+            )
+
+        return ResolveMacroPathResultSuccess(
+            result_details="Macro path resolved successfully",
+            resolved_path=resolution_result,
         )
 
     def _validate_copy_tree_paths(

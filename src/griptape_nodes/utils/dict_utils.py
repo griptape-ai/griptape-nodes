@@ -1,6 +1,25 @@
 from typing import Any
 
 
+def normalize_secrets_to_register(value: list[str] | dict[str, str] | None) -> dict[str, str]:
+    """Normalize secrets_to_register from list to dict format.
+
+    Args:
+        value: Either a list of secret names or a dict mapping names to default values.
+
+    Returns:
+        Dict mapping secret names to their default values.
+        List format is converted to dict with empty string defaults.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, list):
+        return dict.fromkeys(value, "")
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def to_dict(input_value: Any) -> dict:
     """Convert various input types to a dictionary."""
     result = {}  # Default return value
@@ -158,7 +177,7 @@ def merge_dicts(dct: dict | None, merge_dct: dict | None, *, add_keys: bool = Tr
         merge_dct = {k: merge_dct[k] for k in set(dct).intersection(set(merge_dct))}
 
     for key in merge_dct:
-        if key in dct and isinstance(dct[key], dict):
+        if key in dct and isinstance(dct[key], dict) and isinstance(merge_dct[key], dict):
             dct[key] = merge_dicts(dct[key], merge_dct[key], add_keys=add_keys, merge_lists=merge_lists)
         elif merge_lists and key in dct and isinstance(dct[key], list) and isinstance(merge_dct[key], list):
             dct[key] = list(set(dct[key] + merge_dct[key]))
