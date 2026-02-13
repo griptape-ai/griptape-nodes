@@ -13,6 +13,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 TEST_FILE_PATH = Path("test_file.txt")
 TEST_BUCKET_ID = "test-bucket-123"
 TEST_API_KEY = "test-api-key"
+REQUEST_TIMEOUT_SECONDS = 60.0
 
 
 class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
@@ -240,7 +241,7 @@ class TestGriptapeCloudStorageDriverUploadTimeout:
             workspace_directory=Path("/workspace"),
             bucket_id=TEST_BUCKET_ID,
             api_key=TEST_API_KEY,
-            request_timeout=60.0,
+            request_timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
         with (
@@ -265,4 +266,4 @@ class TestGriptapeCloudStorageDriverUploadTimeout:
             assert result == "https://signed-download.example.com"
             assert mock_request.call_count == 1
             _, call_kwargs = mock_request.call_args
-            assert call_kwargs["timeout"] == 60.0
+            assert call_kwargs["timeout"] == REQUEST_TIMEOUT_SECONDS
