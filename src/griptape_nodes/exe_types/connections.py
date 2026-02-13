@@ -42,6 +42,7 @@ class Connections:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
+        waypoints: list[dict[str, float]] | None = None,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
@@ -59,6 +60,7 @@ class Connections:
                 target_node,
                 target_parameter,
                 is_node_group_internal=is_node_group_internal,
+                waypoints=waypoints,
             )
             # New index management.
             connection_id = id(connection)
@@ -403,6 +405,40 @@ class Connections:
                 for conn_id in connection_ids:
                     connections.append(self.connections[conn_id])  # noqa: PERF401, Keeping loop for understanding.
         return connections
+
+    def find_connection(
+        self,
+        source_node_name: str,
+        source_parameter_name: str,
+        target_node_name: str,
+        target_parameter_name: str,
+    ) -> Connection | None:
+        """Find a connection by its source and target identifiers.
+
+        Args:
+            source_node_name: Name of the source node
+            source_parameter_name: Name of the source parameter
+            target_node_name: Name of the target node
+            target_parameter_name: Name of the target parameter
+
+        Returns:
+            The Connection object if found, None otherwise
+        """
+        if source_node_name not in self.outgoing_index:
+            return None
+        if source_parameter_name not in self.outgoing_index[source_node_name]:
+            return None
+
+        for connection_id in self.outgoing_index[source_node_name][source_parameter_name]:
+            if connection_id not in self.connections:
+                continue
+            connection = self.connections[connection_id]
+            if (
+                connection.target_node.name == target_node_name
+                and connection.target_parameter.name == target_parameter_name
+            ):
+                return connection
+        return None
 
     def is_node_in_forward_control_path(
         self, start_node: BaseNode, target_node: BaseNode, visited: set[str] | None = None

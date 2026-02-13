@@ -47,6 +47,9 @@ from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
+    CreateWaypointRequest,
+    CreateWaypointResultFailure,
+    CreateWaypointResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     DeleteConnectionResultSuccess,
@@ -54,6 +57,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
+    RemoveWaypointRequest,
+    RemoveWaypointResultFailure,
+    RemoveWaypointResultSuccess,
+    UpdateWaypointRequest,
+    UpdateWaypointResultFailure,
+    UpdateWaypointResultSuccess,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -256,6 +265,9 @@ class FlowManager:
         )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
+        event_manager.assign_manager_to_request_type(CreateWaypointRequest, self.on_create_waypoint_request)
+        event_manager.assign_manager_to_request_type(RemoveWaypointRequest, self.on_remove_waypoint_request)
+        event_manager.assign_manager_to_request_type(UpdateWaypointRequest, self.on_update_waypoint_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
         event_manager.assign_manager_to_request_type(StartFlowFromNodeRequest, self.on_start_flow_from_node_request)
         event_manager.assign_manager_to_request_type(SingleNodeStepRequest, self.on_single_node_step_request)
@@ -966,6 +978,7 @@ class FlowManager:
                 target_node=target_node,
                 target_parameter=target_param,
                 is_node_group_internal=is_node_group_internal,
+                waypoints=request.waypoints,
             )
             id(conn)
         except ValueError as e:
@@ -1265,6 +1278,218 @@ class FlowManager:
 
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
+
+    def _find_connection_for_waypoint_request(
+        self,
+        source_node_name: str | None,
+        source_parameter_name: str,
+        target_node_name: str | None,
+        target_parameter_name: str,
+    ) -> tuple[Connection, BaseNode, BaseNode] | None:
+        """Helper method to find a connection and nodes for waypoint operations.
+
+        Returns:
+            Tuple of (connection, source_node, target_node) if found, None otherwise
+        """
+        # Resolve source node
+        if source_node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                return None
+            source_node = GriptapeNodes.ContextManager().get_current_node()
+            source_node_name = source_node.name
+        else:
+            try:
+                source_node = GriptapeNodes.NodeManager().get_node_by_name(source_node_name)
+            except ValueError:
+                return None
+
+        # Resolve target node
+        if target_node_name is None:
+            if not GriptapeNodes.ContextManager().has_current_node():
+                return None
+            target_node = GriptapeNodes.ContextManager().get_current_node()
+            target_node_name = target_node.name
+        else:
+            try:
+                target_node = GriptapeNodes.NodeManager().get_node_by_name(target_node_name)
+            except ValueError:
+                return None
+
+        # Find the connection
+        connection = self._connections.find_connection(
+            source_node_name=source_node_name,
+            source_parameter_name=source_parameter_name,
+            target_node_name=target_node_name,
+            target_parameter_name=target_parameter_name,
+        )
+
+        if connection is None:
+            return None
+
+        return (connection, source_node, target_node)
+
+    def _connection_to_incoming_or_outgoing(
+        self, connection: Connection, source_node: BaseNode, target_node: BaseNode
+    ) -> IncomingConnection | OutgoingConnection:
+        """Convert a Connection object to IncomingConnection or OutgoingConnection for response.
+
+        Returns OutgoingConnection when viewed from source node, IncomingConnection when viewed from target node.
+        For waypoint operations, we return OutgoingConnection as it's the standard view.
+        """
+        return OutgoingConnection(
+            source_parameter_name=connection.source_parameter.name,
+            target_node_name=connection.target_node.name,
+            target_parameter_name=connection.target_parameter.name,
+            waypoints=connection.waypoints.copy() if connection.waypoints else [],
+        )
+
+    def on_create_waypoint_request(self, request: CreateWaypointRequest) -> ResultPayload:
+        """Handle request to add a waypoint to a connection."""
+        # Validate waypoint coordinates
+        if "x" not in request.waypoint or "y" not in request.waypoint:
+            return CreateWaypointResultFailure(
+                result_details="Waypoint must contain 'x' and 'y' coordinates as numbers."
+            )
+
+        try:
+            x = float(request.waypoint["x"])
+            y = float(request.waypoint["y"])
+        except (ValueError, TypeError):
+            return CreateWaypointResultFailure(
+                result_details="Waypoint coordinates 'x' and 'y' must be valid numbers."
+            )
+
+        # Find the connection
+        result = self._find_connection_for_waypoint_request(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+
+        if result is None:
+            return CreateWaypointResultFailure(
+                result_details="Connection not found. Please verify node and parameter names."
+            )
+
+        connection, source_node, target_node = result
+
+        # Validate insert_index if provided
+        waypoints = connection.waypoints.copy() if connection.waypoints else []
+        if request.insert_index is not None:
+            if request.insert_index < 0 or request.insert_index > len(waypoints):
+                return CreateWaypointResultFailure(
+                    result_details=f"Invalid insert_index {request.insert_index}. Must be between 0 and {len(waypoints)}."
+                )
+            waypoints.insert(request.insert_index, {"x": x, "y": y})
+        else:
+            waypoints.append({"x": x, "y": y})
+
+        # Update the connection's waypoints
+        connection.waypoints = waypoints
+
+        # Return success with updated connection
+        connection_response = self._connection_to_incoming_or_outgoing(connection, source_node, target_node)
+        return CreateWaypointResultSuccess(
+            connection=connection_response,
+            result_details=f"Successfully added waypoint at index {len(waypoints) - 1 if request.insert_index is None else request.insert_index}.",
+        )
+
+    def on_remove_waypoint_request(self, request: RemoveWaypointRequest) -> ResultPayload:
+        """Handle request to remove a waypoint from a connection."""
+        # Validate waypoint_index
+        if request.waypoint_index < 0:
+            return RemoveWaypointResultFailure(
+                result_details="waypoint_index must be a non-negative integer."
+            )
+
+        # Find the connection
+        result = self._find_connection_for_waypoint_request(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+
+        if result is None:
+            return RemoveWaypointResultFailure(
+                result_details="Connection not found. Please verify node and parameter names."
+            )
+
+        connection, source_node, target_node = result
+
+        # Validate waypoint_index exists
+        waypoints = connection.waypoints.copy() if connection.waypoints else []
+        if request.waypoint_index >= len(waypoints):
+            return RemoveWaypointResultFailure(
+                result_details=f"Invalid waypoint_index {request.waypoint_index}. Connection has {len(waypoints)} waypoint(s)."
+            )
+
+        # Remove the waypoint
+        waypoints.pop(request.waypoint_index)
+        connection.waypoints = waypoints
+
+        # Return success with updated connection
+        connection_response = self._connection_to_incoming_or_outgoing(connection, source_node, target_node)
+        return RemoveWaypointResultSuccess(
+            connection=connection_response,
+            result_details=f"Successfully removed waypoint at index {request.waypoint_index}.",
+        )
+
+    def on_update_waypoint_request(self, request: UpdateWaypointRequest) -> ResultPayload:
+        """Handle request to update a waypoint position."""
+        # Validate waypoint coordinates
+        if "x" not in request.waypoint or "y" not in request.waypoint:
+            return UpdateWaypointResultFailure(
+                result_details="Waypoint must contain 'x' and 'y' coordinates as numbers."
+            )
+
+        try:
+            x = float(request.waypoint["x"])
+            y = float(request.waypoint["y"])
+        except (ValueError, TypeError):
+            return UpdateWaypointResultFailure(
+                result_details="Waypoint coordinates 'x' and 'y' must be valid numbers."
+            )
+
+        # Validate waypoint_index
+        if request.waypoint_index < 0:
+            return UpdateWaypointResultFailure(
+                result_details="waypoint_index must be a non-negative integer."
+            )
+
+        # Find the connection
+        result = self._find_connection_for_waypoint_request(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+
+        if result is None:
+            return UpdateWaypointResultFailure(
+                result_details="Connection not found. Please verify node and parameter names."
+            )
+
+        connection, source_node, target_node = result
+
+        # Validate waypoint_index exists
+        waypoints = connection.waypoints.copy() if connection.waypoints else []
+        if request.waypoint_index >= len(waypoints):
+            return UpdateWaypointResultFailure(
+                result_details=f"Invalid waypoint_index {request.waypoint_index}. Connection has {len(waypoints)} waypoint(s)."
+            )
+
+        # Update the waypoint
+        waypoints[request.waypoint_index] = {"x": x, "y": y}
+        connection.waypoints = waypoints
+
+        # Return success with updated connection
+        connection_response = self._connection_to_incoming_or_outgoing(connection, source_node, target_node)
+        return UpdateWaypointResultSuccess(
+            connection=connection_response,
+            result_details=f"Successfully updated waypoint at index {request.waypoint_index}.",
+        )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: PackageNodesAsSerializedFlowRequest
@@ -3448,6 +3673,7 @@ class FlowManager:
                 source_parameter_name=connection.source_parameter.name,
                 target_node_uuid=target_node_uuid,
                 target_parameter_name=connection.target_parameter.name,
+                waypoints=connection.waypoints.copy() if connection.waypoints else None,
             )
             create_connection_commands.append(create_connection_command)
 
@@ -3618,6 +3844,8 @@ class FlowManager:
                 source_parameter_name=indirect_connection.source_parameter_name,
                 target_node_name=target_node_name,
                 target_parameter_name=indirect_connection.target_parameter_name,
+                initial_setup=True,
+                waypoints=indirect_connection.waypoints.copy() if indirect_connection.waypoints else None,
             )
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():

@@ -3599,6 +3599,14 @@ class WorkflowManager:
                 ast.keyword(arg="target_parameter_name", value=ast.Constant(value=connection.target_parameter_name)),
                 ast.keyword(arg="initial_setup", value=ast.Constant(value=True)),
             ]
+            # Add waypoints if they exist
+            if connection.waypoints:
+                create_connection_request_args.append(
+                    ast.keyword(
+                        arg="waypoints",
+                        value=ast.Constant(value=connection.waypoints),
+                    )
+                )
 
             create_connection_call = ast.Expr(
                 value=ast.Call(

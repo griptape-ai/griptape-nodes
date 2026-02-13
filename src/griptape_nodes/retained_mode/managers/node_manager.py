@@ -1216,6 +1216,7 @@ class NodeManager:
                                 source_parameter_name=connection.source_parameter.name,
                                 target_node_name=connection.target_node.name,
                                 target_parameter_name=connection.target_parameter.name,
+                                waypoints=connection.waypoints.copy() if connection.waypoints else [],
                             )
                         )
 
@@ -1231,6 +1232,7 @@ class NodeManager:
                                 source_node_name=connection.source_node.name,
                                 source_parameter_name=connection.source_parameter.name,
                                 target_parameter_name=connection.target_parameter.name,
+                                waypoints=connection.waypoints.copy() if connection.waypoints else [],
                             )
                         )
 
@@ -1292,6 +1294,7 @@ class NodeManager:
                     source_parameter_name=connection.source_parameter.name,
                     target_node_name=connection.target_node.name,
                     target_parameter_name=connection.target_parameter.name,
+                    waypoints=connection.waypoints.copy() if connection.waypoints else [],
                 )
                 for connection_id in connection_mgr.outgoing_index[node_name][parameter_name]
                 for connection in [connection_mgr.connections[connection_id]]
@@ -1305,6 +1308,7 @@ class NodeManager:
                     source_node_name=connection.source_node.name,
                     source_parameter_name=connection.source_parameter.name,
                     target_parameter_name=connection.target_parameter.name,
+                    waypoints=connection.waypoints.copy() if connection.waypoints else [],
                 )
                 for connection_id in connection_mgr.incoming_index[node_name][parameter_name]
                 for connection in [connection_mgr.connections[connection_id]]
@@ -3274,6 +3278,7 @@ class NodeManager:
                     source_parameter_name=connection.source_parameter.name,
                     target_node_uuid=target_node_uuid,
                     target_parameter_name=connection.target_parameter.name,
+                    waypoints=connection.waypoints.copy() if connection.waypoints else None,
                 )
             )
         # Final result for serialized node commands
@@ -3461,6 +3466,8 @@ class NodeManager:
                 source_parameter_name=connection_command.source_parameter_name,
                 target_node_name=node_uuid_to_name[connection_command.target_node_uuid],
                 target_parameter_name=connection_command.target_parameter_name,
+                initial_setup=True,
+                waypoints=connection_command.waypoints.copy() if connection_command.waypoints else None,
             )
             result = GriptapeNodes.handle_request(connection_request)
             if result.failed():
