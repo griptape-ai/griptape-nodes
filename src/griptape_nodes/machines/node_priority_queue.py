@@ -112,7 +112,7 @@ class DistanceToNode(NodeHeuristic):
 
 
 class TopLeftToBottomRight(NodeHeuristic):
-    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
+    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:  # noqa: ARG002
         current_pos = dag_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
         current_reading_order = current_pos["y"] + current_pos["x"]
 
@@ -136,7 +136,7 @@ class TopLeftToBottomRight(NodeHeuristic):
 
         return score * self._weight
 
-    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
+    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:  # noqa: ARG002
         if not dag_nodes:
             return {}
 
