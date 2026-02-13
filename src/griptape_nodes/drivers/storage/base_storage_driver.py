@@ -120,7 +120,7 @@ class BaseStorageDriver(ABC):
             path: The path of the file to upload.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
-            timeout: Optional timeout in seconds for upload request.
+            timeout: Optional timeout in seconds for upload request, None falls back to the httpx default.
 
         Returns:
             The URL where the file can be accessed.
@@ -158,7 +158,7 @@ class BaseStorageDriver(ABC):
 
         Args:
             path: The path of the file to download.
-            timeout: Optional timeout in seconds for download request.
+            timeout: Optional timeout in seconds for download request, None falls back to the httpx default.
 
         Returns:
             The file content as bytes.
