@@ -13,6 +13,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 TEST_FILE_PATH = Path("test_file.txt")
 TEST_BUCKET_ID = "test-bucket-123"
 TEST_API_KEY = "test-api-key"
+REQUEST_TIMEOUT_SECONDS = 60.0
 
 
 class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
@@ -229,3 +230,39 @@ class TestGriptapeCloudStorageDriverParseCloudAssetPath:
         full_url = "https://cloud.griptape.ai/buckets/test-bucket/assets/nested/path/to/file.txt"
         result = cloud_storage_driver._parse_cloud_asset_path(full_url)
         assert result == Path("nested/path/to/file.txt")
+
+
+class TestGriptapeCloudStorageDriverUploadTimeout:
+    """Test timeout propagation for GriptapeCloudStorageDriver.upload_file()."""
+
+    def test_upload_file_uses_timeout_parameter(self) -> None:
+        """upload_file should pass timeout parameter to signed URL upload request."""
+        driver = GriptapeCloudStorageDriver(
+            workspace_directory=Path("/workspace"),
+            bucket_id=TEST_BUCKET_ID,
+            api_key=TEST_API_KEY,
+        )
+
+        with (
+            patch.object(driver, "create_signed_upload_url") as mock_create_signed_upload_url,
+            patch.object(driver, "create_signed_download_url") as mock_create_signed_download_url,
+            patch("griptape_nodes.drivers.storage.base_storage_driver.httpx.request") as mock_request,
+        ):
+            mock_create_signed_upload_url.return_value = {
+                "method": "PUT",
+                "url": "https://signed-upload.example.com",
+                "headers": {"x-test": "1"},
+                "file_path": str(TEST_FILE_PATH),
+            }
+            mock_create_signed_download_url.return_value = "https://signed-download.example.com"
+
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            mock_request.return_value = mock_response
+
+            result = driver.upload_file(TEST_FILE_PATH, b"test-bytes", timeout=REQUEST_TIMEOUT_SECONDS)
+
+            assert result == "https://signed-download.example.com"
+            assert mock_request.call_count == 1
+            _, call_kwargs = mock_request.call_args
+            assert call_kwargs["timeout"] == REQUEST_TIMEOUT_SECONDS

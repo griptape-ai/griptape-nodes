@@ -108,7 +108,11 @@ class BaseStorageDriver(ABC):
         ...
 
     def upload_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        timeout: float | None = None,
     ) -> str:
         """Upload a file to storage.
 
@@ -116,6 +120,7 @@ class BaseStorageDriver(ABC):
             path: The path of the file to upload.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
+            timeout: Optional timeout in seconds for upload request, None falls back to the httpx default.
 
         Returns:
             The URL where the file can be accessed.
@@ -133,6 +138,7 @@ class BaseStorageDriver(ABC):
                 upload_response["url"],
                 content=file_content,
                 headers=upload_response["headers"],
+                timeout=timeout,
             )
             response.raise_for_status()
 
@@ -147,11 +153,12 @@ class BaseStorageDriver(ABC):
             logger.error(msg)
             raise RuntimeError(msg) from e
 
-    def download_file(self, path: Path) -> bytes:
+    def download_file(self, path: Path, timeout: float | None = None) -> bytes:
         """Download a file from storage.
 
         Args:
             path: The path of the file to download.
+            timeout: Optional timeout in seconds for download request, None falls back to the httpx default.
 
         Returns:
             The file content as bytes.
@@ -164,7 +171,7 @@ class BaseStorageDriver(ABC):
             download_url = self.create_signed_download_url(path)
 
             # Download the file
-            response = httpx.get(download_url)
+            response = httpx.get(download_url, timeout=timeout)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             msg = f"Failed to download file {path}: {e}"

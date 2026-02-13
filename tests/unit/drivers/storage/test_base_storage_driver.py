@@ -12,6 +12,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 # Test data constants
 TEST_FILE_DATA = b"test file content"
 TEST_FILE_PATH = Path("/test/file.txt")
+REQUEST_TIMEOUT_SECONDS = 45.0
 
 
 class TestBaseStorageDriverUploadFile:
@@ -140,3 +141,30 @@ class TestBaseStorageDriverUploadFile:
 
             # Verify create_signed_upload_url was called with CREATE_NEW policy (line 95)
             mock_create_url.assert_called_once_with(TEST_FILE_PATH, ExistingFilePolicy.CREATE_NEW)
+
+    def test_upload_file_uses_timeout_parameter(self) -> None:
+        """upload_file should pass timeout parameter to httpx.request."""
+        driver = self.ConcreteStorageDriver(Path("/workspace"))
+
+        with (
+            patch.object(driver, "create_signed_upload_url") as mock_create_url,
+            patch.object(driver, "create_signed_download_url") as mock_create_download_url,
+            patch("griptape_nodes.drivers.storage.base_storage_driver.httpx.request") as mock_request,
+        ):
+            mock_create_url.return_value = {
+                "url": "http://test.com/upload",
+                "file_path": str(TEST_FILE_PATH),
+                "headers": {"Authorization": "Bearer token"},
+                "method": "PUT",
+            }
+            mock_create_download_url.return_value = "http://test.com/download/file.txt"
+
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            mock_request.return_value = mock_response
+
+            result = driver.upload_file(TEST_FILE_PATH, TEST_FILE_DATA, timeout=REQUEST_TIMEOUT_SECONDS)
+
+            assert result == "http://test.com/download/file.txt"
+            _, call_kwargs = mock_request.call_args
+            assert call_kwargs["timeout"] == REQUEST_TIMEOUT_SECONDS
