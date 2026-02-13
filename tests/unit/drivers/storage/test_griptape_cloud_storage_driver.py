@@ -235,13 +235,12 @@ class TestGriptapeCloudStorageDriverParseCloudAssetPath:
 class TestGriptapeCloudStorageDriverUploadTimeout:
     """Test timeout propagation for GriptapeCloudStorageDriver.upload_file()."""
 
-    def test_upload_file_uses_configured_request_timeout(self) -> None:
-        """upload_file should pass request_timeout to signed URL upload request."""
+    def test_upload_file_uses_timeout_parameter(self) -> None:
+        """upload_file should pass timeout parameter to signed URL upload request."""
         driver = GriptapeCloudStorageDriver(
             workspace_directory=Path("/workspace"),
             bucket_id=TEST_BUCKET_ID,
             api_key=TEST_API_KEY,
-            request_timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
         with (
@@ -261,7 +260,7 @@ class TestGriptapeCloudStorageDriverUploadTimeout:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            result = driver.upload_file(TEST_FILE_PATH, b"test-bytes")
+            result = driver.upload_file(TEST_FILE_PATH, b"test-bytes", timeout=REQUEST_TIMEOUT_SECONDS)
 
             assert result == "https://signed-download.example.com"
             assert mock_request.call_count == 1

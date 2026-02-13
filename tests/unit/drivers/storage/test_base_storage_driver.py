@@ -142,9 +142,9 @@ class TestBaseStorageDriverUploadFile:
             # Verify create_signed_upload_url was called with CREATE_NEW policy (line 95)
             mock_create_url.assert_called_once_with(TEST_FILE_PATH, ExistingFilePolicy.CREATE_NEW)
 
-    def test_upload_file_uses_configured_request_timeout(self) -> None:
-        """upload_file should pass configured request_timeout to httpx.request."""
-        driver = self.ConcreteStorageDriver(Path("/workspace"), request_timeout=REQUEST_TIMEOUT_SECONDS)
+    def test_upload_file_uses_timeout_parameter(self) -> None:
+        """upload_file should pass timeout parameter to httpx.request."""
+        driver = self.ConcreteStorageDriver(Path("/workspace"))
 
         with (
             patch.object(driver, "create_signed_upload_url") as mock_create_url,
@@ -163,7 +163,7 @@ class TestBaseStorageDriverUploadFile:
             mock_response.raise_for_status.return_value = None
             mock_request.return_value = mock_response
 
-            result = driver.upload_file(TEST_FILE_PATH, TEST_FILE_DATA)
+            result = driver.upload_file(TEST_FILE_PATH, TEST_FILE_DATA, timeout=REQUEST_TIMEOUT_SECONDS)
 
             assert result == "http://test.com/download/file.txt"
             _, call_kwargs = mock_request.call_args

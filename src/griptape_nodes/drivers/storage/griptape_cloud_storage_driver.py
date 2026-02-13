@@ -34,11 +34,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             static_files_directory: The directory path prefix for static files. If provided, file names will be prefixed with this path.
             **kwargs: Additional keyword arguments including base_url and headers.
         """
-        super().__init__(workspace_directory, request_timeout=kwargs.get("request_timeout"))
+        super().__init__(workspace_directory)
 
         self.base_url = kwargs.get("base_url") or os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         self.api_key = api_key if api_key is not None else os.environ.get("GT_CLOUD_API_KEY")
         self.headers = kwargs.get("headers") or {"Authorization": f"Bearer {self.api_key}"}
+        self.request_timeout = kwargs.get("request_timeout")
         self.bucket_id = bucket_id
 
     def create_signed_upload_url(
