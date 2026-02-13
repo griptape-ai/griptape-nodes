@@ -13,9 +13,12 @@ if TYPE_CHECKING:
 class NodeHeuristic(ABC):
     """Base class for node priority heuristics."""
 
-    def __init__(self, context: ParallelResolutionContext, weight: float = 1) -> None:
+    def __init__(self, context: ParallelResolutionContext, weight: float = 1, max_value: float = 100.0) -> None:
         self._context = context
+        # The weight of this specific heuristic. Higher weight means higher priority, assuming the maximum values are the same (otherwise weight will have less of an effect)
         self._weight = weight
+        # This is the value we use to get the maximum value that we want to allow to be set for a heuristic.
+        self.max_value = max_value
 
     @property
     def weight(self) -> float:
@@ -46,72 +49,100 @@ class NodeHeuristic(ABC):
 
 
 class DistanceToNode(NodeHeuristic):
+    """Prioritize nodes based on their spatial proximity to the previously executed node.
+
+    This heuristic assigns higher priority to nodes that are closer to the last executed node
+    in the visual canvas. Distance is calculated using squared Euclidean distance for efficiency.
+
+    Scoring:
+    - Nodes closer to the previous node receive higher scores (approaching max_value)
+    - Nodes farther away receive lower scores (approaching 1.0)
+    - When no previous node exists, all nodes receive a neutral score (max_value/2)
+    - Distances are normalized across all available nodes to ensure consistent scoring
+
+    This encourages execution flow that follows the visual layout of the workflow.
+    """
+
     def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
         previous_executed_node = kwargs.get("previous_executed_node")
         if previous_executed_node is None:
-            return 50.0 * self._weight
+            return self.max_value / 2
 
         current_pos = dag_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
         prev_pos = previous_executed_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
 
-        distance = ((current_pos["x"] - prev_pos["x"]) ** 2 + (current_pos["y"] - prev_pos["y"]) ** 2) ** 0.5
+        distance_squared = (current_pos["x"] - prev_pos["x"]) ** 2 + (current_pos["y"] - prev_pos["y"]) ** 2
 
-        all_distances = []
+        all_distances_squared = []
         for node_ref in self._context.node_to_reference.values():
             pos = node_ref.node_reference.metadata.get("position", {"x": 0, "y": 0})
-            d = ((pos["x"] - prev_pos["x"]) ** 2 + (pos["y"] - prev_pos["y"]) ** 2) ** 0.5
-            all_distances.append(d)
+            d_squared = (pos["x"] - prev_pos["x"]) ** 2 + (pos["y"] - prev_pos["y"]) ** 2
+            all_distances_squared.append(d_squared)
 
-        if not all_distances or len(all_distances) == 1:
-            return 50.0 * self._weight
+        if not all_distances_squared or len(all_distances_squared) == 1:
+            return self.max_value / 2
 
-        min_distance = min(all_distances)
-        max_distance = max(all_distances)
+        min_distance_squared = min(all_distances_squared)
+        max_distance_squared = max(all_distances_squared)
 
-        if max_distance == min_distance:
-            score = 50.0
-        else:
-            normalized = (distance - min_distance) / (max_distance - min_distance)
-            score = 100.0 - (normalized * 99.0)
+        if max_distance_squared == min_distance_squared:
+            return self.max_value / 2
 
-        return score * self._weight
+        normalized = (distance_squared - min_distance_squared) / (max_distance_squared - min_distance_squared)
+        return self.max_value - (normalized * 99.0)
 
     def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
         previous_executed_node = kwargs.get("previous_executed_node")
         if previous_executed_node is None:
-            return {node.node_reference.name: 50.0 * self._weight for node in dag_nodes}
+            return {node.node_reference.name: self.max_value / 2 for node in dag_nodes}
 
         if not dag_nodes:
             return {}
 
         if len(dag_nodes) == 1:
-            return {dag_nodes[0].node_reference.name: 50.0 * self._weight}
+            return {dag_nodes[0].node_reference.name: self.max_value / 2}
 
         prev_pos = previous_executed_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
 
-        distances = []
+        distances_squared = []
         for dag_node in dag_nodes:
             pos = dag_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
-            d = ((pos["x"] - prev_pos["x"]) ** 2 + (pos["y"] - prev_pos["y"]) ** 2) ** 0.5
-            distances.append((dag_node, d))
+            d_squared = (pos["x"] - prev_pos["x"]) ** 2 + (pos["y"] - prev_pos["y"]) ** 2
+            distances_squared.append((dag_node, d_squared))
 
-        min_distance = min(d for _, d in distances)
-        max_distance = max(d for _, d in distances)
+        min_distance_squared = min(d for _, d in distances_squared)
+        max_distance_squared = max(d for _, d in distances_squared)
 
         results = {}
-        for dag_node, distance in distances:
-            if max_distance == min_distance:
-                score = 50.0
+        for dag_node, distance_squared in distances_squared:
+            if max_distance_squared == min_distance_squared:
+                score = self.max_value / 2
             else:
-                normalized = (distance - min_distance) / (max_distance - min_distance)
-                score = 100.0 - (normalized * 99.0)
+                normalized = (distance_squared - min_distance_squared) / (max_distance_squared - min_distance_squared)
+                score = self.max_value - (normalized * 99.0)
 
-            results[dag_node.node_reference.name] = score * self._weight
+            results[dag_node.node_reference.name] = score
 
         return results
 
 
 class TopLeftToBottomRight(NodeHeuristic):
+    """Prioritize nodes based on top-left to bottom-right reading order.
+
+    This heuristic assigns higher priority to nodes positioned earlier in a natural
+    reading flow (top-left of the canvas) and lower priority to nodes positioned
+    later (bottom-right).
+
+    Scoring:
+    - Reading order is calculated as: y_position + x_position
+    - Nodes with smaller reading order values (top-left) receive higher scores
+    - Nodes with larger reading order values (bottom-right) receive lower scores
+    - Scores are normalized across all nodes to ensure consistent priority distribution
+
+    This creates a predictable execution pattern that follows visual layout conventions,
+    making workflow execution more intuitive for users.
+    """
+
     def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:  # noqa: ARG002
         current_pos = dag_node.node_reference.metadata.get("position", {"x": 0, "y": 0})
         current_reading_order = current_pos["y"] + current_pos["x"]
@@ -123,25 +154,23 @@ class TopLeftToBottomRight(NodeHeuristic):
             all_reading_orders.append(reading_order)
 
         if not all_reading_orders or len(all_reading_orders) == 1:
-            return 50.0 * self._weight
+            return self.max_value / 2
 
         min_reading_order = min(all_reading_orders)
         max_reading_order = max(all_reading_orders)
 
         if max_reading_order == min_reading_order:
-            score = 50.0
-        else:
-            normalized = (current_reading_order - min_reading_order) / (max_reading_order - min_reading_order)
-            score = 100.0 - (normalized * 99.0)
+            return self.max_value / 2
 
-        return score * self._weight
+        normalized = (current_reading_order - min_reading_order) / (max_reading_order - min_reading_order)
+        return self.max_value - (normalized * 99.0)
 
     def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:  # noqa: ARG002
         if not dag_nodes:
             return {}
 
         if len(dag_nodes) == 1:
-            return {dag_nodes[0].node_reference.name: 50.0 * self._weight}
+            return {dag_nodes[0].node_reference.name: self.max_value / 2}
 
         reading_orders = []
         for dag_node in dag_nodes:
@@ -155,17 +184,32 @@ class TopLeftToBottomRight(NodeHeuristic):
         results = {}
         for dag_node, reading_order in reading_orders:
             if max_reading_order == min_reading_order:
-                score = 50.0
+                score = self.max_value / 2
             else:
                 normalized = (reading_order - min_reading_order) / (max_reading_order - min_reading_order)
-                score = 100.0 - (normalized * 99.0)
+                score = self.max_value - (normalized * 99.0)
 
-            results[dag_node.node_reference.name] = score * self._weight
+            results[dag_node.node_reference.name] = score
 
         return results
 
 
 class HasConnectionFromPrevious(NodeHeuristic):
+    """Prioritize nodes that are direct successors of the previously executed node.
+
+    This heuristic gives maximum priority to nodes that have a direct connection from
+    the last resolved node, encouraging execution to follow the natural flow of data
+    and control through the workflow graph.
+
+    Scoring:
+    - Nodes that are direct successors of the previous node receive max_value
+    - All other nodes receive a score of 0.0
+    - When no previous node exists, all nodes receive 0.0
+
+    This creates strong preference for following explicit connection paths, which helps
+    maintain data locality and reduces context switching during parallel execution.
+    """
+
     def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
         previous_executed_node = kwargs.get("previous_executed_node")
         last_resolved_successors = kwargs.get("last_resolved_successors", set())
@@ -177,7 +221,7 @@ class HasConnectionFromPrevious(NodeHeuristic):
 
         # Check if current node was a successor of the last resolved node
         if current_node_name in last_resolved_successors:
-            return 100.0 * self._weight
+            return self.max_value
 
         return 0.0
 
@@ -194,7 +238,7 @@ class HasConnectionFromPrevious(NodeHeuristic):
         results = {}
         for dag_node in dag_nodes:
             if dag_node.node_reference.name in last_resolved_successors:
-                results[dag_node.node_reference.name] = 100.0 * self._weight
+                results[dag_node.node_reference.name] = self.max_value
             else:
                 results[dag_node.node_reference.name] = 0.0
 
@@ -298,7 +342,7 @@ class NodePriorityQueue:
             )
 
             for node_name, score in scores.items():
-                combined_priorities[node_name] += score
+                combined_priorities[node_name] += score * heuristic.weight
 
         # Sort the string names directly
         self._queued_nodes.sort(key=lambda name: combined_priorities[name], reverse=True)

@@ -232,6 +232,7 @@ class DagBuilder:
                     return False
 
         if len(self.graphs) == 1:
+            # If there's only one graph, we aren't looking for a control flow connection from elsewhere! We can queue. We've already looked at data dependencies.
             return True
 
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
