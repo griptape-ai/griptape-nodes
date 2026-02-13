@@ -29,6 +29,7 @@ class NodeHeuristic(ABC):
     def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
         pass
 
+    @abstractmethod
     def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
         """Calculate priorities for multiple nodes at once.
 
@@ -42,7 +43,6 @@ class NodeHeuristic(ABC):
         Returns:
             Dictionary mapping node names to priority scores
         """
-        return {node.node_reference.name: self.calculate_priority(node, **kwargs) for node in dag_nodes}
 
 
 class DistanceToNode(NodeHeuristic):
@@ -136,7 +136,7 @@ class TopLeftToBottomRight(NodeHeuristic):
 
         return score * self._weight
 
-    def calculate_priorities_batch(self, dag_nodes: list[DagNode]) -> dict[str, float]:
+    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
         if not dag_nodes:
             return {}
 
@@ -166,45 +166,34 @@ class TopLeftToBottomRight(NodeHeuristic):
 
 
 class HasConnectionFromPrevious(NodeHeuristic):
-    def calculate_priority(self, dag_node: DagNode, previous_executed_node: DagNode | None) -> float:
+    def calculate_priority(self, dag_node: DagNode, **kwargs) -> float:
+        previous_executed_node = kwargs.get("previous_executed_node")
+        last_resolved_successors = kwargs.get("last_resolved_successors", set())
+
         if previous_executed_node is None:
             return 0.0
 
-        prev_node_name = previous_executed_node.node_reference.name
         current_node_name = dag_node.node_reference.name
 
-        if self._context.dag_builder is None:
-            return 0.0
-
-        for graph in self._context.dag_builder.graphs.values():
-            if current_node_name in graph._predecessors and prev_node_name in graph._predecessors[current_node_name]:
-                return 100.0 * self._weight
+        # Check if current node was a successor of the last resolved node
+        if current_node_name in last_resolved_successors:
+            return 100.0 * self._weight
 
         return 0.0
 
-    def calculate_priorities_batch(
-        self, dag_nodes: list[DagNode], previous_executed_node: DagNode | None
-    ) -> dict[str, float]:
+    def calculate_priorities_batch(self, dag_nodes: list[DagNode], **kwargs) -> dict[str, float]:
+        previous_executed_node = kwargs.get("previous_executed_node")
+        last_resolved_successors = kwargs.get("last_resolved_successors", set())
+
         if previous_executed_node is None:
             return {node.node_reference.name: 0.0 for node in dag_nodes}
 
         if not dag_nodes:
             return {}
 
-        if self._context.dag_builder is None:
-            return {node.node_reference.name: 0.0 for node in dag_nodes}
-
-        prev_node_name = previous_executed_node.node_reference.name
-
-        connected_nodes = set()
-        for graph in self._context.dag_builder.graphs.values():
-            for node_name in graph._predecessors:
-                if prev_node_name in graph._predecessors[node_name]:
-                    connected_nodes.add(node_name)
-
         results = {}
         for dag_node in dag_nodes:
-            if dag_node.node_reference.name in connected_nodes:
+            if dag_node.node_reference.name in last_resolved_successors:
                 results[dag_node.node_reference.name] = 100.0 * self._weight
             else:
                 results[dag_node.node_reference.name] = 0.0
@@ -228,6 +217,7 @@ class NodePriorityQueue:
         self._context = context
         self._queued_nodes: list[str] = []  # Node names, sorted by priority (highest first)
         self._needs_reorder = False  # Lazy reorder flag
+        self._last_resolved_successors: set[str] = set()  # Nodes connected to last resolved node
         self._heuristics: list[NodeHeuristic] = [
             HasConnectionFromPrevious(context, weight=1.0),
             DistanceToNode(context, weight=1.0),
@@ -301,7 +291,12 @@ class NodePriorityQueue:
         combined_priorities: dict[str, float] = {node.node_reference.name: 0.0 for node in dag_nodes}
 
         for heuristic in self._heuristics:
-            scores = heuristic.calculate_priorities_batch(dag_nodes, previous_executed_node=previous_executed_node)
+            scores = heuristic.calculate_priorities_batch(
+                dag_nodes,
+                previous_executed_node=previous_executed_node,
+                last_resolved_successors=self._last_resolved_successors,
+            )
+
             for node_name, score in scores.items():
                 combined_priorities[node_name] += score
 

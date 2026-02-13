@@ -412,6 +412,14 @@ class ExecuteDagState(State):
                 # If the node is locked, mark it as done so it skips execution
                 if node_reference.node_reference.lock or node_state == NodeState.DONE:
                     node_reference.node_state = NodeState.DONE
+
+                    # Capture successors BEFORE removing the node
+                    successors = set()
+                    for other_node in network.nodes():
+                        if node in network._predecessors.get(other_node, set()):
+                            successors.add(other_node)
+                    context.node_priority_queue._last_resolved_successors = successors
+
                     network.remove_node(node)
 
                     # Only call handle_done_nodes once per node (first network that processes it)

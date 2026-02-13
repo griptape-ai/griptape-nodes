@@ -184,6 +184,15 @@ class DagBuilder:
         self.start_node_candidates.clear()
 
     def can_queue_control_node(self, node: DagNode) -> bool:
+        # Check if node has any DAG predecessors (dependencies) still in the graph
+        node_name = node.node_reference.name
+        for graph in self.graphs.values():
+            if node_name in graph.nodes():
+                # If any predecessors exist, they haven't completed yet (completed nodes are removed)
+                predecessors = graph._predecessors.get(node_name, set())
+                if predecessors:
+                    return False
+
         if len(self.graphs) == 1:
             return True
 
