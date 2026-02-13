@@ -34,13 +34,11 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             static_files_directory: The directory path prefix for static files. If provided, file names will be prefixed with this path.
             **kwargs: Additional keyword arguments including base_url and headers.
         """
-        super().__init__(workspace_directory)
+        super().__init__(workspace_directory, request_timeout=kwargs.get("request_timeout"))
 
         self.base_url = kwargs.get("base_url") or os.environ.get("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         self.api_key = api_key if api_key is not None else os.environ.get("GT_CLOUD_API_KEY")
         self.headers = kwargs.get("headers") or {"Authorization": f"Bearer {self.api_key}"}
-        self.request_timeout = kwargs.get("request_timeout")
-
         self.bucket_id = bucket_id
 
     def create_signed_upload_url(
@@ -196,35 +194,6 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         # Return the full asset URL
         return urljoin(self.base_url, f"/buckets/{self.bucket_id}/assets/{normalized_path.as_posix()}")
-
-    def upload_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
-    ) -> str:
-        """Upload a file to cloud storage and return a signed download URL.
-
-        This override ensures configured request_timeout is applied to the signed URL upload request.
-        """
-        try:
-            upload_response = self.create_signed_upload_url(path, existing_file_policy)
-
-            response = httpx.request(
-                upload_response["method"],
-                upload_response["url"],
-                content=file_content,
-                headers=upload_response["headers"],
-                timeout=self.request_timeout,
-            )
-            response.raise_for_status()
-
-            return self.create_signed_download_url(path)
-        except httpx.HTTPStatusError as e:
-            msg = f"Failed to upload file {path}: {e}"
-            logger.error(msg)
-            raise RuntimeError(msg) from e
-        except Exception as e:
-            msg = f"Unexpected error uploading file {path}: {e}"
-            logger.error(msg)
-            raise RuntimeError(msg) from e
 
     def _create_asset(self, asset_name: str) -> str:
         url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/assets")

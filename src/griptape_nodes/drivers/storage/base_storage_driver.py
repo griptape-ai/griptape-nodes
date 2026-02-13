@@ -22,13 +22,15 @@ class CreateSignedUploadUrlResponse(TypedDict):
 class BaseStorageDriver(ABC):
     """Base class for storage drivers."""
 
-    def __init__(self, workspace_directory: Path) -> None:
+    def __init__(self, workspace_directory: Path, request_timeout: float | None = None) -> None:
         """Initialize the storage driver with a workspace directory.
 
         Args:
             workspace_directory: The base workspace directory path.
+            request_timeout: Optional HTTP request timeout in seconds for upload/download operations.
         """
         self.workspace_directory = workspace_directory
+        self.request_timeout = request_timeout
 
     @abstractmethod
     def create_signed_upload_url(
@@ -133,6 +135,7 @@ class BaseStorageDriver(ABC):
                 upload_response["url"],
                 content=file_content,
                 headers=upload_response["headers"],
+                timeout=self.request_timeout,
             )
             response.raise_for_status()
 
@@ -164,7 +167,7 @@ class BaseStorageDriver(ABC):
             download_url = self.create_signed_download_url(path)
 
             # Download the file
-            response = httpx.get(download_url)
+            response = httpx.get(download_url, timeout=self.request_timeout)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             msg = f"Failed to download file {path}: {e}"

@@ -247,7 +247,7 @@ class TestGriptapeCloudStorageDriverUploadTimeout:
         with (
             patch.object(driver, "create_signed_upload_url") as mock_create_signed_upload_url,
             patch.object(driver, "create_signed_download_url") as mock_create_signed_download_url,
-            patch("griptape_nodes.drivers.storage.griptape_cloud_storage_driver.httpx.request") as mock_request,
+            patch("griptape_nodes.drivers.storage.base_storage_driver.httpx.request") as mock_request,
         ):
             mock_create_signed_upload_url.return_value = {
                 "method": "PUT",
