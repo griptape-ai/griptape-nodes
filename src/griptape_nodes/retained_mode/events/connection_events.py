@@ -38,6 +38,8 @@ class CreateConnectionRequest(RequestPayload):
     initial_setup: bool = False
     # Mark this connection as internal to a node group proxy parameter
     is_node_group_internal: bool = False
+    # Waypoints for the connection (ordered list of {x, y} coordinates)
+    waypoints: list[dict[str, float]] | None = None
 
 
 @dataclass
@@ -118,6 +120,7 @@ class IncomingConnection:
     source_node_name: str
     source_parameter_name: str
     target_parameter_name: str
+    waypoints: list[dict[str, float]] | None = None
 
 
 @dataclass
@@ -125,6 +128,7 @@ class OutgoingConnection:
     source_parameter_name: str
     target_node_name: str
     target_parameter_name: str
+    waypoints: list[dict[str, float]] | None = None
 
 
 @dataclass
@@ -145,3 +149,133 @@ class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayload
 @PayloadRegistry.register
 class ListConnectionsForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node connections listing failed. Common causes: node not found, no current context."""
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointRequest(RequestPayload):
+    """Add a new waypoint to an existing connection.
+
+    Use when: User adds a waypoint to a connection in the frontend to control the visual path.
+
+    Args:
+        source_node_name: Name of the source node (None for current context)
+        source_parameter_name: Name of the source parameter
+        target_node_name: Name of the target node (None for current context)
+        target_parameter_name: Name of the target parameter
+        waypoint: Dictionary with 'x' and 'y' coordinates for the waypoint
+        insert_index: Optional position to insert waypoint (0-based). If omitted, append to end
+
+    Results: CreateWaypointResultSuccess | CreateWaypointResultFailure (connection not found, invalid index)
+    """
+
+    source_parameter_name: str
+    target_parameter_name: str
+    waypoint: dict[str, float]
+    source_node_name: str | None = None
+    target_node_name: str | None = None
+    insert_index: int | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint created successfully.
+
+    Args:
+        connection: Updated connection information with waypoints
+    """
+
+    connection: IncomingConnection | OutgoingConnection
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointResultFailure(ResultPayloadFailure):
+    """Waypoint creation failed. Common causes: connection not found, invalid index, invalid coordinates."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointRequest(RequestPayload):
+    """Remove a waypoint from a connection.
+
+    Use when: User removes a waypoint from a connection in the frontend.
+
+    Args:
+        source_node_name: Name of the source node (None for current context)
+        source_parameter_name: Name of the source parameter
+        target_node_name: Name of the target node (None for current context)
+        target_parameter_name: Name of the target parameter
+        waypoint_index: 0-based index of waypoint to remove
+
+    Results: RemoveWaypointResultSuccess | RemoveWaypointResultFailure (connection not found, invalid index)
+    """
+
+    source_parameter_name: str
+    target_parameter_name: str
+    waypoint_index: int
+    source_node_name: str | None = None
+    target_node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint removed successfully.
+
+    Args:
+        connection: Updated connection information with waypoints
+    """
+
+    connection: IncomingConnection | OutgoingConnection
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointResultFailure(ResultPayloadFailure):
+    """Waypoint removal failed. Common causes: connection not found, invalid index."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointRequest(RequestPayload):
+    """Update the position of an existing waypoint.
+
+    Use when: User drags a waypoint to a new position in the frontend.
+
+    Args:
+        source_node_name: Name of the source node (None for current context)
+        source_parameter_name: Name of the source parameter
+        target_node_name: Name of the target node (None for current context)
+        target_parameter_name: Name of the target parameter
+        waypoint_index: 0-based index of waypoint to update
+        waypoint: Dictionary with 'x' and 'y' coordinates for the updated waypoint
+
+    Results: UpdateWaypointResultSuccess | UpdateWaypointResultFailure (connection not found, invalid index)
+    """
+
+    source_parameter_name: str
+    target_parameter_name: str
+    waypoint_index: int
+    waypoint: dict[str, float]
+    source_node_name: str | None = None
+    target_node_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint updated successfully.
+
+    Args:
+        connection: Updated connection information with waypoints
+    """
+
+    connection: IncomingConnection | OutgoingConnection
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointResultFailure(ResultPayloadFailure):
+    """Waypoint update failed. Common causes: connection not found, invalid index, invalid coordinates."""

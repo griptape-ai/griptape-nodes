@@ -233,12 +233,14 @@ class SerializedFlowCommands:
             source_parameter_name (str): Name of the source parameter.
             target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
             target_parameter_name (str): Name of the target parameter.
+            waypoints (list[dict[str, float]] | None): Optional ordered list of waypoint coordinates.
         """
 
         source_node_uuid: SerializedNodeCommands.NodeUUID
         source_parameter_name: str
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
+        waypoints: list[dict[str, float]] | None = None
 
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]
