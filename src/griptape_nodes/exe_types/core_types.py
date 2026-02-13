@@ -55,7 +55,7 @@ T = TypeVar("T", bound="Parameter")
 N = TypeVar("N", bound="BaseNodeElement")
 
 # Badge variant type for element badge (aligned with ParameterMessage.VariantType, excluding "none")
-BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note"]
+BadgeVariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload"]
 VALID_BADGE_VARIANTS: frozenset[str] = frozenset(get_args(BadgeVariantType))
 
 
@@ -71,6 +71,8 @@ class BadgeData:
         variant: Badge style (e.g. info, warning, error, success).
         title: Optional short title for the badge.
         message: Badge message body.
+        icon: Optional Lucide icon name (e.g. "upload-cloud"); when set, overrides variant's default icon.
+        color: Optional badge color; can be hex (e.g. "#3b82f6"), rgb (e.g. "rgb(59, 130, 246)"), etc. Overrides variant's default.
         hide: When True, the badge indicator is hidden in the UI.
         hide_clear_button: When True, the clear/dismiss button is hidden; when False,
             the button is shown so the user can dismiss the badge (e.g. via clear_badge_display).
@@ -79,18 +81,27 @@ class BadgeData:
     variant: BadgeVariantType = "info"
     title: str | None = None
     message: str = ""
+    icon: str | None = None
+    color: str | None = None
     hide: bool = False
     hide_clear_button: bool = True
 
+    _parent_element: Any = field(default=None, repr=False)
+
     def to_dict(self) -> dict[str, Any]:
         """Return a serializable dictionary suitable for events and element serialization."""
-        return {
+        result: dict[str, Any] = {
             "variant": self.variant,
             "title": self.title,
             "message": self.message,
             "hide": self.hide,
             "hide_clear_button": self.hide_clear_button,
         }
+        if self.icon is not None:
+            result["icon"] = self.icon
+        if self.color is not None:
+            result["color"] = self.color
+        return result
 
 
 # Types of Modes provided for Parameters
@@ -316,24 +327,34 @@ class BaseNodeElement:
         """Return current badge, or None if cleared; use .to_dict() when a serializable dict is needed."""
         return self._badge
 
-    def set_badge(
+    def set_badge(  # noqa: PLR0913
         self,
         variant: BadgeVariantType | None = None,
         title: str | None = None,
         message: str | None = None,
         *,
+        icon: str | None = None,
+        color: str | None = None,
         hide: bool | None = None,
         hide_clear_button: bool | None = None,
     ) -> None:
-        """Set badge fields; only provided arguments are updated. No kwargs so badge is discoverable."""
+        """Set badge fields; only provided arguments are updated. No kwargs so badge is discoverable.
+
+        color can be hex (e.g. "#3b82f6"), rgb (e.g. "rgb(59, 130, 246)"), etc.
+        """
         if self._badge is None:
             self._badge = BadgeData()
+        self._badge._parent_element = self
         if variant is not None:
             self._badge.variant = variant
         if title is not None:
             self._badge.title = title
         if message is not None:
             self._badge.message = message
+        if icon is not None:
+            self._badge.icon = icon
+        if color is not None:
+            self._badge.color = color
         if hide is not None:
             self._badge.hide = hide
         if hide_clear_button is not None:
@@ -557,10 +578,11 @@ class BaseNodeElement:
         }
         return event_data
 
-    def _apply_badge_from_message_data(self, data: dict) -> None:
+    def _apply_badge_from_message_data(self, data: dict) -> None:  # noqa: C901
         """Apply badge fields from a message data dict and track change."""
         if self._badge is None:
             self._badge = BadgeData()
+        self._badge._parent_element = self
         if "variant" in data:
             val = data["variant"]
             if val in VALID_BADGE_VARIANTS:
@@ -573,6 +595,10 @@ class BaseNodeElement:
             self._badge.title = data["title"]
         if "message" in data:
             self._badge.message = data["message"]
+        if "icon" in data:
+            self._badge.icon = data["icon"]
+        if "color" in data:
+            self._badge.color = data["color"]
         if "hide" in data:
             self._badge.hide = data["hide"]
         if "hide_clear_button" in data:
@@ -729,6 +755,7 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "docs": "Documentation",
         "help": "Help",
         "note": "Note",
+        "cloud-upload": "Upload",
         "none": "",
     }
 
@@ -743,11 +770,14 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         "docs": "book-open",
         "help": "help-circle",
         "note": "sticky-note",
+        "cloud-upload": "cloud-upload",
         "none": "",
     }
 
     # Create a type alias using the keys from DEFAULT_TITLES
-    type VariantType = Literal["info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "none"]
+    type VariantType = Literal[
+        "info", "warning", "error", "success", "tip", "link", "docs", "help", "note", "cloud-upload", "none"
+    ]
     type ButtonAlignType = Literal["full-width", "left", "center", "right"]
     type ButtonVariantType = Literal["default", "destructive", "outline", "secondary", "ghost", "link"]
 
@@ -1110,6 +1140,8 @@ class ParameterGroup(BaseNodeElement, UIOptionsMixin):
                 variant=badge.variant,
                 title=badge.title,
                 message=badge.message,
+                icon=badge.icon,
+                color=badge.color,
                 hide=badge.hide,
                 hide_clear_button=badge.hide_clear_button,
             )
@@ -1525,6 +1557,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
                 variant=badge.variant,
                 title=badge.title,
                 message=badge.message,
+                icon=badge.icon,
+                color=badge.color,
                 hide=badge.hide,
                 hide_clear_button=badge.hide_clear_button,
             )

@@ -95,7 +95,7 @@ class PublicArtifactUrlParameter:
     def add_input_parameters(self) -> None:
         self._node.add_parameter(self._parameter)
         self._parameter.set_badge(
-            variant="warning",
+            variant="cloud-upload",
             title="Media Upload",
             message=self.get_help_message(),
             hide_clear_button=False,
