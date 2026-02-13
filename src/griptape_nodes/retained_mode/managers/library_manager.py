@@ -843,6 +843,7 @@ class LibraryManager:
             library_name = existing_schema.name
             library_metadata = existing_schema.metadata
             categories = existing_schema.categories
+            widgets = existing_schema.widgets
 
             # Update schema version to latest
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
@@ -854,36 +855,7 @@ class LibraryManager:
                 sandbox_directory,
             )
 
-            # Create placeholder node definitions (original behavior)
-            node_definitions = []
-            for candidate in sandbox_node_candidates:
-                # Use placeholder class name to make it obvious when discovery hasn't run yet
-                class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
-                file_name = candidate.name
-
-                # Create a placeholder node definition - we can't get the actual class metadata
-                # without importing, so we use defaults
-                node_metadata = NodeMetadata(
-                    category=self.SANDBOX_CATEGORY_NAME,
-                    description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
-                    display_name=file_name,
-                    icon="square-dashed",
-                    color=None,
-                )
-                node_definition = NodeDefinition(
-                    class_name=class_name,
-                    file_path=str(candidate.relative_to(sandbox_directory)),
-                    metadata=node_metadata,
-                )
-                node_definitions.append(node_definition)
-
-            if not node_definitions:
-                logger.debug(
-                    "No valid node files found in sandbox directory '%s'. Creating empty sandbox library metadata.",
-                    sandbox_directory,
-                )
-                # Continue with empty list - create valid schema with 0 nodes
-                node_definitions = []
+            node_definitions = self._create_placeholder_node_definitions(sandbox_node_candidates, sandbox_directory)
 
             # Create default metadata
             sandbox_category = CategoryDefinition(
@@ -918,6 +890,7 @@ class LibraryManager:
             ]
             library_name = LibraryManager.SANDBOX_LIBRARY_NAME
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
+            widgets = None  # Fresh schemas have no widgets defined yet
 
         # Create the library schema (now using variables set by either path)
         library_schema = LibrarySchema(
@@ -926,6 +899,7 @@ class LibraryManager:
             metadata=library_metadata,
             categories=categories,
             nodes=node_definitions,
+            widgets=widgets,
         )
 
         # Sandbox libraries are never git repositories - always set to None
@@ -940,6 +914,40 @@ class LibraryManager:
             git_ref=git_ref,
             result_details=details,
         )
+
+    def _create_placeholder_node_definitions(
+        self,
+        sandbox_node_candidates: list[Path],
+        sandbox_directory: Path,
+    ) -> list[NodeDefinition]:
+        """Create placeholder node definitions for sandbox files that haven't been imported yet.
+
+        Args:
+            sandbox_node_candidates: List of Python files found in sandbox directory
+            sandbox_directory: Path to sandbox directory for computing relative paths
+
+        Returns:
+            List of placeholder NodeDefinitions
+        """
+        node_definitions = []
+        for candidate in sandbox_node_candidates:
+            class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
+            file_name = candidate.name
+
+            node_metadata = NodeMetadata(
+                category=self.SANDBOX_CATEGORY_NAME,
+                description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
+                display_name=file_name,
+                icon="square-dashed",
+                color=None,
+            )
+            node_definition = NodeDefinition(
+                class_name=class_name,
+                file_path=str(candidate.relative_to(sandbox_directory)),
+                metadata=node_metadata,
+            )
+            node_definitions.append(node_definition)
+        return node_definitions
 
     def _merge_sandbox_nodes(
         self,
@@ -2871,6 +2879,7 @@ class LibraryManager:
             metadata=library_schema.metadata,
             categories=library_schema.categories,
             nodes=actual_node_definitions,
+            widgets=library_schema.widgets,
         )
 
         # Save the schema with real class names back to disk
