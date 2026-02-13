@@ -6,29 +6,30 @@
       "description": "API keys required by nodes in this library",
       "category": "app_events.on_app_initialization_complete",
       "contents": {
-        "secrets_to_register": [
-          "OPENAI_API_KEY",
-          "ANTHROPIC_API_KEY",
-          "COHERE_API_KEY",
-          "GROK_API_KEY",
-          "GROQ_API_KEY",
-          "NVIDIA_API_KEY",
-          "AWS_ACCESS_KEY_ID",
-          "AWS_SECRET_ACCESS_KEY",
-          "AWS_DEFAULT_REGION",
-          "GOOGLE_API_KEY",
-          "GOOGLE_API_SEARCH_ID",
-          "EXA_API_KEY",
-          "ELEVEN_LABS_API_KEY"
-        ]
+        "secrets_to_register": {
+          "OPENAI_API_KEY": "",
+          "ANTHROPIC_API_KEY": "",
+          "COHERE_API_KEY": "",
+          "GROK_API_KEY": "",
+          "GROQ_API_KEY": "",
+          "NVIDIA_API_KEY": "",
+          "AWS_ACCESS_KEY_ID": "",
+          "AWS_SECRET_ACCESS_KEY": "",
+          "AWS_DEFAULT_REGION": "",
+          "GOOGLE_API_KEY": "",
+          "GOOGLE_API_SEARCH_ID": "",
+          "EXA_API_KEY": "",
+          "ELEVEN_LABS_API_KEY": "",
+          "OPENBLAS_NUM_THREADS": "1"
+        }
       }
     }
   ],
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.63.4",
-    "engine_version": "0.71.0",
+    "library_version": "0.63.5",
+    "engine_version": "0.74.0",
     "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
