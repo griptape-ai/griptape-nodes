@@ -18,9 +18,18 @@ class LocalFileReadDriver(BaseFileReadDriver):
     Reads files from local filesystem paths with full validation.
     For writing files, use OSManager directly.
 
-    This driver should be registered LAST in FileReadDriverRegistry as it matches all
+    This driver is automatically registered last (priority 100) as it matches all
     absolute paths and file:// URIs (fallback driver).
     """
+
+    @property
+    def priority(self) -> int:
+        """Return high priority (100) to ensure this driver is checked last.
+
+        Returns:
+            Priority value of 100 (checked after all other drivers)
+        """
+        return 100
 
     def can_handle(self, location: str) -> bool:
         """Check if location is a local file path or file:// URI.
