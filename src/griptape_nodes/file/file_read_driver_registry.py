@@ -15,20 +15,27 @@ class FileReadDriverNotFoundError(Exception):
 class FileReadDriverRegistry:
     """Singleton registry for file read drivers.
 
-    Drivers are registered in order of specificity (most specific first).
-    LocalFileReadDriver should be registered last as it matches all absolute paths.
+    Drivers are automatically sorted by priority (lowest first).
+    Specific drivers (HTTP, data URI, cloud) should have low priority (default: 50).
+    Fallback drivers (LocalFileReadDriver) should have high priority (100+).
     """
 
     _drivers: ClassVar[list[BaseFileReadDriver]] = []
 
     @classmethod
     def register(cls, driver: BaseFileReadDriver) -> None:
-        """Register a file read driver (order matters - first match wins).
+        """Register a file read driver (automatically sorted by priority).
+
+        Drivers are sorted by priority on registration:
+        - Lower priority values are checked first (specific drivers)
+        - Higher priority values are checked last (fallback drivers)
 
         Args:
             driver: The file read driver to register
         """
         cls._drivers.append(driver)
+        # Sort by priority (lowest first) to ensure fallback drivers are checked last
+        cls._drivers.sort(key=lambda d: d.priority)
 
     @classmethod
     def get_driver(cls, location: str) -> BaseFileReadDriver:

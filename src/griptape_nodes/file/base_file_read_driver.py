@@ -14,7 +14,23 @@ class BaseFileReadDriver(ABC):
 
     FileReadDrivers are READ-ONLY. For writing files, use OSManager directly
     (all saves go to local filesystem).
+
+    Driver Priority:
+    - Drivers are checked in order of priority (lowest to highest)
+    - Lower priority values are checked first (specific drivers)
+    - Higher priority values are checked last (fallback drivers)
+    - Default priority is 50 for most drivers
+    - LocalFileReadDriver should use priority 100 (checked last)
     """
+
+    @property
+    def priority(self) -> int:
+        """Priority for driver selection (lower = checked first, higher = checked last).
+
+        Returns:
+            Priority value (default: 50)
+        """
+        return 50
 
     @abstractmethod
     def can_handle(self, location: str) -> bool:

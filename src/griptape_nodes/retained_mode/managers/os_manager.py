@@ -349,19 +349,15 @@ class OSManager:
     def _initialize_file_drivers(self) -> None:
         """Initialize file read drivers for multi-source file reading.
 
-        Registers drivers in order of specificity (most specific first).
-        LocalFileReadDriver is registered last as the fallback (matches all absolute paths).
+        Drivers are automatically sorted by priority on registration.
         """
-        # Register core drivers (order matters: most specific first, local last)
         FileReadDriverRegistry.register(HttpFileReadDriver())
         FileReadDriverRegistry.register(DataUriFileReadDriver())
 
-        # Register GriptapeCloudFileReadDriver if credentials available
         cloud_driver = GriptapeCloudFileReadDriver.create_from_env()
         if cloud_driver:
             FileReadDriverRegistry.register(cloud_driver)
 
-        # LocalFileReadDriver must be registered LAST (matches all absolute paths)
         FileReadDriverRegistry.register(LocalFileReadDriver())
 
     def _get_workspace_path(self) -> Path:
