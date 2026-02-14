@@ -17,13 +17,6 @@ from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 class TestParallelFlowExecution:
     """Test cases for parallel flow execution functionality."""
 
-    def teardown_method(self) -> None:
-        """Clean up after each test method to prevent resource leaks."""
-        # Force garbage collection to clean up mock objects and circular references
-        import gc
-
-        gc.collect()
-
     def test_control_flow_machine_creates_parallel_resolution_with_dag_builder(self) -> None:
         """Test that ControlFlowMachine creates ParallelResolutionMachine with DAG builder when execution type is PARALLEL."""
         flow_name = "test_flow"
@@ -209,13 +202,6 @@ class TestParallelFlowExecution:
 class TestFlowManagerDagBuilderIntegration:
     """Test cases for FlowManager's DAG builder integration during flow execution."""
 
-    def teardown_method(self) -> None:
-        """Clean up after each test method to prevent resource leaks."""
-        # Force garbage collection to clean up mock objects and async contexts
-        import gc
-
-        gc.collect()
-
     def test_flow_manager_creates_dag_builder_for_parallel_flow(self) -> None:
         """Test that FlowManager creates a DAG builder when starting a parallel flow."""
         # This test is complex and involves async flow manager methods that are hard to mock
@@ -333,13 +319,6 @@ class TestFlowManagerDagBuilderIntegration:
 
 class TestDagBuilderLifecycle:
     """Test cases for DAG builder lifecycle management."""
-
-    def teardown_method(self) -> None:
-        """Clean up after each test method to prevent resource leaks."""
-        # Force garbage collection to clean up DAG builder objects
-        import gc
-
-        gc.collect()
 
     def test_dag_builder_initialization_state(self) -> None:
         """Test that DAG builder starts with clean state."""
