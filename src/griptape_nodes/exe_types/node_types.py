@@ -1001,6 +1001,23 @@ class BaseNode(ABC):
         """Runs before this node is run."""
         return None
 
+    def can_queue_for_execution(self) -> bool:
+        """Check if this node is ready to be queued for execution.
+
+        This hook allows nodes to implement custom readiness checks before being
+        added to the execution queue. If this returns False, the node will be kept
+        in a waiting state and re-checked later.
+
+        Returns:
+            True if the node can be queued for execution, False otherwise.
+
+        Note:
+            By default, all nodes are considered ready. Override this method to
+            implement custom readiness logic (e.g., waiting for external resources,
+            rate limiting, time-based delays, etc.).
+        """
+        return True
+
     # It could be quite common to want to validate whether or not a parameter is empty.
     # this helper function can be used within the `validate_before_workflow_run` method along with other validations
     #

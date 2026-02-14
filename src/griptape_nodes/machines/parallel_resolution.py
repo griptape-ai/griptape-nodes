@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
 from griptape_nodes.exe_types.connections import Direction
@@ -39,6 +39,18 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
 logger = logging.getLogger("griptape_nodes")
+
+
+class NodeStatesResult(NamedTuple):
+    """Result of building node states from the DAG networks.
+
+    Attributes:
+        canceled_nodes: Set of node names that are in a canceled state
+        leaf_nodes: Set of node names that are leaf nodes (no dependencies)
+    """
+
+    canceled_nodes: set[str]
+    leaf_nodes: set[str]
 
 
 class ParallelResolutionContext:
@@ -372,7 +384,7 @@ class ExecuteDagState(State):
                     raise RuntimeError(msg)
 
     @staticmethod
-    def build_node_states(context: ParallelResolutionContext) -> tuple[set[str], set[str]]:
+    def build_node_states(context: ParallelResolutionContext) -> NodeStatesResult:
         networks = context.networks
         leaf_nodes = set()
         for network in networks.values():
@@ -392,7 +404,7 @@ class ExecuteDagState(State):
             node_state = node_reference.node_state
             if node_state == NodeState.CANCELED:
                 canceled_nodes.add(node)
-        return canceled_nodes, leaf_nodes
+        return NodeStatesResult(canceled_nodes=canceled_nodes, leaf_nodes=leaf_nodes)
 
     @staticmethod
     async def pop_done_states(context: ParallelResolutionContext) -> None:
@@ -466,12 +478,12 @@ class ExecuteDagState(State):
         # Check and see if there are leaf nodes that are cancelled.
         # Reinitialize leaf nodes since maybe we changed things up.
         # We removed nodes from the network. There may be new leaf nodes.
-        canceled_nodes, leaf_nodes = ExecuteDagState.build_node_states(context)
+        node_states = ExecuteDagState.build_node_states(context)
         # We have no more leaf nodes. Quit early.
-        if not leaf_nodes:
+        if not node_states.leaf_nodes:
             context.workflow_state = WorkflowState.WORKFLOW_COMPLETE
             return DagCompleteState
-        if len(canceled_nodes) == len(leaf_nodes):
+        if len(node_states.canceled_nodes) == len(node_states.leaf_nodes):
             # All leaf nodes are cancelled.
             # Set state to workflow complete.
             context.workflow_state = WorkflowState.CANCELED
