@@ -594,7 +594,8 @@ class ExecuteDagState(State):
 
             # Decrement counter for completed tasks
             context.running_tasks_count -= len(done)
-
+            # New node has finished - priorities are stale
+            context.node_priority_queue.mark_priorities_stale()
             # Check for task exceptions and handle them properly
             for task in done:
                 if task.cancelled():
