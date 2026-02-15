@@ -1,6 +1,6 @@
 {
   "name": "Griptape Nodes Library",
-  "library_schema_version": "0.6.1",
+  "library_schema_version": "0.6.0",
   "settings": [
     {
       "description": "API keys required by nodes in this library",
@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.63.5",
+    "library_version": "0.63.6",
     "engine_version": "0.74.0",
     "tags": [
       "Griptape",
