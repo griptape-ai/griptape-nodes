@@ -32,6 +32,19 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultFailure,
     SetConfigValueResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    FileIOFailureReason,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    ReadFileRequest,
+    ReadFileResultFailure,
+    ReadFileResultSuccess,
+    RenameFileRequest,
+    RenameFileResultFailure,
+    WriteFileRequest,
+    WriteFileResultFailure,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY, Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
@@ -532,32 +545,205 @@ class ConfigManager:
 
         return SetConfigValueResultSuccess(result_details=result_details)
 
-    def _write_user_config_delta(self, user_config_delta: dict) -> None:
-        """Write the user configuration to the config file.
+    def _write_user_config_delta(self, user_config_delta: dict) -> None:  # noqa: C901, PLR0912, PLR0915
+        """Write user configuration delta to config file with atomic read-modify-write.
 
-        This method creates the config file if it doesn't exist and writes the
-        current configuration to it.
+        This method performs an atomic read-modify-write operation on the user config file:
+        1. Checks if config file exists, creates if missing
+        2. Reads current config with file locking (prevents concurrent write corruption)
+        3. Merges the delta with current config
+        4. Writes merged config back with file locking
+        5. Reloads all configs to reflect changes
+
+        Uses OSManager request types (GetFileInfoRequest, ReadFileRequest, WriteFileRequest)
+        for centralized file I/O with automatic file locking, structured error handling,
+        and audit trail capabilities.
 
         Args:
-            user_config_delta: The user configuration delta to write to the file Will be merged with the existing config on disk.
-            workspace_dir: The path to the config file
+            user_config_delta: Configuration changes to merge with existing config.
+                              Uses dot notation keys (e.g., {"nodes.max_depth": 10})
         """
-        if not USER_CONFIG_PATH.exists():
-            USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            USER_CONFIG_PATH.touch()
-            USER_CONFIG_PATH.write_text(json.dumps({}, indent=2))
-        try:
-            current_config = json.loads(USER_CONFIG_PATH.read_text())
-        except json.JSONDecodeError:
-            backup = USER_CONFIG_PATH.rename(USER_CONFIG_PATH.with_suffix(".bak"))
+        # Lazy import to avoid circular dependency during initialization
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        os_manager = GriptapeNodes.OSManager()
+        config_path_str = str(USER_CONFIG_PATH)
+
+        # Step 1: Check if config file exists
+        info_request = GetFileInfoRequest(path=config_path_str, workspace_only=False)
+        info_result = os_manager.on_get_file_info_request(info_request)
+
+        # Handle failures getting file info
+        if isinstance(info_result, GetFileInfoResultFailure):
             logger.error(
-                "Error parsing user config file %s. Saved this to a backup %s and created a new one.",
-                USER_CONFIG_PATH,
-                backup,
+                "Attempted to check if user config exists at '%s'. Failed due to: %s",
+                config_path_str,
+                info_result.result_details,
             )
+            return
+
+        # Step 2: Create config file if it doesn't exist
+        if info_result.file_entry is None:
+            logger.info("User config file does not exist at '%s', creating with empty config", config_path_str)
+
+            # Create empty config with proper JSON formatting
+            empty_config = json.dumps({}, indent=2)
+
+            create_request = WriteFileRequest(
+                file_path=config_path_str,
+                content=empty_config,
+                encoding="utf-8",
+                existing_file_policy=ExistingFilePolicy.FAIL,  # Should not exist, fail if it does
+                create_parents=True,  # Create parent directories if missing
+            )
+            create_result = os_manager.on_write_file_request(create_request)
+
+            if isinstance(create_result, WriteFileResultFailure):
+                logger.error(
+                    "Attempted to create user config file at '%s'. Failed due to: %s",
+                    config_path_str,
+                    create_result.result_details,
+                )
+                return
+
+        # Step 3: Read current config with file locking
+        read_request = ReadFileRequest(
+            file_path=config_path_str,
+            encoding="utf-8",
+            workspace_only=False,
+        )
+        read_result = os_manager.on_read_file_request(read_request)
+
+        # Handle read failures
+        if isinstance(read_result, ReadFileResultFailure):
+            match read_result.failure_reason:
+                case FileIOFailureReason.FILE_NOT_FOUND:
+                    logger.error(
+                        "Attempted to read user config at '%s'. File not found despite creation attempt.",
+                        config_path_str,
+                    )
+                case FileIOFailureReason.PERMISSION_DENIED:
+                    logger.error(
+                        "Attempted to read user config at '%s'. Permission denied: %s",
+                        config_path_str,
+                        read_result.result_details,
+                    )
+                case FileIOFailureReason.FILE_LOCKED:
+                    logger.error(
+                        "Attempted to read user config at '%s'. File is locked by another process: %s",
+                        config_path_str,
+                        read_result.result_details,
+                    )
+                case FileIOFailureReason.ENCODING_ERROR:
+                    logger.error(
+                        "Attempted to read user config at '%s'. Encoding error: %s",
+                        config_path_str,
+                        read_result.result_details,
+                    )
+                case _:
+                    logger.error(
+                        "Attempted to read user config at '%s'. Failed with: %s",
+                        config_path_str,
+                        read_result.result_details,
+                    )
+            return
+
+        # Step 4: Parse JSON from file content (success case only)
+        # Type narrowing: At this point read_result must be ReadFileResultSuccess
+        if not isinstance(read_result, ReadFileResultSuccess):
+            logger.error("Unexpected result type from read request at '%s'", config_path_str)
+            return
+
+        try:
+            current_config = json.loads(read_result.content)
+        except json.JSONDecodeError as e:
+            # Config file is corrupted - back it up and start fresh
+            backup_path_str = str(USER_CONFIG_PATH.with_suffix(".bak"))
+
+            logger.warning(
+                "User config file at '%s' contained invalid JSON. Attempting to back up to '%s'. Parse error: %s",
+                config_path_str,
+                backup_path_str,
+                str(e),
+            )
+
+            # Use RenameFileRequest to back up corrupted file
+            rename_request = RenameFileRequest(
+                old_path=config_path_str,
+                new_path=backup_path_str,
+                workspace_only=False,
+            )
+            rename_result = os_manager.on_rename_file_request(rename_request)
+
+            if isinstance(rename_result, RenameFileResultFailure):
+                logger.error(
+                    "Failed to back up corrupted config from '%s' to '%s': %s. Using empty config.",
+                    config_path_str,
+                    backup_path_str,
+                    rename_result.result_details,
+                )
+            else:
+                logger.info("Successfully backed up corrupted config to '%s'", backup_path_str)
+
+            # Use empty config regardless of backup success
             current_config = {}
+
+        # Step 5: Merge delta with current config
         merged_config = merge_dicts(current_config, user_config_delta)
-        USER_CONFIG_PATH.write_text(json.dumps(merged_config, indent=2))
+
+        # Step 6: Write merged config back with file locking (atomic write)
+        write_request = WriteFileRequest(
+            file_path=config_path_str,
+            content=json.dumps(merged_config, indent=2),
+            encoding="utf-8",
+            existing_file_policy=ExistingFilePolicy.OVERWRITE,
+            create_parents=True,
+        )
+        write_result = os_manager.on_write_file_request(write_request)
+
+        # Handle write failures
+        if isinstance(write_result, WriteFileResultFailure):
+            match write_result.failure_reason:
+                case FileIOFailureReason.PERMISSION_DENIED:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. Permission denied: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+                case FileIOFailureReason.DISK_FULL:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. Disk full: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+                case FileIOFailureReason.FILE_LOCKED:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. File is locked by another process: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+                case FileIOFailureReason.IS_DIRECTORY:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. Path is a directory, not a file: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+                case FileIOFailureReason.ENCODING_ERROR:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. Encoding error: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+                case _:
+                    logger.error(
+                        "Attempted to write merged config to '%s'. Failed with: %s",
+                        config_path_str,
+                        write_result.result_details,
+                    )
+            return
+
+        # Success path: Reload configs to reflect the changes
+        logger.debug("Successfully wrote user config delta to '%s', reloading configs", config_path_str)
 
     def _set_log_level(self, level: str) -> None:
         """Set the log level for the logger.
