@@ -12,13 +12,6 @@ from griptape_nodes.machines.dag_builder import DagBuilder, DagNode, NodeState
 class TestDagBuilder:
     """Test cases for DagBuilder functionality."""
 
-    def teardown_method(self) -> None:
-        """Clean up after each test method to prevent resource leaks."""
-        # Force garbage collection to clean up mock objects and circular references
-        import gc
-
-        gc.collect()
-
     def test_init_creates_empty_dag_builder(self) -> None:
         """Test that initialization creates an empty DAG builder."""
         dag_builder = DagBuilder()

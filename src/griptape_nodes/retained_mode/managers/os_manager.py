@@ -4,7 +4,6 @@ import ctypes
 import logging
 import mimetypes
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -25,6 +24,13 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
+from griptape_nodes.file.path_utils import path_needs_expansion
+from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -81,6 +87,9 @@ from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.resource_types.compute_resource import ComputeBackend, ComputeResourceType
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
+
+# File is not in static directory (or not a local file), create small preview
+from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
 
 console = Console()
 
@@ -329,10 +338,27 @@ class OSManager:
             # Store event_manager for direct access during resource registration
             self._event_manager = event_manager
 
+            # Initialize file read drivers for multi-source file reading
+            self._initialize_file_drivers()
+
             # Register system resources immediately using the event_manager directly
             # This must happen before libraries are loaded so they can check requirements
             # We use event_manager directly to avoid singleton recursion issues
             self._register_system_resources_direct()
+
+    def _initialize_file_drivers(self) -> None:
+        """Initialize file drivers for multi-source file reading.
+
+        Drivers are automatically sorted by priority on registration.
+        """
+        FileDriverRegistry.register(HttpFileDriver())
+        FileDriverRegistry.register(DataUriFileDriver())
+
+        cloud_driver = GriptapeCloudFileDriver.create_from_env()
+        if cloud_driver:
+            FileDriverRegistry.register(cloud_driver)
+
+        FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
         """Get the workspace path from config."""
@@ -456,20 +482,7 @@ class OSManager:
             resolve_path_safely(Path("/abs/nonexistent/path"))
             → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
         """
-        # Convert to absolute if relative
-        if not path.is_absolute():
-            path = Path.cwd() / path
-
-        # Normalize (remove . and .., collapse slashes) without resolving symlinks
-        # This works consistently even for non-existent paths on Windows
-        return Path(os.path.normpath(path))
-
-    def _path_needs_expansion(self, path_str: str) -> bool:
-        """Return True if path contains env vars, is absolute, or starts with ~ (needs _expand_path)."""
-        has_env_vars = "%" in path_str or "$" in path_str
-        is_absolute = Path(path_str).is_absolute()
-        starts_with_tilde = path_str.startswith("~")
-        return has_env_vars or is_absolute or starts_with_tilde
+        return pr_resolve(path)
 
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
@@ -482,7 +495,7 @@ class OSManager:
             Resolved Path object
         """
         try:
-            if self._path_needs_expansion(path_str):
+            if path_needs_expansion(path_str):
                 return self._expand_path(path_str)
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
@@ -644,12 +657,9 @@ class OSManager:
         Returns:
             Path string with surrounding quotes removed if present
         """
-        if len(path_str) >= 2 and (  # noqa: PLR2004
-            (path_str.startswith("'") and path_str.endswith("'"))
-            or (path_str.startswith('"') and path_str.endswith('"'))
-        ):
-            return path_str[1:-1]
-        return path_str
+        from griptape_nodes.file.path_utils import strip_surrounding_quotes as pr_strip
+
+        return pr_strip(path_str)
 
     def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
         r"""Clean path strings by removing newlines, carriage returns, shell escapes, and quotes.
@@ -695,40 +705,9 @@ class OSManager:
         Returns:
             Sanitized path string, or original value if not a string/Path
         """
-        # Convert Path objects to strings
-        if isinstance(path, Path):
-            path = str(path)
+        from griptape_nodes.file.path_utils import sanitize_path_string as pr_sanitize
 
-        if not isinstance(path, str):
-            return path
-
-        # First, strip surrounding quotes
-        path_str = OSManager.strip_surrounding_quotes(path)
-
-        # Handle Windows extended-length paths (\\?\...) specially
-        # These are used for paths longer than 260 characters on Windows
-        # We need to sanitize the path part but preserve the prefix
-        extended_length_prefix = ""
-        if path_str.startswith("\\\\?\\"):
-            extended_length_prefix = "\\\\?\\"
-            path_str = path_str[4:]  # Remove prefix temporarily
-
-        # Remove shell escape characters (backslashes before special chars only)
-        # Matches: space ' " ( ) { } [ ] & | ; < > $ ` ! * ? /
-        # Does NOT match: \U \t \f etc in Windows paths like C:\Users
-        path_str = re.sub(r"\\([ '\"(){}[\]&|;<>$`!*?/])", r"\1", path_str)
-
-        # Remove newlines and carriage returns from anywhere in the path
-        path_str = path_str.replace("\n", "").replace("\r", "")
-
-        # Strip leading/trailing whitespace
-        path_str = path_str.strip()
-
-        # Restore extended-length prefix if it was present
-        if extended_length_prefix:
-            path_str = extended_length_prefix + path_str
-
-        return path_str
+        return pr_sanitize(path)
 
     def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
@@ -749,21 +728,9 @@ class OSManager:
             String representation of path, cleaned of newlines/carriage returns,
             with Windows long path prefix if needed
         """
-        path_str = str(path.resolve())
+        from griptape_nodes.file.path_utils import normalize_path_for_platform as pr_normalize
 
-        # Clean path to remove newlines/carriage returns, shell escapes, and quotes
-        # This handles cases where merge_texts nodes accidentally add newlines between path components
-        path_str = self.sanitize_path_string(path_str)
-
-        # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
-        if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
-            # UNC paths (\\server\share) need \\?\UNC\ prefix
-            if path_str.startswith("\\\\"):
-                return f"\\\\?\\UNC\\{path_str[2:]}"
-            # Regular paths need \\?\ prefix
-            return f"\\\\?\\{path_str}"
-
-        return path_str
+        return pr_normalize(path)
 
     @staticmethod
     def format_command_line(args: list[str]) -> str:
@@ -1405,7 +1372,7 @@ class OSManager:
             # Get the directory path to list
             if request.directory_path is None:
                 directory = self._get_workspace_path()
-            elif self._path_needs_expansion(request.directory_path):
+            elif path_needs_expansion(request.directory_path):
                 directory = self._expand_path(request.directory_path)
             else:
                 directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
@@ -1567,61 +1534,141 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: PLR0911
-        """Handle a request to read file contents with automatic text/binary detection."""
-        # Validate request and get file path
+    def _detect_mime_type_from_location(self, location: str) -> str:
+        """Detect MIME type from location string.
+
+        Args:
+            location: URL, data URI, or file path
+
+        Returns:
+            MIME type string (default: "text/plain")
+        """
+        if location.startswith("data:"):
+            # Extract MIME type from data URI (e.g., "data:image/png;base64,...")
+            if ";" in location:
+                mime_part = location.split(";", maxsplit=1)[0].replace("data:", "")
+                return mime_part or "text/plain"
+            return "text/plain"
+
+        # Use mimetypes module for URLs and paths
+        mime_type, _ = mimetypes.guess_type(location, strict=True)
+        return mime_type or "text/plain"
+
+    def _is_text_content(self, content: bytes, mime_type: str) -> bool:
+        """Check if content is text based on MIME type and content analysis.
+
+        Args:
+            content: File content as bytes
+            mime_type: MIME type string
+
+        Returns:
+            True if content should be treated as text
+        """
+        # Check MIME type first
+        if mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml")):
+            return True
+
+        # For binary MIME types, return False
+        if mime_type.startswith(("image/", "audio/", "video/", "application/octet-stream")):
+            return False
+
+        # For unknown types, try detecting from content
         try:
-            file_path, _file_path_str = self._validate_read_file_request(request)
+            content.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            return False
+        else:
+            return True
+
+    async def _read_via_driver(
+        self, location: str, request: ReadFileRequest
+    ) -> ReadFileResultSuccess | ReadFileResultFailure:
+        """Read file using FileDriver system.
+
+        Driver handles validation (existence, permissions, format).
+        OSManager adds metadata enrichment and thumbnail generation for images.
+
+        Args:
+            location: Location string (URL, data URI, cloud path, or local path)
+            request: ReadFileRequest containing options like should_transform_image_content_to_thumbnail
+
+        Returns:
+            ReadFileResultSuccess with content and metadata, or ReadFileResultFailure
+        """
+        try:
+            # Get appropriate driver
+            driver = FileDriverRegistry.get_driver(location)
+
+            # Driver validates and reads
+            content = await driver.read(location, timeout=120.0)
+
+            # Add basic metadata
+            file_size = len(content)
+            mime_type = self._detect_mime_type_from_location(location)
+            is_text = self._is_text_content(content, mime_type)
+            encoding = "utf-8" if is_text else None
+
+            # Handle image thumbnail generation (if requested)
+            if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
+                content = self._generate_thumbnail_from_image_content(content, location, mime_type)
+                # Thumbnail returns a string (URL or data URI), not bytes
+                decoded_content: str | bytes = content
+                encoding = None
+            # Decode text content to str (API contract: text files return str, binary returns bytes)
+            elif is_text and encoding:
+                try:
+                    decoded_content = content.decode(encoding)
+                except UnicodeDecodeError:
+                    # If decoding fails, fall back to binary
+                    decoded_content = content
+                    encoding = None
+            else:
+                decoded_content = content
+
+            return ReadFileResultSuccess(
+                content=decoded_content,
+                file_size=file_size,
+                mime_type=mime_type,
+                encoding=encoding,
+                compression_encoding=None,
+                result_details="File read successfully.",
+            )
+        except (FileDriverNotFoundError, ValueError) as e:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=str(e),
+            )
         except FileNotFoundError as e:
-            msg = f"File not found: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=str(e))
         except PermissionError as e:
-            msg = f"Permission denied: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Invalid path: {e}"
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=str(e))
+        except IsADirectoryError as e:
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=str(e))
+        except Exception as e:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR, result_details=f"Error reading from {location}: {e}"
+            )
+
+    async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
+        """Handle a request to read file contents with automatic text/binary detection.
+
+        All file reading is delegated to FileDriver system.
+        """
+        # Get location string from request
+        if request.file_entry is not None:
+            location = request.file_entry.path
+        elif request.file_path is not None:
+            location = request.file_path
+        else:
+            msg = "Either file_path or file_entry must be provided"
             logger.error(msg)
             return ReadFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error validating path: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
-        # Read file content
-        try:
-            result = self._read_file_content(file_path, request)
-        except PermissionError as e:
-            msg = f"Permission denied for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except IsADirectoryError:
-            msg = f"Path is a directory, not a file: {file_path}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
-        except UnicodeDecodeError as e:
-            msg = f"Encoding error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.ENCODING_ERROR, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-        except Exception as e:
-            msg = f"Unexpected error reading file {file_path}: {type(e).__name__}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+        # Sanitize path string (basic cleanup)
+        location = self.sanitize_path_string(location)
 
-        # SUCCESS PATH - Only reached if no exceptions occurred
-        return ReadFileResultSuccess(
-            content=result.content,
-            file_size=result.file_size,
-            mime_type=result.mime_type,
-            encoding=result.encoding,
-            compression_encoding=result.compression_encoding,
-            result_details="File read successfully.",
-        )
+        # Read via driver system (driver handles all validation and I/O)
+        return await self._read_via_driver(location, request)
 
     def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
         """Read file content and return FileContentResult with all file information."""
@@ -1687,43 +1734,62 @@ class OSManager:
 
         return content, None
 
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
-        """Handle image content by creating previews or returning static URLs."""
+    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
+        """Handle image content by creating previews or returning static URLs.
+
+        Args:
+            content: Image bytes
+            file_path: File location (Path object, local path string, URL, or data URI)
+            mime_type: Image MIME type
+
+        Returns:
+            URL string (http://localhost:8124/workspace/...) or data URI
+        """
         # Store original bytes for preview creation
         original_image_bytes = content
 
-        # Check if file is already in the static files directory
-        config_manager = GriptapeNodes.ConfigManager()
-        static_dir = config_manager.workspace_path
-
+        # Check if file is already in the static files directory (only for local paths)
         try:
-            # Check if file is within the static files directory
-            file_relative_to_static = file_path.relative_to(static_dir)
-            # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
-            msg = f"Image already in workspace directory, returning URL: {static_url}"
-            logger.debug(msg)
-        except ValueError:
-            # File is not in static directory, create small preview
-            from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+            # Convert to Path object if it's a string
+            path_obj = Path(file_path) if isinstance(file_path, str) else file_path
 
-            preview_data_url = create_image_preview_from_bytes(
-                original_image_bytes,  # type: ignore[arg-type]
-                max_width=200,
-                max_height=200,
-                quality=85,
-                image_format="WEBP",
-            )
+            # Only check workspace directory for absolute local paths
+            if path_obj.is_absolute():
+                config_manager = GriptapeNodes.ConfigManager()
+                static_dir = config_manager.workspace_path
 
-            if preview_data_url:
-                logger.debug("Image preview created (file not moved)")
-                return preview_data_url
-            # Fallback to data URL if preview creation fails
-            data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
-            logger.debug("Fallback to full image data URL")
-            return data_url
-        else:
-            return static_url
+                try:
+                    # Check if file is within the static files directory
+                    file_relative_to_static = path_obj.relative_to(static_dir)
+                except ValueError:
+                    # File is not in static directory, continue to preview creation
+                    pass
+                else:
+                    # File is in static directory, construct URL directly
+                    static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+                    msg = f"Image already in workspace directory, returning URL: {static_url}"
+                    logger.debug(msg)
+                    return static_url
+        except (ValueError, OSError, TypeError):
+            # Not a valid local path (might be URL or data URI), continue to preview
+            pass
+
+        preview_data_url = create_image_preview_from_bytes(
+            original_image_bytes,  # type: ignore[arg-type]
+            max_width=200,
+            max_height=200,
+            quality=85,
+            image_format="WEBP",
+        )
+
+        if preview_data_url:
+            logger.debug("Image preview created (file not moved)")
+            return preview_data_url
+
+        # Fallback to data URL if preview creation fails
+        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        logger.debug("Fallback to full image data URL")
+        return data_url
 
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""
