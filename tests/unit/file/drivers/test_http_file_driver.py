@@ -1,36 +1,36 @@
-"""Unit tests for HttpFileReadDriver."""
+"""Unit tests for HttpFileDriver."""
 
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
+from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
 
 
-class TestHttpFileReadDriver:
-    """Tests for HttpFileReadDriver class."""
+class TestHttpFileDriver:
+    """Tests for HttpFileDriver class."""
 
     @pytest.fixture
-    def driver(self) -> HttpFileReadDriver:
-        """Create an HttpFileReadDriver instance."""
-        return HttpFileReadDriver()
+    def driver(self) -> HttpFileDriver:
+        """Create an HttpFileDriver instance."""
+        return HttpFileDriver()
 
-    def test_can_handle_http_urls(self, driver: HttpFileReadDriver) -> None:
+    def test_can_handle_http_urls(self, driver: HttpFileDriver) -> None:
         """Test that driver handles HTTP URLs."""
         assert driver.can_handle("http://example.com/file.txt") is True
 
-    def test_can_handle_https_urls(self, driver: HttpFileReadDriver) -> None:
+    def test_can_handle_https_urls(self, driver: HttpFileDriver) -> None:
         """Test that driver handles HTTPS URLs."""
         assert driver.can_handle("https://example.com/file.txt") is True
 
-    def test_can_handle_rejects_other_protocols(self, driver: HttpFileReadDriver) -> None:
+    def test_can_handle_rejects_other_protocols(self, driver: HttpFileDriver) -> None:
         """Test that driver rejects non-HTTP protocols."""
         assert driver.can_handle("ftp://example.com/file.txt") is False
         assert driver.can_handle("/local/path/file.txt") is False
         assert driver.can_handle("data:image/png;base64,abc") is False
 
     @pytest.mark.asyncio
-    async def test_read_successful_download(self, driver: HttpFileReadDriver) -> None:
+    async def test_read_successful_download(self, driver: HttpFileDriver) -> None:
         """Test successful file download."""
         mock_response = Mock()
         mock_response.content = b"downloaded content"
@@ -48,7 +48,7 @@ class TestHttpFileReadDriver:
             mock_client.get.assert_called_once_with("https://example.com/file.txt", timeout=30.0)
 
     @pytest.mark.asyncio
-    async def test_read_http_error(self, driver: HttpFileReadDriver) -> None:
+    async def test_read_http_error(self, driver: HttpFileDriver) -> None:
         """Test that HTTP errors are raised as RuntimeError."""
         import httpx
 
@@ -65,7 +65,7 @@ class TestHttpFileReadDriver:
             assert "https://example.com/file.txt" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_read_respects_timeout(self, driver: HttpFileReadDriver) -> None:
+    async def test_read_respects_timeout(self, driver: HttpFileDriver) -> None:
         """Test that timeout parameter is passed to httpx."""
         mock_response = Mock()
         mock_response.content = b"content"
@@ -82,7 +82,7 @@ class TestHttpFileReadDriver:
             mock_client.get.assert_called_once_with("https://example.com/file.txt", timeout=60.0)
 
     @pytest.mark.asyncio
-    async def test_exists_returns_true_for_accessible_url(self, driver: HttpFileReadDriver) -> None:
+    async def test_exists_returns_true_for_accessible_url(self, driver: HttpFileDriver) -> None:
         """Test exists returns True for accessible URL (2xx status)."""
         mock_response = Mock()
         mock_response.status_code = 200
@@ -98,7 +98,7 @@ class TestHttpFileReadDriver:
             assert result is True
 
     @pytest.mark.asyncio
-    async def test_exists_returns_false_for_404(self, driver: HttpFileReadDriver) -> None:
+    async def test_exists_returns_false_for_404(self, driver: HttpFileDriver) -> None:
         """Test exists returns False for 404 status."""
         mock_response = Mock()
         mock_response.status_code = 404
@@ -114,7 +114,7 @@ class TestHttpFileReadDriver:
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_exists_returns_false_on_error(self, driver: HttpFileReadDriver) -> None:
+    async def test_exists_returns_false_on_error(self, driver: HttpFileDriver) -> None:
         """Test exists returns False when HTTP error occurs."""
         import httpx
 
@@ -128,7 +128,7 @@ class TestHttpFileReadDriver:
             result = await driver.exists("https://example.com/file.txt")
             assert result is False
 
-    def test_get_size_from_content_length_header(self, driver: HttpFileReadDriver) -> None:
+    def test_get_size_from_content_length_header(self, driver: HttpFileDriver) -> None:
         """Test get_size extracts size from Content-Length header."""
         mock_response = Mock()
         mock_response.headers = {"content-length": "1234"}
@@ -145,7 +145,7 @@ class TestHttpFileReadDriver:
             expected_size = 1234
             assert size == expected_size
 
-    def test_get_size_returns_zero_when_no_content_length(self, driver: HttpFileReadDriver) -> None:
+    def test_get_size_returns_zero_when_no_content_length(self, driver: HttpFileDriver) -> None:
         """Test get_size returns 0 when Content-Length header is missing."""
         mock_response = Mock()
         mock_response.headers = {}
@@ -161,7 +161,7 @@ class TestHttpFileReadDriver:
             size = driver.get_size("https://example.com/file.txt")
             assert size == 0
 
-    def test_get_size_returns_zero_on_error(self, driver: HttpFileReadDriver) -> None:
+    def test_get_size_returns_zero_on_error(self, driver: HttpFileDriver) -> None:
         """Test get_size returns 0 when HTTP error occurs."""
         import httpx
 

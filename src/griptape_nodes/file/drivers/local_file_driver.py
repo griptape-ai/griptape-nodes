@@ -1,8 +1,8 @@
-"""File read driver for local filesystem locations."""
+"""File driver for local filesystem locations."""
 
 from pathlib import Path
 
-from griptape_nodes.file.base_file_read_driver import BaseFileReadDriver
+from griptape_nodes.file.base_file_driver import BaseFileDriver
 from griptape_nodes.file.path_utils import (
     expand_path,
     normalize_path_for_platform,
@@ -12,8 +12,8 @@ from griptape_nodes.file.path_utils import (
 )
 
 
-class LocalFileReadDriver(BaseFileReadDriver):
-    """File read driver for local filesystem locations.
+class LocalFileDriver(BaseFileDriver):
+    """File driver for local filesystem locations.
 
     Reads files from local filesystem paths with full validation.
     For writing files, use OSManager directly.

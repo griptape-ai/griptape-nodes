@@ -1,17 +1,17 @@
-"""Unit tests for FileReadDriver and FileReadDriverRegistry."""
+"""Unit tests for FileDriver and FileDriverRegistry."""
 
 from typing import Any
 
 import pytest
 
-from griptape_nodes.file.file_read_driver import (
-    FileReadDriver,
-    FileReadDriverNotFoundError,
-    FileReadDriverRegistry,
+from griptape_nodes.file.file_driver import (
+    FileDriver,
+    FileDriverNotFoundError,
+    FileDriverRegistry,
 )
 
 
-class MockDriver(FileReadDriver):
+class MockDriver(FileDriver):
     """Mock driver for testing."""
 
     def __init__(self, prefix: str) -> None:
@@ -30,7 +30,7 @@ class MockDriver(FileReadDriver):
         return 100
 
 
-class MockDriverWithPriority(FileReadDriver):
+class MockDriverWithPriority(FileDriver):
     """Mock driver with custom priority for testing."""
 
     def __init__(self, prefix: str, priority: int) -> None:
@@ -54,23 +54,23 @@ class MockDriverWithPriority(FileReadDriver):
         return 100
 
 
-class TestFileReadDriverRegistry:
-    """Tests for FileReadDriverRegistry class."""
+class TestFileDriverRegistry:
+    """Tests for FileDriverRegistry class."""
 
     def test_register_driver(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test registering a driver."""
         driver = MockDriver("http://")
-        FileReadDriverRegistry.register(driver)
-        assert len(FileReadDriverRegistry._drivers) == 1
+        FileDriverRegistry.register(driver)
+        assert len(FileDriverRegistry._drivers) == 1
 
     def test_get_driver_returns_first_match(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test that get_driver returns the first matching driver."""
         http_driver = MockDriver("http://")
         https_driver = MockDriver("https://")
-        FileReadDriverRegistry.register(http_driver)
-        FileReadDriverRegistry.register(https_driver)
+        FileDriverRegistry.register(http_driver)
+        FileDriverRegistry.register(https_driver)
 
-        result = FileReadDriverRegistry.get_driver("http://example.com")
+        result = FileDriverRegistry.get_driver("http://example.com")
         assert result is http_driver
 
     def test_get_driver_respects_order(self, clear_registry: Any) -> None:  # noqa: ARG002
@@ -79,35 +79,35 @@ class TestFileReadDriverRegistry:
         specific_driver = MockDriver("https://")  # Only matches https://
 
         # Register generic first, then specific
-        FileReadDriverRegistry.register(generic_driver)
-        FileReadDriverRegistry.register(specific_driver)
+        FileDriverRegistry.register(generic_driver)
+        FileDriverRegistry.register(specific_driver)
 
         # Generic should match first (even for https://)
-        result = FileReadDriverRegistry.get_driver("https://example.com")
+        result = FileDriverRegistry.get_driver("https://example.com")
         assert result is generic_driver
 
     def test_get_driver_raises_when_no_match(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test that get_driver raises when no driver matches."""
         driver = MockDriver("http://")
-        FileReadDriverRegistry.register(driver)
+        FileDriverRegistry.register(driver)
 
         test_location = "ftp://example.com"
-        with pytest.raises(FileReadDriverNotFoundError) as exc_info:
-            FileReadDriverRegistry.get_driver(test_location)
+        with pytest.raises(FileDriverNotFoundError) as exc_info:
+            FileDriverRegistry.get_driver(test_location)
 
         error_message = str(exc_info.value)
-        assert "No file read driver found" in error_message
+        assert "No file driver found" in error_message
         assert f"location: {test_location}" in error_message
 
     def test_clear_removes_all_drivers(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test that clear removes all registered drivers."""
-        FileReadDriverRegistry.register(MockDriver("http://"))
-        FileReadDriverRegistry.register(MockDriver("https://"))
+        FileDriverRegistry.register(MockDriver("http://"))
+        FileDriverRegistry.register(MockDriver("https://"))
         expected_driver_count = 2
-        assert len(FileReadDriverRegistry._drivers) == expected_driver_count
+        assert len(FileDriverRegistry._drivers) == expected_driver_count
 
-        FileReadDriverRegistry.clear()
-        assert len(FileReadDriverRegistry._drivers) == 0
+        FileDriverRegistry.clear()
+        assert len(FileDriverRegistry._drivers) == 0
 
     def test_multiple_drivers_with_overlapping_patterns(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test registry with multiple drivers that could match the same location."""
@@ -116,19 +116,19 @@ class TestFileReadDriverRegistry:
         http_driver = MockDriver("http")  # Matches both http:// and https://
         local_driver = MockDriver("/")  # Matches absolute paths
 
-        FileReadDriverRegistry.register(data_driver)
-        FileReadDriverRegistry.register(http_driver)
-        FileReadDriverRegistry.register(local_driver)
+        FileDriverRegistry.register(data_driver)
+        FileDriverRegistry.register(http_driver)
+        FileDriverRegistry.register(local_driver)
 
         # Test each driver is selected correctly
-        assert FileReadDriverRegistry.get_driver("data:image/png") is data_driver
-        assert FileReadDriverRegistry.get_driver("http://example.com") is http_driver
-        assert FileReadDriverRegistry.get_driver("https://example.com") is http_driver
-        assert FileReadDriverRegistry.get_driver("/path/to/file") is local_driver
+        assert FileDriverRegistry.get_driver("data:image/png") is data_driver
+        assert FileDriverRegistry.get_driver("http://example.com") is http_driver
+        assert FileDriverRegistry.get_driver("https://example.com") is http_driver
+        assert FileDriverRegistry.get_driver("/path/to/file") is local_driver
 
 
-class TestFileReadDriverPriority:
-    """Tests for FileReadDriver priority system."""
+class TestFileDriverPriority:
+    """Tests for FileDriver priority system."""
 
     def test_default_priority_is_50(self, clear_registry: Any) -> None:  # noqa: ARG002
         """Test that default driver priority is 50."""
@@ -142,12 +142,12 @@ class TestFileReadDriverPriority:
         medium_priority_driver = MockDriverWithPriority("med", priority=50)
         low_priority_driver = MockDriverWithPriority("low", priority=10)
 
-        FileReadDriverRegistry.register(high_priority_driver)
-        FileReadDriverRegistry.register(medium_priority_driver)
-        FileReadDriverRegistry.register(low_priority_driver)
+        FileDriverRegistry.register(high_priority_driver)
+        FileDriverRegistry.register(medium_priority_driver)
+        FileDriverRegistry.register(low_priority_driver)
 
         # Verify drivers are sorted by priority (lowest first)
-        drivers = FileReadDriverRegistry._drivers
+        drivers = FileDriverRegistry._drivers
         assert len(drivers) == 3  # noqa: PLR2004
         assert drivers[0] is low_priority_driver
         assert drivers[1] is medium_priority_driver
@@ -159,10 +159,10 @@ class TestFileReadDriverPriority:
         low_priority_driver = MockDriverWithPriority("test", priority=10)
         high_priority_driver = MockDriverWithPriority("test", priority=100)
 
-        FileReadDriverRegistry.register(high_priority_driver)
-        FileReadDriverRegistry.register(low_priority_driver)
+        FileDriverRegistry.register(high_priority_driver)
+        FileDriverRegistry.register(low_priority_driver)
 
-        result = FileReadDriverRegistry.get_driver("test://example")
+        result = FileDriverRegistry.get_driver("test://example")
         assert result is low_priority_driver
 
     def test_fallback_driver_with_high_priority_checked_last(self, clear_registry: Any) -> None:  # noqa: ARG002
@@ -172,18 +172,18 @@ class TestFileReadDriverPriority:
         # Fallback driver that matches everything with high priority
         fallback_driver = MockDriverWithPriority("", priority=100)
 
-        FileReadDriverRegistry.register(fallback_driver)
-        FileReadDriverRegistry.register(specific_driver)
+        FileDriverRegistry.register(fallback_driver)
+        FileDriverRegistry.register(specific_driver)
 
         # Specific driver should match first even though fallback was registered first
-        result = FileReadDriverRegistry.get_driver("http://example.com")
+        result = FileDriverRegistry.get_driver("http://example.com")
         assert result is specific_driver
 
     def test_local_file_driver_has_high_priority(self) -> None:
-        """Test that LocalFileReadDriver has priority 100."""
-        from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
+        """Test that LocalFileDriver has priority 100."""
+        from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
 
-        driver = LocalFileReadDriver()
+        driver = LocalFileDriver()
         assert driver.priority == 100  # noqa: PLR2004
 
     def test_priority_sorting_preserves_order_for_equal_priorities(self, clear_registry: Any) -> None:  # noqa: ARG002
@@ -192,11 +192,11 @@ class TestFileReadDriverPriority:
         driver2 = MockDriverWithPriority("b", priority=50)
         driver3 = MockDriverWithPriority("c", priority=50)
 
-        FileReadDriverRegistry.register(driver1)
-        FileReadDriverRegistry.register(driver2)
-        FileReadDriverRegistry.register(driver3)
+        FileDriverRegistry.register(driver1)
+        FileDriverRegistry.register(driver2)
+        FileDriverRegistry.register(driver3)
 
-        drivers = FileReadDriverRegistry._drivers
+        drivers = FileDriverRegistry._drivers
         assert drivers[0] is driver1
         assert drivers[1] is driver2
         assert drivers[2] is driver3

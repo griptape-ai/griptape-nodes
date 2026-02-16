@@ -21,8 +21,8 @@ def clear_registry() -> Generator[None, None, None]:
     Driver registration is handled by OSManager._initialize_file_drivers().
     This fixture provides a clean slate for tests that need to test registration logic.
     """
-    from griptape_nodes.file.file_read_driver import FileReadDriverRegistry
+    from griptape_nodes.file.file_driver import FileDriverRegistry
 
     yield
 
-    FileReadDriverRegistry.clear()
+    FileDriverRegistry.clear()

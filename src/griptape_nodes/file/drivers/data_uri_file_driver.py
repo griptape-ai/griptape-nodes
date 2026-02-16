@@ -1,12 +1,12 @@
-"""File read driver for data URI locations."""
+"""File driver for data URI locations."""
 
 import base64
 
-from griptape_nodes.file.base_file_read_driver import BaseFileReadDriver
+from griptape_nodes.file.base_file_driver import BaseFileDriver
 
 
-class DataUriFileReadDriver(BaseFileReadDriver):
-    """Read-only file read driver for data URI locations.
+class DataUriFileDriver(BaseFileDriver):
+    """Read-only file driver for data URI locations.
 
     Handles locations starting with "data:" prefix, decoding base64-encoded data.
     Example: "data:image/png;base64,iVBORw0KGgo..."

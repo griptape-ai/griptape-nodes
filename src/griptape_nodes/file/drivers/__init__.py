@@ -1,16 +1,16 @@
-"""File read driver implementations for reading files from various sources.
+"""File driver implementations for reading files from various sources.
 
 Driver registration is handled by OSManager._initialize_file_drivers() during initialization.
 """
 
-from griptape_nodes.file.drivers.data_uri_file_read_driver import DataUriFileReadDriver
-from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
-from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
-from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
+from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
 
 __all__ = [
-    "DataUriFileReadDriver",
-    "GriptapeCloudFileReadDriver",
-    "HttpFileReadDriver",
-    "LocalFileReadDriver",
+    "DataUriFileDriver",
+    "GriptapeCloudFileDriver",
+    "HttpFileDriver",
+    "LocalFileDriver",
 ]

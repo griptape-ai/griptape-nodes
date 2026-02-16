@@ -9,7 +9,7 @@ Comprehensive path handling utilities including:
 - file:// URI parsing
 
 These utilities provide consistent path handling across the codebase
-and are used by OSManager, FileReadDrivers, and workspace managers.
+and are used by OSManager, FileDrivers, and workspace managers.
 """
 
 import os

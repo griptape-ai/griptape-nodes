@@ -1,4 +1,4 @@
-"""Unit tests for GriptapeCloudFileReadDriver."""
+"""Unit tests for GriptapeCloudFileDriver."""
 
 import os
 from typing import Any
@@ -6,28 +6,28 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
 
 
-class TestGriptapeCloudFileReadDriver:
-    """Tests for GriptapeCloudFileReadDriver class."""
+class TestGriptapeCloudFileDriver:
+    """Tests for GriptapeCloudFileDriver class."""
 
     @pytest.fixture
-    def driver(self) -> GriptapeCloudFileReadDriver:
-        """Create a GriptapeCloudFileReadDriver instance."""
-        return GriptapeCloudFileReadDriver(
+    def driver(self) -> GriptapeCloudFileDriver:
+        """Create a GriptapeCloudFileDriver instance."""
+        return GriptapeCloudFileDriver(
             bucket_id="test-bucket-123", api_key="test-api-key", base_url="https://cloud.griptape.ai"
         )
 
     @pytest.fixture
     def mock_cloud_storage_driver(self) -> Any:
         """Mock GriptapeCloudStorageDriver static methods."""
-        with patch("griptape_nodes.file.drivers.griptape_cloud_file_read_driver.GriptapeCloudStorageDriver") as mock:
+        with patch("griptape_nodes.file.drivers.griptape_cloud_file_driver.GriptapeCloudStorageDriver") as mock:
             mock.is_cloud_asset_url = Mock(return_value=True)
             mock.extract_workspace_path_from_cloud_url = Mock(return_value="assets/test.txt")
             yield mock
 
-    def test_initialization(self, driver: GriptapeCloudFileReadDriver) -> None:
+    def test_initialization(self, driver: GriptapeCloudFileDriver) -> None:
         """Test driver initialization with credentials."""
         assert driver.bucket_id == "test-bucket-123"
         assert driver.api_key == "test-api-key"
@@ -40,7 +40,7 @@ class TestGriptapeCloudFileReadDriver:
             os.environ,
             {"GT_CLOUD_BUCKET_ID": "env-bucket", "GT_CLOUD_API_KEY": "env-key", "GT_CLOUD_BASE_URL": "https://test.ai"},
         ):
-            driver = GriptapeCloudFileReadDriver.create_from_env()
+            driver = GriptapeCloudFileDriver.create_from_env()
             assert driver is not None
             assert driver.bucket_id == "env-bucket"
             assert driver.api_key == "env-key"
@@ -49,17 +49,17 @@ class TestGriptapeCloudFileReadDriver:
     def test_create_from_env_without_credentials(self) -> None:
         """Test creating driver from env returns None when credentials missing."""
         with patch.dict(os.environ, {}, clear=True):
-            driver = GriptapeCloudFileReadDriver.create_from_env()
+            driver = GriptapeCloudFileDriver.create_from_env()
             assert driver is None
 
     def test_create_from_env_default_base_url(self) -> None:
         """Test creating driver uses default base URL when not provided."""
         with patch.dict(os.environ, {"GT_CLOUD_BUCKET_ID": "bucket", "GT_CLOUD_API_KEY": "key"}):
-            driver = GriptapeCloudFileReadDriver.create_from_env()
+            driver = GriptapeCloudFileDriver.create_from_env()
             assert driver is not None
             assert driver.base_url == "https://cloud.griptape.ai"
 
-    def test_can_handle_cloud_urls(self, driver: GriptapeCloudFileReadDriver, mock_cloud_storage_driver: Any) -> None:
+    def test_can_handle_cloud_urls(self, driver: GriptapeCloudFileDriver, mock_cloud_storage_driver: Any) -> None:
         """Test that driver handles Griptape Cloud URLs."""
         mock_cloud_storage_driver.is_cloud_asset_url.return_value = True
         result = driver.can_handle("https://cloud.griptape.ai/buckets/123/assets/test.txt")
@@ -67,7 +67,7 @@ class TestGriptapeCloudFileReadDriver:
         mock_cloud_storage_driver.is_cloud_asset_url.assert_called_once()
 
     def test_can_handle_rejects_other_urls(
-        self, driver: GriptapeCloudFileReadDriver, mock_cloud_storage_driver: Any
+        self, driver: GriptapeCloudFileDriver, mock_cloud_storage_driver: Any
     ) -> None:
         """Test that driver rejects non-cloud URLs."""
         mock_cloud_storage_driver.is_cloud_asset_url.return_value = False
@@ -77,7 +77,7 @@ class TestGriptapeCloudFileReadDriver:
     @pytest.mark.asyncio
     async def test_read_successful_download(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test successful file download from cloud storage."""
@@ -104,7 +104,7 @@ class TestGriptapeCloudFileReadDriver:
 
     @pytest.mark.asyncio
     async def test_read_url_extraction_failure(
-        self, driver: GriptapeCloudFileReadDriver, mock_cloud_storage_driver: Any
+        self, driver: GriptapeCloudFileDriver, mock_cloud_storage_driver: Any
     ) -> None:
         """Test read raises error when URL extraction fails."""
         mock_cloud_storage_driver.extract_workspace_path_from_cloud_url.return_value = None
@@ -116,7 +116,7 @@ class TestGriptapeCloudFileReadDriver:
     @pytest.mark.asyncio
     async def test_read_http_error(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test read raises RuntimeError on HTTP error."""
@@ -136,7 +136,7 @@ class TestGriptapeCloudFileReadDriver:
     @pytest.mark.asyncio
     async def test_exists_returns_true_for_accessible_asset(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test exists returns True for accessible cloud asset."""
@@ -156,7 +156,7 @@ class TestGriptapeCloudFileReadDriver:
     @pytest.mark.asyncio
     async def test_exists_returns_false_for_404(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test exists returns False for 404 status."""
@@ -175,7 +175,7 @@ class TestGriptapeCloudFileReadDriver:
 
     @pytest.mark.asyncio
     async def test_exists_returns_false_on_url_extraction_failure(
-        self, driver: GriptapeCloudFileReadDriver, mock_cloud_storage_driver: Any
+        self, driver: GriptapeCloudFileDriver, mock_cloud_storage_driver: Any
     ) -> None:
         """Test exists returns False when URL extraction fails."""
         mock_cloud_storage_driver.extract_workspace_path_from_cloud_url.return_value = None
@@ -184,7 +184,7 @@ class TestGriptapeCloudFileReadDriver:
 
     def test_get_size_from_content_length(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test get_size extracts size from Content-Length header."""
@@ -212,7 +212,7 @@ class TestGriptapeCloudFileReadDriver:
 
     def test_get_size_returns_zero_on_error(
         self,
-        driver: GriptapeCloudFileReadDriver,
+        driver: GriptapeCloudFileDriver,
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test get_size returns 0 on HTTP error."""
@@ -229,7 +229,7 @@ class TestGriptapeCloudFileReadDriver:
             assert size == 0
 
     def test_get_size_returns_zero_on_url_extraction_failure(
-        self, driver: GriptapeCloudFileReadDriver, mock_cloud_storage_driver: Any
+        self, driver: GriptapeCloudFileDriver, mock_cloud_storage_driver: Any
     ) -> None:
         """Test get_size returns 0 when URL extraction fails."""
         mock_cloud_storage_driver.extract_workspace_path_from_cloud_url.return_value = None

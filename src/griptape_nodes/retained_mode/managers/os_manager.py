@@ -24,11 +24,11 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
-from griptape_nodes.file.drivers.data_uri_file_read_driver import DataUriFileReadDriver
-from griptape_nodes.file.drivers.griptape_cloud_file_read_driver import GriptapeCloudFileReadDriver
-from griptape_nodes.file.drivers.http_file_read_driver import HttpFileReadDriver
-from griptape_nodes.file.drivers.local_file_read_driver import LocalFileReadDriver
-from griptape_nodes.file.file_read_driver import FileReadDriverNotFoundError, FileReadDriverRegistry
+from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.file.path_utils import path_needs_expansion
 from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
@@ -347,18 +347,18 @@ class OSManager:
             self._register_system_resources_direct()
 
     def _initialize_file_drivers(self) -> None:
-        """Initialize file read drivers for multi-source file reading.
+        """Initialize file drivers for multi-source file reading.
 
         Drivers are automatically sorted by priority on registration.
         """
-        FileReadDriverRegistry.register(HttpFileReadDriver())
-        FileReadDriverRegistry.register(DataUriFileReadDriver())
+        FileDriverRegistry.register(HttpFileDriver())
+        FileDriverRegistry.register(DataUriFileDriver())
 
-        cloud_driver = GriptapeCloudFileReadDriver.create_from_env()
+        cloud_driver = GriptapeCloudFileDriver.create_from_env()
         if cloud_driver:
-            FileReadDriverRegistry.register(cloud_driver)
+            FileDriverRegistry.register(cloud_driver)
 
-        FileReadDriverRegistry.register(LocalFileReadDriver())
+        FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
         """Get the workspace path from config."""
@@ -1583,7 +1583,7 @@ class OSManager:
     async def _read_via_driver(
         self, location: str, request: ReadFileRequest
     ) -> ReadFileResultSuccess | ReadFileResultFailure:
-        """Read file using FileReadDriver system.
+        """Read file using FileDriver system.
 
         Driver handles validation (existence, permissions, format).
         OSManager adds metadata enrichment and thumbnail generation for images.
@@ -1597,7 +1597,7 @@ class OSManager:
         """
         try:
             # Get appropriate driver
-            driver = FileReadDriverRegistry.get_driver(location)
+            driver = FileDriverRegistry.get_driver(location)
 
             # Driver validates and reads
             content = await driver.read(location, timeout=120.0)
@@ -1633,7 +1633,7 @@ class OSManager:
                 compression_encoding=None,
                 result_details="File read successfully.",
             )
-        except (FileReadDriverNotFoundError, ValueError) as e:
+        except (FileDriverNotFoundError, ValueError) as e:
             return ReadFileResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
                 result_details=str(e),
@@ -1652,7 +1652,7 @@ class OSManager:
     async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
         """Handle a request to read file contents with automatic text/binary detection.
 
-        All file reading is delegated to FileReadDriver system.
+        All file reading is delegated to FileDriver system.
         """
         # Get location string from request
         if request.file_entry is not None:

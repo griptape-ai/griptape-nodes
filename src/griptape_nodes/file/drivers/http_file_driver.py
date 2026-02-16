@@ -1,15 +1,15 @@
-"""File read driver for HTTP/HTTPS locations."""
+"""File driver for HTTP/HTTPS locations."""
 
 import httpx
 
-from griptape_nodes.file.base_file_read_driver import BaseFileReadDriver
+from griptape_nodes.file.base_file_driver import BaseFileDriver
 
 # HTTP status code threshold for success
 _HTTP_SUCCESS_THRESHOLD = 400
 
 
-class HttpFileReadDriver(BaseFileReadDriver):
-    """Read-only file read driver for HTTP/HTTPS locations.
+class HttpFileDriver(BaseFileDriver):
+    """Read-only file driver for HTTP/HTTPS locations.
 
     Handles locations starting with "http://" or "https://" prefix,
     downloading content via async HTTP requests.

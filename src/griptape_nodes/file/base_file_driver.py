@@ -1,26 +1,23 @@
-"""Base file read driver interface for reading files from various sources."""
+"""Base file driver interface for reading files from various sources."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
 
-class BaseFileReadDriver(ABC):
-    """Abstract file read driver for reading files from different backends.
+class BaseFileDriver(ABC):
+    """Abstract file driver for reading files from different backends.
 
     Each driver handles a specific type of location (local paths, HTTP URLs,
     S3 buckets, cloud URLs, data URIs). Drivers are registered with
-    FileReadDriverRegistry and selected based on the location format.
-
-    FileReadDrivers are READ-ONLY. For writing files, use OSManager directly
-    (all saves go to local filesystem).
+    FileDriverRegistry and selected based on the location format.
 
     Driver Priority:
     - Drivers are checked in order of priority (lowest to highest)
     - Lower priority values are checked first (specific drivers)
     - Higher priority values are checked last (fallback drivers)
     - Default priority is 50 for most drivers
-    - LocalFileReadDriver should use priority 100 (checked last)
+    - LocalFileDriver should use priority 100 (checked last)
     """
 
     @property
