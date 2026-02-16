@@ -36,6 +36,7 @@ MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol s
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
 ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
+HEURISTICS = Category(name="Heuristics", description="Node priority heuristic weights for parallel execution ordering")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -123,6 +124,29 @@ class AppInitializationComplete(BaseModel):
         category=PROJECTS,
         default_factory=list,
         description="List of project.yml file paths to load at startup",
+    )
+
+
+class HeuristicWeights(BaseModel):
+    """Weights for node priority heuristics in parallel execution.
+
+    Higher weights increase the influence of a heuristic on node ordering.
+    """
+
+    has_connection_from_previous: float = Field(
+        default=1.0,
+        description="Weight for prioritizing nodes connected to the previously executed node",
+        ge=0.0,
+    )
+    distance_to_node: float = Field(
+        default=1.0,
+        description="Weight for prioritizing nodes based on graph distance from recently executed nodes",
+        ge=0.0,
+    )
+    top_left_to_bottom_right: float = Field(
+        default=1.0,
+        description="Weight for prioritizing nodes based on visual position (top-left to bottom-right)",
+        ge=0.0,
     )
 
 
@@ -270,4 +294,9 @@ class Settings(BaseModel):
         category=ARTIFACTS,
         default_factory=dict,
         description="Control how previews are generated for images and other media files",
+    )
+    heuristic_weights: HeuristicWeights = Field(
+        category=HEURISTICS,
+        default_factory=HeuristicWeights,
+        description="Weights for node priority heuristics used in parallel execution ordering",
     )
