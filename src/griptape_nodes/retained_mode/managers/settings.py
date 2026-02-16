@@ -225,6 +225,24 @@ class Settings(BaseModel):
         default=5,
         description="Maximum number of nodes executing at a time for parallel execution.",
     )
+    heuristic_has_connection_from_previous_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes connected to the previously executed node",
+        ge=0.0,
+    )
+    heuristic_distance_to_node_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes based on graph distance from recently executed nodes",
+        ge=0.0,
+    )
+    heuristic_top_left_to_bottom_right_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes based on visual position (top-left to bottom-right)",
+        ge=0.0,
+    )
     storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
     auto_inject_workflow_metadata: bool = Field(
         category=STORAGE,

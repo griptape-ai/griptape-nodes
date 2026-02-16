@@ -90,7 +90,7 @@ class TestParallelFlowExecution:
         context = parallel_machine._context
         assert context.flow_name == flow_name
         assert context.dag_builder is mock_dag_builder
-        assert context.async_semaphore._value == max_nodes_in_parallel
+        assert context.max_nodes_in_parallel == max_nodes_in_parallel
 
     def test_parallel_resolution_machine_default_max_nodes_in_parallel(self) -> None:
         """Test that ParallelResolutionMachine uses default value for max_nodes_in_parallel."""
@@ -101,7 +101,7 @@ class TestParallelFlowExecution:
         parallel_machine = ParallelResolutionMachine(flow_name, dag_builder=mock_dag_builder)
 
         # Should default to 5
-        assert parallel_machine._context.async_semaphore._value == 5
+        assert parallel_machine._context.max_nodes_in_parallel == 5
 
     def test_parallel_resolution_context_networks_property_delegates_to_dag_builder(self) -> None:
         """Test that ParallelResolutionContext.networks property delegates to DAG builder's graphs."""
