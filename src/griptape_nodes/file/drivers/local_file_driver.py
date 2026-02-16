@@ -85,6 +85,7 @@ class LocalFileDriver(BaseFileDriver):
         # Normalize for platform (Windows long paths, etc.)
         return Path(normalize_path_for_platform(path))
 
+    # TODO: Replace pathlib.Path with anyio.Path for async compatibility https://github.com/griptape-ai/griptape-nodes/issues/3959
     async def read(self, location: str, timeout: float) -> bytes:  # noqa: ARG002, ASYNC109
         """Read file from local filesystem with validation.
 
