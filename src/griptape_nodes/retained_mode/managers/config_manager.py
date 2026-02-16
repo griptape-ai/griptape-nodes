@@ -32,6 +32,19 @@ from griptape_nodes.retained_mode.events.config_events import (
     SetConfigValueResultFailure,
     SetConfigValueResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
+    FileIOFailureReason,
+    GetFileInfoRequest,
+    GetFileInfoResultFailure,
+    ReadFileRequest,
+    ReadFileResultFailure,
+    ReadFileResultSuccess,
+    RenameFileRequest,
+    RenameFileResultFailure,
+    WriteFileRequest,
+    WriteFileResultFailure,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY, Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
@@ -551,19 +564,6 @@ class ConfigManager:
                               Uses dot notation keys (e.g., {"nodes.max_depth": 10})
         """
         # Lazy import to avoid circular dependency during initialization
-        from griptape_nodes.retained_mode.events.os_events import (
-            ExistingFilePolicy,
-            FileIOFailureReason,
-            GetFileInfoRequest,
-            GetFileInfoResultFailure,
-            ReadFileRequest,
-            ReadFileResultFailure,
-            ReadFileResultSuccess,
-            RenameFileRequest,
-            RenameFileResultFailure,
-            WriteFileRequest,
-            WriteFileResultFailure,
-        )
         from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         os_manager = GriptapeNodes.OSManager()
