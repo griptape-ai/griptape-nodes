@@ -4,18 +4,17 @@ import logging
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.error import URLError
 from urllib.parse import urlparse
 
-import httpx
 import numpy as np
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.loaders import ImageLoader
 from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
@@ -103,20 +102,6 @@ def validate_pil_format(format_str: str, param_name: str = "format") -> None:
         supported = ", ".join(sorted(SUPPORTED_PIL_FORMATS))
         msg = f"Unsupported {param_name}: '{format_str}'. Supported formats: {supported}"
         raise ValueError(msg)
-
-
-def is_local(url: str) -> bool:
-    """Check if a URL is a local file path."""
-    try:
-        url_parsed = urlparse(url)
-        if url_parsed.scheme in ("file", ""):
-            # Handle file:// URLs by extracting the actual path
-            path = url_parsed.path if url_parsed.scheme == "file" else url
-            return Path(path).exists()
-        else:  # noqa: RET505 (one linter said use else, another said it was unnecessary)
-            return False
-    except (ValueError, OSError):
-        return False
 
 
 @dataclass
@@ -275,63 +260,14 @@ def resolve_localhost_url_to_path(url: str) -> str:
     return url_without_params
 
 
-def read_image_from_file_path(path_str: str, context_name: str = "image") -> str | None:
-    """Read image file from disk and convert to base64 data URI.
-
-    Args:
-        path_str: File path (relative to workspace or absolute)
-        context_name: Name for logging context (e.g., node name)
-
-    Returns:
-        Base64 data URI string or None if file cannot be read
-    """
-    try:
-        # Try as workspace-relative path first
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        file_path = workspace_path / path_str
-
-        # If not found, try as absolute path
-        if not file_path.exists() or not file_path.is_file():
-            file_path = Path(path_str)
-            if not file_path.exists() or not file_path.is_file():
-                return None
-
-        # Read file bytes
-        image_bytes = file_path.read_bytes()
-        if not image_bytes:
-            return None
-
-        # Determine mime type from extension
-        ext = file_path.suffix.lower()
-        mime_type = "image/png"  # default
-        if ext in [".jpg", ".jpeg"]:
-            mime_type = "image/jpeg"
-        elif ext == ".png":
-            mime_type = "image/png"
-        elif ext == ".webp":
-            mime_type = "image/webp"
-        elif ext == ".gif":
-            mime_type = "image/gif"
-        else:
-            mime_type = "image/png"
-
-        # Encode to base64
-        b64_string = base64.b64encode(image_bytes).decode("utf-8")
-    except Exception as e:
-        logger.debug("%s failed to read image from file path %s: %s", context_name, path_str, e)
-        return None
-    else:
-        return f"data:{mime_type};base64,{b64_string}"
-
-
-def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:
+async def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:
     """Convert image value to base64 data URI, handling URLs, file paths, and raw base64.
 
-    This is a synchronous helper that tries file paths first, then falls back to raw base64.
-    For async URL downloads, use the async version or handle URLs separately.
+    Uses FileLoader to transparently handle local files, HTTP/HTTPS URLs,
+    localhost URLs, and data URIs.
 
     Args:
-        image_value: Image value (URL, file path, or base64 string)
+        image_value: Image value (URL, file path, data URI, or base64 string)
         context_name: Name for logging context (e.g., node name)
 
     Returns:
@@ -341,21 +277,16 @@ def convert_image_value_to_base64_data_uri(image_value: str, context_name: str =
     if image_value.startswith("data:image/"):
         return image_value
 
-    # If it's a URL, return None (caller should handle async download)
-    if image_value.startswith(("http://", "https://")):
+    # FileLoader handles local files, HTTP URLs, localhost URLs, etc.
+    try:
+        return await FileLoader.aload_data_uri(image_value, fallback_mime="image/png")
+    except FileLoadError:
+        logger.debug("%s failed to load image value: %s", context_name, image_value)
         return None
-
-    # Try to read as file path first (works cross-platform)
-    file_path = read_image_from_file_path(image_value, context_name)
-    if file_path:
-        return file_path
-
-    # Assume it's raw base64 without data URI prefix
-    return f"data:image/png;base64,{image_value}"
 
 
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL or local file path using httpx or PIL.
+    """Load image from URL or local file path via FileLoader.
 
     Note: SVG files are not supported as PIL cannot open vector graphics.
     TODO: Add SVG support using cairosvg or similar library to convert SVG to PNG/bytes
@@ -369,44 +300,30 @@ def load_pil_from_url(url: str) -> Image.Image:
         logger.error(msg)
         raise ValueError(msg)
 
-    # Check if it's a local file path
-    if is_local(url):
-        # Local file path - load directly with PIL
-        try:
-            return Image.open(url)
-        except Exception as e:
-            # Check if error is due to SVG format
-            if "cannot identify image file" in str(e).lower() and url_lower.endswith(".svg"):
-                msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
-                logger.error(msg)
-                raise ValueError(msg) from e
-            msg = f"Failed to load image from local file: {url}\nError: {e}"
-            logger.error(msg)
-            raise ValueError(msg) from e
+    try:
+        image_bytes = FileLoader.load_bytes(url)
+    except FileLoadError as e:
+        msg = f"Failed to load image from: {url}\nError: {e}"
+        logger.error(msg)
+        raise ValueError(msg) from e
 
-    # HTTP/HTTPS URL - use httpx
-    response = httpx.get(url, timeout=DEFAULT_TIMEOUT)
-    response.raise_for_status()
-
-    # Check content type for SVG
-    content_type = response.headers.get("content-type", "").lower()
-    if "image/svg+xml" in content_type:
+    # Check if content is SVG by looking at first few bytes
+    content_start = image_bytes[:100].decode("utf-8", errors="ignore").lower()
+    if "<svg" in content_start:
         msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
         logger.error(msg)
         raise ValueError(msg)
 
     try:
-        return Image.open(BytesIO(response.content))
+        return Image.open(BytesIO(image_bytes))
     except Exception as e:
-        # Check if error is due to SVG format
         if "cannot identify image file" in str(e).lower():
-            # Check if content might be SVG by looking at first few bytes
-            content_start = response.content[:100].decode("utf-8", errors="ignore").lower()
-            if "<svg" in content_start or "image/svg+xml" in content_type:
+            content_start = image_bytes[:100].decode("utf-8", errors="ignore").lower()
+            if "<svg" in content_start:
                 msg = f"SVG files are not supported by PIL. Cannot load vector graphics: {url}"
                 logger.error(msg)
                 raise ValueError(msg) from e
-        msg = f"Failed to load image from URL: {url}\nError: {e}"
+        msg = f"Failed to load image from: {url}\nError: {e}"
         logger.error(msg)
         raise ValueError(msg) from e
 
@@ -440,29 +357,6 @@ def load_pil_image_from_artifact(image: ImageUrlArtifact | ImageArtifact | str, 
         error_msg = f"{context_name}: Failed to load image: {e}"
         logger.warning(error_msg)
         raise ValueError(error_msg) from e
-
-
-def create_alpha_mask(image: Image.Image) -> Image.Image:
-    """Create a mask from an image's alpha channel.
-
-    Args:
-        image: PIL Image to create mask from
-
-    Returns:
-        PIL Image with black background and white mask
-    """
-    # Convert to RGBA if needed
-    if image.mode != "RGBA":
-        image = image.convert("RGBA")
-
-    # Extract alpha channel
-    mask = image.getchannel("A")
-
-    # Convert to RGB (black background with white mask)
-    mask_rgb = Image.new("RGB", mask.size, NAMED_COLORS["black"])
-    mask_rgb.paste(NAMED_COLORS["white"], mask=mask)
-
-    return mask_rgb
 
 
 def load_image_from_url_artifact(image_url_artifact: ImageUrlArtifact) -> ImageArtifact:

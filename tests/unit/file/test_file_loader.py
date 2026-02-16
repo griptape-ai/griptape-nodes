@@ -1,5 +1,6 @@
 """Unit tests for FileLoader."""
 
+import base64
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +17,7 @@ from griptape_nodes.retained_mode.events.os_events import (
 from griptape_nodes.retained_mode.events.project_events import MacroPath
 
 HANDLE_REQUEST_PATH = "griptape_nodes.file.file_loader.GriptapeNodes.handle_request"
+AHANDLE_REQUEST_PATH = "griptape_nodes.file.file_loader.GriptapeNodes.ahandle_request"
 
 
 class TestFileLoader:
@@ -211,3 +213,131 @@ class TestFileLoaderMacroPath:
 
         assert result is read_result
         mock_handle.assert_called_once()
+
+
+class TestFileLoaderLoadDataUri:
+    """Tests for FileLoader.load_data_uri()."""
+
+    def test_load_data_uri_binary_content(self) -> None:
+        raw_bytes = b"\x89PNG\r\n"
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content=raw_bytes,
+            file_size=len(raw_bytes),
+            mime_type="image/png",
+            encoding=None,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            uri = FileLoader.load_data_uri("workspace/image.png")
+
+        expected_b64 = base64.b64encode(raw_bytes).decode("utf-8")
+        assert uri == f"data:image/png;base64,{expected_b64}"
+
+    def test_load_data_uri_text_content(self) -> None:
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content="hello",
+            file_size=5,
+            mime_type="text/plain",
+            encoding="utf-8",
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            uri = FileLoader.load_data_uri("workspace/test.txt")
+
+        expected_b64 = base64.b64encode(b"hello").decode("utf-8")
+        assert uri == f"data:text/plain;base64,{expected_b64}"
+
+    def test_load_data_uri_uses_result_mime_type(self) -> None:
+        raw_bytes = b"\xff\xd8\xff"
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content=raw_bytes,
+            file_size=len(raw_bytes),
+            mime_type="image/jpeg",
+            encoding=None,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            uri = FileLoader.load_data_uri("workspace/photo.jpg", fallback_mime="image/png")
+
+        assert uri.startswith("data:image/jpeg;base64,")
+
+    def test_load_data_uri_uses_fallback_mime_when_empty(self) -> None:
+        raw_bytes = b"\x00\x01"
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content=raw_bytes,
+            file_size=len(raw_bytes),
+            mime_type="",
+            encoding=None,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            uri = FileLoader.load_data_uri("workspace/file.bin", fallback_mime="video/mp4")
+
+        assert uri.startswith("data:video/mp4;base64,")
+
+    def test_load_data_uri_propagates_file_load_error(self) -> None:
+        failure_result = ReadFileResultFailure(
+            result_details="File not found",
+            failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileLoadError):
+            FileLoader.load_data_uri("workspace/missing.txt")
+
+
+class TestFileLoaderAloadDataUri:
+    """Tests for FileLoader.aload_data_uri()."""
+
+    @pytest.mark.asyncio
+    async def test_aload_data_uri_binary_content(self) -> None:
+        raw_bytes = b"\x89PNG\r\n"
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content=raw_bytes,
+            file_size=len(raw_bytes),
+            mime_type="image/png",
+            encoding=None,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            uri = await FileLoader.aload_data_uri("workspace/image.png")
+
+        expected_b64 = base64.b64encode(raw_bytes).decode("utf-8")
+        assert uri == f"data:image/png;base64,{expected_b64}"
+
+    @pytest.mark.asyncio
+    async def test_aload_data_uri_text_content(self) -> None:
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content="hello",
+            file_size=5,
+            mime_type="text/plain",
+            encoding="utf-8",
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            uri = await FileLoader.aload_data_uri("workspace/test.txt")
+
+        expected_b64 = base64.b64encode(b"hello").decode("utf-8")
+        assert uri == f"data:text/plain;base64,{expected_b64}"
+
+    @pytest.mark.asyncio
+    async def test_aload_data_uri_uses_fallback_mime_when_empty(self) -> None:
+        raw_bytes = b"\x00\x01"
+        success_result = ReadFileResultSuccess(
+            result_details="OK",
+            content=raw_bytes,
+            file_size=len(raw_bytes),
+            mime_type="",
+            encoding=None,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            uri = await FileLoader.aload_data_uri("workspace/file.bin", fallback_mime="audio/mpeg")
+
+        assert uri.startswith("data:audio/mpeg;base64,")
+
+    @pytest.mark.asyncio
+    async def test_aload_data_uri_propagates_file_load_error(self) -> None:
+        failure_result = ReadFileResultFailure(
+            result_details="File not found",
+            failure_reason=FileIOFailureReason.FILE_NOT_FOUND,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileLoadError):
+            await FileLoader.aload_data_uri("workspace/missing.txt")

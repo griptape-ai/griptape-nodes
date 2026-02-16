@@ -1,7 +1,6 @@
 from io import BytesIO
 from typing import Any
 
-import requests
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
@@ -12,6 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -82,23 +82,21 @@ class DisplayImage(DataNode):
                 return 0, 0
 
             try:
-                response = requests.get(image.value, timeout=30)
-                response.raise_for_status()
+                result = FileLoader.load(image.value)
 
                 # Check content type for SVG
-                content_type = response.headers.get("content-type", "").lower()
-                if "image/svg+xml" in content_type:
+                if result.mime_type and "image/svg+xml" in result.mime_type.lower():
                     logger.debug(
                         f"{self.name}: SVG content type detected, cannot determine dimensions without rasterization"
                     )
                     return 0, 0
 
-                image_data = response.content
+                image_data = result.content if isinstance(result.content, bytes) else result.content.encode()
                 pil_image = Image.open(BytesIO(image_data))
             except Exception as e:
-                # If PIL cannot identify the image (e.g., SVG), log and return 0,0
-                if "cannot identify image file" in str(e).lower():
-                    logger.debug(f"{self.name}: Cannot identify image file (may be SVG or unsupported format): {e}")
+                # If file loading fails or PIL cannot identify the image (e.g., SVG), log and return 0,0
+                if isinstance(e, FileLoadError) or "cannot identify image file" in str(e).lower():
+                    logger.debug(f"{self.name}: Cannot load or identify image file: {e}")
                     return 0, 0
                 # Re-raise other exceptions
                 raise

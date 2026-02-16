@@ -11,7 +11,6 @@ import cv2  # type: ignore[reportMissingImports]
 import huggingface_hub  # pyright: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
 import numpy as np
-import requests
 from artifact_utils.video_utils import dict_to_video_url_artifact  # type: ignore[reportMissingImports]
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from safetensors.torch import load_file  # type: ignore[reportMissingImports]
@@ -26,6 +25,7 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
+from griptape_nodes.file.file_loader import FileLoader
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from openpose_nodes_library.model import util  # type: ignore[reportMissingImports]
 from openpose_nodes_library.model.body import Body  # type: ignore[reportMissingImports]
@@ -218,13 +218,12 @@ class OpenPoseVideoDetection(ControlNode):
             input_video_artifact = dict_to_video_url_artifact(input_video_artifact)
 
         # Download video from URL to temporary file
-        response = requests.get(input_video_artifact.value, timeout=30)
+        video_bytes = FileLoader.load_bytes(input_video_artifact.value)
         # Use mkstemp for safe temporary file creation
         fd, temp_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd)  # Close the file descriptor immediately
         try:
-            with Path(temp_path).open("wb") as f:
-                f.write(response.content)
+            Path(temp_path).write_bytes(video_bytes)
         except Exception:
             # Clean up on failure
             Path(temp_path).unlink(missing_ok=True)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 from contextlib import suppress
@@ -21,11 +20,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import (
-    convert_image_value_to_base64_data_uri,
-    read_image_from_file_path,
-    resolve_localhost_url_to_path,
-)
+from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -471,16 +466,14 @@ class Flux2ImageGeneration(GriptapeProxyNode):
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
         if isinstance(image_input, str):
-            # Resolve localhost URLs to workspace paths
-            return resolve_localhost_url_to_path(image_input)
+            return image_input
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
                 if isinstance(value, str):
-                    # Resolve localhost URLs to workspace paths
-                    return resolve_localhost_url_to_path(value)
+                    return value
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
@@ -494,32 +487,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
     async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
-        # If it's already a data URI, return it
-        if image_value.startswith("data:image/"):
-            return image_value
-
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_image(image_value)
-
-        # Try to read as file path first (works cross-platform)
-        file_path = read_image_from_file_path(image_value, self.name)
-        if file_path:
-            return file_path
-
-        # Use utility function to handle raw base64
-        return convert_image_value_to_base64_data_uri(image_value, self.name)
-
-    async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            self._log(f"Failed to download image from URL {url}: {e}")
-        return None
+        return await convert_image_value_to_base64_data_uri(image_value, self.name)
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):

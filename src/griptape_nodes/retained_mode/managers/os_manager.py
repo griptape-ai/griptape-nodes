@@ -16,7 +16,6 @@ from typing import Any, ClassVar, NamedTuple
 import aioshutil
 import portalocker
 import send2trash
-from binaryornot.check import is_binary
 from rich.console import Console
 
 from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
@@ -24,10 +23,12 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.file.drivers.base64_file_driver import Base64FileDriver
 from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
 from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
 from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
 from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.file.drivers.localhost_file_driver import LocalhostFileDriver
 from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.file.path_utils import path_needs_expansion
 from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
@@ -107,16 +108,6 @@ class DiskSpaceInfo:
     total: int
     used: int
     free: int
-
-
-class FileContentResult(NamedTuple):
-    """Result from reading file content."""
-
-    content: str | bytes
-    encoding: str | None
-    mime_type: str
-    compression_encoding: str | None
-    file_size: int
 
 
 class FileWriteAttemptResult(NamedTuple):
@@ -337,6 +328,7 @@ class OSManager:
 
         Drivers are automatically sorted by priority on registration.
         """
+        FileDriverRegistry.register(LocalhostFileDriver())
         FileDriverRegistry.register(HttpFileDriver())
         FileDriverRegistry.register(DataUriFileDriver())
 
@@ -344,6 +336,7 @@ class OSManager:
         if cloud_driver:
             FileDriverRegistry.register(cloud_driver)
 
+        FileDriverRegistry.register(Base64FileDriver())
         FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
@@ -1068,53 +1061,6 @@ class OSManager:
 
         return self._find_next_index_with_gap_fill(existing_indices)
 
-    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
-        """Validate read file request and return resolved file path and path string."""
-        # Validate that exactly one of file_path or file_entry is provided
-        if request.file_path is None and request.file_entry is None:
-            msg = "Either file_path or file_entry must be provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        if request.file_path is not None and request.file_entry is not None:
-            msg = "Only one of file_path or file_entry should be provided, not both"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Get the file path to read - handle paths consistently
-        if request.file_entry is not None:
-            file_path_str = request.file_entry.path
-        elif request.file_path is not None:
-            file_path_str = request.file_path
-        else:
-            msg = "No valid file path provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Sanitize path to handle shell escapes and quotes (e.g., from macOS Finder "Copy as Pathname")
-        file_path_str = self.sanitize_path_string(file_path_str)
-
-        file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
-
-        # Check if file exists and is actually a file
-        if not file_path.exists():
-            msg = f"File does not exist: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-        if not file_path.is_file():
-            msg = f"File is not a file: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-
-        # Check workspace constraints
-        is_workspace_path, _ = self._validate_workspace_path(file_path)
-        if request.workspace_only and not is_workspace_path:
-            msg = f"File is outside workspace: {file_path}"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        return file_path, file_path_str
-
     @staticmethod
     def platform() -> str:
         return sys.platform
@@ -1603,70 +1549,6 @@ class OSManager:
 
         # Read via driver system (driver handles all validation and I/O)
         return await self._read_via_driver(location, request)
-
-    def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
-        """Read file content and return FileContentResult with all file information."""
-        # Get file size
-        file_size = file_path.stat().st_size
-
-        # Determine MIME type and compression encoding
-        normalized_path = self.normalize_path_for_platform(file_path)
-        mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
-        if mime_type is None:
-            mime_type = "text/plain"
-
-        # Determine if file is binary
-        try:
-            is_binary_file = is_binary(normalized_path)
-        except Exception as e:
-            msg = f"binaryornot detection failed for {file_path}: {e}"
-            logger.warning(msg)
-            is_binary_file = not mime_type.startswith(
-                ("text/", "application/json", "application/xml", "application/yaml")
-            )
-
-        # Read file content
-        if not is_binary_file:
-            content, encoding = self._read_text_file(file_path, request.encoding)
-        else:
-            content, encoding = self._read_binary_file(
-                file_path,
-                mime_type,
-                should_transform_to_thumbnail=request.should_transform_image_content_to_thumbnail,
-            )
-
-        return FileContentResult(
-            content=content,
-            encoding=encoding,
-            mime_type=mime_type,
-            compression_encoding=compression_encoding,
-            file_size=file_size,
-        )
-
-    def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
-        """Read file as text with fallback encodings."""
-        try:
-            with file_path.open(encoding=requested_encoding) as f:
-                return f.read(), requested_encoding
-        except UnicodeDecodeError:
-            try:
-                with file_path.open(encoding="utf-8") as f:
-                    return f.read(), "utf-8"
-            except UnicodeDecodeError:
-                with file_path.open("rb") as f:
-                    return f.read(), None
-
-    def _read_binary_file(
-        self, file_path: Path, mime_type: str, *, should_transform_to_thumbnail: bool
-    ) -> tuple[bytes | str, None]:
-        """Read file as binary, with optional thumbnail generation for images."""
-        with file_path.open("rb") as f:
-            content = f.read()
-
-        if mime_type.startswith("image/") and should_transform_to_thumbnail:
-            content = self._generate_thumbnail_from_image_content(content, file_path, mime_type)
-
-        return content, None
 
     def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
         """Handle image content by creating previews or returning static URLs.

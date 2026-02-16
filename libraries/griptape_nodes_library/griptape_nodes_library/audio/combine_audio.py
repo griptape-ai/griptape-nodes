@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import (
@@ -14,6 +13,7 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
@@ -213,24 +213,15 @@ class CombineAudio(SuccessFailureNode):
         """Download an audio file to a temporary file."""
         # FAILURE CASES FIRST
         try:
-            response = httpx.get(audio_artifact.value, timeout=60)
-        except httpx.TimeoutException as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: timeout after 60 seconds"
-            raise RuntimeError(error_msg) from e
-        except httpx.RequestError as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: network error - {e}"
-            raise RuntimeError(error_msg) from e
-
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            error_msg = f"{self.name}: Failed to download audio file {index + 1}: HTTP {e.response.status_code}"
+            audio_bytes = FileLoader.load_bytes(audio_artifact.value)
+        except FileLoadError as e:
+            error_msg = f"{self.name}: Failed to download audio file {index + 1}: {e}"
             raise RuntimeError(error_msg) from e
 
         try:
             # Create temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
-                temp_file.write(response.content)
+                temp_file.write(audio_bytes)
                 temp_file_path = Path(temp_file.name)
         except OSError as e:
             error_msg = f"{self.name}: Failed to create temporary file for audio {index + 1}: {e}"

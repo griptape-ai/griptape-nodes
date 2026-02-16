@@ -6,7 +6,6 @@ import diffusers  # type: ignore[reportMissingImports]
 import imageio  # type: ignore[reportMissingImports]
 import numpy as np
 import PIL.Image  # type: ignore[reportMissingImports]
-import requests
 import torch  # type: ignore[reportMissingImports]
 import transformers  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.utils.huggingface_utils import model_cache  # type: ignore[reportMissingImports]
@@ -19,6 +18,7 @@ from dino_sam2_library.dino_sam_2_detector_parameters import DinoSam2DetectorPar
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
+from griptape_nodes.file.file_loader import FileLoader
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("sam2_nodes_library")
@@ -229,9 +229,8 @@ class DinoSam2VideoDetector(ControlNode):
             video_path = Path(tmp_dir) / "input_video.mp4"
 
             # 1. Download the video
-            video_data = requests.get(self.get_video_mp4(), timeout=30).content
-            with Path(video_path).open("wb") as f:
-                f.write(video_data)
+            video_data = FileLoader.load_bytes(self.get_video_mp4())
+            Path(video_path).write_bytes(video_data)
 
             # 2. Create output folder for frames
             frame_dir = Path(tmp_dir) / "frames"

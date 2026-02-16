@@ -5,10 +5,10 @@ import io
 import logging
 import time
 from contextlib import suppress
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
-from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -20,6 +20,9 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -438,36 +441,23 @@ class SoraVideoGeneration(GriptapeProxyNode):
         if isinstance(image_value, dict):
             image_value = dict_to_image_url_artifact(image_value)
 
-        if hasattr(image_value, "value"):
-            image_value = image_value.value
-        elif hasattr(image_value, "base64"):
-            image_value = image_value.base64
-
-        if not isinstance(image_value, str) or not image_value:
+        # Extract a string URL that load_pil_from_url / FileLoader can handle
+        if isinstance(image_value, str):
+            url = image_value
+        elif isinstance(image_value, ImageUrlArtifact):
+            url = image_value.value
+        elif isinstance(image_value, ImageArtifact):
+            url = f"data:image/png;base64,{image_value.base64}"
+        else:
             return None
 
-        if image_value.startswith("data:image/"):
-            image_bytes = self._decode_base64_data(image_value)
-            if not image_bytes:
-                return None
-            return Image.open(io.BytesIO(image_bytes))
+        if not url:
+            return None
 
-        if image_value.startswith(("http://", "https://")):
-            return load_pil_from_url(image_value)
-
-        image_bytes = self._decode_base64_data(image_value)
-        if image_bytes:
-            return Image.open(io.BytesIO(image_bytes))
-
-        return None
-
-    @staticmethod
-    def _decode_base64_data(data: str) -> bytes | None:
         try:
-            if "base64," in data:
-                data = data.split("base64,", 1)[1]
-            return base64.b64decode(data)
-        except Exception:
+            return load_pil_from_url(url)
+        except Exception as e:
+            self._log(f"Failed to load image: {e}")
             return None
 
     def _set_safe_defaults(self) -> None:

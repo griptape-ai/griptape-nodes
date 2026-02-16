@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import time
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -21,9 +19,11 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
+from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -548,29 +548,7 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
 
     async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
         """Convert image value to base64 data URI."""
-        # If it's already a data URI, return it
-        if image_value.startswith("data:image/"):
-            return image_value
-
-        # If it's a URL, download and convert to base64
-        if image_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_image(image_value)
-
-        # Assume it's raw base64 without data URI prefix
-        return f"data:image/png;base64,{image_value}"
-
-    async def _download_and_encode_image(self, url: str) -> str | None:
-        """Download image from URL and encode as base64 data URI."""
-        try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                import base64
-
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            logger.error("Failed to download image from URL %s: %s", url, e)
-        return None
+        return await convert_image_value_to_base64_data_uri(image_value, context_name=self.name)
 
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         """Handle WAN response and extract video.
@@ -648,29 +626,15 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         if not audio_url:
             return None
 
+        # Already a data URI — return as-is
         if audio_url.startswith("data:audio/"):
             return audio_url
 
-        if audio_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(audio_url, "audio/mpeg")
-
-        return audio_url
-
-    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.debug("%s failed to inline URL: %s", self.name, e)
+            return await FileLoader.aload_data_uri(audio_url, fallback_mime="audio/mpeg")
+        except FileLoadError as e:
+            logger.debug("%s failed to load audio from %s: %s", self.name, audio_url, e)
             return None
-        else:
-            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-            if not content_type.startswith("audio/"):
-                content_type = default_content_type
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
 
     @staticmethod
     def _coerce_audio_url_or_data_uri(val: Any) -> str | None:
@@ -800,14 +764,3 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         self.parameter_output_values["generation_id"] = ""
         self.parameter_output_values["provider_response"] = None
         self.parameter_output_values["video"] = None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

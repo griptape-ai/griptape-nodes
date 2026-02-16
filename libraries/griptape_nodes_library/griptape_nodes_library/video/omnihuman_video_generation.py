@@ -6,9 +6,7 @@ import io
 import json as _json
 import logging
 import time
-from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 
 import httpx
 from griptape.artifacts import VideoUrlArtifact
@@ -25,6 +23,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -219,13 +218,6 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             self._public_image_url_parameter.delete_uploaded_artifact()
             self._public_audio_url_parameter.delete_uploaded_artifact()
 
-    def _get_static_files_path(self) -> Path:
-        """Get the absolute path to the static files directory."""
-        static_files_manager = GriptapeNodes.StaticFilesManager()
-        static_files_dir = static_files_manager._get_static_files_directory()
-        workspace_path = GriptapeNodes.ConfigManager().workspace_path
-        return workspace_path / static_files_dir
-
     async def _get_image_for_api(self) -> bytes | None:
         """Get the image bytes to use for the API call, shrinking if needed."""
         # Get the image file contents
@@ -285,60 +277,30 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
         self._log(f"Resized image to {len(shrunk_bytes) / (1024 * 1024):.2f}MB")
         return shrunk_bytes
 
-    async def _get_image_file_contents(self) -> bytes | None:  # noqa: PLR0911
+    async def _get_image_file_contents(self) -> bytes | None:
         """Get the file contents of the input image."""
         parameter_value = self.get_parameter_value("image_url")
-        if hasattr(parameter_value, "base64"):
-            base64_value = getattr(parameter_value, "base64", None)
-            if isinstance(base64_value, str):
-                return self._decode_base64_data(base64_value)
 
-        url = parameter_value.value if isinstance(parameter_value, UrlArtifact) else parameter_value
+        # Extract a string that FileLoader can handle
+        if isinstance(parameter_value, UrlArtifact):
+            url = parameter_value.value
+        elif isinstance(parameter_value, str):
+            url = parameter_value
+        else:
+            # ImageArtifact with .base64 property — wrap as data URI for FileLoader
+            b64 = getattr(parameter_value, "base64", None)
+            if isinstance(b64, str):
+                url = f"data:image/png;base64,{b64}"
+            else:
+                return None
 
         if not url:
             return None
 
-        if isinstance(url, str) and url.startswith("data:image/"):
-            return self._decode_base64_data(url)
-
-        # External URLs need to be downloaded
-        if self._is_external_url(url):
-            return await self._download_image_bytes(url)
-
-        # Read from local static files
-        file_bytes = self._read_local_file(url)
-        if file_bytes:
-            return file_bytes
-
-        if isinstance(url, str):
-            return self._decode_base64_data(url)
-
-        return None
-
-    def _is_external_url(self, url: str) -> bool:
-        """Check if a URL is external (not localhost)."""
-        return url.startswith(("http://", "https://")) and "localhost" not in url
-
-    def _read_local_file(self, url: str) -> bytes | None:
-        """Read file contents from local static files directory."""
-        filename = Path(urlparse(url).path).name
-        file_path = self._get_static_files_path() / filename
-
-        if not file_path.exists():
-            return None
-
-        with file_path.open("rb") as f:
-            return f.read()
-
-    async def _download_image_bytes(self, url: str) -> bytes | None:
-        """Download image bytes from an external URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=120.0)
-                response.raise_for_status()
-                return response.content
-        except Exception as e:
-            self._log(f"Failed to download image from {url}: {e}")
+            return await FileLoader.aload_bytes(url)
+        except FileLoadError as e:
+            self._log(f"Failed to load image from {url}: {e}")
             return None
 
     async def _get_parameters(self) -> dict[str, Any]:  # noqa: C901
@@ -365,7 +327,8 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             msg = "Failed to read image contents."
             raise ValueError(msg)
 
-        image_url = self._bytes_to_data_url(image_bytes, "image/png")
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        image_url = f"data:image/png;base64,{image_b64}"
         audio_url = await self._prepare_audio_data_url_async(audio_input)
         if not audio_url:
             msg = "Failed to process audio input."
@@ -513,13 +476,15 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
         if not audio_url:
             return None
 
+        # Already a data URI — return as-is
         if audio_url.startswith("data:audio/"):
             return audio_url
 
-        if audio_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(audio_url, "audio/mpeg")
-
-        return audio_url
+        try:
+            return await FileLoader.aload_data_uri(audio_url, fallback_mime="audio/mpeg")
+        except FileLoadError as e:
+            self._log(f"Failed to load audio from {audio_url}: {e}")
+            return None
 
     async def _prepare_image_data_url_async(self, image_input: Any) -> str | None:
         if not image_input:
@@ -529,28 +494,15 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
         if not image_url:
             return None
 
+        # Already a data URI — return as-is
         if image_url.startswith("data:image/"):
             return image_url
 
-        if image_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(image_url, "image/png")
-
-        return image_url
-
-    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                self._log(f"{self.name} failed to inline URL: {e}")
-                return None
-            else:
-                content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-                if not content_type.startswith(("image/", "audio/")):
-                    content_type = default_content_type
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                return f"data:{content_type};base64,{b64}"
+        try:
+            return await FileLoader.aload_data_uri(image_url, fallback_mime="image/png")
+        except FileLoadError as e:
+            self._log(f"Failed to load image from {image_url}: {e}")
+            return None
 
     @staticmethod
     def _coerce_image_url_or_data_uri(val: Any) -> str | None:
@@ -597,19 +549,6 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             pass
 
         return None
-
-    @staticmethod
-    def _bytes_to_data_url(data: bytes, content_type: str) -> str:
-        return f"data:{content_type};base64,{base64.b64encode(data).decode('utf-8')}"
-
-    @staticmethod
-    def _decode_base64_data(data: str) -> bytes | None:
-        try:
-            if "base64," in data:
-                data = data.split("base64,", 1)[1]
-            return base64.b64decode(data)
-        except Exception:
-            return None
 
     async def _handle_completion(self, response_json: dict[str, Any]) -> None:
         """Handle successful completion of video generation."""
@@ -658,16 +597,15 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
 
     @staticmethod
     async def _save_video_bytes(url: str) -> str | None:
-        """Download video bytes from URL."""
+        """Download video bytes from URL and save to static storage."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=120.0)
-                response.raise_for_status()
-                video_filename = f"omnihuman_video_{int(time.time())}.mp4"
-                GriptapeNodes.StaticFilesManager().save_static_file(response.content, video_filename)
-                return video_filename
+            video_bytes = await FileLoader.aload_bytes(url)
+            video_filename = f"omnihuman_video_{int(time.time())}.mp4"
+            GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, video_filename)
         except Exception:
             return None
+
+        return video_filename
 
     def _set_safe_defaults(self) -> None:
         """Set safe default values for outputs on error."""

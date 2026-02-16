@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
@@ -482,9 +483,6 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
             bytes | None: The downloaded bytes, or None if download failed
         """
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
+            return await FileLoader.aload_bytes(url)
+        except FileLoadError:
             return None

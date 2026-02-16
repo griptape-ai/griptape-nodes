@@ -4,7 +4,6 @@ import json
 import logging
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -14,6 +13,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -327,34 +327,15 @@ class LTXImageToVideoGeneration(GriptapeProxyNode):
         if not image_url:
             return None
 
-        # If it's already a data URL, return it
+        # Already a data URI — return as-is
         if image_url.startswith("data:image/"):
             return image_url
 
-        # If it's an external URL, download and convert to data URL
-        if image_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(image_url)
-
-        return image_url
-
-    async def _inline_external_url_async(self, url: str) -> str | None:
-        """Download external image URL and convert to base64 data URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.debug("%s failed to inline image URL: %s", self.name, e)
+            return await FileLoader.aload_data_uri(image_url, fallback_mime="image/jpeg")
+        except FileLoadError as e:
+            logger.debug("%s failed to load image from %s: %s", self.name, image_url, e)
             return None
-        else:
-            import base64
-
-            content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0]
-            if not content_type.startswith("image/"):
-                content_type = "image/jpeg"
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("Image URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
 
     @staticmethod
     def _coerce_image_url_or_data_uri(val: Any) -> str | None:

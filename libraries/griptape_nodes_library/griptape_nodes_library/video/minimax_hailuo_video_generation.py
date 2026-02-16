@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from copy import deepcopy
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -16,6 +14,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -373,28 +372,11 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
         if frame_url.startswith("data:image/"):
             return frame_url
 
-        # If it's an external URL, download and convert to data URL
-        if frame_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(frame_url)
-
-        return frame_url
-
-    async def _inline_external_url_async(self, url: str) -> str | None:
-        """Download external image URL and convert to data URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.debug("%s failed to inline frame URL: %s", self.name, e)
+            return await FileLoader.aload_data_uri(frame_url, fallback_mime="image/jpeg")
+        except FileLoadError as e:
+            logger.debug("%s failed to load frame from %s: %s", self.name, frame_url, e)
             return None
-        else:
-            content_type = (resp.headers.get("content-type") or "image/jpeg").split(";")[0]
-            if not content_type.startswith("image/"):
-                content_type = "image/jpeg"
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("Frame URL converted to data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
 
     def _log_request(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> None:
         def _sanitize_body(b: dict[str, Any]) -> dict[str, Any]:
@@ -441,8 +423,8 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url_async(download_url)
-        except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as e:
+            video_bytes = await self._download_bytes_from_url(download_url)
+        except Exception as e:
             logger.warning("%s failed to download video: %s", self.name, e)
             video_bytes = None
 
@@ -544,15 +526,3 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
             pass
 
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url_async(url: str) -> bytes | None:
-        """Download file from URL and return bytes."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=300)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException):
-            return None
-        else:
-            return resp.content

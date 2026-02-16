@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from contextlib import suppress
 from time import time
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
@@ -25,11 +23,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import (
-    convert_image_value_to_base64_data_uri,
-    read_image_from_file_path,
-    resolve_localhost_url_to_path,
-)
+from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -294,7 +288,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
 
         try:
             logger.info("Downloading image bytes from provider URL")
-            image_bytes = await self._download_bytes_from_url_async(extracted_url)
+            image_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             msg = f"Failed to download image: {e}"
             logger.info(msg)
@@ -413,7 +407,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         await self._handle_completion(result_json, generation_id)
 
-    async def _convert_to_base64_data_uri(self, image_input: Any) -> str | None:  # noqa: PLR0911
+    async def _convert_to_base64_data_uri(self, image_input: Any) -> str | None:
         if not image_input:
             return None
 
@@ -421,29 +415,16 @@ class SeedVRImageUpscale(GriptapeProxyNode):
         if not image_value:
             return None
 
-        if image_value.startswith("data:image/"):
-            return image_value
-
-        if image_value.startswith(("http://", "https://")):
-            image_bytes = await self._download_bytes_from_url_async(image_value)
-            if not image_bytes:
-                return None
-            return f"data:image/png;base64,{base64.b64encode(image_bytes).decode('utf-8')}"
-
-        file_data = read_image_from_file_path(image_value, self.name)
-        if file_data:
-            return file_data
-
-        return convert_image_value_to_base64_data_uri(image_value, self.name)
+        return await convert_image_value_to_base64_data_uri(image_value, self.name)
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         if isinstance(image_input, str):
-            return resolve_localhost_url_to_path(image_input)
+            return image_input
 
         try:
             value = getattr(image_input, "value", None)
             if isinstance(value, str):
-                return resolve_localhost_url_to_path(value)
+                return value
             b64 = getattr(image_input, "base64", None)
             if isinstance(b64, str) and b64:
                 return b64 if b64.startswith("data:image/") else f"data:image/png;base64,{b64}"
@@ -451,16 +432,6 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             return None
 
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url_async(url: str) -> bytes | None:
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None
 
     def _handle_payload_build_error(self, e: Exception) -> None:
         if isinstance(e, ValueError):
