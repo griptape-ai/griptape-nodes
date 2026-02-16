@@ -36,7 +36,6 @@ MCP_SERVERS = Category(name="MCP Servers", description="Model Context Protocol s
 PROJECTS = Category(name="Projects", description="Project template configurations and registrations")
 STATIC_SERVER = Category(name="Static Server", description="Static file server configuration for serving media assets")
 ARTIFACTS = Category(name="Artifacts", description="Settings for artifact providers and preview generation")
-HEURISTICS = Category(name="Heuristics", description="Node priority heuristic weights for parallel execution ordering")
 
 
 def Field(category: str | Category = "General", **kwargs) -> Any:
@@ -296,7 +295,7 @@ class Settings(BaseModel):
         description="Control how previews are generated for images and other media files",
     )
     heuristic_weights: HeuristicWeights = Field(
-        category=HEURISTICS,
+        category=EXECUTION,
         default_factory=HeuristicWeights,
         description="Weights for node priority heuristics used in parallel execution ordering",
     )
