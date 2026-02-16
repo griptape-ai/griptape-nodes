@@ -35,12 +35,11 @@ class NodePriorityQueue:
 
         # Load heuristic weights from config
         config_manager = GriptapeNodes.ConfigManager()
-        weights = config_manager.get_config_value("heuristic_weights", default={})
-
-        # Get individual weights with fallback defaults
-        has_connection_weight = weights.get("has_connection_from_previous", 1.0)
-        distance_weight = weights.get("distance_to_node", 1.0)
-        top_left_weight = weights.get("top_left_to_bottom_right", 1.0)
+        has_connection_weight = config_manager.get_config_value(
+            "heuristic_has_connection_from_previous_weight", default=1.0
+        )
+        distance_weight = config_manager.get_config_value("heuristic_distance_to_node_weight", default=1.0)
+        top_left_weight = config_manager.get_config_value("heuristic_top_left_to_bottom_right_weight", default=1.0)
 
         self._heuristics: list[NodeHeuristic] = [
             HasConnectionFromPrevious(context, weight=has_connection_weight),
