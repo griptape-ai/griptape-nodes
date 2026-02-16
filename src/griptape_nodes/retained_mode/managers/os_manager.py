@@ -1633,10 +1633,10 @@ class OSManager:
                 compression_encoding=None,
                 result_details="File read successfully.",
             )
-        except FileReadDriverNotFoundError:
+        except (FileReadDriverNotFoundError, ValueError) as e:
             return ReadFileResultFailure(
                 failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details=f"No driver found for location: {location}",
+                result_details=str(e),
             )
         except FileNotFoundError as e:
             return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=str(e))

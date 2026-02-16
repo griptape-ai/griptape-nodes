@@ -31,33 +31,62 @@ class LocalFileReadDriver(BaseFileReadDriver):
         """
         return 100
 
-    def can_handle(self, location: str) -> bool:
-        """Check if location is a local file path or file:// URI.
+    def can_handle(self, location: str) -> bool:  # noqa: ARG002
+        """Always returns True — this is the fallback driver.
+
+        Since this driver has the highest priority value (checked last),
+        any location that wasn't matched by a more specific driver is
+        assumed to be a local file path.
 
         Args:
             location: Location string to check
 
         Returns:
-            True for absolute paths and file:// URIs (this is the fallback driver)
+            Always True
         """
-        # Handle file:// URIs
-        if location.startswith("file://"):
-            return parse_file_uri(location) is not None
+        return True
 
-        # Handle absolute paths
-        path = Path(location)
-        return path.is_absolute()
+    def _resolve_path(self, location: str) -> Path:
+        """Resolve a location string to a local filesystem Path.
+
+        Handles file:// URI parsing, path sanitization, expansion, and
+        platform normalization.
+
+        Args:
+            location: Absolute file path, file:// URI, or path with ~
+
+        Returns:
+            Resolved Path object
+
+        Raises:
+            ValueError: Invalid file:// URI or empty location
+        """
+        if not location or not location.strip():
+            msg = f"Empty file path: {location!r}"
+            raise ValueError(msg)
+
+        # Convert file:// URI to path if needed
+        if location.startswith("file://"):
+            parsed_path = parse_file_uri(location)
+            if parsed_path is None:
+                msg = f"Invalid file:// URI: {location}"
+                raise ValueError(msg)
+            location = parsed_path
+
+        # Sanitize path (remove shell escapes, quotes from Finder)
+        clean_location = sanitize_path_string(location)
+
+        # Expand path (~/env vars)
+        if path_needs_expansion(clean_location):
+            path = expand_path(clean_location)
+        else:
+            path = Path(clean_location)
+
+        # Normalize for platform (Windows long paths, etc.)
+        return Path(normalize_path_for_platform(path))
 
     async def read(self, location: str, timeout: float) -> bytes:  # noqa: ARG002, ASYNC109
         """Read file from local filesystem with validation.
-
-        Performs:
-        - file:// URI parsing (if applicable)
-        - Path sanitization (shell escapes, quotes)
-        - Path expansion (~/env vars)
-        - Existence check
-        - Is-file check (not directory)
-        - Permission check
 
         Args:
             location: Absolute file path, file:// URI, or path with ~
@@ -72,38 +101,17 @@ class LocalFileReadDriver(BaseFileReadDriver):
             PermissionError: No read permission
             ValueError: Invalid file:// URI
         """
-        # 0. Convert file:// URI to path if needed
-        if location.startswith("file://"):
-            parsed_path = parse_file_uri(location)
-            if parsed_path is None:
-                msg = f"Invalid file:// URI: {location}"
-                raise ValueError(msg)
-            location = parsed_path
+        path = self._resolve_path(location)
 
-        # 1. Sanitize path (remove shell escapes, quotes from Finder)
-        clean_location = sanitize_path_string(location)
-
-        # 2. Expand path (~/env vars)
-        if path_needs_expansion(clean_location):
-            path = expand_path(clean_location)
-        else:
-            path = Path(clean_location)
-
-        # 3. Normalize for platform (Windows long paths, etc.)
-        normalized_path = Path(normalize_path_for_platform(path))
-
-        # 4. Validate existence
-        if not normalized_path.exists():
+        if not path.exists():
             msg = f"File not found: {location}"
             raise FileNotFoundError(msg)
 
-        # 5. Validate is file (not directory)
-        if not normalized_path.is_file():
+        if not path.is_file():
             msg = f"Path is a directory, not a file: {location}"
             raise IsADirectoryError(msg)
 
-        # 6. Read file
-        return normalized_path.read_bytes()
+        return path.read_bytes()
 
     async def exists(self, location: str) -> bool:
         """Check if file exists on local filesystem.
@@ -114,23 +122,11 @@ class LocalFileReadDriver(BaseFileReadDriver):
         Returns:
             True if file exists and is a file (not directory)
         """
-        # 0. Convert file:// URI to path if needed
-        if location.startswith("file://"):
-            parsed_path = parse_file_uri(location)
-            if parsed_path is None:
-                return False
-            location = parsed_path
+        try:
+            path = self._resolve_path(location)
+        except ValueError:
+            return False
 
-        # 1. Sanitize path (remove shell escapes, quotes from Finder)
-        clean_location = sanitize_path_string(location)
-
-        # 2. Expand path (~/env vars)
-        if path_needs_expansion(clean_location):
-            path = expand_path(clean_location)
-        else:
-            path = Path(clean_location)
-
-        # 3. Check existence
         return path.exists() and path.is_file()
 
     def get_size(self, location: str) -> int:
@@ -144,26 +140,11 @@ class LocalFileReadDriver(BaseFileReadDriver):
 
         Raises:
             FileNotFoundError: File does not exist
+            IsADirectoryError: Path is a directory
             ValueError: Invalid file:// URI
         """
-        # 0. Convert file:// URI to path if needed
-        if location.startswith("file://"):
-            parsed_path = parse_file_uri(location)
-            if parsed_path is None:
-                msg = f"Invalid file:// URI: {location}"
-                raise ValueError(msg)
-            location = parsed_path
+        path = self._resolve_path(location)
 
-        # 1. Sanitize path (remove shell escapes, quotes from Finder)
-        clean_location = sanitize_path_string(location)
-
-        # 2. Expand path (~/env vars)
-        if path_needs_expansion(clean_location):
-            path = expand_path(clean_location)
-        else:
-            path = Path(clean_location)
-
-        # 3. Validate existence
         if not path.exists():
             msg = f"File not found: {location}"
             raise FileNotFoundError(msg)

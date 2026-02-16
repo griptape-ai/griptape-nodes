@@ -17,24 +17,17 @@ class TestLocalFileReadDriver:
         """Create a LocalFileReadDriver instance."""
         return LocalFileReadDriver()
 
-    def test_can_handle_absolute_paths(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
-        """Test that driver handles absolute paths."""
-        # Use a real absolute path that works on all platforms
+    def test_can_handle_always_returns_true(self, driver: LocalFileReadDriver, tmp_path: Path) -> None:
+        """Test that driver always returns True (fallback driver).
+
+        As the fallback driver (priority 100, checked last), LocalFileReadDriver
+        handles any location not matched by a more specific driver.
+        """
         absolute_path = tmp_path / "file.txt"
         assert driver.can_handle(str(absolute_path)) is True
-
-    def test_can_handle_rejects_relative_paths(self, driver: LocalFileReadDriver) -> None:
-        """Test that driver rejects relative paths."""
-        assert driver.can_handle("relative/path/file.txt") is False
-
-    def test_can_handle_rejects_urls(self, driver: LocalFileReadDriver) -> None:
-        """Test that driver rejects HTTP URLs."""
-        assert driver.can_handle("http://example.com/file.txt") is False
-        assert driver.can_handle("https://example.com/file.txt") is False
-
-    def test_can_handle_rejects_data_uris(self, driver: LocalFileReadDriver) -> None:
-        """Test that driver rejects data URIs."""
-        assert driver.can_handle("data:image/png;base64,abc") is False
+        assert driver.can_handle("relative/path/file.txt") is True
+        assert driver.can_handle("http://example.com/file.txt") is True
+        assert driver.can_handle("data:image/png;base64,abc") is True
 
     @pytest.mark.asyncio
     async def test_read_existing_file(self, driver: LocalFileReadDriver, temp_file: Path) -> None:
@@ -193,10 +186,13 @@ class TestLocalFileReadDriverFileURI:
         uri = "file:///C:/Users/test/file.txt"
         assert driver.can_handle(uri) is True
 
-    def test_can_handle_rejects_remote_file_uri(self, driver: LocalFileReadDriver) -> None:
-        """Test that driver rejects file:// URIs with remote hosts."""
+    def test_can_handle_accepts_remote_file_uri(self, driver: LocalFileReadDriver) -> None:
+        """Test that driver accepts file:// URIs with remote hosts (fallback).
+
+        The driver accepts all locations; invalid URIs fail at read time, not can_handle.
+        """
         uri = "file://remote-server/path/to/file.txt"
-        assert driver.can_handle(uri) is False
+        assert driver.can_handle(uri) is True
 
     @pytest.mark.asyncio
     async def test_read_file_uri(self, driver: LocalFileReadDriver, temp_file: Path) -> None:
