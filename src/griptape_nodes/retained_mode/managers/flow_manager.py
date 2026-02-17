@@ -1078,6 +1078,10 @@ class FlowManager:
                     incoming_connection_source_parameter_name=source_param.name,
                 )
             )
+            # Mark all downstream nodes as dirty when connection is created
+            # This ensures dependency graph changes propagate even if values don't change
+            # Matches the pattern used in connection deletion (line 1227)
+            self._connections.unresolve_future_nodes(target_node)
 
         # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
         if not request.initial_setup:
