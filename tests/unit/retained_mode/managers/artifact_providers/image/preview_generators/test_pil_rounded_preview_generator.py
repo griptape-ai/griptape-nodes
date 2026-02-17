@@ -57,8 +57,8 @@ class TestPILRoundedPreviewGeneratorParameters:
     """Test parameter validation."""
 
     def test_invalid_max_width_negative(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that negative max_width raises TypeError."""
-        with pytest.raises(TypeError, match="max_width must be positive int"):
+        """Test that negative max_width raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*max_width must be positive"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -68,8 +68,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_max_width_zero(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that zero max_width raises TypeError."""
-        with pytest.raises(TypeError, match="max_width must be positive int"):
+        """Test that zero max_width raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*max_width must be positive"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -79,8 +79,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_max_width_non_integer(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that non-integer max_width raises TypeError."""
-        with pytest.raises(TypeError, match="max_width must be positive int"):
+        """Test that non-integer max_width raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*max_width must be an integer"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -90,8 +90,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_max_height_negative(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that negative max_height raises TypeError."""
-        with pytest.raises(TypeError, match="max_height must be positive int"):
+        """Test that negative max_height raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*max_height must be positive"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -101,8 +101,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_max_height_zero(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that zero max_height raises TypeError."""
-        with pytest.raises(TypeError, match="max_height must be positive int"):
+        """Test that zero max_height raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*max_height must be positive"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -112,8 +112,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_corner_radius_negative(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that negative corner_radius raises TypeError."""
-        with pytest.raises(TypeError, match="corner_radius must be non-negative int"):
+        """Test that negative corner_radius raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*corner_radius must be non-negative"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
@@ -123,8 +123,8 @@ class TestPILRoundedPreviewGeneratorParameters:
             )
 
     def test_invalid_corner_radius_non_integer(self, temp_test_image: str, temp_output_dir: str) -> None:
-        """Test that non-integer corner_radius raises TypeError."""
-        with pytest.raises(TypeError, match="corner_radius must be non-negative int"):
+        """Test that non-integer corner_radius raises ValueError."""
+        with pytest.raises(ValueError, match=r"Invalid parameters:.*corner_radius must be an integer"):
             PILRoundedPreviewGenerator(
                 source_file_location=temp_test_image,
                 preview_format="png",
