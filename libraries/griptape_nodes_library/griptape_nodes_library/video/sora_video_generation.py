@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json as _json
 import logging
 import time
 from contextlib import suppress
@@ -350,8 +351,6 @@ class SoraVideoGeneration(GriptapeProxyNode):
         """Parse provider_response if it's a JSON string."""
         if isinstance(provider_response, str):
             try:
-                import json as _json
-
                 return _json.loads(provider_response)
             except Exception:
                 return None

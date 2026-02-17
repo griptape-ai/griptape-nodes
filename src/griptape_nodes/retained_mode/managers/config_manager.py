@@ -45,6 +45,7 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultFailure,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.settings import WORKFLOWS_TO_REGISTER_KEY, Settings
 from griptape_nodes.utils.dict_utils import get_dot_value, merge_dicts, set_dot_value
@@ -333,8 +334,6 @@ class ConfigManager:
             return None
 
         if should_load_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             value = GriptapeNodes.SecretsManager().get_secret(value[1:])
 
         if cast_type is not None:
@@ -359,8 +358,6 @@ class ConfigManager:
         self._write_user_config_delta(delta)
 
         if should_set_env_var_if_detected and isinstance(value, str) and value.startswith("$"):
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             value = GriptapeNodes.SecretsManager().set_secret(value[1:], "")
 
         # We need to fully reload the user config because we need to regenerate the merged config.
@@ -438,8 +435,6 @@ class ConfigManager:
         libraries without schemas get simple object types.
         """
         try:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             # Get base settings schema and current values
             base_schema = Settings.model_json_schema()
             current_values = self.merged_config.copy()
@@ -564,7 +559,6 @@ class ConfigManager:
                               Uses dot notation keys (e.g., {"nodes.max_depth": 10})
         """
         # Lazy import to avoid circular dependency during initialization
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         os_manager = GriptapeNodes.OSManager()
         config_path_str = str(USER_CONFIG_PATH)

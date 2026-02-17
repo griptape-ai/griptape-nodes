@@ -8,9 +8,11 @@ from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes_library.image.base_image_processor import BaseImageProcessor
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
+from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
 
 
 class AddBoundingBoxes(BaseImageProcessor):
@@ -211,8 +213,6 @@ class AddBoundingBoxes(BaseImageProcessor):
 
     def _get_image_input_data_safe(self) -> tuple[Image.Image, str] | None:
         """Safely get PIL image and detected format, returning None if not available."""
-        from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
-
         image = self.parameter_values.get("input_image")
 
         if not image:
@@ -239,8 +239,6 @@ class AddBoundingBoxes(BaseImageProcessor):
 
     def process(self) -> AsyncResult[None]:
         """Override process to make image input optional."""
-        from griptape_nodes.retained_mode.griptape_nodes import logger
-
         # Reset execution state and result details at the start of each run
         self._clear_execution_status()
 

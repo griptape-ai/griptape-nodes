@@ -15,6 +15,13 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.retained_mode.events.connection_events import (
+    CreateConnectionRequest,
+    DeleteConnectionRequest,
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 def _outgoing_connection_exists(source_node: str, source_param: str) -> bool:
@@ -29,8 +36,6 @@ def _outgoing_connection_exists(source_node: str, source_param: str) -> bool:
 
     Logic: Look in connections.outgoing_index[source_node][source_param]
     """
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     connections = GriptapeNodes.FlowManager().get_connections()
 
     # Check if source_node has any outgoing connections at all
@@ -59,8 +64,6 @@ def _incoming_connection_exists(target_node: str, target_param: str) -> bool:
 
     Logic: Look in connections.incoming_index[target_node][target_param]
     """
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     connections = GriptapeNodes.FlowManager().get_connections()
 
     # Check if target_node has any incoming connections at all
@@ -324,8 +327,6 @@ class BaseIterativeStartNode(BaseNode):
 
     def _validate_start_node(self) -> list[Exception] | None:
         """Common validation logic for both workflow and node run validation."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         exceptions = []
 
         # Validate end node connection
@@ -475,7 +476,6 @@ class BaseIterativeStartNode(BaseNode):
             return
 
         # Continue with current item - unresolve future nodes for fresh evaluation
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         connections = GriptapeNodes.FlowManager().get_connections()
         connections.unresolve_future_nodes(self)
@@ -972,9 +972,6 @@ class BaseIterativeEndNode(BaseNode):
 
     def _create_hidden_signal_connections(self, start_node: BaseNode) -> None:
         """Automatically create all hidden signal connections between Start and End nodes."""
-        from griptape_nodes.retained_mode.events.connection_events import CreateConnectionRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Create the hidden signal connections and default control flow:
 
         # 1. Start → End: loop_end_condition_met_signal → loop_end_condition_met_signal_input
@@ -1021,13 +1018,6 @@ class BaseIterativeEndNode(BaseNode):
 
     def _remove_hidden_signal_connections(self, start_node: BaseNode) -> None:
         """Remove all hidden signal connections when the main tethering connection is removed."""
-        from griptape_nodes.retained_mode.events.connection_events import (
-            DeleteConnectionRequest,
-            ListConnectionsForNodeRequest,
-            ListConnectionsForNodeResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Get current connections for start node to check what still exists
         list_connections_result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=start_node.name))
         if not isinstance(list_connections_result, ListConnectionsForNodeResultSuccess):

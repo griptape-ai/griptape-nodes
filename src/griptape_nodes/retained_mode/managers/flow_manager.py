@@ -120,6 +120,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
     ListNodesInFlowResultFailure,
     ListNodesInFlowResultSuccess,
     OriginalNodeParameter,
+    PackagedNodeParameterMapping,
     PackageNodesAsSerializedFlowRequest,
     PackageNodesAsSerializedFlowResultFailure,
     PackageNodesAsSerializedFlowResultSuccess,
@@ -1372,7 +1373,6 @@ class FlowManager:
             start_node_result.start_to_package_connections.append(start_to_end_control_connection)
 
         # Combine parameter mappings as a list: [Start node (index 0), End node (index 1)]
-        from griptape_nodes.retained_mode.events.flow_events import PackagedNodeParameterMapping
 
         parameter_name_mappings = [
             PackagedNodeParameterMapping(

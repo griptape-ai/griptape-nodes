@@ -3,6 +3,7 @@
 # ruff: noqa: PLR2004
 
 from typing import Any
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -397,29 +398,21 @@ class TestMacroParserParse:
 
     def test_parse_nested_braces_fails(self) -> None:
         """Test parsing template with nested braces fails."""
-        from griptape_nodes.common.macro_parser import MacroSyntaxError
-
         with pytest.raises(MacroSyntaxError, match="Nested braces are not allowed"):
             ParsedMacro("{outer{inner}}")
 
     def test_parse_unclosed_brace_fails(self) -> None:
         """Test parsing template with unclosed brace fails."""
-        from griptape_nodes.common.macro_parser import MacroSyntaxError
-
         with pytest.raises(MacroSyntaxError, match="Unclosed brace"):
             ParsedMacro("{file_name")
 
     def test_parse_unmatched_closing_brace_fails(self) -> None:
         """Test parsing template with unmatched closing brace fails."""
-        from griptape_nodes.common.macro_parser import MacroSyntaxError
-
         with pytest.raises(MacroSyntaxError, match="Unmatched closing brace"):
             ParsedMacro("file_name}")
 
     def test_parse_empty_variable_fails(self) -> None:
         """Test parsing template with empty variable fails."""
-        from griptape_nodes.common.macro_parser import MacroSyntaxError
-
         with pytest.raises(MacroSyntaxError, match="Empty variable"):
             ParsedMacro("{}")
 
@@ -430,8 +423,6 @@ class TestMacroParserFindMatchesDetailed:
     @pytest.fixture
     def mock_secrets_manager(self) -> Any:
         """Create a mock SecretsManager for testing."""
-        from unittest.mock import MagicMock
-
         mock = MagicMock()
         mock.get_secret.return_value = None
         return mock
@@ -453,8 +444,6 @@ class TestMacroParserFindMatchesDetailed:
 
     def test_find_matches_single_unknown_variable(self, mock_secrets_manager: Any) -> None:
         """Test matching with single unknown variable."""
-        from griptape_nodes.common.macro_parser import VariableInfo
-
         parsed = ParsedMacro("{file_name}")
         result = parsed.find_matches_detailed("image.jpg", {}, mock_secrets_manager)
 
@@ -464,8 +453,6 @@ class TestMacroParserFindMatchesDetailed:
 
     def test_find_matches_with_known_variable(self, mock_secrets_manager: Any) -> None:
         """Test matching with known variable provided."""
-        from griptape_nodes.common.macro_parser import VariableInfo
-
         parsed = ParsedMacro("{inputs}/{file_name}")
         result = parsed.find_matches_detailed("inputs/image.jpg", {"inputs": "inputs"}, mock_secrets_manager)
 
@@ -485,8 +472,6 @@ class TestMacroParserFindMatchesDetailed:
 
     def test_find_matches_multiple_unknowns_with_delimiters(self, mock_secrets_manager: Any) -> None:
         """Test matching multiple unknown variables separated by static text."""
-        from griptape_nodes.common.macro_parser import VariableInfo
-
         parsed = ParsedMacro("{dir}/{file_name}")
         result = parsed.find_matches_detailed("inputs/image.jpg", {}, mock_secrets_manager)
 
@@ -496,8 +481,6 @@ class TestMacroParserFindMatchesDetailed:
 
     def test_find_matches_with_numeric_padding_format(self, mock_secrets_manager: Any) -> None:
         """Test matching with numeric padding format spec reversal."""
-        from griptape_nodes.common.macro_parser import VariableInfo
-
         parsed = ParsedMacro("{file_name}_{index:03}")
         result = parsed.find_matches_detailed("render_005", {}, mock_secrets_manager)
 
@@ -520,8 +503,6 @@ class TestMacroResolverResolve:
     @pytest.fixture
     def mock_secrets_manager(self) -> Any:
         """Create a mock SecretsManager for testing."""
-        from unittest.mock import MagicMock
-
         mock = MagicMock()
         mock.get_secret.return_value = None
         return mock
@@ -598,8 +579,6 @@ class TestMacroResolverResolve:
 
     def test_resolve_required_variable_missing_fails(self, mock_secrets_manager: Any) -> None:
         """Test resolving template fails when required variable is missing."""
-        from griptape_nodes.common.macro_parser import MacroResolutionError
-
         parsed = ParsedMacro("{inputs}/{file_name}")
 
         with pytest.raises(MacroResolutionError, match="Cannot fully resolve macro - missing required variables"):
@@ -607,8 +586,6 @@ class TestMacroResolverResolve:
 
     def test_resolve_env_var(self) -> None:
         """Test resolving template with environment variable reference."""
-        from unittest.mock import MagicMock
-
         mock_secrets = MagicMock()
         mock_secrets.get_secret.return_value = "/path/to/outputs"
 
@@ -620,10 +597,6 @@ class TestMacroResolverResolve:
 
     def test_resolve_env_var_missing_fails(self) -> None:
         """Test resolving template fails when env var is not found."""
-        from unittest.mock import MagicMock
-
-        from griptape_nodes.common.macro_parser import MacroResolutionError
-
         mock_secrets = MagicMock()
         mock_secrets.get_secret.return_value = None
 
@@ -791,8 +764,6 @@ class TestEnhancedExceptions:
 
     def test_macro_resolution_error_missing_variables(self) -> None:
         """Test MacroResolutionError for missing required variables."""
-        from unittest.mock import Mock
-
         macro = ParsedMacro("{workflow_name}/{file_name}")
         secrets_manager = Mock()
 

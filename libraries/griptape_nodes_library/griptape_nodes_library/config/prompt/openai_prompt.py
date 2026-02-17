@@ -7,6 +7,7 @@ OpenAi specific model options, requires a OpenAi API key via
 node configuration, and instantiates the `OpenAiPromptDriver`.
 """
 
+import openai
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver as GtOpenAiChatPromptDriver
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -51,7 +52,6 @@ class OpenAiPrompt(BasePrompt):
 
         # Update the 'model' parameter for OpenAi specifics.
         # call openai listmodels to get available models
-        import openai
 
         available_models = [model.id for model in openai.Client().models.list().data]
         self._update_option_choices(

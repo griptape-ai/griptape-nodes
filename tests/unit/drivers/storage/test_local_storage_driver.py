@@ -5,8 +5,10 @@ from unittest.mock import Mock, patch
 import pytest
 
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
+from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
+    FileIOFailureReason,
     WriteFileRequest,
     WriteFileResultFailure,
     WriteFileResultSuccess,
@@ -44,9 +46,6 @@ class TestLocalStorageDriverCreateSignedUploadUrl:
     @pytest.fixture
     def mock_write_failure_result(self) -> WriteFileResultFailure:
         """Mock failed WriteFileRequest result."""
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
-        from griptape_nodes.retained_mode.events.os_events import FileIOFailureReason
-
         return WriteFileResultFailure(
             failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
             result_details=ResultDetails(message="File already exists", level=40),

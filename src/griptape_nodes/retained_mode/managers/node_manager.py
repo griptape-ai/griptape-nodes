@@ -111,6 +111,8 @@ from griptape_nodes.retained_mode.events.node_events import (
     ListParametersOnNodeResultFailure,
     ListParametersOnNodeResultSuccess,
     MoveNodeToNewFlowRequest,
+    MoveNodeToNewFlowResultFailure,
+    MoveNodeToNewFlowResultSuccess,
     RemoveNodeFromNodeGroupRequest,
     RemoveNodeFromNodeGroupResultFailure,
     RemoveNodeFromNodeGroupResultSuccess,
@@ -969,11 +971,6 @@ class NodeManager:
         Returns:
             MoveNodeToNewFlowResultSuccess or MoveNodeToNewFlowResultFailure
         """
-        from griptape_nodes.retained_mode.events.node_events import (
-            MoveNodeToNewFlowResultFailure,
-            MoveNodeToNewFlowResultSuccess,
-        )
-
         node_name = request.node_name
         if node_name is None:
             if not GriptapeNodes.ContextManager().has_current_node():

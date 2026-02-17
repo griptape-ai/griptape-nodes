@@ -564,8 +564,6 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         try:
             image_bytes = await self._download_bytes_from_url(url)
             if image_bytes:
-                import base64
-
                 b64_string = base64.b64encode(image_bytes).decode("utf-8")
                 return f"data:image/png;base64,{b64_string}"
         except Exception as e:
@@ -619,7 +617,6 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
             video_bytes = await self._download_bytes_from_url(video_url)
             if video_bytes:
                 filename = f"wan_i2v_{int(time.time())}.mp4"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(video_bytes, filename)

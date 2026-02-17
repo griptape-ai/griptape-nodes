@@ -15,8 +15,9 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
+from griptape_nodes.common.project_templates.project import ProjectTemplate
+
 if TYPE_CHECKING:
-    from griptape_nodes.common.project_templates.project import ProjectTemplate
     from griptape_nodes.common.project_templates.validation import ProjectValidationInfo
 
 # Field name constants
@@ -154,7 +155,6 @@ def load_project_template_from_yaml(  # noqa: C901
     """
     # Lazy import required: circular dependency between this module and project.py
     # project.py imports ProjectOverlayData from this file, and we need ProjectTemplate from project.py
-    from griptape_nodes.common.project_templates.project import ProjectTemplate
 
     # Pass 1: Load YAML with line tracking
     try:

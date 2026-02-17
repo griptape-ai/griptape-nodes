@@ -11,6 +11,7 @@ from griptape_nodes.retained_mode.events.context_events import (
     SetWorkflowContextRequest,
     SetWorkflowContextSuccess,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -280,8 +281,6 @@ class ContextManager:
         return self.WorkflowContext(self, workflow_name)
 
     def flow(self, flow: ControlFlow | str) -> ContextManager.FlowContext:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         """Create a context manager for a Flow context.
 
         Args:

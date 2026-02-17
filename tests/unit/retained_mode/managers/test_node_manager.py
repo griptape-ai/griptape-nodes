@@ -1,15 +1,19 @@
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 
 from griptape_nodes.exe_types.core_types import Parameter
+from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
 from griptape_nodes.retained_mode.events.node_events import (
     BatchSetNodeMetadataRequest,
     BatchSetNodeMetadataResultFailure,
     BatchSetNodeMetadataResultSuccess,
+    CreateNodeRequest,
 )
 from griptape_nodes.retained_mode.events.parameter_events import AlterParameterDetailsRequest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager, SerializedParameterValueTracker
 
 
 class TestNodeManagerBatchSetNodeMetadata:
@@ -55,13 +59,6 @@ class TestNodeManagerResolutionStateSerialization:
 
     def test_resolved_node_with_no_parameter_value_preserves_resolution(self) -> None:
         """Test that a resolved node with no parameter value set maintains its resolution state."""
-        from unittest.mock import MagicMock
-
-        from griptape_nodes.exe_types.core_types import Parameter
-        from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
-        from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-
         # Create a simple parameter and node
         mock_parameter = MagicMock(spec=Parameter)
         mock_parameter.name = "test_param"
@@ -91,13 +88,6 @@ class TestNodeManagerResolutionStateSerialization:
 
     def test_resolved_node_with_unserializable_parameter_becomes_unresolved(self) -> None:
         """Test that a resolved node becomes unresolved when parameter serialization fails."""
-        from unittest.mock import MagicMock
-
-        from griptape_nodes.exe_types.core_types import Parameter
-        from griptape_nodes.exe_types.node_types import BaseNode, NodeResolutionState
-        from griptape_nodes.retained_mode.events.node_events import CreateNodeRequest
-        from griptape_nodes.retained_mode.managers.node_manager import NodeManager, SerializedParameterValueTracker
-
         # Create parameter with unserializable value
         mock_parameter = MagicMock(spec=Parameter)
         mock_parameter.name = "test_param"

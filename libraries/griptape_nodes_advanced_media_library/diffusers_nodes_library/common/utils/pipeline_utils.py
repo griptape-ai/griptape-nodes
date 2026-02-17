@@ -4,6 +4,7 @@ import logging
 
 import torch  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
+from optimum.quanto import freeze, qfloat8, qint4, qint8, quantize  # type: ignore[reportMissingImports]
 
 from diffusers_nodes_library.common.utils.torch_utils import (
     get_best_device,
@@ -88,8 +89,6 @@ def _quantize_diffusion_pipeline(
     device: torch.device,
 ) -> None:
     """Uses optimum.quanto to quantize the pipeline components."""
-    from optimum.quanto import freeze, qfloat8, qint4, qint8, quantize  # type: ignore[reportMissingImports]
-
     logger.info("Applying quantization: %s", quantization_mode)
     _log_memory_info(pipe, device)
     quant_map = {"fp8": qfloat8, "int8": qint8, "int4": qint4}

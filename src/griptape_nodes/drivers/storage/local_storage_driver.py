@@ -8,6 +8,12 @@ import httpx
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy, WriteFileRequest, WriteFileResultSuccess
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.servers.static import (
+    STATIC_SERVER_ENABLED,
+    STATIC_SERVER_HOST,
+    STATIC_SERVER_PORT,
+    STATIC_SERVER_URL,
+)
 from griptape_nodes.utils import resolve_workspace_path
 
 logger = logging.getLogger("griptape_nodes")
@@ -24,13 +30,6 @@ class LocalStorageDriver(BaseStorageDriver):
             base_url: The base URL for the static file server. If not provided, it will be constructed
         """
         super().__init__(workspace_directory)
-
-        from griptape_nodes.servers.static import (
-            STATIC_SERVER_ENABLED,
-            STATIC_SERVER_HOST,
-            STATIC_SERVER_PORT,
-            STATIC_SERVER_URL,
-        )
 
         if not STATIC_SERVER_ENABLED:
             msg = "Static server is not enabled. Please set STATIC_SERVER_ENABLED to True."

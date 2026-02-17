@@ -25,24 +25,29 @@ from griptape_nodes.exe_types.core_types import (
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
+from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ExecutionEvent,
     ExecutionGriptapeNodeEvent,
     ProgressEvent,
     RequestPayload,
 )
+from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent, ParameterValueUpdateEvent
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
+    AddParameterToNodeResultSuccess,
+    AlterElementEvent,
     RemoveElementEvent,
     RemoveParameterFromNodeRequest,
 )
+from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.widget import Widget
 from griptape_nodes.utils import async_utils
 
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
-    from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -146,9 +151,6 @@ class NodeResolutionState(StrEnum):
 
 def get_library_names_with_publish_handlers() -> list[str]:
     """Get names of all registered libraries that have PublishWorkflowRequest handlers."""
-    from griptape_nodes.retained_mode.events.workflow_events import PublishWorkflowRequest
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     library_manager = GriptapeNodes.LibraryManager()
     event_handlers = library_manager.get_registered_event_handlers(PublishWorkflowRequest)
 
@@ -233,13 +235,10 @@ class BaseNode(ABC):
     # This is gross and we need to have a universal pass on resolution state changes and emission of events. That's what this ticket does!
     # https://github.com/griptape-ai/griptape-nodes/issues/994
     def make_node_unresolved(self, current_states_to_trigger_change_event: set[NodeResolutionState] | None) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # See if the current state is in the set of states to trigger a change event.
         if current_states_to_trigger_change_event is not None and self.state in current_states_to_trigger_change_event:
             # Trigger the change event.
             # Send an event to the GUI so it knows this node has changed resolution state.
-            from griptape_nodes.retained_mode.events.execution_events import NodeUnresolvedEvent
 
             GriptapeNodes.EventManager().put_event(
                 ExecutionGriptapeNodeEvent(
@@ -889,8 +888,6 @@ class BaseNode(ABC):
             self.metadata["size"] = {"width": width, "height": height}
 
     def kill_parameter_children(self, parameter: Parameter) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         for child in parameter.find_elements_by_type(Parameter):
             GriptapeNodes.handle_request(RemoveParameterFromNodeRequest(parameter_name=child.name, node_name=self.name))
 
@@ -1040,8 +1037,6 @@ class BaseNode(ABC):
         return None
 
     def get_config_value(self, service: str, value: str) -> str:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         warnings.warn(
             "get_config_value() is deprecated. Use GriptapeNodes.SecretsManager().get_secret() for secrets/API keys "
             "or GriptapeNodes.ConfigManager().get_config_value() for other config values.",
@@ -1053,8 +1048,6 @@ class BaseNode(ABC):
         return config_value
 
     def set_config_value(self, service: str, value: str, new_value: str) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         warnings.warn(
             "set_config_value() is deprecated. Use GriptapeNodes.SecretsManager().set_secret() for secrets/API keys "
             "or GriptapeNodes.ConfigManager().set_config_value() for other config values.",
@@ -1119,7 +1112,6 @@ class BaseNode(ABC):
                 return deps
         """
         # Lazy import to avoid circular dependency: library_registry imports BaseNode
-        from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 
         widget_libraries: set[LibraryNameAndVersion] = set()
 
@@ -1151,8 +1143,6 @@ class BaseNode(ABC):
         return None
 
     def append_value_to_parameter(self, parameter_name: str, value: Any) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Add the value to the node
         if parameter_name in self.parameter_output_values:
             try:
@@ -1172,9 +1162,6 @@ class BaseNode(ABC):
         )
 
     def publish_update_to_parameter(self, parameter_name: str, value: Any) -> None:
-        from griptape_nodes.retained_mode.events.execution_events import ParameterValueUpdateEvent
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         parameter = self.get_parameter_by_name(parameter_name)
         if parameter:
             data_type = parameter.type
@@ -1302,10 +1289,6 @@ class BaseNode(ABC):
 
     def _emit_parameter_lifecycle_event(self, parameter: BaseNodeElement, *, remove: bool = False) -> None:
         """Emit an AlterElementEvent for parameter add/remove operations."""
-        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Create event data using the parameter's to_event method
         if remove:
             # Import logger here to avoid circular dependency
@@ -1506,10 +1489,6 @@ class TrackedParameterOutputValues(dict[str, Any]):
         """Emit an AlterElementEvent for parameter output value changes."""
         parameter = self._node.get_parameter_by_name(parameter_name)
         if parameter is not None:
-            from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-            from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             # Create event data using the parameter's to_event method
             event_data = parameter.to_event(self._node)
             event_data["value"] = value
@@ -1612,8 +1591,6 @@ class SuccessFailureNode(BaseNode):
 
     def _has_outgoing_connections(self, parameter: Parameter) -> bool:
         """Check if a specific parameter has outgoing connections."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         connections = GriptapeNodes.FlowManager().get_connections()
 
         # Check if node has any outgoing connections
@@ -1857,7 +1834,6 @@ class ErrorProxyNode(BaseNode):
 
         if existing_param is None:
             # Create new universal parameter with all modes enabled
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             request = AddParameterToNodeRequest(
                 node_name=self.name,
@@ -1875,7 +1851,6 @@ class ErrorProxyNode(BaseNode):
             result = GriptapeNodes.handle_request(request)
 
             # Check if parameter creation was successful
-            from griptape_nodes.retained_mode.events.parameter_events import AddParameterToNodeResultSuccess
 
             if not isinstance(result, AddParameterToNodeResultSuccess):
                 failure_message = f"Failed to create parameter '{param_name}': {result.result_details}"

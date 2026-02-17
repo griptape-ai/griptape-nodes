@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
@@ -50,8 +51,6 @@ class TestHttpFileDriver:
     @pytest.mark.asyncio
     async def test_read_http_error(self, driver: HttpFileDriver) -> None:
         """Test that HTTP errors are raised as RuntimeError."""
-        import httpx
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=httpx.HTTPError("Connection failed"))
@@ -116,8 +115,6 @@ class TestHttpFileDriver:
     @pytest.mark.asyncio
     async def test_exists_returns_false_on_error(self, driver: HttpFileDriver) -> None:
         """Test exists returns False when HTTP error occurs."""
-        import httpx
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.head = AsyncMock(side_effect=httpx.HTTPError("Connection failed"))
@@ -163,8 +160,6 @@ class TestHttpFileDriver:
 
     def test_get_size_returns_zero_on_error(self, driver: HttpFileDriver) -> None:
         """Test get_size returns 0 when HTTP error occurs."""
-        import httpx
-
         with patch("httpx.Client") as mock_client_class:
             mock_client = Mock()
             mock_client.head = Mock(side_effect=httpx.HTTPError("Connection failed"))

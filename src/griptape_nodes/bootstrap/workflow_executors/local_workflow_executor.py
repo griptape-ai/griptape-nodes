@@ -17,6 +17,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowFromScratchRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -80,8 +81,6 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             raise LocalExecutorError(msg) from e
 
     def _set_storage_backend(self, storage_backend: StorageBackend) -> None:
-        from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-
         try:
             config_manager = ConfigManager()
             config_manager.set_config_value(

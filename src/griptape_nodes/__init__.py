@@ -5,6 +5,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from griptape_nodes.cli.main import app
+
 
 def main() -> None:
     """Main entry point for the Griptape Nodes CLI."""
@@ -16,7 +18,7 @@ def main() -> None:
 
     console = Console()
     with console.status("[bold green]Loading Griptape Nodes...", spinner="dots"):
-        from griptape_nodes.cli.main import app
+        pass
 
     app()
 

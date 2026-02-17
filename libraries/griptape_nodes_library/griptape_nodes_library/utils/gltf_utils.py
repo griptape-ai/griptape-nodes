@@ -1,13 +1,12 @@
 import base64
 import uuid
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.three_d.gltf_artifact import GLTFUrlArtifact
 
 
 def dict_to_gltf_url_artifact(gltf_dict: dict, gltf_format: str | None = None) -> GLTFUrlArtifact:
     """Convert a dictionary representation of a GLTF file to a GLTFArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     # Get the base64 encoded string
     value = gltf_dict["value"]
     if gltf_dict["type"] == "GLTFUrlArtifact":

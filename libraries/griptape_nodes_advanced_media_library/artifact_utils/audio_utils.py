@@ -3,11 +3,11 @@ import uuid
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 
 def dict_to_audio_url_artifact(audio_dict: dict, audio_format: str | None = None) -> AudioUrlArtifact:
     """Convert a dictionary representation of audio to an AudioUrlArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     value = audio_dict["value"]
 
     # If it already is an AudioUrlArtifact, just wrap and return

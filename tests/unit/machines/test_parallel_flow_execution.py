@@ -9,8 +9,10 @@ import pytest
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.machines.control_flow import ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
-from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
+from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext, ParallelResolutionMachine
+from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 
@@ -64,7 +66,6 @@ class TestParallelFlowExecution:
             control_flow = ControlFlowMachine(flow_name)
 
             # Verify that a SequentialResolutionMachine was created
-            from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 
             assert isinstance(control_flow._context.resolution_machine, SequentialResolutionMachine)
 
@@ -98,8 +99,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_networks_property_delegates_to_dag_builder(self) -> None:
         """Test that ParallelResolutionContext.networks property delegates to DAG builder's graphs."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         mock_dag_builder = MagicMock(spec=DagBuilder)
         mock_graphs = {"default": MagicMock()}
@@ -115,8 +114,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_node_to_reference_property_delegates_to_dag_builder(self) -> None:
         """Test that ParallelResolutionContext.node_to_reference property delegates to DAG builder."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         mock_dag_builder = MagicMock(spec=DagBuilder)
         mock_node_to_reference = {"node1": MagicMock(), "node2": MagicMock()}
@@ -132,8 +129,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_raises_error_when_dag_builder_is_none(self) -> None:
         """Test that ParallelResolutionContext raises error when accessing properties without DAG builder."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         context = ParallelResolutionContext(flow_name, dag_builder=None)
 
@@ -155,8 +150,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_reset_calls_dag_builder_clear(self) -> None:
         """Test that ParallelResolutionContext.reset() calls DAG builder's clear() method."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         mock_dag_builder = MagicMock(spec=DagBuilder)
         mock_dag_builder.graphs = {"default": MagicMock()}
@@ -172,8 +165,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_reset_with_cancel_calls_dag_builder_clear(self) -> None:
         """Test that ParallelResolutionContext.reset() with cancel=True also calls DAG builder's clear()."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         mock_dag_builder = MagicMock(spec=DagBuilder)
         mock_dag_builder.graphs = {"default": MagicMock()}
@@ -189,8 +180,6 @@ class TestParallelFlowExecution:
 
     def test_parallel_resolution_context_reset_handles_none_dag_builder(self) -> None:
         """Test that ParallelResolutionContext.reset() handles None DAG builder gracefully."""
-        from griptape_nodes.machines.parallel_resolution import ParallelResolutionContext
-
         flow_name = "test_flow"
         context = ParallelResolutionContext(flow_name, dag_builder=None)
 
@@ -206,7 +195,6 @@ class TestFlowManagerDagBuilderIntegration:
         """Test that FlowManager creates a DAG builder when starting a parallel flow."""
         # This test is complex and involves async flow manager methods that are hard to mock
         # For now, just test that the basic FlowManager functionality works
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
 
         try:
             # Test basic FlowManager creation
@@ -225,8 +213,6 @@ class TestFlowManagerDagBuilderIntegration:
 
     def test_flow_manager_preserves_dag_builder_between_single_node_resolutions(self) -> None:
         """Test that FlowManager preserves DAG builder between single node resolutions."""
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-
         try:
             # Create FlowManager instance
             flow_manager = FlowManager(MagicMock(spec=EventManager))
@@ -249,8 +235,6 @@ class TestFlowManagerDagBuilderIntegration:
     @pytest.mark.asyncio
     async def test_flow_manager_clears_dag_builder_on_cancel(self) -> None:
         """Test that FlowManager clears DAG builder reference when canceling a flow."""
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-
         try:
             # Create FlowManager instance with existing DAG builder
             flow_manager = FlowManager(MagicMock(spec=EventManager))

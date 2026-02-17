@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from abc import abstractmethod
 from enum import StrEnum
 from typing import Any
@@ -225,8 +226,6 @@ class BaseIterativeNodeGroup(SubflowNodeGroup):
 
     def _output_results_list(self) -> None:
         """Output the current results list to the results parameter."""
-        import copy
-
         self.parameter_output_values["results"] = copy.deepcopy(self._results_list)
 
     def reset_for_workflow_run(self) -> None:

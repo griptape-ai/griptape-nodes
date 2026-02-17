@@ -1,6 +1,10 @@
+import base64
+import io
 import logging
 from typing import Any
 
+import numpy as np
+import scipy.io.wavfile  # type: ignore[reportMissingImports]
 from artifact_utils.audio_utils import dict_to_audio_url_artifact  # type: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
@@ -160,12 +164,6 @@ class AudioldmPipelineRuntimeParameters(DiffusionPipelineRuntimeParameters):
 
     def _audio_data_to_artifact(self, audio_data: Any) -> Any:
         """Convert audio data to audio artifact."""
-        import base64
-        import io
-
-        import numpy as np
-        import scipy.io.wavfile  # type: ignore[reportMissingImports]
-
         # Convert audio array to WAV format
         buffer = io.BytesIO()
         # AudioLDM typically outputs at 16kHz

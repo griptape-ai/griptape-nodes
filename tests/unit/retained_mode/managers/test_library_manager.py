@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
     InstallLibraryDependenciesResultFailure,
@@ -14,6 +15,7 @@ from griptape_nodes.retained_mode.events.library_events import (
     RegisterLibraryFromFileResultFailure,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
 
 class TestLibraryManagerLoadLibraries:
@@ -27,8 +29,6 @@ class TestLibraryManagerLoadLibraries:
         library_manager = griptape_nodes.LibraryManager()
 
         # Mock that libraries are already loaded and discovered libraries match loaded ones
-        from griptape_nodes.node_library.library_registry import LibraryRegistry
-        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 
         mock_lib_info = library_manager.LibraryInfo(
             lifecycle_state=LibraryManager.LibraryLifecycleState.LOADED,

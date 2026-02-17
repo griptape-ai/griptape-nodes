@@ -487,7 +487,9 @@ def deserialize_event(json_data: str | dict | Any) -> BaseEvent:
     Returns:
         The deserialized event with the correct payload
     """
-    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+    # Lazy import required: circular dependency between base_events and payload_registry
+    # payload_registry imports Payload from base_events, and we need PayloadRegistry from payload_registry
+    from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry  # noqa: PLC0415
 
     # Parse the data if it's a string, otherwise use as is
     if isinstance(json_data, str):

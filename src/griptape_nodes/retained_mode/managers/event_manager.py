@@ -22,12 +22,12 @@ from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
     ResultPayload,
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.async_utils import call_function
 
 if TYPE_CHECKING:
     import types
     from collections.abc import Awaitable, Callable
-
 
 RP = TypeVar("RP", bound=RequestPayload, default=RequestPayload)
 AP = TypeVar("AP", bound=AppPayload, default=AppPayload)
@@ -227,8 +227,6 @@ class EventManager:
         context: ResultContext,
     ) -> EventResultSuccess | EventResultFailure:
         """Core logic for handling requests, shared between sync and async methods."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         workflow_mgr = GriptapeNodes.WorkflowManager()
 
@@ -286,8 +284,6 @@ class EventManager:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         if result_context is None:
             result_context = ResultContext()
@@ -325,8 +321,6 @@ class EventManager:
             request: The request to handle
             result_context: The result context containing response_topic and request_id
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         operation_depth_mgr = GriptapeNodes.OperationDepthManager()
         if result_context is None:
             result_context = ResultContext()
@@ -387,8 +381,6 @@ class EventManager:
                     tg.create_task(call_function(listener_callback, app_event))
 
     def _flush_tracked_parameter_changes(self) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         obj_manager = GriptapeNodes.ObjectManager()
         # Get all flows and their nodes
         nodes = obj_manager.get_filtered_subset(type=BaseNode)

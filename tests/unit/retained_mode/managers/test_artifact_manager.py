@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
 import tempfile
+import time
 from collections.abc import Generator
 from pathlib import Path
 
@@ -8,6 +10,7 @@ import pytest
 from PIL import Image
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewRequest,
     GeneratePreviewResultFailure,
@@ -26,12 +29,16 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterArtifactProviderResultSuccess,
 )
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
-from griptape_nodes.retained_mode.events.config_events import SetConfigValueResultSuccess
+from griptape_nodes.retained_mode.events.config_events import SetConfigValueRequest, SetConfigValueResultSuccess
 from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager, PreviewMetadata
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+    PILThumbnailGenerator,
 )
 
 # ==================================================================================
@@ -55,9 +62,6 @@ def mock_config_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     This fixture is autouse=True, so it applies to ALL tests in this file automatically.
     Any test that registers providers would otherwise pollute the real user config.
     """
-    from griptape_nodes.retained_mode.events.config_events import SetConfigValueRequest
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     # Store the original handle_request method
     original_handle_request = GriptapeNodes.handle_request
 
@@ -80,8 +84,6 @@ class TestArtifactManager:
     @pytest.mark.asyncio
     async def test_init_creates_empty_providers(self) -> None:
         """Test that initialization creates empty provider collections and registers defaults."""
-        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-
         manager = ArtifactManager()
 
         # Initially empty
@@ -170,8 +172,6 @@ class TestArtifactManager:
     @pytest.mark.asyncio
     async def test_initialization_registers_default_providers(self) -> None:
         """Test that ArtifactManager initialization registers default providers."""
-        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
-
         manager = ArtifactManager()
 
         # Initially empty
@@ -712,8 +712,6 @@ class TestGetPreviewForArtifact:
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
     ) -> Path:
         """Generate a preview with metadata for testing retrieval."""
-        import asyncio
-
         request = GeneratePreviewRequest(
             macro_path=test_macro_path,
             artifact_provider_name="Image",
@@ -731,8 +729,6 @@ class TestGetPreviewForArtifact:
     @pytest.mark.usefixtures("generated_preview_with_metadata")
     def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
         """Test retrieving existing preview."""
-        import asyncio
-
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
             artifact_provider_name="Image",
@@ -748,8 +744,6 @@ class TestGetPreviewForArtifact:
 
     def test_get_preview_source_file_not_found(self, artifact_manager: ArtifactManager, temp_dir: Path) -> None:
         """Test getting preview for non-existent source file."""
-        import asyncio
-
         nonexistent_path = temp_dir / "nonexistent.jpg"
         parsed_macro = ParsedMacro(str(nonexistent_path))
         macro_path = MacroPath(parsed_macro=parsed_macro, variables={})
@@ -768,8 +762,6 @@ class TestGetPreviewForArtifact:
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
     ) -> None:
         """Test getting preview when metadata doesn't exist."""
-        import asyncio
-
         # Don't generate preview or metadata
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
@@ -790,8 +782,6 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when metadata JSON is malformed."""
-        import asyncio
-
         # Corrupt the metadata file (named after source file, not preview)
         preview_dir = test_image_path.parent / "nodes_previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
@@ -816,8 +806,6 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when metadata has missing required field."""
-        import asyncio
-
         # Write metadata with missing field (named after source file)
         preview_dir = test_image_path.parent / "nodes_previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
@@ -847,8 +835,6 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when source file was modified."""
-        import asyncio
-
         # Modify source file by writing more data
         with test_image_path.open("ab") as f:
             f.write(b"extra data to change size")
@@ -872,9 +858,6 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test getting preview when source file mtime was updated."""
-        import asyncio
-        import time
-
         future_time = time.time() + 100
         os.utime(test_image_path, (future_time, future_time))
 
@@ -896,8 +879,6 @@ class TestGetPreviewForArtifact:
         generated_preview_with_metadata: Path,
     ) -> None:
         """Test getting preview when preview file is deleted but metadata exists."""
-        import asyncio
-
         # Delete the preview file but keep metadata
         generated_preview_with_metadata.unlink()
 
@@ -916,8 +897,6 @@ class TestGetPreviewForArtifact:
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
     ) -> None:
         """Test that DO_NOT_GENERATE policy is accepted and fails when no preview exists."""
-        import asyncio
-
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
             artifact_provider_name="Image",
@@ -936,8 +915,6 @@ class TestGetPreviewForArtifact:
         test_image_path: Path,
     ) -> None:
         """Test ONLY_IF_STALE policy regenerates when source is stale."""
-        import asyncio
-
         # Make source stale by modifying it
         with test_image_path.open("ab") as f:
             f.write(b"extra data to change size")
@@ -958,8 +935,6 @@ class TestGetPreviewForArtifact:
         self, artifact_manager: ArtifactManager, test_macro_path: MacroPath
     ) -> None:
         """Test ONLY_IF_STALE policy generates when metadata missing."""
-        import asyncio
-
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
             artifact_provider_name="Image",
@@ -979,8 +954,6 @@ class TestGetPreviewForArtifact:
         test_macro_path: MacroPath,
     ) -> None:
         """Test ALWAYS policy regenerates even when preview is fresh."""
-        import asyncio
-
         request = GetPreviewForArtifactRequest(
             macro_path=test_macro_path,
             artifact_provider_name="Image",
@@ -995,11 +968,6 @@ class TestGetPreviewForArtifact:
 
     def test_get_generator_config_schema(self) -> None:
         """Test that get_preview_generator_config_schema generates correct config keys."""
-        from griptape_nodes.retained_mode.managers.artifact_providers.image import ImageArtifactProvider
-        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
-            PILThumbnailGenerator,
-        )
-
         # Generate config schema for PILThumbnailGenerator using static method
         config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
             ImageArtifactProvider, PILThumbnailGenerator

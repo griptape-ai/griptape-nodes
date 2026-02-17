@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from griptape_nodes.machines.heuristics import DistanceToNode, HasConnectionFromPrevious, TopLeftToBottomRight
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     from griptape_nodes.machines.dag_builder import DagNode
@@ -25,8 +26,6 @@ class NodePriorityQueue:
         Args:
             context: The execution context containing node references and DAG state
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         self._context = context
         self._queued_nodes: list[str] = []  # Node names, sorted by priority (highest first)
         self._blocked_nodes: list[str] = []  # Node names blocked from queuing (not ready yet)

@@ -4,6 +4,8 @@ import platform
 import sys
 
 import torch  # type: ignore[reportMissingImports]
+import torch_directml  # pyright: ignore[reportMissingImports]
+import torch_xla.core.xla_model as xm  # pyright: ignore[reportMissingImports]
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline  # type: ignore[reportMissingImports]
 
 logger = logging.getLogger("diffusers_nodes_library")
@@ -97,8 +99,6 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
     # TPU detection (Colab etc.)
     if "COLAB_TPU_ADDR" in os.environ:
         try:
-            import torch_xla.core.xla_model as xm  # pyright: ignore[reportMissingImports]
-
             device = xm.xla_device()
             if not quiet:
                 logger.info("Detected TPU environment, using XLA device.")
@@ -129,8 +129,6 @@ def get_best_device(*, quiet: bool = False) -> torch.device:  # noqa: C901 PLR09
                 logger.info("Detected Windows with CUDA support, using CUDA device: %s.", device_name)
             return torch.device("cuda")
         try:
-            import torch_directml  # pyright: ignore[reportMissingImports]
-
             device = torch_directml.device()
             if not quiet:
                 logger.info("Detected Windows without CUDA, using DirectML device.")

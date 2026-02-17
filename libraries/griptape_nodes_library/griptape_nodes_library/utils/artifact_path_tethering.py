@@ -11,6 +11,7 @@ import httpx
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
+from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlRequest,
     CreateStaticFileDownloadUrlResultFailure,
@@ -126,7 +127,6 @@ class ArtifactPathValidator(Trait):
                     raise ValueError(error_msg)
             else:
                 # Sanitize file paths before validation to handle shell escapes from macOS Finder
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
                 sanitized_path = GriptapeNodes.OSManager().sanitize_path_string(path_str)
 
@@ -315,7 +315,6 @@ class ArtifactPathTethering:
             self._updating_from_parameter = None
 
         # Second, handle connection-aware settable restoration
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         connections = GriptapeNodes.FlowManager().get_connections()
         target_connections = connections.incoming_index.get(self.node.name)
@@ -416,8 +415,6 @@ class ArtifactPathTethering:
         """Helper to sync parameter values bidirectionally without triggering infinite loops."""
         # Use node manager's request system to ensure full parameter setting flow including downstream propagation
         # The _updating_from_parameter lock prevents infinite recursion in on_after_value_set
-        from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         GriptapeNodes.handle_request(
             SetParameterValueRequest(

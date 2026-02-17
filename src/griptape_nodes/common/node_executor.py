@@ -9,6 +9,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
+    SubprocessWorkflowExecutor,
+)
 from griptape_nodes.bootstrap.workflow_publishers.subprocess_workflow_publisher import SubprocessWorkflowPublisher
 from griptape_nodes.drivers.storage.storage_backend import StorageBackend
 from griptape_nodes.exe_types import node_types
@@ -537,10 +540,6 @@ class NodeExecutor:
         Returns:
             The subprocess execution output dictionary
         """
-        from griptape_nodes.bootstrap.workflow_executors.subprocess_workflow_executor import (
-            SubprocessWorkflowExecutor,
-        )
-
         # Define event callback if node provided for GUI updates
         on_event: Callable[[dict], None] | None = None
         if node is not None:

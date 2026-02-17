@@ -29,6 +29,7 @@ from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -185,7 +186,9 @@ from griptape_nodes.utils.git_utils import (
     get_git_remote,
     get_local_commit_sha,
     is_git_url,
+    normalize_github_url,
     parse_git_url_with_ref,
+    sparse_checkout_library_json,
     switch_branch_or_tag,
     update_library_git,
 )
@@ -202,7 +205,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from types import ModuleType
 
-    from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
     from griptape_nodes.retained_mode.events.base_events import Payload, RequestPayload, ResultPayload
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -2623,8 +2625,6 @@ class LibraryManager:
             AttributeError: If no AdvancedNodeLibrary subclass is found
             TypeError: If the found class cannot be instantiated
         """
-        from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
-
         if not library_data.advanced_library_path:
             return None
 
@@ -4145,7 +4145,6 @@ class LibraryManager:
         ref = request.ref
 
         # Normalize GitHub shorthand to full URL
-        from griptape_nodes.utils.git_utils import normalize_github_url, sparse_checkout_library_json
 
         normalized_url = normalize_github_url(git_url)
         logger.info("Inspecting library metadata from '%s' (ref: %s)", normalized_url, ref)

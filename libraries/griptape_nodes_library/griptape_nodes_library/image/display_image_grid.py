@@ -1,7 +1,7 @@
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
@@ -280,8 +280,6 @@ class DisplayImageGrid(ControlNode):
         Returns:
             tuple: (scaled_image, final_width, final_height)
         """
-        from PIL import Image
-
         grid_width = grid_image.width
         grid_height = grid_image.height
 

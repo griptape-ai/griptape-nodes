@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import semver
 
+import griptape_nodes.version_compatibility.versions as versions_module
 from griptape_nodes.retained_mode.events.app_events import (
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -133,8 +134,6 @@ class VersionCompatibilityManager:
     def _discover_version_checks(self) -> None:
         """Automatically discover and register all version compatibility checks from the versions/ directory."""
         try:
-            import griptape_nodes.version_compatibility.versions as versions_module
-
             if versions_module.__file__ is None:
                 logger.debug("No version compatibility checks directory found, skipping discovery")
                 return

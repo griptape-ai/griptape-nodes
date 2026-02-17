@@ -24,6 +24,43 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.flow_events import (
     DeleteFlowRequest,
 )
+from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
+from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
+    ArbitraryCodeExecManager,
+)
+from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
+from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
+from griptape_nodes.retained_mode.managers.context_manager import ContextManager
+from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
+from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
+from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
+from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
+from griptape_nodes.retained_mode.managers.model_manager import ModelManager
+from griptape_nodes.retained_mode.managers.node_manager import NodeManager
+from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
+from griptape_nodes.retained_mode.managers.operation_manager import (
+    OperationDepthManager,
+)
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
+from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
+from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
+from griptape_nodes.retained_mode.managers.session_manager import SessionManager
+from griptape_nodes.retained_mode.managers.static_files_manager import (
+    StaticFilesManager,
+)
+from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
+from griptape_nodes.retained_mode.managers.user_manager import UserManager
+from griptape_nodes.retained_mode.managers.variable_manager import (
+    VariablesManager,
+)
+from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
+    VersionCompatibilityManager,
+)
+from griptape_nodes.retained_mode.managers.workflow_manager import (
+    WorkflowManager,
+)
 from griptape_nodes.utils.metaclasses import SingletonMeta
 from griptape_nodes.utils.version_utils import engine_version
 
@@ -33,42 +70,6 @@ if TYPE_CHECKING:
         RequestPayload,
         ResultPayload,
     )
-    from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
-    from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
-        ArbitraryCodeExecManager,
-    )
-    from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
-    from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-    from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-    from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
-    from griptape_nodes.retained_mode.managers.event_manager import EventManager
-    from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-    from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-    from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
-    from griptape_nodes.retained_mode.managers.model_manager import ModelManager
-    from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-    from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-    from griptape_nodes.retained_mode.managers.operation_manager import (
-        OperationDepthManager,
-    )
-    from griptape_nodes.retained_mode.managers.os_manager import OSManager
-    from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
-    from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
-    from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-    from griptape_nodes.retained_mode.managers.session_manager import SessionManager
-    from griptape_nodes.retained_mode.managers.static_files_manager import (
-        StaticFilesManager,
-    )
-    from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
-    from griptape_nodes.retained_mode.managers.user_manager import UserManager
-    from griptape_nodes.retained_mode.managers.variable_manager import (
-        VariablesManager,
-    )
-    from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
-        VersionCompatibilityManager,
-    )
-    from griptape_nodes.retained_mode.managers.workflow_manager import WorkflowManager
-
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -100,45 +101,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
     _project_manager: ProjectManager
     _artifact_manager: ArtifactManager
 
-    def __init__(self) -> None:  # noqa: PLR0915
-        from griptape_nodes.retained_mode.managers.agent_manager import AgentManager
-        from griptape_nodes.retained_mode.managers.arbitrary_code_exec_manager import (
-            ArbitraryCodeExecManager,
-        )
-        from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
-        from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
-        from griptape_nodes.retained_mode.managers.context_manager import ContextManager
-        from griptape_nodes.retained_mode.managers.engine_identity_manager import EngineIdentityManager
-        from griptape_nodes.retained_mode.managers.event_manager import EventManager
-        from griptape_nodes.retained_mode.managers.flow_manager import FlowManager
-        from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
-        from griptape_nodes.retained_mode.managers.mcp_manager import MCPManager
-        from griptape_nodes.retained_mode.managers.model_manager import ModelManager
-        from griptape_nodes.retained_mode.managers.node_manager import NodeManager
-        from griptape_nodes.retained_mode.managers.object_manager import ObjectManager
-        from griptape_nodes.retained_mode.managers.operation_manager import (
-            OperationDepthManager,
-        )
-        from griptape_nodes.retained_mode.managers.os_manager import OSManager
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
-        from griptape_nodes.retained_mode.managers.resource_manager import ResourceManager
-        from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
-        from griptape_nodes.retained_mode.managers.session_manager import SessionManager
-        from griptape_nodes.retained_mode.managers.static_files_manager import (
-            StaticFilesManager,
-        )
-        from griptape_nodes.retained_mode.managers.sync_manager import SyncManager
-        from griptape_nodes.retained_mode.managers.user_manager import UserManager
-        from griptape_nodes.retained_mode.managers.variable_manager import (
-            VariablesManager,
-        )
-        from griptape_nodes.retained_mode.managers.version_compatibility_manager import (
-            VersionCompatibilityManager,
-        )
-        from griptape_nodes.retained_mode.managers.workflow_manager import (
-            WorkflowManager,
-        )
-
+    def __init__(self) -> None:
         # Initialize only if our managers haven't been created yet
         if not hasattr(self, "_event_manager"):
             self._event_manager = EventManager()

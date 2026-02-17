@@ -1,3 +1,4 @@
+import traceback
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -110,6 +111,5 @@ class InvertMask(DataNode):
             # Log the error and set a meaningful error message
             error_msg = f"Failed to invert mask: {e!s}"
             logger.error(f"{self.name}: {error_msg}")
-            import traceback
 
             logger.debug(f"{self.name}: {traceback.format_exc()}")

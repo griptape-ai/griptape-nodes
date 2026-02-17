@@ -1,5 +1,6 @@
 import logging
 
+from griptape_cloud.publish_workflow.griptape_cloud_publisher import GriptapeCloudPublisher
 from griptape_nodes.node_library.advanced_node_library import AdvancedNodeLibrary
 from griptape_nodes.node_library.library_registry import Library, LibrarySchema
 from griptape_nodes.retained_mode.events.base_events import RequestPayload, ResultPayload
@@ -17,7 +18,6 @@ def _publish_workflow_request_handler(request: RequestPayload) -> ResultPayload:
     if not isinstance(request, PublishWorkflowRequest):
         msg = f"Expected PublishWorkflowRequest, got {type(request).__name__}"
         raise TypeError(msg)
-    from griptape_cloud.publish_workflow.griptape_cloud_publisher import GriptapeCloudPublisher
 
     publisher = GriptapeCloudPublisher(
         workflow_name=request.workflow_name,

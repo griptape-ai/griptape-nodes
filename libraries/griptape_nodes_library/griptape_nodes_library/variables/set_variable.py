@@ -2,6 +2,11 @@ from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import ControlNode, NodeResolutionState
+from griptape_nodes.retained_mode.events.variable_events import (
+    SetVariableValueRequest,
+    SetVariableValueResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.variables.variable_utils import (
     create_advanced_parameter_group,
     get_variable,
@@ -40,11 +45,6 @@ class SetVariable(ControlNode):
 
     def process(self) -> None:
         # Lazy imports to avoid circular import issues
-        from griptape_nodes.retained_mode.events.variable_events import (
-            SetVariableValueRequest,
-            SetVariableValueResultSuccess,
-        )
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         variable_name = self.get_parameter_value(self.variable_name_param.name)
         value = self.get_parameter_value(self.value_param.name)

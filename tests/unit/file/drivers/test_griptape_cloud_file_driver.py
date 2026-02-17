@@ -4,6 +4,7 @@ import os
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 
 from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
@@ -120,8 +121,6 @@ class TestGriptapeCloudFileDriver:
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test read raises RuntimeError on HTTP error."""
-        import httpx
-
         with patch("httpx.AsyncClient") as mock_client_class:
             mock_client = AsyncMock()
             mock_client.post = AsyncMock(side_effect=httpx.HTTPError("Connection failed"))
@@ -216,8 +215,6 @@ class TestGriptapeCloudFileDriver:
         mock_cloud_storage_driver: Any,  # noqa: ARG002
     ) -> None:
         """Test get_size returns 0 on HTTP error."""
-        import httpx
-
         with patch("httpx.Client") as mock_client_class:
             mock_client = Mock()
             mock_client.post = Mock(side_effect=httpx.HTTPError("Connection failed"))

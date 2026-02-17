@@ -6,6 +6,7 @@ import logging
 import pickle
 import re
 import sys
+import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
@@ -171,7 +172,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
     from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
-
 
 T = TypeVar("T")
 
@@ -622,10 +622,6 @@ class WorkflowManager:
         # Second check: Do we have a current flow? If not, try to establish one.
         if not context_manager.has_current_flow():
             # Use the proper request to get the top-level flow
-            from griptape_nodes.retained_mode.events.flow_events import (
-                GetTopLevelFlowRequest,
-                GetTopLevelFlowResultSuccess,
-            )
 
             top_level_flow_request = GetTopLevelFlowRequest()
             top_level_flow_result = await GriptapeNodes.ahandle_request(top_level_flow_request)
@@ -2172,8 +2168,6 @@ class WorkflowManager:
         Returns:
             The workflow content with updated metadata header, or None if replacement failed
         """
-        import re
-
         # Generate the new metadata header
         new_metadata_header = self._generate_workflow_metadata_header(new_metadata)
         if new_metadata_header is None:
@@ -4223,7 +4217,6 @@ class WorkflowManager:
 
         except Exception as e:
             details = f"Failed to branch workflow '{request.workflow_name}': {e!s}"
-            import traceback
 
             traceback.print_exc()
             return BranchWorkflowResultFailure(result_details=details)
@@ -4637,8 +4630,6 @@ class WorkflowManager:
         Returns:
             WorkflowRegistrationResult with succeeded and failed workflow names
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         succeeded = []
         failed = []
 
@@ -4738,8 +4729,6 @@ class WorkflowManager:
         Returns:
             Workflow name if registered successfully, None if failed or skipped
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Parse metadata once and use it for both registration check and actual registration
         load_metadata_request = LoadWorkflowMetadata(file_name=str(workflow_file))
         load_metadata_result = self.on_load_workflow_metadata_request(load_metadata_request)

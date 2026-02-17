@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 import httpx
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 logger = logging.getLogger("griptape_nodes")
 
 DEFAULT_DOWNLOAD_TIMEOUT = 30.0
@@ -57,8 +59,6 @@ def detect_audio_format(audio: Any | dict) -> str | None:
 
 def dict_to_audio_url_artifact(audio_dict: dict, audio_format: str | None = None) -> AudioUrlArtifact:
     """Convert a dictionary representation of audio to an AudioUrlArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     value = audio_dict["value"]
 
     # If it already is an AudioUrlArtifact, just wrap and return

@@ -735,9 +735,6 @@ class ArtifactManager:
             self._registry.register_preview_generator_with_provider(provider_class, request.preview_generator_class)
 
             # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
 
             config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
                 provider_class, request.preview_generator_class
@@ -923,9 +920,6 @@ class ArtifactManager:
             self._registry.register_preview_generator_with_provider(provider_class, preview_generator_class)
 
             # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
 
             config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
                 provider_class, preview_generator_class

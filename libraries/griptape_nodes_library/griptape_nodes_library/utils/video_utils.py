@@ -12,8 +12,9 @@ from urllib.parse import urlparse
 
 import httpx
 import static_ffmpeg.run  # type: ignore[import-untyped]  # static_ffmpeg is dynamically installed by the library loader at runtime
-from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+from griptape.artifacts import VideoUrlArtifact
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.async_utils import subprocess_run
 
 logger = logging.getLogger("griptape_nodes")
@@ -80,10 +81,6 @@ def detect_video_format(video: Any | dict) -> str | None:
 
 def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None) -> VideoUrlArtifact:
     """Convert a dictionary representation of video to a VideoUrlArtifact."""
-    from griptape.artifacts import VideoUrlArtifact
-
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     value = video_dict["value"]
 
     # If it already is a VideoUrlArtifact, just wrap and return

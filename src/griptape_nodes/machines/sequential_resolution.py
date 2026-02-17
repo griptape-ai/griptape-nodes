@@ -88,8 +88,6 @@ class InitializeSpotlightState(State):
         if current_node.state == NodeResolutionState.UNRESOLVED:
             # Mark all future nodes unresolved.
             # TODO: https://github.com/griptape-ai/griptape-nodes/issues/862
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             GriptapeNodes.FlowManager().get_connections().unresolve_future_nodes(current_node)
             current_node.initialize_spotlight()
         # Set node to resolving - we are now resolving this node.
@@ -145,8 +143,6 @@ class EvaluateParameterState(State):
 
     @staticmethod
     async def on_update(context: ResolutionContext) -> type[State] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         current_node = context.current_node
         current_parameter = current_node.get_current_parameter()
 
@@ -182,8 +178,6 @@ class ExecuteNodeState(State):
             context (ResolutionContext): The resolution context containing the focus stack
                 with the current node being processed.
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         current_node = context.current_node
         connections = GriptapeNodes.FlowManager().get_connections()
 
@@ -278,8 +272,6 @@ class ExecuteNodeState(State):
 
     @staticmethod
     async def on_update(context: ResolutionContext) -> type[State] | None:  # noqa: PLR0915
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Once everything has been set
         current_focus = context.focus_stack[-1]
         current_node = current_focus.node
@@ -295,8 +287,6 @@ class ExecuteNodeState(State):
             current_node = current_focus.node
 
             try:
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
                 executor = GriptapeNodes.FlowManager().node_executor
                 # Create and track task in Focus for cancellation support
                 execution_task = asyncio.create_task(executor.execute(current_node))
@@ -335,8 +325,6 @@ class ExecuteNodeState(State):
                         {NodeResolutionState.UNRESOLVED, NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                     )
                 )
-
-                from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
                 # Do NOT call cancel_flow_run() here - that cancels the global main flow!
                 # When executing in a subflow (e.g., for-each loop iteration), we want to

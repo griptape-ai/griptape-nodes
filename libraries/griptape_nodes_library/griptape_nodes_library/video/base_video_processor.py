@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
@@ -13,6 +14,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.video_utils import (
@@ -191,7 +193,6 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
 
             # URL is validated via _validate_url_safety() before this call
             result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
-            import json
 
             streams_data = json.loads(result.stdout)
 
@@ -305,8 +306,6 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
 
     def _save_video_artifact(self, video_bytes: bytes, format_extension: str, suffix: str = "") -> VideoUrlArtifact:
         """Save video bytes to static file and return VideoUrlArtifact."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Generate meaningful filename based on workflow and node
         filename = self._generate_filename(suffix, format_extension)
         url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)

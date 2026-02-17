@@ -17,6 +17,7 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -421,7 +422,6 @@ class FluxImageGeneration(GriptapeProxyNode):
             image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = f"flux_image_{int(time.time())}.jpg"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)

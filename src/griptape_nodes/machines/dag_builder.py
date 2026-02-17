@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, 
 from griptape_nodes.exe_types.connections import Direction
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
     import asyncio
@@ -81,8 +82,6 @@ class DagBuilder:
     # Complex with the inner recursive method, but it needs connections and added_nodes.
     def add_node_with_dependencies(self, node: BaseNode, graph_name: str = "default") -> list[BaseNode]:  # noqa: C901
         """Add node and all its dependencies to DAG. Returns list of added nodes."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         connections = GriptapeNodes.FlowManager().get_connections()
         added_nodes = []
         graph = self.graphs.get(graph_name, None)
@@ -234,8 +233,6 @@ class DagBuilder:
         if len(self.graphs) == 1:
             # If there's only one graph, we aren't looking for a control flow connection from elsewhere! We can queue. We've already looked at data dependencies.
             return True
-
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         connections = GriptapeNodes.FlowManager().get_connections()
 

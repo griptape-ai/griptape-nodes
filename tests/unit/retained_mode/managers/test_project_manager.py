@@ -6,21 +6,36 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from griptape_nodes.common.macro_parser import MacroMatchFailureReason
+from griptape_nodes.common.macro_parser import MacroMatchFailureReason, ParsedMacro
+from griptape_nodes.common.project_templates import (
+    DEFAULT_PROJECT_TEMPLATE,
+    DirectoryDefinition,
+    ProjectTemplate,
+    ProjectValidationInfo,
+    ProjectValidationStatus,
+)
+from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
+    AttemptMapAbsolutePathToProjectResultFailure,
     AttemptMapAbsolutePathToProjectResultSuccess,
     AttemptMatchPathAgainstMacroRequest,
     AttemptMatchPathAgainstMacroResultSuccess,
+    GetCurrentProjectRequest,
+    GetCurrentProjectResultFailure,
+    GetCurrentProjectResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultFailure,
     GetPathForMacroResultSuccess,
     GetStateForMacroRequest,
     GetStateForMacroResultFailure,
     GetStateForMacroResultSuccess,
+    ListProjectTemplatesRequest,
+    ListProjectTemplatesResultSuccess,
     PathResolutionFailureReason,
 )
-from griptape_nodes.retained_mode.managers.project_manager import ProjectManager
+from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo, ProjectManager
 
 
 class TestProjectManagerMacroHandlers:
@@ -36,8 +51,6 @@ class TestProjectManagerMacroHandlers:
 
     def test_match_path_against_macro_success(self, project_manager: ProjectManager) -> None:
         """Test AttemptMatchPathAgainstMacro successfully matches path."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
 
         request = AttemptMatchPathAgainstMacroRequest(
@@ -54,8 +67,6 @@ class TestProjectManagerMacroHandlers:
 
     def test_match_path_mismatch(self, project_manager: ProjectManager) -> None:
         """Test that AttemptMatchPathAgainstMacro returns success with match_failure when path doesn't match."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         known_vars: dict[str, str | int] = {"inputs": "outputs", "ext": "png"}
         parsed_macro = ParsedMacro("{inputs}/{file_name}.{ext}")
 
@@ -75,8 +86,6 @@ class TestProjectManagerMacroHandlers:
 
     def test_match_path_empty_known_variables(self, project_manager: ProjectManager) -> None:
         """Test AttemptMatchPathAgainstMacro with empty known_variables."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{file_name}")
 
         request = AttemptMatchPathAgainstMacroRequest(
@@ -125,10 +134,6 @@ class TestProjectManagerBuiltinVariables:
     @pytest.fixture
     def project_manager_with_template(self) -> ProjectManager:
         """Create a ProjectManager with system defaults loaded."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -161,8 +166,6 @@ class TestProjectManagerBuiltinVariables:
 
     def test_builtin_project_dir_resolves_correctly(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {project_dir} builtin resolves to project_path.parent."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -177,8 +180,6 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workspace_dir} builtin resolves from ConfigManager."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "/workspace"
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
@@ -198,8 +199,6 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workflow_name} builtin resolves from ContextManager."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = True
         mock_context_manager.get_current_workflow_name.return_value = "my_workflow"
@@ -221,8 +220,6 @@ class TestProjectManagerBuiltinVariables:
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
     ) -> None:
         """Test that {workflow_name} raises RuntimeError when no current workflow."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = False
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
@@ -235,15 +232,12 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "No current workflow" in str(result.result_details)
 
     def test_builtin_project_name_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {project_name} raises NotImplementedError."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{project_name}/output.txt")
 
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -252,15 +246,12 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "project_name not yet implemented" in str(result.result_details)
 
     def test_builtin_workflow_dir_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
         """Test that {workflow_dir} raises NotImplementedError."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
 
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
@@ -269,15 +260,12 @@ class TestProjectManagerBuiltinVariables:
 
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "workflow_dir not yet implemented" in str(result.result_details)
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetPathForMacroRequest(
@@ -292,8 +280,6 @@ class TestProjectManagerBuiltinVariables:
 
     def test_builtin_override_different_value_rejected(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing different value for builtin variable is rejected."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetPathForMacroRequest(
@@ -306,7 +292,6 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultFailure)
         assert result.failure_reason == PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED
         assert result.conflicting_variables == {"project_dir"}
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "cannot override builtin variables" in str(result.result_details)
@@ -318,10 +303,6 @@ class TestProjectManagerGetStateForMacro:
     @pytest.fixture
     def project_manager_with_current_project(self) -> ProjectManager:
         """Create a ProjectManager with current project set."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -354,8 +335,6 @@ class TestProjectManagerGetStateForMacro:
 
     def test_get_state_for_macro_no_current_project(self) -> None:
         """Test GetStateForMacro fails when no current project is set."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -368,7 +347,6 @@ class TestProjectManagerGetStateForMacro:
         result = pm.on_get_state_for_macro_request(request)
 
         assert isinstance(result, GetStateForMacroResultFailure)
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "no current project is set" in str(result.result_details)
@@ -377,8 +355,6 @@ class TestProjectManagerGetStateForMacro:
         self, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro when all variables are satisfied."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{file_name}.{ext}")
 
         request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"file_name": "output", "ext": "txt"})
@@ -397,8 +373,6 @@ class TestProjectManagerGetStateForMacro:
         self, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro when required variables are missing."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{file_name}.{ext}")
 
         request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"file_name": "output"})
@@ -414,8 +388,6 @@ class TestProjectManagerGetStateForMacro:
         self, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro when user provides directory name."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{inputs}/{file_name}.txt")
 
         request = GetStateForMacroRequest(
@@ -433,8 +405,6 @@ class TestProjectManagerGetStateForMacro:
         self, mock_griptape_nodes: Mock, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro with satisfied builtin variable."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_config_manager = Mock()
         mock_config_manager.get_config_value.return_value = "/workspace"
         mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
@@ -454,8 +424,6 @@ class TestProjectManagerGetStateForMacro:
         self, mock_griptape_nodes: Mock, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro fails when builtin variable cannot be resolved."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         mock_context_manager = Mock()
         mock_context_manager.has_current_workflow.return_value = False
         mock_griptape_nodes.ContextManager.return_value = mock_context_manager
@@ -467,7 +435,6 @@ class TestProjectManagerGetStateForMacro:
         result = project_manager_with_current_project.on_get_state_for_macro_request(request)
 
         assert isinstance(result, GetStateForMacroResultFailure)
-        from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
         assert "workflow_name" in str(result.result_details)
@@ -477,8 +444,6 @@ class TestProjectManagerGetStateForMacro:
         self, project_manager_with_current_project: ProjectManager
     ) -> None:
         """Test GetStateForMacro when user tries to override builtin with different value."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-
         parsed_macro = ParsedMacro("{project_dir}/output.txt")
 
         request = GetStateForMacroRequest(parsed_macro=parsed_macro, variables={"project_dir": "/different"})
@@ -495,11 +460,6 @@ class TestProjectManagerGetCurrentProject:
 
     def test_get_current_project_no_project_set(self) -> None:
         """Test GetCurrentProject fails when no project is set."""
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetCurrentProjectRequest,
-            GetCurrentProjectResultFailure,
-        )
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -513,14 +473,6 @@ class TestProjectManagerGetCurrentProject:
 
     def test_get_current_project_returns_project_info(self) -> None:
         """Test GetCurrentProject returns complete ProjectInfo."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetCurrentProjectRequest,
-            GetCurrentProjectResultSuccess,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -560,11 +512,6 @@ class TestProjectManagerGetCurrentProject:
 
     def test_get_current_project_id_not_found_in_templates(self) -> None:
         """Test GetCurrentProject fails when current project ID is not in loaded templates."""
-        from griptape_nodes.retained_mode.events.project_events import (
-            GetCurrentProjectRequest,
-            GetCurrentProjectResultFailure,
-        )
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -585,11 +532,6 @@ class TestProjectManagerListProjectTemplates:
 
     def test_list_project_templates_empty(self) -> None:
         """Test ListProjectTemplates with no projects loaded."""
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            ListProjectTemplatesResultSuccess,
-        )
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -604,14 +546,6 @@ class TestProjectManagerListProjectTemplates:
 
     def test_list_project_templates_successfully_loaded(self) -> None:
         """Test ListProjectTemplates returns successfully loaded projects."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            ListProjectTemplatesResultSuccess,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -665,12 +599,6 @@ class TestProjectManagerListProjectTemplates:
 
     def test_list_project_templates_with_failures(self) -> None:
         """Test ListProjectTemplates returns failed projects."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            ListProjectTemplatesResultSuccess,
-        )
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -694,14 +622,6 @@ class TestProjectManagerListProjectTemplates:
 
     def test_list_project_templates_filters_system_builtins(self) -> None:
         """Test ListProjectTemplates filters system builtins when requested."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            ListProjectTemplatesResultSuccess,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -741,14 +661,6 @@ class TestProjectManagerListProjectTemplates:
 
     def test_list_project_templates_mixed_state(self) -> None:
         """Test ListProjectTemplates with mix of successful and failed projects."""
-        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
-        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
-        from griptape_nodes.retained_mode.events.project_events import (
-            ListProjectTemplatesRequest,
-            ListProjectTemplatesResultSuccess,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
-
         mock_config = Mock()
         mock_secrets = Mock()
         mock_event_manager = Mock()
@@ -804,14 +716,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_inside_project_directory(self, project_manager: ProjectManager) -> None:
         """Test mapping an absolute path that's inside a project directory."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Set up project with outputs directory
         project_base = Path("/Users/test/project")
 
@@ -848,7 +752,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_gn.ContextManager.return_value = mock_context
 
             # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
             mock_os_manager = Mock(spec=OSManager)
             mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
@@ -867,14 +770,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_outside_project_directories(self, project_manager: ProjectManager) -> None:
         """Test mapping an absolute path that's outside all project directories."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Set up project
         project_base = Path("/Users/test/project")
 
@@ -911,7 +806,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_gn.ContextManager.return_value = mock_context
 
             # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
             mock_os_manager = Mock(spec=OSManager)
             mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
@@ -930,8 +824,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_no_current_project(self, project_manager: ProjectManager) -> None:
         """Test mapping when no current project is set (returns failure)."""
-        from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
-
         # No project set up
 
         absolute_path = Path("/Users/test/project/outputs/file.png")
@@ -945,14 +837,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_longest_prefix_matching(self, project_manager: ProjectManager) -> None:
         """Test that longest prefix matching works correctly for nested directories."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Set up project
         project_base = Path("/Users/test/project")
 
@@ -989,7 +873,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_gn.ContextManager.return_value = mock_context
 
             # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
             mock_os_manager = Mock(spec=OSManager)
             mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
@@ -1008,14 +891,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_at_directory_root(self, project_manager: ProjectManager) -> None:
         """Test mapping a path that's exactly at a directory root (no subdirectories)."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Set up project
         project_base = Path("/Users/test/project")
 
@@ -1052,7 +927,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_gn.ContextManager.return_value = mock_context
 
             # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
             mock_os_manager = Mock(spec=OSManager)
             mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
@@ -1071,14 +945,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_fallback_to_project_dir(self, project_manager: ProjectManager) -> None:
         """Test that paths not in defined directories fall back to {project_dir}."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DEFAULT_PROJECT_TEMPLATE,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Set up project
         project_base = Path("/Users/test/project")
 
@@ -1113,7 +979,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             mock_gn.ContextManager.return_value = mock_context
 
             # Mock OSManager - use real resolve_path_safely implementation
-            from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
             mock_os_manager = Mock(spec=OSManager)
             mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
@@ -1132,16 +997,6 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
 
     def test_attempt_map_path_with_unresolvable_builtin_variable(self, project_manager: ProjectManager) -> None:
         """Test that if a directory macro needs an unresolvable builtin, returns failure."""
-        from griptape_nodes.common.macro_parser import ParsedMacro
-        from griptape_nodes.common.project_templates import (
-            DirectoryDefinition,
-            ProjectTemplate,
-            ProjectValidationInfo,
-            ProjectValidationStatus,
-        )
-        from griptape_nodes.retained_mode.events.project_events import AttemptMapAbsolutePathToProjectResultFailure
-        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY, ProjectInfo
-
         # Create a custom template with a directory that uses workflow_name (will fail without workflow)
         custom_template = ProjectTemplate(
             project_template_schema_version="0.1.0",

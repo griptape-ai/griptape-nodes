@@ -14,6 +14,10 @@ from griptape_nodes.exe_types.node_types import SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.events.static_file_events import (
+    CreateStaticFileDownloadUrlRequest,
+    CreateStaticFileDownloadUrlResultFailure,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.image_utils import (
@@ -357,11 +361,6 @@ class SaveImage(SuccessFailureNode):
 
         # Check if file exists in static storage and overwrite is disabled
         if not overwrite_existing:
-            from griptape_nodes.retained_mode.events.static_file_events import (
-                CreateStaticFileDownloadUrlRequest,
-                CreateStaticFileDownloadUrlResultFailure,
-            )
-
             static_files_manager = GriptapeNodes.StaticFilesManager()
             request = CreateStaticFileDownloadUrlRequest(file_name=output_file)
             result = static_files_manager.on_handle_create_static_file_download_url_request(request)

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -217,8 +218,6 @@ class LoadImage(SuccessFailureNode):
 
         # Convert path to artifact using tethering utilities
         try:
-            from pathlib import Path
-
             # Check if it's a URL or file path
             if path_value.startswith(("http://", "https://")):
                 return ImageUrlArtifact(value=path_value)

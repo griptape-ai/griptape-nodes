@@ -1,8 +1,9 @@
 import inspect
 import logging
+import re
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Literal
+from typing import Any, Literal, get_type_hints
 
 from griptape_nodes.retained_mode.events.arbitrary_python_events import RunArbitraryPythonStringRequest
 from griptape_nodes.retained_mode.events.base_events import (
@@ -907,8 +908,6 @@ class RetainedMode:
             parse_indexed_variable("123var['key'][0]")
             # Returns: ("123var", ["'key'", "0"])
         """
-        import re
-
         # Find the first opening bracket to separate the variable name from indexing operations
         bracket_match = re.search(r"[\[\{]", expr_str)
 
@@ -1844,9 +1843,6 @@ class RetainedMode:
 
 def _fancy_signature(func: Callable) -> list[str]:
     """Return a dev-friendly, neatly aligned function signature."""
-    import inspect
-    from typing import get_type_hints
-
     sig = inspect.signature(func)
     type_hints = get_type_hints(func)
 

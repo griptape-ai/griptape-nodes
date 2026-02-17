@@ -1,6 +1,7 @@
 from typing import Any
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode
+from griptape_nodes_library.execution.for_loop_start import ForLoopStartNode
 
 
 class ForLoopEndNode(BaseIterativeEndNode):
@@ -16,6 +17,4 @@ class ForLoopEndNode(BaseIterativeEndNode):
     @classmethod
     def _get_compatible_start_classes(cls) -> set[type]:
         """Return the set of Start node classes that this End node can connect to."""
-        from griptape_nodes_library.execution.for_loop_start import ForLoopStartNode
-
         return {ForLoopStartNode}

@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeResolutionState,
 )
+from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
@@ -23,6 +24,7 @@ from griptape_nodes.retained_mode.events.execution_events import (
     SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
 from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
@@ -66,8 +68,6 @@ class ControlFlowContext:
         self.flow_name = flow_name
         if execution_type == WorkflowExecutionMode.PARALLEL:
             # Get the global DagBuilder from FlowManager
-            from griptape_nodes.machines.dag_builder import DagBuilder
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
             # Create isolated DagBuilder for independent subflows
             if is_isolated:
@@ -447,7 +447,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
 
         # For main flows using the global DagBuilder, process the global queue
         start_nodes = [start_node]
-        from griptape_nodes.retained_mode.managers.flow_manager import DagExecutionType
 
         # PASS 1: Process all control/start nodes first to build control flow graphs
         queue_items = list(flow_manager.global_flow_queue.queue)

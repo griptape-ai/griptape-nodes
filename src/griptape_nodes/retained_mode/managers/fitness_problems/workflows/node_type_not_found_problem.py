@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from griptape_nodes.retained_mode.managers.fitness_problems.workflows.workflow_problem import WorkflowProblem
@@ -28,7 +29,6 @@ class NodeTypeNotFoundProblem(WorkflowProblem):
             return f"Node type '{problem.node_type}' from '{problem.library_name}' not found in current version. May have been removed or renamed."
 
         # Group by library_name
-        from collections import defaultdict
 
         by_library = defaultdict(list)
         for problem in instances:

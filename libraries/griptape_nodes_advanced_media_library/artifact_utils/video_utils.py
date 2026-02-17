@@ -4,7 +4,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import cv2  # type: ignore[reportMissingImports]
+import numpy as np
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
+from PIL import Image
+
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 # Constants for magic numbers
 RGB_CHANNELS = 3
@@ -47,8 +52,6 @@ def detect_video_format(video: Any | dict) -> str | None:
 
 def dict_to_video_url_artifact(video_dict: dict, video_format: str | None = None) -> VideoUrlArtifact:
     """Convert a dictionary representation of video to a VideoUrlArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     value = video_dict["value"]
 
     # If it already is a VideoUrlArtifact, just wrap and return
@@ -88,12 +91,6 @@ def frames_to_video_artifact(frames: list[Any], fps: int = 30, video_format: str
     Returns:
         VideoUrlArtifact containing the generated video
     """
-    import cv2  # type: ignore[reportMissingImports]
-    import numpy as np
-    from PIL import Image
-
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     if not frames:
         msg = "frames list cannot be empty"
         raise ValueError(msg)
@@ -172,8 +169,6 @@ def numpy_video_to_video_artifact(video_np: Any, fps: int = 30, video_format: st
     Returns:
         VideoUrlArtifact containing the generated video
     """
-    import numpy as np
-
     if not isinstance(video_np, np.ndarray):
         msg = "video_np must be a numpy array"
         raise TypeError(msg)

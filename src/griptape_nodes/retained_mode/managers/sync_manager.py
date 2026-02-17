@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
-
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -77,8 +76,6 @@ class SyncManager:
             path: Path to the file that will be written
             content: The exact bytes that will be written to the file
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         os_manager = GriptapeNodes.OSManager()
         path_str = str(os_manager.resolve_path_safely(Path(path)))
         file_hash = hashlib.sha256(content).hexdigest()

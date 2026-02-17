@@ -1033,8 +1033,6 @@ def _extract_library_version_from_json(json_path: Path, remote_url: str) -> str:
     Raises:
         GitCloneError: If JSON is invalid or version is missing.
     """
-    import json
-
     try:
         with json_path.open() as f:
             library_data = json.load(f)

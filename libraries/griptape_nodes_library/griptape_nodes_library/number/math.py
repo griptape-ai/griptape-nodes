@@ -1,3 +1,5 @@
+import math
+import statistics
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -94,8 +96,6 @@ class Math(ControlNode):
         return super().after_value_set(parameter, value)
 
     def _handle_unary(self, operation: str, value: float) -> float:
-        import math
-
         ops = {"sqrt": math.sqrt, "abs": abs, "round": round, "ceil": math.ceil, "floor": math.floor, "sin": math.sin}
         return ops.get(operation, lambda: 0.0)(value)
 
@@ -111,8 +111,6 @@ class Math(ControlNode):
         return ops.get(operation, lambda: 0.0)(a, b)
 
     def _handle_list_ops(self, operation: str, values: list[float]) -> float:
-        import statistics
-
         ops = {"average": statistics.mean, "min": min, "max": max}
         return ops.get(operation, lambda: 0.0)(values)
 

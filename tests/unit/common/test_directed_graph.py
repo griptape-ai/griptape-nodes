@@ -2,6 +2,8 @@
 
 # ruff: noqa: PLR2004
 
+import pytest
+
 from griptape_nodes.common.directed_graph import DirectedGraph
 
 
@@ -72,8 +74,6 @@ class TestDirectedGraph:
     def test_in_degree_nonexistent_node(self) -> None:
         """Test that in_degree raises KeyError for nodes that don't exist."""
         graph = DirectedGraph()
-
-        import pytest
 
         with pytest.raises(KeyError, match="Node nonexistent not found in graph"):
             graph.in_degree("nonexistent")
@@ -224,7 +224,6 @@ class TestDirectedGraph:
         assert graph.nodes() == set()
 
         # in_degree should raise KeyError for nonexistent nodes
-        import pytest
 
         with pytest.raises(KeyError):
             graph.in_degree("any_node")

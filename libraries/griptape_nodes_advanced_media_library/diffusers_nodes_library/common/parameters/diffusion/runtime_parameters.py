@@ -14,6 +14,7 @@ from utils.directory_utils import check_cleanup_intermediates_directory, get_int
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("diffusers_nodes_library")
 
@@ -89,8 +90,6 @@ class DiffusionPipelineRuntimeParameters(ABC):
         self._seed_parameter.preprocess()
 
     def process_pipeline(self, pipe: DiffusionPipeline) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         num_inference_steps = self.get_num_inference_steps()
         # Default to False for better performance - preview intermediates slow down inference
         enable_preview = GriptapeNodes.ConfigManager().get_config_value(

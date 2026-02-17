@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
     BaseArtifactProvider,
 )
+from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+    PILRoundedPreviewGenerator,
+    PILThumbnailGenerator,
+)
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
@@ -31,10 +35,6 @@ class ImageArtifactProvider(BaseArtifactProvider):
         super().__init__(registry)
 
         # Do lazy imports here to only instantiate when the provider gets rezzed up.
-        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
-            PILRoundedPreviewGenerator,
-            PILThumbnailGenerator,
-        )
 
         # Register default generators with config
         self.register_preview_generator_with_config(PILThumbnailGenerator)
@@ -63,9 +63,4 @@ class ImageArtifactProvider(BaseArtifactProvider):
     @classmethod
     def get_default_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
         """Get default preview generator classes."""
-        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
-            PILRoundedPreviewGenerator,
-            PILThumbnailGenerator,
-        )
-
         return [PILThumbnailGenerator, PILRoundedPreviewGenerator]

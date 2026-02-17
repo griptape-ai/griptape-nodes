@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from math import gcd
 from typing import Any, NamedTuple
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -833,8 +834,6 @@ def calculate_aspect_ratio(width: int, height: int) -> tuple[int, int] | None:
     Returns:
         Tuple of (ratio_width, ratio_height) or None if invalid dimensions
     """
-    from math import gcd
-
     if width == 0 or height == 0:
         return (0, 0)
 

@@ -3,12 +3,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, NamedTuple
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
 if TYPE_CHECKING:
     from queue import Queue
 
     from griptape_nodes.exe_types.core_types import Parameter
     from griptape_nodes.exe_types.node_types import BaseNode, Connection
-
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -45,8 +46,6 @@ class ControlFlow:
         target_parameter: Parameter,
     ) -> Connection | None:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             return (
                 GriptapeNodes.FlowManager()
                 .get_connections()
@@ -58,8 +57,6 @@ class ControlFlow:
         self, source_node: BaseNode, source_parameter: Parameter, target_node: BaseNode, target_parameter: Parameter
     ) -> bool:
         if source_node.name in self.nodes and target_node.name in self.nodes:
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
             return (
                 GriptapeNodes.FlowManager()
                 .get_connections()
@@ -74,23 +71,15 @@ class ControlFlow:
         target_node: BaseNode,
         target_parameter: Parameter,
     ) -> bool:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().has_connection(source_node, source_parameter, target_node, target_parameter)
 
     def clear_execution_queue(self) -> None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         GriptapeNodes.FlowManager().clear_execution_queue(self)
 
     def get_connections_on_node(self, node: BaseNode) -> list[BaseNode] | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_connections_on_node(node)
 
     def get_all_connected_nodes(self, node: BaseNode) -> list[BaseNode]:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_all_connected_nodes(node)
 
     def get_node_dependencies(self, node: BaseNode) -> list[BaseNode]:
@@ -105,41 +94,25 @@ class ControlFlow:
         Returns:
             list[BaseNode]: A list of all nodes that the given node depends on, including the node itself (as the first element)
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_node_dependencies(self, node)
 
     def get_connected_output_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_connected_output_parameters(node, param)
 
     def get_connected_input_parameters(self, node: BaseNode, param: Parameter) -> list[tuple[BaseNode, Parameter]]:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_connected_input_parameters(self, node, param)
 
     def get_connected_output_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_connected_output_from_node(self, node)
 
     def get_connected_input_from_node(self, node: BaseNode) -> list[tuple[BaseNode, Parameter]]:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_connected_input_from_node(self, node)
 
     def get_start_node_queue(self) -> Queue | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_start_node_queue()
 
     def get_start_node_from_node(self, node: BaseNode) -> BaseNode | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_start_node_from_node(self, node)
 
     def get_prev_node(self, node: BaseNode) -> BaseNode | None:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         return GriptapeNodes.FlowManager().get_prev_node(self, node)

@@ -6,6 +6,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMessage, Par
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
+from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
 
 
 class LoadGLTF(DataNode):
@@ -57,8 +58,6 @@ class LoadGLTF(DataNode):
         return super().after_value_set(parameter, value)
 
     def process(self) -> None:
-        from griptape_nodes_library.utils.gltf_utils import dict_to_gltf_url_artifact
-
         gltf = self.get_parameter_value("gltf")
         image = self.get_parameter_value("image")
 

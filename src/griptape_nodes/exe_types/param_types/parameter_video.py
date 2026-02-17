@@ -3,6 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
+from griptape.artifacts import VideoUrlArtifact
+
 from griptape_nodes.exe_types.core_types import BadgeData, Parameter, ParameterMode, Trait
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 
@@ -25,7 +27,7 @@ class ParameterVideo(Parameter):
         param.pulse_on_run = True  # Change UI options at runtime
     """
 
-    def __init__(  # noqa: C901, PLR0913
+    def __init__(  # noqa: PLR0913
         self,
         name: str,
         tooltip: str | None = None,
@@ -131,10 +133,6 @@ class ParameterVideo(Parameter):
         if accept_any:
             # Create a converter function that uses normalize_artifact_input with VideoUrlArtifact
             def _normalize_video(value: Any) -> Any:
-                try:
-                    from griptape.artifacts import VideoUrlArtifact
-                except ImportError:
-                    return value
                 return normalize_artifact_input(value, VideoUrlArtifact)
 
             video_converters.insert(0, _normalize_video)

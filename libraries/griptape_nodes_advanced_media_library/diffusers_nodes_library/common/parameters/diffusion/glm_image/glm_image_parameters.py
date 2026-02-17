@@ -6,6 +6,7 @@ import torch  # type: ignore[reportMissingImports]
 from diffusers_nodes_library.common.parameters.diffusion.pipeline_type_parameters import (
     DiffusionPipelineTypePipelineParameters,
 )
+from diffusers_nodes_library.common.utils.torch_utils import get_best_device
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_parameter import HuggingFaceRepoParameter
 
@@ -56,8 +57,6 @@ class GlmImagePipelineParameters(DiffusionPipelineTypePipelineParameters):
         return True
 
     def build_pipeline(self) -> diffusers.GlmImagePipeline:
-        from diffusers_nodes_library.common.utils.torch_utils import get_best_device
-
         base_repo_id, base_revision = self._model_repo_parameter.get_repo_revision()
         device = get_best_device()
 

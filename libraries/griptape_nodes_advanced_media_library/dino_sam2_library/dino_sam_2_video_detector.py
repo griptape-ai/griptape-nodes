@@ -1,5 +1,6 @@
 import logging
 import tempfile
+import uuid
 from pathlib import Path
 
 import diffusers  # type: ignore[reportMissingImports]
@@ -318,8 +319,6 @@ class DinoSam2VideoDetector(ControlNode):
 
     def _publish_output_video(self, video_path: Path) -> None:
         """Publish the output video."""
-        import uuid
-
         filename = f"{uuid.uuid4()}{video_path.suffix}"
         url = GriptapeNodes.StaticFilesManager().save_static_file(video_path.read_bytes(), filename)
         self.parameter_output_values["output_video"] = VideoUrlArtifact(url)

@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Self, Type
 
 from pydantic import BaseModel
 
+from griptape_nodes.exe_types.node_types import NodeResolutionState
+from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
+
 logger = logging.getLogger("griptape_nodes")
 
 
@@ -409,15 +412,13 @@ class BaseNodeElement:
 
     def _emit_alter_element_event_if_possible(self) -> None:
         """Emit an AlterElementEvent if we have node context and the necessary dependencies."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         if self._node_context is None:
             return
 
-        # Import here to avoid circular dependencies
-
-        from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
-        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent
+        # Lazy import required: circular dependency between core_types and parameter_events/griptape_nodes
+        # parameter_events imports ParameterMode from core_types, and we need AlterElementEvent from parameter_events
+        from griptape_nodes.retained_mode.events.parameter_events import AlterElementEvent  # noqa: PLC0415
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes  # noqa: PLC0415
 
         # Create base event data using the existing to_event method
         # Create a modified event data that only includes changed fields
@@ -1021,8 +1022,9 @@ class ParameterMessage(BaseNodeElement, UIOptionsMixin):
         # Check if there are any Button traits with on_click callbacks
         has_button_callback = False
         for child in self.children:
-            # Import here to avoid circular imports
-            from griptape_nodes.traits.button import Button
+            # Lazy import required: circular dependency between core_types and traits/button
+            # traits/button imports NodeMessagePayload from core_types, and we need Button from traits/button
+            from griptape_nodes.traits.button import Button  # noqa: PLC0415
 
             if isinstance(child, Button) and child.on_click_callback is not None:
                 has_button_callback = True
@@ -1089,7 +1091,9 @@ class DeprecationMessage(ParameterMessage):
         kwargs.setdefault("full_width", True)
 
         # Add the button trait
-        from griptape_nodes.traits.button import Button
+        # Lazy import required: circular dependency between core_types and traits/button
+        # traits/button imports NodeMessagePayload from core_types, and we need Button from traits/button
+        from griptape_nodes.traits.button import Button  # noqa: PLC0415
 
         kwargs.setdefault("traits", {})
         kwargs["traits"][Button(label=button_text, icon="plus", variant="secondary", on_click=migrate_function)] = None
@@ -2613,7 +2617,6 @@ class ParameterList(ParameterContainer):
         # Mark the parent node as unresolved since the parameter structure changed
         if self._node_context is not None:
             # Import at runtime to avoid circular import
-            from griptape_nodes.exe_types.node_types import NodeResolutionState
 
             self._node_context.make_node_unresolved(
                 current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
@@ -2630,7 +2633,6 @@ class ParameterList(ParameterContainer):
         # Mark the parent node as unresolved since the parameter structure changed
         if self._node_context is not None:
             # Import at runtime to avoid circular import
-            from griptape_nodes.exe_types.node_types import NodeResolutionState
 
             self._node_context.make_node_unresolved(
                 current_states_to_trigger_change_event={NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}

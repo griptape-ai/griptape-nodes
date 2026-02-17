@@ -7,6 +7,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
+
 LIBRARIES = ["REPLACE_LIBRARIES"]
 PICKLE_DEFAULT = "REPLACE_PICKLE_DEFAULT"
 WEBHOOK_MODE_ARGS_COUNT = 4
@@ -25,9 +28,6 @@ os.environ["GTN_ENABLE_WORKSPACE_FILE_WATCHING"] = "false"
 
 
 def _set_libraries(libraries: list[str]) -> None:
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-    from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_REGISTER_KEY
-
     config_manager = GriptapeNodes.ConfigManager()
     config_manager.set_config_value(
         key="enable_workspace_file_watching",

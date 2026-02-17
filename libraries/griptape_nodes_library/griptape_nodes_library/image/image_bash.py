@@ -1,4 +1,5 @@
 import base64
+import io
 from io import BytesIO
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -755,8 +756,6 @@ class ImageBash(DataNode):
 
     def _pil_to_bytes(self, img: Image.Image, img_format: str) -> bytes:
         """Convert PIL Image to bytes."""
-        import io
-
         img_data = None
         with io.BytesIO() as img_byte_arr:
             img.save(img_byte_arr, format=img_format)

@@ -4,6 +4,18 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.variable_types import FlowVariable, VariableScope
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.retained_mode.events.node_events import (
+    GetFlowForNodeRequest,
+    GetFlowForNodeResultSuccess,
+)
+from griptape_nodes.retained_mode.events.variable_events import (
+    GetVariableRequest,
+    GetVariableResultSuccess,
+    HasVariableRequest,
+    HasVariableResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.variable_types import VariableScope
 from griptape_nodes.traits.options import Options
 
 
@@ -19,7 +31,6 @@ def create_advanced_parameter_group() -> AdvancedParameterGroup:
         AdvancedParameterGroup with the parameter group and its child parameters
     """
     # Lazy import to avoid circular import issues
-    from griptape_nodes.retained_mode.variable_types import VariableScope
 
     parameter_group = ParameterGroup(name="Advanced", ui_options={"collapsed": True})
 
@@ -57,7 +68,6 @@ def scope_string_to_variable_scope(scope_str: str) -> "VariableScope":
         VariableScope enum value
     """
     # Lazy import to avoid circular import issues
-    from griptape_nodes.retained_mode.variable_types import VariableScope
 
     # Direct mapping since we're using VariableScope values directly
     try:
@@ -83,11 +93,6 @@ def get_variable(node_name: str, variable_name: str, scope: "VariableScope") -> 
         LookupError: If the variable cannot be retrieved
     """
     # Lazy imports to avoid circular import issues
-    from griptape_nodes.retained_mode.events.variable_events import (
-        GetVariableRequest,
-        GetVariableResultSuccess,
-    )
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
     current_flow_name = _get_flow_for_node(node_name)
 
@@ -119,11 +124,6 @@ def has_variable(node_name: str, variable_name: str, scope: "VariableScope") -> 
         RuntimeError: If the flow for the node cannot be found
     """
     # Lazy imports to avoid circular import issues
-    from griptape_nodes.retained_mode.events.variable_events import (
-        HasVariableRequest,
-        HasVariableResultSuccess,
-    )
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
     current_flow_name = _get_flow_for_node(node_name)
 
@@ -153,11 +153,6 @@ def _get_flow_for_node(node_name: str) -> str:
         RuntimeError: If the flow for the node cannot be found
     """
     # Lazy imports to avoid circular import issues
-    from griptape_nodes.retained_mode.events.node_events import (
-        GetFlowForNodeRequest,
-        GetFlowForNodeResultSuccess,
-    )
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
     flow_request = GetFlowForNodeRequest(node_name=node_name)
     flow_result = GriptapeNodes.handle_request(flow_request)

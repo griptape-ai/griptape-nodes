@@ -446,7 +446,6 @@ class QwenImageEdit(GriptapeProxyNode):
             image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = f"qwen_edit_{int(time.time())}.jpg"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
                 static_files_manager = GriptapeNodes.StaticFilesManager()
                 saved_url = static_files_manager.save_static_file(image_bytes, filename)

@@ -4,12 +4,14 @@ import ctypes
 import logging
 import mimetypes
 import os
+import shlex
 import shutil
 import stat
 import subprocess
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -29,8 +31,11 @@ from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloud
 from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
 from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
+from griptape_nodes.file.path_utils import normalize_path_for_platform as pr_normalize
 from griptape_nodes.file.path_utils import path_needs_expansion
 from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
+from griptape_nodes.file.path_utils import sanitize_path_string as pr_sanitize
+from griptape_nodes.file.path_utils import strip_surrounding_quotes as pr_strip
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -657,8 +662,6 @@ class OSManager:
         Returns:
             Path string with surrounding quotes removed if present
         """
-        from griptape_nodes.file.path_utils import strip_surrounding_quotes as pr_strip
-
         return pr_strip(path_str)
 
     def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
@@ -705,8 +708,6 @@ class OSManager:
         Returns:
             Sanitized path string, or original value if not a string/Path
         """
-        from griptape_nodes.file.path_utils import sanitize_path_string as pr_sanitize
-
         return pr_sanitize(path)
 
     def normalize_path_for_platform(self, path: Path) -> str:
@@ -728,8 +729,6 @@ class OSManager:
             String representation of path, cleaned of newlines/carriage returns,
             with Windows long path prefix if needed
         """
-        from griptape_nodes.file.path_utils import normalize_path_for_platform as pr_normalize
-
         return pr_normalize(path)
 
     @staticmethod
@@ -749,8 +748,6 @@ class OSManager:
             return ""
         if OSManager.is_windows():
             return subprocess.list2cmdline(args)
-
-        import shlex
 
         return " ".join(shlex.quote(arg) for arg in args)
 
@@ -3099,8 +3096,6 @@ class OSManager:
             OSError: If copy operation fails
             PermissionError: If permission denied
         """
-        from fnmatch import fnmatch
-
         files_copied = 0
         total_bytes_copied = 0
         ignore_patterns = ignore_patterns or []

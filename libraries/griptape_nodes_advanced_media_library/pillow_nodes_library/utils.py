@@ -1,11 +1,14 @@
 import io
 import uuid
 
+import diffusers.utils  # type: ignore[reportMissingImports]
 import PIL.Image
 import PIL.ImageOps
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from PIL.Image import Image
+
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
 def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
@@ -15,8 +18,6 @@ def image_artifact_to_pil(image_artifact: ImageArtifact) -> Image:
 
 def pil_to_image_artifact(pil_image: Image, directory_path: str = "") -> ImageUrlArtifact:
     """Converts Pillow Image to Griptape ImageArtifact."""
-    from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
     image_io = io.BytesIO()
     pil_image.save(image_io, "PNG")
     image_bytes = image_io.getvalue()
@@ -54,8 +55,6 @@ def video_url_artifact_to_pil_images(video_artifact: VideoUrlArtifact) -> list[I
     Returns:
         List of PIL Images, one for each frame in the video
     """
-    import diffusers.utils  # type: ignore[reportMissingImports]
-
     # Use diffusers' load_video utility to convert video URL to PIL frames
     return diffusers.utils.loading_utils.load_video(video_artifact.value)
 

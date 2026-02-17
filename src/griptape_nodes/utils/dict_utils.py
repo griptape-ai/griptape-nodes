@@ -1,3 +1,5 @@
+import ast
+import json
 from typing import Any
 
 
@@ -48,8 +50,6 @@ def to_dict(input_value: Any) -> dict:
 def _convert_string_to_dict(input_str: str) -> dict:
     """Convert a string to a dictionary using various parsing strategies."""
     # Import modules at the function start to avoid unbound errors
-    import ast
-    import json
 
     # Clean the input string
     input_str = input_str.strip()

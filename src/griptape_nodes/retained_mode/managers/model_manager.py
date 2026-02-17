@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
+from huggingface_hub.constants import HF_HUB_CACHE
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
@@ -49,7 +50,6 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
-
 
 HTTP_UNAUTHORIZED = 401
 HTTP_FORBIDDEN = 403
@@ -422,7 +422,6 @@ class ModelManager:
             return params.local_dir
 
         # Otherwise, use the HuggingFace cache directory
-        from huggingface_hub import snapshot_download
 
         try:
             # Get the path without actually downloading (since it's already downloaded)
@@ -434,7 +433,6 @@ class ModelManager:
             )
         except Exception:
             # Fallback: construct the expected cache path
-            from huggingface_hub.constants import HF_HUB_CACHE
 
             cache_path = Path(HF_HUB_CACHE)
             return str(cache_path / f"models--{params.model_id.replace('/', '--')}")

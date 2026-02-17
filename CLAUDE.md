@@ -65,28 +65,6 @@ When developing, follow this iteration loop:
         return result
     ```
 
-**CRITICAL: Do NOT use lazy imports** - Imports MUST be at the top of the file:
-
-- ALL imports MUST be at the top of the file in standard order - this is the default and expected pattern
-- NEVER use lazy imports (imports inside functions) unless absolutely necessary to resolve a circular import
-- If you think you need a lazy import, STOP and explain to the user why you think it's necessary, then ASK for confirmation before proceeding
-- The ONLY valid reason for a lazy import is an unavoidable circular import that cannot be resolved through refactoring
-- If you must use a lazy import, you MUST add a comment explaining exactly why it's necessary and what circular import it's resolving
-- Bad example:
-    ```python
-    def process_data(value):
-        from some_module import helper  # NO! Move to top
-        return helper(value)
-    ```
-- Good example (only if circular import is unavoidable):
-    ```python
-    def process_data(value):
-        # Lazy import required: circular dependency between this module and some_module
-        # some_module imports MyClass from this file, and we need helper from some_module
-        from some_module import helper
-        return helper(value)
-    ```
-
 ## Exception Handling
 
 **CRITICAL: Only wrap code that actually raises exceptions** - Never add try/except blocks speculatively:

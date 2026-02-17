@@ -12,6 +12,7 @@ from griptape_nodes.file.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 logger = logging.getLogger("griptape_nodes")
@@ -174,8 +175,6 @@ class WorkflowRegistry(metaclass=SingletonMeta):
 
     @classmethod
     def get_complete_file_path(cls, relative_file_path: str) -> str:
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Resolve path using utility function
         config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
@@ -224,8 +223,6 @@ class Workflow:
     @property
     def is_synced(self) -> bool:
         """Check if this workflow is in the synced workflows directory."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         config_mgr = GriptapeNodes.ConfigManager()
         synced_directory = config_mgr.get_config_value("synced_workflows_directory")
 

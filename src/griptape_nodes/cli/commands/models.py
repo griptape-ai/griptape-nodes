@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import typer
@@ -290,8 +291,6 @@ def _format_timestamp(download: "ModelDownloadStatus") -> str:
         return "Unknown"
 
     try:
-        from datetime import datetime
-
         dt = datetime.fromisoformat(started_at)
         return dt.strftime("%H:%M:%S")
     except Exception:

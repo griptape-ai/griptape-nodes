@@ -1,4 +1,5 @@
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -8,6 +9,7 @@ from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.video.base_video_processor import BaseVideoProcessor
 
@@ -150,10 +152,6 @@ class ExtractAudio(BaseVideoProcessor):
 
     def _save_audio_artifact(self, audio_bytes: bytes, format_extension: str, suffix: str = "") -> AudioUrlArtifact:
         """Save audio bytes to static file and return AudioUrlArtifact."""
-        import uuid
-
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         # Generate meaningful filename
         filename = f"extracted_audio{suffix}_{uuid.uuid4().hex[:8]}.{format_extension}"
         url = GriptapeNodes.StaticFilesManager().save_static_file(audio_bytes, filename)

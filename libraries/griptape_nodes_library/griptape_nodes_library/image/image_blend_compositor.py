@@ -1,5 +1,6 @@
 from typing import Any, ClassVar
 
+import numpy as np
 from PIL import Image, ImageChops
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup
@@ -355,7 +356,6 @@ class ImageBlendCompositor(BaseImageProcessor):
     def _custom_multiply(self, base: Image.Image, blend: Image.Image) -> Image.Image:
         """Custom multiply implementation to ensure correct math."""
         # Convert images to numpy arrays for pixel-level operations
-        import numpy as np
 
         # Convert PIL images to numpy arrays (0-255 range)
         base_array = np.array(base, dtype=np.float32)

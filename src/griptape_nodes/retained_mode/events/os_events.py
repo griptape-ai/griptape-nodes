@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -276,8 +277,6 @@ class CreateFileRequest(RequestPayload):
         if self.path is not None:
             return self.path
         if self.directory_path is not None and self.name is not None:
-            from pathlib import Path
-
             return str(Path(self.directory_path) / self.name)
         msg = "Either 'path' or both 'directory_path' and 'name' must be provided"
         raise ValueError(msg)
