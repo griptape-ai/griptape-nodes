@@ -55,6 +55,7 @@ class StaticFilesManager:
             secrets_manager: The SecretsManager instance to use for accessing secrets.
         """
         self.config_manager = config_manager
+        self.secrets_manager = secrets_manager
 
         self.storage_backend = config_manager.get_config_value("storage_backend", default=StorageBackend.LOCAL)
         workspace_directory = Path(config_manager.get_config_value("workspace_directory"))
@@ -186,6 +187,30 @@ class StaticFilesManager:
             result_details="Successfully created static file download URL",
         )
 
+    def _create_cloud_storage_driver(self, bucket_id: str) -> GriptapeCloudStorageDriver | None:
+        """Create a GriptapeCloudStorageDriver instance for the given bucket_id.
+
+        Args:
+            bucket_id: The bucket ID to use
+
+        Returns:
+            GriptapeCloudStorageDriver instance if API key is available, None otherwise
+        """
+        api_key = self.secrets_manager.get_secret("GT_CLOUD_API_KEY", should_error_on_not_found=False)
+
+        if not api_key:
+            return None
+
+        workspace_directory = Path(self.config_manager.get_config_value("workspace_directory"))
+        static_files_directory = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+
+        return GriptapeCloudStorageDriver(
+            workspace_directory,
+            bucket_id=bucket_id,
+            api_key=api_key,
+            static_files_directory=static_files_directory,
+        )
+
     def on_handle_create_static_file_download_url_from_path_request(
         self,
         request: CreateStaticFileDownloadUrlFromPathRequest,
@@ -198,18 +223,31 @@ class StaticFilesManager:
         Returns:
             Result with download URL or failure message.
         """
-        full_file_path = Path(uri_to_path(request.file_path))
+        # Detect if this is a Griptape Cloud URL and extract bucket_id
+        bucket_id = GriptapeCloudStorageDriver.extract_bucket_id_from_url(request.file_path)
+
+        if bucket_id is not None:
+            driver = self._create_cloud_storage_driver(bucket_id)
+            if driver is None:
+                msg = f"Attempted to create download URL for Griptape Cloud file. Failed with file_path='{request.file_path}' because GT_CLOUD_API_KEY secret is not available."
+                return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+            # For cloud URLs, pass the full URL to the driver
+            file_path_for_driver = Path(request.file_path)
+        else:
+            driver = self.storage_driver
+            # For local paths, convert URI to path
+            file_path_for_driver = Path(uri_to_path(request.file_path))
 
         try:
-            # TODO: use the driver appropriate for the file format. i.e. If local path use LocalStorageDriver, if GTC path use GriptapeCloudStorageDriver https://github.com/griptape-ai/griptape-nodes/issues/3739
-            url = self.storage_driver.create_signed_download_url(full_file_path)
+            url = driver.create_signed_download_url(file_path_for_driver)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {request.file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
-            file_url=self.storage_driver.get_asset_url(full_file_path),
+            file_url=driver.get_asset_url(file_path_for_driver),
             result_details="Successfully created static file download URL",
         )
 
