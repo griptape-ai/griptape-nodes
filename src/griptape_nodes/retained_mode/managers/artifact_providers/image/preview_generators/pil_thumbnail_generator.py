@@ -51,16 +51,15 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             source_file_location, preview_format, destination_preview_directory, destination_preview_file_name, params
         )
 
-        # Extract and validate parameters (presence already validated by base provider)
+        # Validate parameters using class method
+        errors = self.validate_parameters(params)
+        if errors:
+            msg = f"Invalid parameters: {', '.join(errors)}"
+            raise ValueError(msg)
+
+        # Extract validated parameters
         self.max_width = params["max_width"]
         self.max_height = params["max_height"]
-
-        if not isinstance(self.max_width, int) or self.max_width <= 0:
-            msg = f"max_width must be positive int, got {self.max_width}"
-            raise TypeError(msg)
-        if not isinstance(self.max_height, int) or self.max_height <= 0:
-            msg = f"max_height must be positive int, got {self.max_height}"
-            raise TypeError(msg)
 
     @classmethod
     def get_friendly_name(cls) -> str:
@@ -94,6 +93,50 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
                 description="Maximum height in pixels for generated preview",
             ),
         }
+
+    @classmethod
+    def validate_parameters(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameters against schema.
+
+        Args:
+            params: Parameter dict to validate
+
+        Returns:
+            None if valid, otherwise list of error messages
+        """
+        errors = []
+        schema = cls.get_parameters()
+
+        # Check structural match (keys present)
+        schema_keys = set(schema.keys())
+        param_keys = set(params.keys())
+
+        if schema_keys != param_keys:
+            missing = schema_keys - param_keys
+            extra = param_keys - schema_keys
+            if missing:
+                errors.append(f"Missing required parameters: {missing}")
+            if extra:
+                errors.append(f"Unknown parameters: {extra}")
+            return errors
+
+        # Validate each parameter
+        cls._validate_positive_int(params, "max_width", errors)
+        cls._validate_positive_int(params, "max_height", errors)
+
+        if errors:
+            return errors
+
+        return None
+
+    @staticmethod
+    def _validate_positive_int(params: dict[str, Any], key: str, errors: list[str]) -> None:
+        """Validate that a parameter is a positive integer."""
+        value = params.get(key)
+        if not isinstance(value, int):
+            errors.append(f"{key} must be an integer, got {type(value).__name__}")
+        elif value <= 0:
+            errors.append(f"{key} must be positive, got {value}")
 
     async def attempt_generate_preview(self) -> str:
         """Execute preview generation.

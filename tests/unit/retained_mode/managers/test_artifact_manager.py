@@ -1028,3 +1028,113 @@ class TestGetPreviewForArtifact:
             ]
             == 1024  # noqa: PLR2004
         )
+
+
+class TestGeneratorValidation:
+    """Test generator parameter validation logic."""
+
+    def test_pil_thumbnail_validate_parameters_valid(self) -> None:
+        """Test PILThumbnailGenerator validates correct parameters."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768}
+        errors = PILThumbnailGenerator.validate_parameters(params)
+
+        assert errors is None
+
+    def test_pil_thumbnail_validate_parameters_invalid_type(self) -> None:
+        """Test PILThumbnailGenerator rejects invalid types."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        params = {"max_width": "not_a_number", "max_height": 768}
+        errors = PILThumbnailGenerator.validate_parameters(params)
+
+        assert errors is not None
+        assert len(errors) == 1
+        assert "max_width must be an integer" in errors[0]
+
+    def test_pil_thumbnail_validate_parameters_invalid_value(self) -> None:
+        """Test PILThumbnailGenerator rejects negative values."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        params = {"max_width": -100, "max_height": 768}
+        errors = PILThumbnailGenerator.validate_parameters(params)
+
+        assert errors is not None
+        assert len(errors) == 1
+        assert "max_width must be positive" in errors[0]
+
+    def test_pil_thumbnail_validate_parameters_missing_key(self) -> None:
+        """Test PILThumbnailGenerator rejects missing parameters."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        params = {"max_width": 1024}
+        errors = PILThumbnailGenerator.validate_parameters(params)
+
+        assert errors is not None
+        assert any("Missing required parameters" in err for err in errors)
+
+    def test_pil_thumbnail_validate_parameters_extra_key(self) -> None:
+        """Test PILThumbnailGenerator rejects unknown parameters."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768, "unknown_param": 42}
+        errors = PILThumbnailGenerator.validate_parameters(params)
+
+        assert errors is not None
+        assert any("Unknown parameters" in err for err in errors)
+
+    def test_pil_rounded_validate_parameters_valid(self) -> None:
+        """Test PILRoundedPreviewGenerator validates correct parameters."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILRoundedPreviewGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768, "corner_radius": 20}
+        errors = PILRoundedPreviewGenerator.validate_parameters(params)
+
+        assert errors is None
+
+    def test_pil_rounded_validate_parameters_invalid_corner_radius(self) -> None:
+        """Test PILRoundedPreviewGenerator rejects negative corner_radius."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILRoundedPreviewGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768, "corner_radius": -5}
+        errors = PILRoundedPreviewGenerator.validate_parameters(params)
+
+        assert errors is not None
+        assert len(errors) == 1
+        assert "corner_radius must be non-negative" in errors[0]
+
+    def test_generator_constructor_uses_validation(self) -> None:
+        """Test generator constructors call validate_parameters and raise ValueError on invalid params."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        invalid_params = {"max_width": "not_a_number", "max_height": 768}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "test.png"
+            dest_dir = Path(tmpdir) / "preview"
+
+            with pytest.raises(ValueError, match="Invalid parameters"):
+                PILThumbnailGenerator(
+                    source_file_location=str(source_path),
+                    preview_format="webp",
+                    destination_preview_directory=str(dest_dir),
+                    destination_preview_file_name="preview.webp",
+                    params=invalid_params,
+                )

@@ -41,6 +41,8 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterPreviewGeneratorResultSuccess,
 )
 from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigCategoryRequest,
+    GetConfigCategoryResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultSuccess,
     SetConfigValueRequest,
@@ -731,20 +733,11 @@ class ArtifactManager:
 
         # FAILURE CASE: Generator registration failed
         try:
-            # Register with registry (no provider instantiation - lazy instantiation preserved)
+            # Register with runtime registry (no provider instantiation - lazy instantiation preserved)
             self._registry.register_preview_generator_with_provider(provider_class, request.preview_generator_class)
 
-            # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
-
-            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-                provider_class, request.preview_generator_class
-            )
-            for key, default_value in config_schema.items():
-                SetConfigValueRequest(category_and_key=key, value=default_value)
-                # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
+            # Validate and conditionally write generator settings
+            self._validate_and_register_generator_settings(provider_class, request.preview_generator_class)
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -903,6 +896,9 @@ class ArtifactManager:
     def _register_provider_settings(self, provider_class: type) -> None:
         """Register provider settings and default generators in config system.
 
+        Validates existing config values and only writes defaults if invalid or missing.
+        Preserves valid user settings.
+
         Args:
             provider_class: The provider class to register settings for
 
@@ -910,29 +906,16 @@ class ArtifactManager:
             Default generators are registered WITHOUT instantiating the provider (lazy instantiation).
             Generator settings are registered statically using class methods.
         """
-        # Register provider-level settings
-        config_schema = self._registry.get_provider_config_schema(provider_class)
+        # Validate and write provider-level settings (format, generator name)
+        self._validate_and_write_provider_settings(provider_class)
 
-        for key, default_value in config_schema.items():
-            SetConfigValueRequest(category_and_key=key, value=default_value)
-            # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
-
-        # Register default preview generators and their settings WITHOUT instantiating provider
+        # Register default preview generators and validate their settings
         for preview_generator_class in provider_class.get_default_generators():
-            # Register with registry
+            # Register with runtime registry
             self._registry.register_preview_generator_with_provider(provider_class, preview_generator_class)
 
-            # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
-
-            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-                provider_class, preview_generator_class
-            )
-            for key, default_value in config_schema.items():
-                SetConfigValueRequest(category_and_key=key, value=default_value)
-                # GriptapeNodes.handle_request(request) TODO: Add back after https://github.com/griptape-ai/griptape-nodes/issues/3931
+            # Validate and conditionally write generator settings
+            self._validate_and_register_generator_settings(provider_class, preview_generator_class)
 
     def _get_default_params_for_generator(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict[str, Any]:
         """Get default parameter values for a preview generator.
@@ -948,6 +931,140 @@ class ArtifactManager:
         for param_name, provider_value in parameters.items():
             default_params[param_name] = provider_value.default_value
         return default_params
+
+    def _read_generator_config(
+        self, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> dict[str, Any] | None:
+        """Read all parameters for a generator from config.
+
+        Args:
+            provider_class: The provider class
+            generator_class: The generator class
+
+        Returns:
+            Dictionary of parameter names to values, or None if no config exists
+        """
+        key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
+
+        request = GetConfigCategoryRequest(category=key_prefix)
+        result = GriptapeNodes.handle_request(request)
+
+        # Config category doesn't exist - no settings written yet
+        if not isinstance(result, GetConfigCategoryResultSuccess):
+            return None
+
+        return result.contents
+
+    def _validate_and_register_generator_settings(
+        self, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> None:
+        """Validate and conditionally write generator settings to config.
+
+        Preserves valid user settings. Resets ALL settings to defaults if invalid.
+
+        Args:
+            provider_class: The provider class
+            generator_class: The generator class to register settings for
+        """
+        existing_config = self._read_generator_config(provider_class, generator_class)
+        generator_name = generator_class.get_friendly_name()
+
+        # No config exists - this is first initialization for this generator
+        if existing_config is None:
+            logger.debug(
+                "Initializing artifact preview generator '%s': No config found, writing defaults", generator_name
+            )
+            schema = generator_class.get_parameters()
+            key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
+
+            for param_name, provider_value in schema.items():
+                config_key = f"{key_prefix}.{param_name}"
+                request = SetConfigValueRequest(category_and_key=config_key, value=provider_value.default_value)
+                GriptapeNodes.handle_request(request)
+            return
+
+        # Validate existing config using generator's validation logic
+        errors = generator_class.validate_parameters(existing_config)
+
+        # Config is valid - preserve user's settings
+        if errors is None:
+            return
+
+        # Invalid - reset ALL params to defaults
+        logger.warning(
+            "Validating artifact preview generator '%s': Invalid config (%s). Resetting ALL parameters to defaults.",
+            generator_name,
+            errors,
+        )
+
+        schema = generator_class.get_parameters()
+        key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
+
+        for param_name, provider_value in schema.items():
+            config_key = f"{key_prefix}.{param_name}"
+            request = SetConfigValueRequest(category_and_key=config_key, value=provider_value.default_value)
+            GriptapeNodes.handle_request(request)
+
+    def _validate_and_write_provider_settings(self, provider_class: type[BaseArtifactProvider]) -> None:
+        """Validate and conditionally write provider-level settings to config.
+
+        Validates preview_format and preview_generator settings. Resets to defaults if invalid.
+
+        Args:
+            provider_class: The provider class to validate settings for
+        """
+        provider_name = provider_class.get_friendly_name()
+
+        # Validate preview_format
+        format_key = provider_class.get_preview_format_config_key()
+        format_request = GetConfigValueRequest(category_and_key=format_key)
+        format_result = GriptapeNodes.handle_request(format_request)
+
+        # Config missing - write default
+        if not isinstance(format_result, GetConfigValueResultSuccess):
+            logger.debug(
+                "Initializing artifact provider '%s': No preview format config found, writing default", provider_name
+            )
+            default_format = provider_class.get_default_preview_format()
+            set_request = SetConfigValueRequest(category_and_key=format_key, value=default_format)
+            GriptapeNodes.handle_request(set_request)
+        # Config exists but invalid - reset to default
+        elif format_result.value not in provider_class.get_preview_formats():
+            logger.warning(
+                "Validating artifact provider '%s': Invalid preview format '%s'. Resetting to default.",
+                provider_name,
+                format_result.value,
+            )
+            default_format = provider_class.get_default_preview_format()
+            set_request = SetConfigValueRequest(category_and_key=format_key, value=default_format)
+            GriptapeNodes.handle_request(set_request)
+
+        # Validate preview_generator
+        generator_key = provider_class.get_preview_generator_config_key()
+        generator_request = GetConfigValueRequest(category_and_key=generator_key)
+        generator_result = GriptapeNodes.handle_request(generator_request)
+
+        registered_generators = self._registry.get_preview_generators_for_provider(provider_class)
+        registered_generator_names = [gen.get_friendly_name() for gen in registered_generators]
+
+        # Config missing - write default
+        if not isinstance(generator_result, GetConfigValueResultSuccess):
+            logger.debug(
+                "Initializing artifact provider '%s': No preview generator config found, writing default", provider_name
+            )
+            default_generator = provider_class.get_default_preview_generator()
+            set_request = SetConfigValueRequest(category_and_key=generator_key, value=default_generator)
+            GriptapeNodes.handle_request(set_request)
+        # Config exists but invalid - reset to default
+        elif generator_result.value not in registered_generator_names:
+            logger.warning(
+                "Validating artifact provider '%s': Invalid preview generator '%s'. Resetting to default.",
+                provider_name,
+                generator_result.value,
+            )
+            default_generator = provider_class.get_default_preview_generator()
+            set_request = SetConfigValueRequest(category_and_key=generator_key, value=default_generator)
+            GriptapeNodes.handle_request(set_request)
 
     def _get_preview_settings_from_config(
         self, provider_class: type[BaseArtifactProvider], provider_name: str

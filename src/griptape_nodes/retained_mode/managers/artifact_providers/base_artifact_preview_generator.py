@@ -89,6 +89,30 @@ class BaseArtifactPreviewGenerator(ABC):
         ...
 
     @classmethod
+    @abstractmethod
+    def validate_parameters(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameters against generator schema.
+
+        Validates structural requirements (correct keys, types) and value constraints
+        (positive integers, valid ranges, etc.). Can be called without instantiation.
+
+        Args:
+            params: Parameter dict to validate
+
+        Returns:
+            None if validation passes, otherwise list of error messages
+
+        Example:
+            errors = PILThumbnailGenerator.validate_parameters({
+                "max_width": 1024,
+                "max_height": 768
+            })
+            if errors:
+                print(f"Validation failed: {errors}")
+        """
+        ...
+
+    @classmethod
     def get_config_key_prefix(cls, provider_friendly_name: str) -> str:
         """Get the config key prefix for this generator's parameters.
 
