@@ -612,7 +612,7 @@ class ConfigManager:
             encoding="utf-8",
             workspace_only=False,
         )
-        read_result = os_manager.on_read_file_request(read_request)
+        read_result = GriptapeNodes.handle_request(read_request)
 
         # Handle read failures
         if isinstance(read_result, ReadFileResultFailure):
