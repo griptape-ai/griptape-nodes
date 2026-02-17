@@ -143,20 +143,6 @@ class CopyTreeValidationResult:
     destination_path: Path
 
 
-class FilenameParts(NamedTuple):
-    """Components of a filename for suffix injection strategy.
-
-    Attributes:
-        directory: Parent directory path
-        basename: Filename without extension or suffix
-        extension: File extension including dot (e.g., ".png"), empty string if no extension
-    """
-
-    directory: Path
-    basename: str
-    extension: str
-
-
 class WindowsSpecialFolderError(OSError):
     """Raised when Windows Shell API (SHGetFolderPathW) fails for a special folder.
 
@@ -912,95 +898,6 @@ class OSManager:
 
         return None
 
-    def _parse_filename_parts(self, path: Path) -> FilenameParts:
-        """Parse filename into directory, basename, and extension for suffix injection.
-
-        Args:
-            path: Full file path to parse
-
-        Returns:
-            FilenameParts with directory, basename, extension
-
-        Examples:
-            /path/to/render.png → FilenameParts(Path("/path/to"), "render", ".png")
-            /path/to/file → FilenameParts(Path("/path/to"), "file", "")
-            /path/to/.dotfile → FilenameParts(Path("/path/to"), ".dotfile", "")
-            /path/to/file.tar.gz → FilenameParts(Path("/path/to"), "file.tar", ".gz")
-        """
-        directory = path.parent
-        filename = path.name
-
-        # Handle dotfiles (files starting with .)
-        if filename.startswith(".") and filename.count(".") == 1:
-            # .dotfile with no extension
-            return FilenameParts(directory=directory, basename=filename, extension="")
-
-        # Find last dot for extension
-        if "." in filename:
-            last_dot = filename.rfind(".")
-            basename = filename[:last_dot]
-            extension = filename[last_dot:]
-            return FilenameParts(directory=directory, basename=basename, extension=extension)
-
-        # No extension
-        return FilenameParts(directory=directory, basename=filename, extension="")
-
-    def _build_suffix_glob_pattern(self, directory: Path, basename: str, extension: str) -> str:
-        """Build glob pattern for suffix injection strategy.
-
-        Args:
-            directory: Parent directory
-            basename: Filename without extension
-            extension: File extension including dot
-
-        Returns:
-            Glob pattern string
-
-        Examples:
-            ("render", ".png") → "render_*.png"
-            ("file", "") → "file_*"
-        """
-        if extension:
-            return str(directory / f"{basename}_*{extension}")
-        return str(directory / f"{basename}_*")
-
-    def _extract_suffix_index(self, filename: str, basename: str, extension: str) -> int | None:
-        """Extract numeric index from suffix in filename.
-
-        Args:
-            filename: Full filename (e.g., "render_123.png")
-            basename: Expected base name (e.g., "render")
-            extension: Expected extension (e.g., ".png")
-
-        Returns:
-            Integer index if found, None otherwise
-
-        Examples:
-            ("render_123.png", "render", ".png") → 123
-            ("render_1.png", "render", ".png") → 1
-            ("render.png", "render", ".png") → None (no suffix)
-            ("other_123.png", "render", ".png") → None (different basename)
-        """
-        # Remove extension if present
-        if extension and filename.endswith(extension):
-            name_without_ext = filename[: -len(extension)]
-        else:
-            name_without_ext = filename
-
-        # Check if it starts with basename
-        expected_prefix = f"{basename}_"
-        if not name_without_ext.startswith(expected_prefix):
-            return None
-
-        # Extract suffix after basename_
-        suffix = name_without_ext[len(expected_prefix) :]
-
-        # Try to parse as integer
-        if suffix.isdigit():
-            return int(suffix)
-
-        return None
-
     def _handle_parent_directory_failure(
         self,
         parent_failure_reason: FileIOFailureReason,
@@ -1050,109 +947,6 @@ class OSManager:
                 return i
 
         return max(existing_indices) + 1
-
-    def _scan_for_next_suffix_index(self, file_path: Path) -> int:
-        """Scan existing suffix-indexed files and return next available index.
-
-        Uses suffix injection strategy to find files like "render_1.png", "render_2.png", etc.
-        Returns the next available index using fill-gaps strategy.
-
-        Args:
-            file_path: Base file path (e.g., "/path/to/render.png")
-
-        Returns:
-            Next available index (1-based)
-
-        Examples:
-            No existing files: returns 1
-            Files [render_1.png, render_2.png]: returns 3
-            Files [render_1.png, render_3.png]: returns 2 (fills gap)
-        """
-        file_parts = self._parse_filename_parts(file_path)
-        glob_pattern = self._build_suffix_glob_pattern(
-            file_parts.directory,
-            file_parts.basename,
-            file_parts.extension,
-        )
-
-        glob_path = Path(glob_pattern)
-        existing_files = list(glob_path.parent.glob(glob_path.name))
-
-        # Extract indices from existing files
-        existing_indices = [
-            idx
-            for filepath in existing_files
-            if (idx := self._extract_suffix_index(filepath.name, file_parts.basename, file_parts.extension)) is not None
-        ]
-
-        return self._find_next_index_with_gap_fill(existing_indices)
-
-    def _write_with_suffix_injection(
-        self,
-        file_path: Path,
-        request: WriteFileRequest,
-        path_display: str | Path,
-    ) -> WriteFileResultSuccess | WriteFileResultFailure:
-        """Write file using suffix injection strategy (render.png -> render_1.png, render_2.png, etc.).
-
-        Args:
-            file_path: Base file path to write to
-            request: The write request
-            path_display: Path for display in error messages
-
-        Returns:
-            WriteFileResultSuccess or WriteFileResultFailure
-        """
-        file_parts = self._parse_filename_parts(file_path)
-        start_idx = self._scan_for_next_suffix_index(file_path)
-
-        for idx in range(start_idx, start_idx + MAX_INDEXED_CANDIDATES):
-            if file_parts.extension:
-                candidate_filename = f"{file_parts.basename}_{idx}{file_parts.extension}"
-            else:
-                candidate_filename = f"{file_parts.basename}_{idx}"
-
-            candidate_path = file_parts.directory / candidate_filename
-
-            parent_failure_reason = self._ensure_parent_directory_ready(
-                candidate_path,
-                create_parents=request.create_parents,
-            )
-            if parent_failure_reason is not None:
-                return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
-
-            candidate_normalized = self.normalize_path_for_platform(candidate_path)
-
-            result = self._attempt_file_write(
-                normalized_path=Path(candidate_normalized),
-                content=request.content,
-                encoding=request.encoding,
-                mode="x",
-                file_path_display=candidate_path,
-                fail_if_file_exists=False,
-                fail_if_file_locked=False,
-            )
-
-            if result.failure_reason is not None:
-                return WriteFileResultFailure(
-                    failure_reason=result.failure_reason,
-                    result_details=result.error_message,  # type: ignore[arg-type]
-                )
-
-            if result.bytes_written is not None:
-                msg = f"File written to indexed path: {candidate_path} (original path '{path_display}' already existed)"
-                return WriteFileResultSuccess(
-                    final_file_path=str(candidate_path),
-                    bytes_written=result.bytes_written,
-                    result_details=ResultDetails(message=msg, level=logging.WARNING),
-                )
-
-        attempted_count = MAX_INDEXED_CANDIDATES
-        msg = f"Attempted to write to file '{path_display}'. Failed after trying {attempted_count} indexed candidates"
-        return WriteFileResultFailure(
-            failure_reason=FileIOFailureReason.IO_ERROR,
-            result_details=msg,
-        )
 
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
@@ -2135,11 +1929,9 @@ class OSManager:
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
                     # we'll take their file name and turn it into a macro that appends _<index> to it.
                     # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
-                    macro_path = (
-                        self._convert_str_path_to_macro_with_index(request.file_path)
-                        if isinstance(request.file_path, str)
-                        else request.file_path
-                    )
+                    # For MacroPath inputs, the path is already fully resolved at this point,
+                    # so convert the resolved path string to inject {_index} as well.
+                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path))
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 
@@ -2160,8 +1952,12 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        # All variables resolved - fall back to suffix injection strategy
-                        return self._write_with_suffix_injection(file_path, request, path_display)
+                        # This should not happen since we always inject {_index} above
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to missing index variable after conversion"
+                        return WriteFileResultFailure(
+                            failure_reason=FileIOFailureReason.INVALID_PATH,
+                            result_details=msg,
+                        )
 
                     # We have a macro with one and only one index variable on it. The heuristic here is:
                     # 1. Find the FIRST available file name with our index. We'll start there, but someone else may have
