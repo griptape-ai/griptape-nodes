@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -151,7 +151,7 @@ class GrokVideoEdit(GriptapeProxyNode):
             return video_value
 
         try:
-            return await FileLoader.aload_data_uri(video_value, fallback_mime="video/mp4")
+            return await File(video_value).aread_data_uri(fallback_mime="video/mp4")
         except FileLoadError:
             return None
 
@@ -206,7 +206,7 @@ class GrokVideoEdit(GriptapeProxyNode):
             return
 
         try:
-            video_bytes = await self._download_bytes_from_url(video_url)
+            video_bytes = await File(video_url).aread_bytes()
         except Exception as e:
             with suppress(Exception):
                 logger.warning("%s failed to download video: %s", self.name, e)

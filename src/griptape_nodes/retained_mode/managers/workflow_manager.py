@@ -27,7 +27,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,

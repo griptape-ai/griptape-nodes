@@ -11,7 +11,6 @@ from urllib.parse import urljoin
 import httpx
 
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 logger = logging.getLogger("griptape_nodes")
@@ -471,18 +470,3 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
     async def aprocess(self) -> None:
         """Async processing entry point."""
         await self._process_generation()
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL.
-
-        Args:
-            url: The URL to download from
-
-        Returns:
-            bytes | None: The downloaded bytes, or None if download failed
-        """
-        try:
-            return await FileLoader.aload_bytes(url)
-        except FileLoadError:
-            return None

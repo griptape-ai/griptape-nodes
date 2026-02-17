@@ -3,7 +3,7 @@
 import base64
 import re
 
-from griptape_nodes.file.base_file_driver import BaseFileDriver
+from griptape_nodes.files.base_file_driver import BaseFileDriver
 
 # Base64 alphabet: A-Z, a-z, 0-9, +, /, and = for padding.
 # We also allow whitespace which base64.b64decode tolerates.

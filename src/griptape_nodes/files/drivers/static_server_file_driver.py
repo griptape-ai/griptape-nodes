@@ -1,4 +1,4 @@
-"""File driver for localhost static file URLs.
+"""File driver for static file server URLs.
 
 Intercepts http://localhost:PORT/workspace/... URLs and reads the files
 directly from the workspace directory on disk, avoiding unnecessary
@@ -8,12 +8,12 @@ HTTP round-trips through the dev server.
 from pathlib import Path
 from urllib.parse import urlparse
 
-from griptape_nodes.file.base_file_driver import BaseFileDriver
+from griptape_nodes.files.base_file_driver import BaseFileDriver
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
-class LocalhostFileDriver(BaseFileDriver):
-    """File driver for localhost static file URLs.
+class StaticServerFileDriver(BaseFileDriver):
+    """File driver for static file server URLs.
 
     Handles URLs matching http(s)://localhost:PORT/workspace/... by extracting
     the workspace-relative path and reading directly from disk.

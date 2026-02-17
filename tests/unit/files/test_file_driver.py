@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from griptape_nodes.file.file_driver import (
+from griptape_nodes.files.file_driver import (
     FileDriver,
     FileDriverNotFoundError,
     FileDriverRegistry,
@@ -181,7 +181,7 @@ class TestFileDriverPriority:
 
     def test_local_file_driver_has_high_priority(self) -> None:
         """Test that LocalFileDriver has priority 100."""
-        from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
+        from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 
         driver = LocalFileDriver()
         assert driver.priority == 100  # noqa: PLR2004

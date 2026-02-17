@@ -23,7 +23,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -281,13 +281,13 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
         """Get the file contents of the input image."""
         parameter_value = self.get_parameter_value("image_url")
 
-        # Extract a string that FileLoader can handle
+        # Extract a string that File can handle
         if isinstance(parameter_value, UrlArtifact):
             url = parameter_value.value
         elif isinstance(parameter_value, str):
             url = parameter_value
         else:
-            # ImageArtifact with .base64 property — wrap as data URI for FileLoader
+            # ImageArtifact with .base64 property — wrap as data URI for File
             b64 = getattr(parameter_value, "base64", None)
             if isinstance(b64, str):
                 url = f"data:image/png;base64,{b64}"
@@ -298,7 +298,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             return None
 
         try:
-            return await FileLoader.aload_bytes(url)
+            return await File(url).aread_bytes()
         except FileLoadError as e:
             self._log(f"Failed to load image from {url}: {e}")
             return None
@@ -481,7 +481,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             return audio_url
 
         try:
-            return await FileLoader.aload_data_uri(audio_url, fallback_mime="audio/mpeg")
+            return await File(audio_url).aread_data_uri(fallback_mime="audio/mpeg")
         except FileLoadError as e:
             self._log(f"Failed to load audio from {audio_url}: {e}")
             return None
@@ -499,7 +499,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             return image_url
 
         try:
-            return await FileLoader.aload_data_uri(image_url, fallback_mime="image/png")
+            return await File(image_url).aread_data_uri(fallback_mime="image/png")
         except FileLoadError as e:
             self._log(f"Failed to load image from {image_url}: {e}")
             return None
@@ -599,7 +599,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
     async def _save_video_bytes(url: str) -> str | None:
         """Download video bytes from URL and save to static storage."""
         try:
-            video_bytes = await FileLoader.aload_bytes(url)
+            video_bytes = await File(url).aread_bytes()
             video_filename = f"omnihuman_video_{int(time.time())}.mp4"
             GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, video_filename)
         except Exception:

@@ -4,7 +4,7 @@ import base64
 
 import pytest
 
-from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
 
 
 class TestDataUriFileDriver:

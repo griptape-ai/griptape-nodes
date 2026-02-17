@@ -17,11 +17,11 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -518,14 +518,24 @@ class SeedreamImageGeneration(GriptapeProxyNode):
 
             # Add multiple images if provided for v4.5/v4.0
             images = params.get("images", [])
+            logger.info("[SEEDREAM DEBUG] Building payload for %s, found %d input images", model, len(images))
             if images:
                 image_array = []
-                for img in images:
+                for idx, img in enumerate(images):
+                    logger.info("[SEEDREAM DEBUG] Processing image %d: %s", idx, img)
                     image_data = await self._process_input_image(img)
                     if image_data:
                         image_array.append(image_data)
+                        logger.info(
+                            "[SEEDREAM DEBUG] Added image %d to array (data_uri length: %d)", idx, len(image_data)
+                        )
+                    else:
+                        logger.info("[SEEDREAM DEBUG] Image %d returned None, skipping", idx)
                 if image_array:
                     payload["image"] = image_array
+                    logger.info("[SEEDREAM DEBUG] Final payload has %d images in the image array", len(image_array))
+                else:
+                    logger.info("[SEEDREAM DEBUG] No images in image_array, not adding to payload")
 
         elif model == "Seedream 3.0 T2I":
             # Add guidance scale for v3 t2i
@@ -538,45 +548,71 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             if image_data:
                 payload["image"] = image_data
 
+        # Debug: show payload structure
+        payload_debug = {
+            k: v if k != "image" else f"<{len(v) if isinstance(v, list) else 1} image(s)>" for k, v in payload.items()
+        }
+        logger.info("[SEEDREAM DEBUG] Final payload structure: %s", payload_debug)
+
         return payload
 
     async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""
+        logger.info(
+            "[SEEDREAM DEBUG] _process_input_image called with type: %s, value: %s", type(image_input), image_input
+        )
         if not image_input:
+            logger.info("[SEEDREAM DEBUG] No image_input, returning None")
             return None
 
         # Extract string value from input
         image_value = self._extract_image_value(image_input)
+        logger.info("[SEEDREAM DEBUG] Extracted image_value: %s", image_value)
         if not image_value:
+            logger.info("[SEEDREAM DEBUG] No image_value after extraction, returning None")
             return None
 
-        return await self._convert_to_base64_data_uri(image_value)
+        try:
+            data_uri = await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError as e:
+            logger.info("[SEEDREAM DEBUG] FileLoadError: %s", e)
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
+            return None
+        else:
+            logger.info(
+                "[SEEDREAM DEBUG] Successfully converted to data URI (length: %d)", len(data_uri) if data_uri else 0
+            )
+            return data_uri
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
+        logger.info("[SEEDREAM DEBUG] _extract_image_value: type=%s", type(image_input).__name__)
         if isinstance(image_input, str):
+            logger.info("[SEEDREAM DEBUG] Input is string: %s...", image_input[:100])
             return image_input
 
         try:
             # ImageUrlArtifact: .value holds URL string
             if hasattr(image_input, "value"):
                 value = getattr(image_input, "value", None)
+                logger.info(
+                    "[SEEDREAM DEBUG] Has .value attribute: %s...", value[:100] if isinstance(value, str) else value
+                )
                 if isinstance(value, str):
                     return value
 
             # ImageArtifact: .base64 holds raw or data-URI
             if hasattr(image_input, "base64"):
                 b64 = getattr(image_input, "base64", None)
+                logger.info("[SEEDREAM DEBUG] Has .base64 attribute: %s...", b64[:100] if isinstance(b64, str) else b64)
                 if isinstance(b64, str) and b64:
                     return b64
         except Exception as e:
+            logger.info("[SEEDREAM DEBUG] Exception in _extract_image_value: %s", e)
             self._log(f"Failed to extract image value: {e}")
 
+        logger.info("[SEEDREAM DEBUG] No value extracted, returning None")
         return None
-
-    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
-        """Convert image value to base64 data URI."""
-        return await convert_image_value_to_base64_data_uri(image_value, self.name)
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -624,7 +660,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         """
         try:
             self._log(f"Downloading image {index} from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = await File(image_url).aread_bytes()
             if not image_bytes:
                 self._log(f"Could not download image {index}, using provider URL")
                 return ImageUrlArtifact(value=image_url)

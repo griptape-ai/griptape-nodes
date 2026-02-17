@@ -17,14 +17,12 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import (
-    convert_image_value_to_base64_data_uri,
-    shrink_image_to_size,
-)
+from griptape_nodes_library.utils.image_utils import shrink_image_to_size
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -603,8 +601,10 @@ class GoogleImageGeneration(GriptapeProxyNode):
         if not image_value:
             return None
 
-        data_uri = await self._convert_to_base64_data_uri(image_value)
-        if not data_uri:
+        try:
+            data_uri = await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError:
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
             return None
 
         return self._extract_mime_and_base64_from_data_uri(data_uri, auto_image_resize=auto_image_resize)
@@ -728,10 +728,6 @@ class GoogleImageGeneration(GriptapeProxyNode):
             logger.info(msg)
 
         return None
-
-    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
-        """Convert image value to base64 data URI."""
-        return await convert_image_value_to_base64_data_uri(image_value, self.name)
 
     @staticmethod
     def _extract_status(obj: dict[str, Any] | None) -> str | None:

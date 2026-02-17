@@ -16,11 +16,11 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -906,7 +906,11 @@ class TopazImageEnhance(GriptapeProxyNode):
         if not image_value:
             return None
 
-        return await self._convert_to_base64_data_uri(image_value)
+        try:
+            return await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError:
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
+            return None
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
@@ -929,10 +933,6 @@ class TopazImageEnhance(GriptapeProxyNode):
             self._log(f"Failed to extract image value: {e}")
 
         return None
-
-    async def _convert_to_base64_data_uri(self, image_value: str) -> str | None:
-        """Convert image value to base64 data URI."""
-        return await convert_image_value_to_base64_data_uri(image_value, self.name)
 
     def _log_request(self, payload: dict[str, Any]) -> None:
         with suppress(Exception):
@@ -988,7 +988,7 @@ class TopazImageEnhance(GriptapeProxyNode):
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = await File(image_url).aread_bytes()
             if image_bytes:
                 filename = f"topaz_enhanced_{int(time.time())}.jpg"
                 static_files_manager = GriptapeNodes.StaticFilesManager()

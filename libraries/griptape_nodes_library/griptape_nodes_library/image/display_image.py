@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import (
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import logger
 
 
@@ -82,7 +82,7 @@ class DisplayImage(DataNode):
                 return 0, 0
 
             try:
-                result = FileLoader.load(image.value)
+                result = File(image.value).read()
 
                 # Check content type for SVG
                 if result.mime_type and "image/svg+xml" in result.mime_type.lower():

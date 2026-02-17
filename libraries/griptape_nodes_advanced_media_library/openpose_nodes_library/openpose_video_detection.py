@@ -25,7 +25,7 @@ from griptape_nodes.exe_types.param_components.huggingface.huggingface_repo_file
     HuggingFaceRepoFileParameter,  # type: ignore[reportMissingImports]
 )
 from griptape_nodes.exe_types.param_components.log_parameter import LogParameter
-from griptape_nodes.file.file_loader import FileLoader
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from openpose_nodes_library.model import util  # type: ignore[reportMissingImports]
 from openpose_nodes_library.model.body import Body  # type: ignore[reportMissingImports]
@@ -218,7 +218,7 @@ class OpenPoseVideoDetection(ControlNode):
             input_video_artifact = dict_to_video_url_artifact(input_video_artifact)
 
         # Download video from URL to temporary file
-        video_bytes = FileLoader.load_bytes(input_video_artifact.value)
+        video_bytes = File(input_video_artifact.value).read_bytes()
         # Use mkstemp for safe temporary file creation
         fd, temp_path = tempfile.mkstemp(suffix=".mp4")
         os.close(fd)  # Close the file descriptor immediately

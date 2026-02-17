@@ -10,6 +10,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -197,7 +198,7 @@ class KlingVideoExtension(GriptapeProxyNode):
         # Download and save video
         try:
             logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url(download_url)
+            video_bytes = await File(download_url).aread_bytes()
         except Exception as e:
             logger.warning("%s failed to download video: %s", self.name, e)
             video_bytes = None

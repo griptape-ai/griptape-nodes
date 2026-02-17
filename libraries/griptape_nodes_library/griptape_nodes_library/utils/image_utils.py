@@ -14,7 +14,7 @@ from griptape.loaders import ImageLoader
 from PIL import Image, ImageDraw, ImageFilter
 from requests.exceptions import RequestException
 
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS
 
@@ -260,33 +260,8 @@ def resolve_localhost_url_to_path(url: str) -> str:
     return url_without_params
 
 
-async def convert_image_value_to_base64_data_uri(image_value: str, context_name: str = "image") -> str | None:
-    """Convert image value to base64 data URI, handling URLs, file paths, and raw base64.
-
-    Uses FileLoader to transparently handle local files, HTTP/HTTPS URLs,
-    localhost URLs, and data URIs.
-
-    Args:
-        image_value: Image value (URL, file path, data URI, or base64 string)
-        context_name: Name for logging context (e.g., node name)
-
-    Returns:
-        Base64 data URI string or None if conversion fails
-    """
-    # If it's already a data URI, return it
-    if image_value.startswith("data:image/"):
-        return image_value
-
-    # FileLoader handles local files, HTTP URLs, localhost URLs, etc.
-    try:
-        return await FileLoader.aload_data_uri(image_value, fallback_mime="image/png")
-    except FileLoadError:
-        logger.debug("%s failed to load image value: %s", context_name, image_value)
-        return None
-
-
 def load_pil_from_url(url: str) -> Image.Image:
-    """Load image from URL or local file path via FileLoader.
+    """Load image from URL or local file path via File.
 
     Note: SVG files are not supported as PIL cannot open vector graphics.
     TODO: Add SVG support using cairosvg or similar library to convert SVG to PNG/bytes
@@ -301,7 +276,7 @@ def load_pil_from_url(url: str) -> Image.Image:
         raise ValueError(msg)
 
     try:
-        image_bytes = FileLoader.load_bytes(url)
+        image_bytes = File(url).read_bytes()
     except FileLoadError as e:
         msg = f"Failed to load image from: {url}\nError: {e}"
         logger.error(msg)

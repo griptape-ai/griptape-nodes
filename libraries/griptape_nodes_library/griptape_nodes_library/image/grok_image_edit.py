@@ -12,10 +12,10 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -214,7 +214,11 @@ class GrokImageEdit(GriptapeProxyNode):
         if not image_value:
             return None
 
-        return await convert_image_value_to_base64_data_uri(image_value, self.name)
+        try:
+            return await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError:
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
+            return None
 
     def _show_image_output_parameters(self, count: int) -> None:
         for i in range(1, 11):
@@ -323,7 +327,7 @@ class GrokImageEdit(GriptapeProxyNode):
         self, image_url: str, generation_id: str | None = None, index: int = 0
     ) -> ImageUrlArtifact | None:
         try:
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = await File(image_url).aread_bytes()
             if not image_bytes:
                 return ImageUrlArtifact(value=image_url)
 

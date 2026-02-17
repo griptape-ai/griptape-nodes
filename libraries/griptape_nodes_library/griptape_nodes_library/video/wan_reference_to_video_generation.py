@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -506,7 +506,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
             return video_url
 
         try:
-            return await FileLoader.aload_data_uri(video_url, fallback_mime="video/mp4")
+            return await File(video_url).aread_data_uri(fallback_mime="video/mp4")
         except FileLoadError as e:
             logger.debug("%s failed to load video from %s: %s", self.name, video_url, e)
             return None
@@ -524,7 +524,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
             return audio_url
 
         try:
-            return await FileLoader.aload_data_uri(audio_url, fallback_mime="audio/mpeg")
+            return await File(audio_url).aread_data_uri(fallback_mime="audio/mpeg")
         except FileLoadError as e:
             logger.debug("%s failed to load audio from %s: %s", self.name, audio_url, e)
             return None
@@ -588,7 +588,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.debug("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
+            video_bytes = await File(extracted_url).aread_bytes()
         except Exception as e:
             logger.debug("Failed to download video: %s", e)
             video_bytes = None

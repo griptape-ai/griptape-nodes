@@ -23,15 +23,15 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
-from griptape_nodes.file.drivers.base64_file_driver import Base64FileDriver
-from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
-from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
-from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
-from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
-from griptape_nodes.file.drivers.localhost_file_driver import LocalhostFileDriver
-from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
-from griptape_nodes.file.path_utils import path_needs_expansion
-from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
+from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
+from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
+from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
+from griptape_nodes.files.path_utils import path_needs_expansion
+from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -328,7 +328,7 @@ class OSManager:
 
         Drivers are automatically sorted by priority on registration.
         """
-        FileDriverRegistry.register(LocalhostFileDriver())
+        FileDriverRegistry.register(StaticServerFileDriver())
         FileDriverRegistry.register(HttpFileDriver())
         FileDriverRegistry.register(DataUriFileDriver())
 
@@ -636,7 +636,7 @@ class OSManager:
         Returns:
             Path string with surrounding quotes removed if present
         """
-        from griptape_nodes.file.path_utils import strip_surrounding_quotes as pr_strip
+        from griptape_nodes.files.path_utils import strip_surrounding_quotes as pr_strip
 
         return pr_strip(path_str)
 
@@ -684,7 +684,7 @@ class OSManager:
         Returns:
             Sanitized path string, or original value if not a string/Path
         """
-        from griptape_nodes.file.path_utils import sanitize_path_string as pr_sanitize
+        from griptape_nodes.files.path_utils import sanitize_path_string as pr_sanitize
 
         return pr_sanitize(path)
 
@@ -707,7 +707,7 @@ class OSManager:
             String representation of path, cleaned of newlines/carriage returns,
             with Windows long path prefix if needed
         """
-        from griptape_nodes.file.path_utils import normalize_path_for_platform as pr_normalize
+        from griptape_nodes.files.path_utils import normalize_path_for_platform as pr_normalize
 
         return pr_normalize(path)
 

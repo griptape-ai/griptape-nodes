@@ -16,6 +16,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -423,7 +424,7 @@ class SoraVideoGeneration(GriptapeProxyNode):
     async def _handle_video_url_completion(self, video_url: str) -> None:
         """Handle completion when a video URL is received."""
         try:
-            video_bytes = await self._download_bytes_from_url(video_url)
+            video_bytes = await File(video_url).aread_bytes()
         except Exception as e:
             self._log(f"Failed to download video: {e}")
             video_bytes = None
@@ -441,7 +442,7 @@ class SoraVideoGeneration(GriptapeProxyNode):
         if isinstance(image_value, dict):
             image_value = dict_to_image_url_artifact(image_value)
 
-        # Extract a string URL that load_pil_from_url / FileLoader can handle
+        # Extract a string URL that load_pil_from_url / File can handle
         if isinstance(image_value, str):
             url = image_value
         elif isinstance(image_value, ImageUrlArtifact):

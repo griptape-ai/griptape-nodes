@@ -12,10 +12,10 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import convert_image_value_to_base64_data_uri
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -199,7 +199,11 @@ class GrokVideoGeneration(GriptapeProxyNode):
         if not image_value:
             return None
 
-        return await convert_image_value_to_base64_data_uri(image_value, self.name)
+        try:
+            return await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError:
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
+            return None
 
     def _get_api_model_id(self) -> str:
         model_name = self.get_parameter_value("model") or "Grok Imagine Video"
@@ -261,7 +265,7 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return
 
         try:
-            video_bytes = await self._download_bytes_from_url(video_url)
+            video_bytes = await File(video_url).aread_bytes()
         except Exception as e:
             with suppress(Exception):
                 logger.warning("%s failed to download video: %s", self.name, e)

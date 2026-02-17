@@ -17,7 +17,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -370,7 +370,7 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         # Download and save video
         try:
             logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await self._download_bytes_from_url(download_url)
+            video_bytes = await File(download_url).aread_bytes()
         except Exception as e:
             logger.warning("%s failed to download video: %s", self.name, e)
             video_bytes = None
@@ -520,7 +520,7 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
             return image_url
 
         try:
-            image_bytes = await FileLoader.aload_bytes(image_url)
+            image_bytes = await File(image_url).aread_bytes()
         except FileLoadError as e:
             logger.debug("%s failed to load image from %s: %s", self.name, image_url, e)
             return None

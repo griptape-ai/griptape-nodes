@@ -11,7 +11,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.video_utils import to_video_artifact
@@ -559,7 +559,7 @@ class ConcatenateVideos(BaseVideoProcessor):
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL to local file."""
         try:
-            video_bytes = FileLoader.load_bytes(video_url)
+            video_bytes = File(video_url).read_bytes()
         except FileLoadError as e:
             msg = f"Error downloading video from {video_url}: {e!s}"
             raise ValueError(msg) from e

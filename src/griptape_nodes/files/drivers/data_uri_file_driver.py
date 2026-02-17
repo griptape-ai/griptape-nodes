@@ -2,7 +2,7 @@
 
 import base64
 
-from griptape_nodes.file.base_file_driver import BaseFileDriver
+from griptape_nodes.files.base_file_driver import BaseFileDriver
 
 
 class DataUriFileDriver(BaseFileDriver):

@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -529,7 +529,7 @@ class Rodin23DGeneration(GriptapeProxyNode):
     async def _string_to_bytes(self, value: str) -> bytes | None:
         """Convert a string (URL, data URI, file path, or base64) to raw bytes."""
         try:
-            return await FileLoader.aload_bytes(value)
+            return await File(value).aread_bytes()
         except FileLoadError as e:
             self._log(f"Failed to load bytes from {value}: {e}")
             return None
@@ -586,7 +586,7 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             try:
                 self._log(f"Downloading file: {file_name}")
-                file_bytes = await self._download_bytes_from_url(file_url)
+                file_bytes = await File(file_url).aread_bytes()
 
                 if file_bytes:
                     # Create safe filename

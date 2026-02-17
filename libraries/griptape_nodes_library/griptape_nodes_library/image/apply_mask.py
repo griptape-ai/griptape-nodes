@@ -10,7 +10,7 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.file.file_loader import FileLoader
+from griptape_nodes.files.file import File
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -132,8 +132,8 @@ class ApplyMask(DataNode):
             self._apply_mask_to_input(input_image, input_mask, channel)
 
     def load_pil_from_url(self, url: str) -> Image.Image:
-        """Load image from URL using FileLoader."""
-        image_bytes = FileLoader.load_bytes(url)
+        """Load image from URL using File."""
+        image_bytes = File(url).read_bytes()
         return Image.open(BytesIO(image_bytes))
 
     def _create_edge_mask(self, size: tuple[int, int], fade_distance: float) -> Image.Image:

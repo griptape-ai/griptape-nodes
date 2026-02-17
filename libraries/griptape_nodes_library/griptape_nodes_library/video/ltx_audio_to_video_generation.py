@@ -14,7 +14,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.file.file_loader import FileLoader, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -200,7 +200,7 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
             return self._normalize_audio_data_url(audio_url)
 
         try:
-            data_url = await FileLoader.aload_data_uri(audio_url, fallback_mime="audio/mpeg")
+            data_url = await File(audio_url).aread_data_uri(fallback_mime="audio/mpeg")
         except FileLoadError as e:
             logger.debug("%s failed to load audio from %s: %s", self.name, audio_url, e)
             return None
@@ -394,7 +394,7 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
             return image_url
 
         try:
-            return await FileLoader.aload_data_uri(image_url, fallback_mime="image/jpeg")
+            return await File(image_url).aread_data_uri(fallback_mime="image/jpeg")
         except FileLoadError as e:
             logger.debug("%s failed to load image from %s: %s", self.name, image_url, e)
             return None

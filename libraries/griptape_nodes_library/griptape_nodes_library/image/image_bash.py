@@ -8,7 +8,7 @@ from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
-from griptape_nodes.file.file_loader import FileLoader
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
@@ -160,7 +160,7 @@ class ImageBash(DataNode):
     def _get_image_dimensions(self, image_url: str) -> tuple[int, int]:
         """Get the width and height of an image from its URL."""
         try:
-            image_bytes = FileLoader.load_bytes(image_url)
+            image_bytes = File(image_url).read_bytes()
 
             with Image.open(BytesIO(image_bytes)) as img:
                 return img.size  # Returns (width, height)
