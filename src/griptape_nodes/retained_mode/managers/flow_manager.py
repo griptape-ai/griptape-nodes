@@ -1078,9 +1078,16 @@ class FlowManager:
                     incoming_connection_source_parameter_name=source_param.name,
                 )
             )
-            # Mark all downstream nodes as dirty when connection is created
-            # This ensures dependency graph changes propagate even if values don't change
-            # Matches the pattern used in connection deletion (line 1227)
+
+        # Mark all downstream nodes as dirty when connection is created
+        # This ensures dependency graph changes propagate even if values don't change
+        # Matches the pattern used in connection deletion (https://github.com/griptape-ai/griptape-nodes/blob/9f299338193edc4a10f60728172c1ad214d1eb46/src/griptape_nodes/retained_mode/managers/flow_manager.py#L1227)
+        if not is_control_parameter and not request.initial_setup:
+            target_node.make_node_unresolved(
+                current_states_to_trigger_change_event=set(
+                    {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
+                )
+            )
             self._connections.unresolve_future_nodes(target_node)
 
         # Check if either node is ErrorProxyNode and mark connection modification if not initial_setup
