@@ -121,13 +121,31 @@ class BaseArtifactProvider(ABC):
         return f"artifacts.{provider_key}.preview_generation"
 
     @classmethod
+    def get_preview_format_leaf_key(cls) -> str:
+        """Get the leaf key for preview format config.
+
+        Returns:
+            The leaf key (e.g., 'preview_format')
+        """
+        return "preview_format"
+
+    @classmethod
+    def get_preview_generator_leaf_key(cls) -> str:
+        """Get the leaf key for preview generator config.
+
+        Returns:
+            The leaf key (e.g., 'preview_generator')
+        """
+        return "preview_generator"
+
+    @classmethod
     def get_preview_format_config_key(cls) -> str:
         """Get the config key for the user's selected preview format.
 
         Returns:
             Config key (e.g., 'artifacts.image.preview_generation.preview_format')
         """
-        return f"{cls.get_config_key_prefix()}.preview_format"
+        return f"{cls.get_config_key_prefix()}.{cls.get_preview_format_leaf_key()}"
 
     @classmethod
     def get_preview_generator_config_key(cls) -> str:
@@ -136,7 +154,7 @@ class BaseArtifactProvider(ABC):
         Returns:
             Config key (e.g., 'artifacts.image.preview_generation.preview_generator')
         """
-        return f"{cls.get_config_key_prefix()}.preview_generator"
+        return f"{cls.get_config_key_prefix()}.{cls.get_preview_generator_leaf_key()}"
 
     async def attempt_generate_preview(  # noqa: PLR0913
         self,
