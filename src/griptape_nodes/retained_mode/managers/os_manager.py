@@ -143,20 +143,6 @@ class CopyTreeValidationResult:
     destination_path: Path
 
 
-class FilenameParts(NamedTuple):
-    """Components of a filename for suffix injection strategy.
-
-    Attributes:
-        directory: Parent directory path
-        basename: Filename without extension or suffix
-        extension: File extension including dot (e.g., ".png"), empty string if no extension
-    """
-
-    directory: Path
-    basename: str
-    extension: str
-
-
 class WindowsSpecialFolderError(OSError):
     """Raised when Windows Shell API (SHGetFolderPathW) fails for a special folder.
 
@@ -912,94 +898,55 @@ class OSManager:
 
         return None
 
-    def _parse_filename_parts(self, path: Path) -> FilenameParts:
-        """Parse filename into directory, basename, and extension for suffix injection.
+    def _handle_parent_directory_failure(
+        self,
+        parent_failure_reason: FileIOFailureReason,
+        candidate_path: Path,
+    ) -> WriteFileResultFailure:
+        """Create failure result for parent directory errors.
 
         Args:
-            path: Full file path to parse
+            parent_failure_reason: The failure reason from _ensure_parent_directory_ready
+            candidate_path: The file path that failed
 
         Returns:
-            FilenameParts with directory, basename, extension
-
-        Examples:
-            /path/to/render.png → FilenameParts(Path("/path/to"), "render", ".png")
-            /path/to/file → FilenameParts(Path("/path/to"), "file", "")
-            /path/to/.dotfile → FilenameParts(Path("/path/to"), ".dotfile", "")
-            /path/to/file.tar.gz → FilenameParts(Path("/path/to"), "file.tar", ".gz")
+            WriteFileResultFailure with appropriate error message
         """
-        directory = path.parent
-        filename = path.name
+        match parent_failure_reason:
+            case FileIOFailureReason.PERMISSION_DENIED:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+            case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+            case _:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+        return WriteFileResultFailure(
+            failure_reason=parent_failure_reason,
+            result_details=msg,
+        )
 
-        # Handle dotfiles (files starting with .)
-        if filename.startswith(".") and filename.count(".") == 1:
-            # .dotfile with no extension
-            return FilenameParts(directory=directory, basename=filename, extension="")
-
-        # Find last dot for extension
-        if "." in filename:
-            last_dot = filename.rfind(".")
-            basename = filename[:last_dot]
-            extension = filename[last_dot:]
-            return FilenameParts(directory=directory, basename=basename, extension=extension)
-
-        # No extension
-        return FilenameParts(directory=directory, basename=filename, extension="")
-
-    def _build_suffix_glob_pattern(self, directory: Path, basename: str, extension: str) -> str:
-        """Build glob pattern for suffix injection strategy.
+    def _find_next_index_with_gap_fill(self, existing_indices: list[int]) -> int:
+        """Find next available index using fill-gaps strategy.
 
         Args:
-            directory: Parent directory
-            basename: Filename without extension
-            extension: File extension including dot
+            existing_indices: List of existing indices
 
         Returns:
-            Glob pattern string
+            Next available index (1-based)
 
         Examples:
-            ("render", ".png") → "render_*.png"
-            ("file", "") → "file_*"
+            [] -> 1
+            [1, 2, 3] -> 4
+            [1, 3, 4] -> 2 (fills gap)
         """
-        if extension:
-            return str(directory / f"{basename}_*{extension}")
-        return str(directory / f"{basename}_*")
+        if not existing_indices:
+            return 1
 
-    def _extract_suffix_index(self, filename: str, basename: str, extension: str) -> int | None:
-        """Extract numeric index from suffix in filename.
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
 
-        Args:
-            filename: Full filename (e.g., "render_123.png")
-            basename: Expected base name (e.g., "render")
-            extension: Expected extension (e.g., ".png")
-
-        Returns:
-            Integer index if found, None otherwise
-
-        Examples:
-            ("render_123.png", "render", ".png") → 123
-            ("render_1.png", "render", ".png") → 1
-            ("render.png", "render", ".png") → None (no suffix)
-            ("other_123.png", "render", ".png") → None (different basename)
-        """
-        # Remove extension if present
-        if extension and filename.endswith(extension):
-            name_without_ext = filename[: -len(extension)]
-        else:
-            name_without_ext = filename
-
-        # Check if it starts with basename
-        expected_prefix = f"{basename}_"
-        if not name_without_ext.startswith(expected_prefix):
-            return None
-
-        # Extract suffix after basename_
-        suffix = name_without_ext[len(expected_prefix) :]
-
-        # Try to parse as integer
-        if suffix.isdigit():
-            return int(suffix)
-
-        return None
+        return max(existing_indices) + 1
 
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
@@ -1119,20 +1066,7 @@ class OSManager:
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
-        if not existing_indices:
-            # No existing indexed files - start at 1
-            return 1
-
-        # Sort indices to find first gap
-        existing_indices.sort()
-
-        # Find first gap starting from 1
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i  # Found a gap
-
-        # No gaps - use max + 1
-        return max(existing_indices) + 1
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
         """Validate read file request and return resolved file path and path string."""
@@ -1995,11 +1929,9 @@ class OSManager:
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
                     # we'll take their file name and turn it into a macro that appends _<index> to it.
                     # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
-                    macro_path = (
-                        self._convert_str_path_to_macro_with_index(request.file_path)
-                        if isinstance(request.file_path, str)
-                        else request.file_path
-                    )
+                    # For MacroPath inputs, the path is already fully resolved at this point,
+                    # so convert the resolved path string to inject {_index} as well.
+                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path))
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 
@@ -2020,7 +1952,8 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
+                        # This should not happen since we always inject {_index} above
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to missing index variable after conversion"
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.INVALID_PATH,
                             result_details=msg,
@@ -2083,17 +2016,7 @@ class OSManager:
                             create_parents=request.create_parents,
                         )
                         if parent_failure_reason is not None:
-                            match parent_failure_reason:
-                                case FileIOFailureReason.PERMISSION_DENIED:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                case _:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                            return WriteFileResultFailure(
-                                failure_reason=parent_failure_reason,
-                                result_details=msg,
-                            )
+                            return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
