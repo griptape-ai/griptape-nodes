@@ -49,7 +49,7 @@ class LocalSessionWorkflowExecutor(LocalWorkflowExecutor, SubprocessWebSocketSen
     async def __aenter__(self) -> Self:
         """Async context manager entry: initialize queue and broadcast app initialization."""
         GriptapeNodes.EventManager().initialize_queue()
-        await GriptapeNodes.EventManager().broadcast_app_event(AppInitializationComplete())
+        await GriptapeNodes.EventManager().abroadcast_app_event(AppInitializationComplete())
 
         logger.info("Setting up session %s", self._session_id)
         GriptapeNodes.SessionManager().save_session(self._session_id)

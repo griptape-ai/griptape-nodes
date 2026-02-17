@@ -40,6 +40,7 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
+    ConfigChanged,
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -403,6 +404,10 @@ class LibraryManager:
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
             self.on_app_initialization_complete,
+        )
+        event_manager.add_listener_to_app_event(
+            ConfigChanged,
+            self.on_config_changed,
         )
 
     def print_library_load_status(self) -> None:
@@ -2603,6 +2608,25 @@ class LibraryManager:
             padding=(1, 4),
         )
         console.print(message)
+
+    async def on_config_changed(self, event: ConfigChanged) -> None:
+        """Handle config changes to reload libraries when needed.
+
+        Responds to:
+        - libraries_to_register changes: Full library reload
+        """
+        if event.key == LIBRARIES_TO_REGISTER_KEY:
+            logger.info("Config change detected for %s, triggering library reload", event.key)
+
+            # Use existing ReloadAllLibrariesRequest instead of manual reload
+            # This clears workflow state and does a full reload (safer when libraries change)
+            reload_request = ReloadAllLibrariesRequest()
+            reload_result = await GriptapeNodes.ahandle_request(reload_request)
+
+            if reload_result.succeeded():
+                logger.info("Successfully reloaded libraries after %s change", event.key)
+            else:
+                logger.error("Failed to reload libraries after %s change: %s", event.key, reload_result.result_details)
 
     def _load_advanced_library_module(
         self,

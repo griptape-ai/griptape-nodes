@@ -377,7 +377,36 @@ class EventManager:
         listener_set = self._app_event_listeners[app_event_type]
         listener_set.remove(callback)
 
-    async def broadcast_app_event(self, app_event: AP) -> None:
+    def broadcast_app_event(self, app_event: AP) -> None:
+        """Broadcast an app event to all registered listeners (sync version).
+
+        Args:
+            app_event: The app event to broadcast
+        """
+        app_event_type = type(app_event)
+        if app_event_type in self._app_event_listeners:
+            listener_set = self._app_event_listeners[app_event_type]
+
+            # Support async callbacks for sync method
+            async def _broadcast_async() -> None:
+                async with asyncio.TaskGroup() as tg:
+                    for listener_callback in listener_set:
+                        tg.create_task(call_function(listener_callback, app_event))
+
+            try:
+                asyncio.get_running_loop()
+                with ThreadRunner() as runner:
+                    runner.run(_broadcast_async())
+            except RuntimeError:
+                # No event loop running, safe to use asyncio.run
+                asyncio.run(_broadcast_async())
+
+    async def abroadcast_app_event(self, app_event: AP) -> None:
+        """Broadcast an app event to all registered listeners (async version).
+
+        Args:
+            app_event: The app event to broadcast
+        """
         app_event_type = type(app_event)
         if app_event_type in self._app_event_listeners:
             listener_set = self._app_event_listeners[app_event_type]
