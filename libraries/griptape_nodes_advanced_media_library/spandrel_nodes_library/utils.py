@@ -20,9 +20,6 @@ class SpandrelPipeline:
 
     @classmethod
     def from_hf_file(cls, repo_id: str, revision: str, filename: str) -> "SpandrelPipeline":
-        if repo_id != "skbhadra/ClearRealityV1" or filename != "4x-ClearRealityV1.pth":
-            logger.exception("Unsupported (repo_id: %s filename: %s) pair", repo_id, filename)
-
         model_path = hf_hub_download(
             repo_id=repo_id,
             revision=revision,
