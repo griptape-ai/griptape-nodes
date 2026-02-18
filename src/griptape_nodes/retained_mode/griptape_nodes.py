@@ -223,7 +223,7 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         Args:
             request: The request payload to handle.
-            broadcast: Whether to broadcast the result to the GUI. Defaults to request.broadcast_result.
+            broadcast: Whether to broadcast the result. Defaults to request.broadcast_result.
         """
         event_mgr = GriptapeNodes.EventManager()
         should_broadcast = broadcast if broadcast is not None else request.broadcast_result

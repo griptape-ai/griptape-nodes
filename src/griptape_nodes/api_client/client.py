@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes_client")
 
+# Payload size (in bytes) above which a warning is logged before sending.
+# Messages above this threshold can saturate the WebSocket send buffer and cause
+# connected clients (e.g. the editor) to stall or disconnect.
 LARGE_PAYLOAD_WARNING_THRESHOLD = 100_000
 
 
@@ -264,7 +267,8 @@ class Client:
         serialized = json.dumps(message)
         if len(serialized) > LARGE_PAYLOAD_WARNING_THRESHOLD:
             logger.warning(
-                "Sending large WebSocket message: type=%s, size=%d bytes",
+                "Sending large WebSocket message: type=%s, size=%d bytes. "
+                "Large messages can saturate the send buffer and cause connected clients (e.g. the editor) to stall or disconnect.",
                 message.get("type"),
                 len(serialized),
             )
