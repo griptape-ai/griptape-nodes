@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import NamedTuple, cast
 
+from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
     FileIOFailureReason,
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
-    ResolveMacroPathRequest,
-    ResolveMacroPathResultFailure,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultFailure,
+    MacroPath,
+    PathResolutionFailureReason,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.events.project_events import MacroPath
 
 
 class FileLoadError(Exception):
@@ -32,10 +34,12 @@ class FileLoadError(Exception):
         failure_reason: FileIOFailureReason,
         result_details: str,
         missing_variables: set[str] | None = None,
+        conflicting_variables: set[str] | None = None,
     ) -> None:
         self.failure_reason = failure_reason
         self.result_details = result_details
         self.missing_variables = missing_variables
+        self.conflicting_variables = conflicting_variables
         super().__init__(result_details)
 
 
@@ -46,6 +50,13 @@ class FileContent(NamedTuple):
     mime_type: str
     encoding: str | None
     size: int
+
+
+_PATH_FAILURE_TO_FILE_IO: dict[PathResolutionFailureReason, FileIOFailureReason] = {
+    PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES: FileIOFailureReason.MISSING_MACRO_VARIABLES,
+    PathResolutionFailureReason.MACRO_RESOLUTION_ERROR: FileIOFailureReason.INVALID_PATH,
+    PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED: FileIOFailureReason.INVALID_PATH,
+}
 
 
 def _resolve_file_path(file_path: str | MacroPath | None) -> str | None:
@@ -66,17 +77,20 @@ def _resolve_file_path(file_path: str | MacroPath | None) -> str | None:
     if isinstance(file_path, str):
         return file_path
 
-    # It's a MacroPath - resolve it
-    resolve_result = GriptapeNodes.handle_request(ResolveMacroPathRequest(macro_path=file_path))
+    # It's a MacroPath - resolve it via project-aware resolution
+    resolve_result = GriptapeNodes.handle_request(
+        GetPathForMacroRequest(parsed_macro=file_path.parsed_macro, variables=file_path.variables)
+    )
 
-    if isinstance(resolve_result, ResolveMacroPathResultFailure):
+    if isinstance(resolve_result, GetPathForMacroResultFailure):
         raise FileLoadError(
-            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+            failure_reason=_PATH_FAILURE_TO_FILE_IO[resolve_result.failure_reason],
             result_details=str(resolve_result.result_details),
             missing_variables=resolve_result.missing_variables,
+            conflicting_variables=resolve_result.conflicting_variables,
         )
 
-    return resolve_result.resolved_path  # type: ignore[union-attr]
+    return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
 async def _aresolve_file_path(file_path: str | MacroPath | None) -> str | None:
@@ -99,17 +113,20 @@ async def _aresolve_file_path(file_path: str | MacroPath | None) -> str | None:
     if isinstance(file_path, str):
         return file_path
 
-    # It's a MacroPath - resolve it
-    resolve_result = await GriptapeNodes.ahandle_request(ResolveMacroPathRequest(macro_path=file_path))
+    # It's a MacroPath - resolve it via project-aware resolution
+    resolve_result = await GriptapeNodes.ahandle_request(
+        GetPathForMacroRequest(parsed_macro=file_path.parsed_macro, variables=file_path.variables)
+    )
 
-    if isinstance(resolve_result, ResolveMacroPathResultFailure):
+    if isinstance(resolve_result, GetPathForMacroResultFailure):
         raise FileLoadError(
-            failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+            failure_reason=_PATH_FAILURE_TO_FILE_IO[resolve_result.failure_reason],
             result_details=str(resolve_result.result_details),
             missing_variables=resolve_result.missing_variables,
+            conflicting_variables=resolve_result.conflicting_variables,
         )
 
-    return resolve_result.resolved_path  # type: ignore[union-attr]
+    return str(resolve_result.absolute_path)  # type: ignore[union-attr]
 
 
 class File:
@@ -126,11 +143,27 @@ class File:
     def __init__(self, file_path: str | MacroPath) -> None:
         """Store file reference. No I/O is performed.
 
+        Plain strings containing macro variables (e.g. ``"{outputs}/file.png"``) are
+        automatically wrapped in a MacroPath so they are resolved against the current
+        project at read time.  Strings with no macro variables and already-constructed
+        MacroPath objects are stored as-is.
+
         Args:
             file_path: Path to the file to read. Can be a plain string or a MacroPath
                 (which contains macro variables).
         """
-        self._file_path = file_path
+        if isinstance(file_path, str):
+            try:
+                parsed = ParsedMacro(file_path)
+            except MacroSyntaxError:
+                self._file_path: str | MacroPath = file_path
+            else:
+                if parsed.get_variables():
+                    self._file_path = MacroPath(parsed, {})
+                else:
+                    self._file_path = file_path
+        else:
+            self._file_path = file_path
 
     def _read(self, encoding: str = "utf-8") -> FileContent:
         """Perform the sync file read and return a FileContent.
