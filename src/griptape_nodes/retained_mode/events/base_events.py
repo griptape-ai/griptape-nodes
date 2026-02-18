@@ -125,6 +125,7 @@ class RequestPayload(Payload, ABC):
                           Default: None (use handler's default, typically ERROR).
     """
 
+    broadcast_result: ClassVar[bool] = True
     request_id: int | None = None
     failure_log_level: int | None = None
 

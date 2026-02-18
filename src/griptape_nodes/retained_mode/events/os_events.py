@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -202,6 +202,7 @@ class ReadFileRequest(RequestPayload):
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
 
+    broadcast_result: ClassVar[bool] = False
     file_path: str | None = None
     file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
