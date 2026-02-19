@@ -418,7 +418,7 @@ class GetNextUnusedFilenameResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
     failure_reason: FileIOFailureReason
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class WriteFileRequest(RequestPayload):
     """Write content to a file.
@@ -444,6 +444,7 @@ class WriteFileRequest(RequestPayload):
     Note: existing_file_policy is ignored when append=True (append always allows existing files)
     """
 
+    broadcast_result: bool = False
     file_path: str | MacroPath
     content: str | bytes
     encoding: str = "utf-8"  # Ignored for bytes
