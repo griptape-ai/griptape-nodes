@@ -183,19 +183,16 @@ class DagBuilder:
         self.graph_to_nodes.clear()
         self.start_node_candidates.clear()
 
-    def can_queue_control_node(self, node: DagNode) -> bool:
-        if len(self.graphs) == 1:
-            return True
+    def _has_active_control_path_to_node(self, node: DagNode, connections: Connections) -> bool:
+        """Check if any active graph has a control path that can reach the target node.
 
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        Args:
+            node: The target node to check
+            connections: The connections manager
 
-        connections = GriptapeNodes.FlowManager().get_connections()
-
-        control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
-        # If no control connections, we can queue this! Don't worry about this.
-        if control_connections == 0:
-            return True
-
+        Returns:
+            True if any graph could still reach the target node via control flow
+        """
         for graph in self.graphs.values():
             # If the length of the graph is 0, skip it. it's either reached it or it's a dead end.
             if len(graph.nodes()) == 0:
@@ -220,10 +217,35 @@ class DagBuilder:
 
                     # Check if the target node is in the forward path from this root
                     if connections.is_node_in_forward_control_path(root_node, node.node_reference):
-                        return False  # This graph could still reach the target node
+                        return True  # This graph could still reach the target node
 
-        # Otherwise, return true at the end of the function
-        return True
+        return False
+
+    def can_queue_control_node(self, node: DagNode) -> bool:
+        # Check if node has any DAG predecessors (dependencies) still in the graph
+        node_name = node.node_reference.name
+        for graph in self.graphs.values():
+            if node_name in graph.nodes():
+                # If any predecessors exist, they haven't completed yet (completed nodes are removed)
+                predecessors = graph._predecessors.get(node_name, set())
+                if predecessors:
+                    return False
+
+        if len(self.graphs) == 1:
+            # If there's only one graph, we aren't looking for a control flow connection from elsewhere! We can queue. We've already looked at data dependencies.
+            return True
+
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        connections = GriptapeNodes.FlowManager().get_connections()
+
+        control_connections = self.get_number_incoming_control_connections(node.node_reference, connections)
+        # If no control connections, we can queue this! Don't worry about this.
+        if control_connections == 0:
+            return True
+
+        # Check if any active graph has a control path to this node
+        return not self._has_active_control_path_to_node(node, connections)
 
     def get_number_incoming_control_connections(self, node: BaseNode, connections: Connections) -> int:
         if node.name not in connections.incoming_index:

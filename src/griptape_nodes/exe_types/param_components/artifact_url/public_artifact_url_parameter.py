@@ -30,11 +30,16 @@ class PublicArtifactUrlParameter:
     gtc_file_path: Path | None = None
 
     def __init__(
-        self, node: BaseNode, artifact_url_parameter: Parameter, disclaimer_message: str | None = None
+        self,
+        node: BaseNode,
+        artifact_url_parameter: Parameter,
+        disclaimer_message: str | None = None,
+        request_timeout: float | None = None,
     ) -> None:
         self._node = node
         self._parameter = artifact_url_parameter
         self._disclaimer_message = disclaimer_message
+        self._request_timeout = request_timeout
 
         if artifact_url_parameter.type.lower() not in [name.lower() for name in self.supported_artifact_type_names]:
             msg = (
@@ -48,13 +53,14 @@ class PublicArtifactUrlParameter:
         base = os.getenv("GT_CLOUD_BASE_URL", "https://cloud.griptape.ai")
         self._storage_driver = GriptapeCloudStorageDriver(
             workspace_directory=GriptapeNodes.ConfigManager().workspace_path,
-            bucket_id=self._get_bucket_id(base, api_key),
+            bucket_id=self._get_bucket_id(base, api_key, timeout=self._request_timeout),
             api_key=api_key,
             base_url=base,
+            request_timeout=self._request_timeout,
         )
 
     @classmethod
-    def _get_bucket_id(cls, base_url: str, api_key: str) -> str:
+    def _get_bucket_id(cls, base_url: str, api_key: str, timeout: float | None = None) -> str:
         bucket_id: str | None = cls._get_secret_value(cls.BUCKET_ID_NAME, should_error_on_not_found=False)
 
         if bucket_id is not None:
@@ -63,6 +69,7 @@ class PublicArtifactUrlParameter:
         buckets = GriptapeCloudStorageDriver.list_buckets(
             base_url=base_url,
             api_key=api_key,
+            timeout=timeout,
         )
         if len(buckets) == 0:
             msg = "No Griptape Cloud storage buckets found!"
@@ -95,7 +102,7 @@ class PublicArtifactUrlParameter:
     def add_input_parameters(self) -> None:
         self._node.add_parameter(self._parameter)
         self._parameter.set_badge(
-            variant="warning",
+            variant="cloud-upload",
             title="Media Upload",
             message=self.get_help_message(),
             hide_clear_button=False,

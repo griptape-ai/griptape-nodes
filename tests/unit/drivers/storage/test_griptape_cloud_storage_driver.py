@@ -13,6 +13,7 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 TEST_FILE_PATH = Path("test_file.txt")
 TEST_BUCKET_ID = "test-bucket-123"
 TEST_API_KEY = "test-api-key"
+REQUEST_TIMEOUT_SECONDS = 60.0
 
 
 class TestGriptapeCloudStorageDriverCreateSignedUploadUrl:
@@ -229,3 +230,138 @@ class TestGriptapeCloudStorageDriverParseCloudAssetPath:
         full_url = "https://cloud.griptape.ai/buckets/test-bucket/assets/nested/path/to/file.txt"
         result = cloud_storage_driver._parse_cloud_asset_path(full_url)
         assert result == Path("nested/path/to/file.txt")
+
+
+class TestGriptapeCloudStorageDriverUploadTimeout:
+    """Test timeout propagation for GriptapeCloudStorageDriver.upload_file()."""
+
+    def test_upload_file_uses_timeout_parameter(self) -> None:
+        """upload_file should pass timeout parameter to signed URL upload request."""
+        driver = GriptapeCloudStorageDriver(
+            workspace_directory=Path("/workspace"),
+            bucket_id=TEST_BUCKET_ID,
+            api_key=TEST_API_KEY,
+        )
+
+        with (
+            patch.object(driver, "create_signed_upload_url") as mock_create_signed_upload_url,
+            patch.object(driver, "create_signed_download_url") as mock_create_signed_download_url,
+            patch("griptape_nodes.drivers.storage.base_storage_driver.httpx.request") as mock_request,
+        ):
+            mock_create_signed_upload_url.return_value = {
+                "method": "PUT",
+                "url": "https://signed-upload.example.com",
+                "headers": {"x-test": "1"},
+                "file_path": str(TEST_FILE_PATH),
+            }
+            mock_create_signed_download_url.return_value = "https://signed-download.example.com"
+
+            mock_response = Mock()
+            mock_response.raise_for_status.return_value = None
+            mock_request.return_value = mock_response
+
+            result = driver.upload_file(TEST_FILE_PATH, b"test-bytes", timeout=REQUEST_TIMEOUT_SECONDS)
+
+            assert result == "https://signed-download.example.com"
+            assert mock_request.call_count == 1
+            _, call_kwargs = mock_request.call_args
+            assert call_kwargs["timeout"] == REQUEST_TIMEOUT_SECONDS
+
+
+class TestGriptapeCloudStorageDriverExtractBucketId:
+    """Test GriptapeCloudStorageDriver.extract_bucket_id_from_url() static method."""
+
+    def test_extract_bucket_id_from_full_https_url(self) -> None:
+        """Extract bucket_id from full HTTPS URL."""
+        url = "https://cloud.griptape.ai/buckets/test-bucket-123/assets/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "test-bucket-123"
+
+    def test_extract_bucket_id_from_full_http_url(self) -> None:
+        """Extract bucket_id from full HTTP URL."""
+        url = "http://cloud.griptape.ai/buckets/my-bucket/assets/path/to/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket"
+
+    def test_extract_bucket_id_from_path_only(self) -> None:
+        """Extract bucket_id from path-only format (no domain)."""
+        url = "/buckets/bucket-456/assets/nested/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "bucket-456"
+
+    def test_extract_bucket_id_with_uuid_format(self) -> None:
+        """Extract bucket_id that uses UUID format."""
+        url = "https://cloud.griptape.ai/buckets/9ff5bda9-8f55-409f-a1dd-d1aba54fa233/assets/file.zip"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "9ff5bda9-8f55-409f-a1dd-d1aba54fa233"
+
+    def test_extract_bucket_id_with_nested_asset_path(self) -> None:
+        """Extract bucket_id when asset path has multiple nested directories."""
+        url = "https://cloud.griptape.ai/buckets/my-bucket/assets/deeply/nested/path/to/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket"
+
+    def test_extract_bucket_id_returns_none_for_empty_string(self) -> None:
+        """Return None for empty string input."""
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url("")
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_for_non_cloud_url(self) -> None:
+        """Return None for regular HTTP URL without cloud pattern."""
+        url = "https://example.com/some/path/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_for_missing_buckets(self) -> None:
+        """Return None when /buckets/ pattern is missing."""
+        url = "https://cloud.griptape.ai/assets/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_for_missing_assets(self) -> None:
+        """Return None when /assets/ pattern is missing."""
+        url = "https://cloud.griptape.ai/buckets/my-bucket/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_for_local_file_path(self) -> None:
+        """Return None for local file paths."""
+        url = "/home/user/documents/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_for_file_uri(self) -> None:
+        """Return None for file:// URIs."""
+        url = "file:///home/user/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_returns_none_when_bucket_id_empty(self) -> None:
+        """Return None when bucket_id portion is empty."""
+        url = "https://cloud.griptape.ai/buckets//assets/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result is None
+
+    def test_extract_bucket_id_with_query_parameters(self) -> None:
+        """Extract bucket_id from URL with query parameters."""
+        url = "https://cloud.griptape.ai/buckets/my-bucket/assets/file.txt?version=1&cache=false"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket"
+
+    def test_extract_bucket_id_with_url_fragment(self) -> None:
+        """Extract bucket_id from URL with fragment."""
+        url = "https://cloud.griptape.ai/buckets/my-bucket/assets/file.txt#section"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket"
+
+    def test_extract_bucket_id_with_port_number(self) -> None:
+        """Extract bucket_id from URL with port number."""
+        url = "https://cloud.griptape.ai:8443/buckets/my-bucket/assets/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket"
+
+    def test_extract_bucket_id_with_special_characters(self) -> None:
+        """Extract bucket_id containing special characters (hyphens, underscores)."""
+        url = "https://cloud.griptape.ai/buckets/my-bucket_test-123/assets/file.txt"
+        result = GriptapeCloudStorageDriver.extract_bucket_id_from_url(url)
+        assert result == "my-bucket_test-123"

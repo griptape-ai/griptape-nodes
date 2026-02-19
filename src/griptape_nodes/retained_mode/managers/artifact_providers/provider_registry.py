@@ -161,7 +161,7 @@ class ProviderRegistry:
         Returns:
             List of all preview generator classes for this provider
         """
-        preview_generators = provider_class.get_default_generators().copy()
+        preview_generators = provider_class.get_default_preview_generators().copy()
 
         if provider_class in self._provider_preview_generators:
             for preview_generator_class in self._provider_preview_generators[provider_class]:

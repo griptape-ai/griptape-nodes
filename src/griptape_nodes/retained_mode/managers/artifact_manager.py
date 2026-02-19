@@ -21,6 +21,9 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     GetArtifactProviderDetailsRequest,
     GetArtifactProviderDetailsResultFailure,
     GetArtifactProviderDetailsResultSuccess,
+    GetArtifactSchemasRequest,
+    GetArtifactSchemasResultFailure,
+    GetArtifactSchemasResultSuccess,
     GetPreviewForArtifactRequest,
     GetPreviewForArtifactResultFailure,
     GetPreviewForArtifactResultSuccess,
@@ -42,9 +45,11 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     RegisterPreviewGeneratorResultSuccess,
 )
 from griptape_nodes.retained_mode.events.config_events import (
+    GetConfigCategoryRequest,
+    GetConfigCategoryResultSuccess,
     GetConfigValueRequest,
     GetConfigValueResultSuccess,
-    SetConfigValueRequest,
+    SetConfigCategoryRequest,
 )
 from griptape_nodes.retained_mode.events.os_events import (
     DeleteFileRequest,
@@ -72,6 +77,19 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
     ProviderRegistry,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import (
+    ArtifactSchemas,
+    GeneratorConfigurationsSchema,
+    GeneratorParametersSchema,
+    ParameterSchema,
+    PreviewFormatSchema,
+    PreviewGenerationSchema,
+    PreviewGeneratorSchema,
+    ProviderSchema,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
+    normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
@@ -172,6 +190,9 @@ class ArtifactManager:
             )
             event_manager.assign_manager_to_request_type(
                 GetPreviewGeneratorDetailsRequest, self.on_handle_get_preview_generator_details_request
+            )
+            event_manager.assign_manager_to_request_type(
+                GetArtifactSchemasRequest, self.on_handle_get_artifact_schemas_request
             )
 
             event_manager.add_listener_to_app_event(
@@ -635,7 +656,7 @@ class ArtifactManager:
                 if has_validity_issue:
                     should_regenerate_preview = True
                 else:
-                    # Check if settings match
+                    # Check if preview matches current generator settings
                     preview_settings = self._get_preview_settings_from_config(
                         provider_class, request.artifact_provider_name
                     )
@@ -765,20 +786,11 @@ class ArtifactManager:
 
         # FAILURE CASE: Generator registration failed
         try:
-            # Register with registry (no provider instantiation - lazy instantiation preserved)
+            # Register with runtime registry (no provider instantiation - lazy instantiation preserved)
             self._registry.register_preview_generator_with_provider(provider_class, request.preview_generator_class)
 
-            # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
-
-            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-                provider_class, request.preview_generator_class
-            )
-            for key, default_value in config_schema.items():
-                config_request = SetConfigValueRequest(category_and_key=key, value=default_value)
-                GriptapeNodes.handle_request(config_request)
+            # Validate and conditionally write generator settings
+            self._validate_and_register_generator_settings(provider_class, request.preview_generator_class)
         except Exception as e:
             return RegisterPreviewGeneratorResultFailure(
                 result_details=f"Attempted to register preview generator with provider '{request.provider_friendly_name}'. "
@@ -852,15 +864,19 @@ class ArtifactManager:
             friendly_name = generator_class.get_friendly_name()
             source_formats = generator_class.get_supported_source_formats()
             preview_formats = generator_class.get_supported_preview_formats()
-            parameters = generator_class.get_parameters()
+            params_model_class = generator_class.get_parameters()
         except Exception as e:
             return GetPreviewGeneratorDetailsResultFailure(
                 result_details=f"Attempted to get preview generator details for '{request.preview_generator_friendly_name}' "
                 f"in provider '{request.provider_friendly_name}'. Failed due to: metadata access error - {e}"
             )
 
-        # Convert ProviderValue to tuple for serialization
-        parameters_dict = {name: (pv.default_value, pv.required) for name, pv in parameters.items()}
+        # Extract parameters from Pydantic model for serialization
+        parameters_dict = {}
+        for param_name, field_info in params_model_class.model_fields.items():
+            default_value = field_info.default
+            required = field_info.is_required()
+            parameters_dict[param_name] = (default_value, required)
 
         # SUCCESS PATH: Return generator details
         return GetPreviewGeneratorDetailsResultSuccess(
@@ -871,71 +887,95 @@ class ArtifactManager:
             parameters=parameters_dict,
         )
 
-    def get_artifact_schemas(self) -> dict:
+    def on_handle_get_artifact_schemas_request(
+        self,
+        request: GetArtifactSchemasRequest,  # noqa: ARG002
+    ) -> GetArtifactSchemasResultSuccess | GetArtifactSchemasResultFailure:
+        """Handle request for artifact configuration schemas.
+
+        Args:
+            request: The get schemas request (no parameters needed)
+
+        Returns:
+            Success with schemas dict or failure result
+        """
+        # No failure cases - this is a simple query operation
+
+        # SUCCESS PATH: Generate and return schemas
+        artifact_schemas_model = self._get_artifact_schemas()
+        schemas_dict = artifact_schemas_model.model_dump()
+        return GetArtifactSchemasResultSuccess(
+            result_details="Successfully retrieved artifact configuration schemas",
+            schemas=schemas_dict,
+        )
+
+    def _get_artifact_schemas(self) -> ArtifactSchemas:
         """Generate artifact configuration schemas for all registered providers.
 
         NO INSTANTIATION: Uses static methods and registry tracking to avoid loading heavyweight dependencies.
 
-        Returns detailed schema information including:
-        - Enum values for format and generator dropdowns
-        - Type information for generator parameters
-        - Default values and descriptions
-
         Returns:
-            Dictionary mapping provider keys to their schemas
+            ArtifactSchemas model containing all provider schemas with type safety
         """
-        schemas = {}
+        provider_schemas: dict[str, ProviderSchema] = {}
 
         for provider_class in self._registry.get_all_provider_classes():
             provider_friendly_name = provider_class.get_friendly_name()
-            provider_key = provider_friendly_name.lower().replace(" ", "_")
+            provider_key = normalize_friendly_name_to_key(provider_friendly_name)
 
             provider_formats = sorted(provider_class.get_preview_formats())
             default_format = provider_class.get_default_preview_format()
             default_preview_generator_name = provider_class.get_default_preview_generator()
 
             preview_generator_names = []
-            preview_generator_schemas = {}
+            generator_configs: dict[str, GeneratorParametersSchema] = {}
 
-            # Get preview generators from registry without instantiation
+            # Build generator configurations
             for preview_generator_class in self._registry.get_preview_generators_for_provider(provider_class):
                 preview_generator_friendly_name = preview_generator_class.get_friendly_name()
-                preview_generator_key = preview_generator_friendly_name.lower().replace(" ", "_")
+                preview_generator_key = normalize_friendly_name_to_key(preview_generator_friendly_name)
                 preview_generator_names.append(preview_generator_friendly_name)
 
-                parameters = preview_generator_class.get_parameters()
-                param_schemas = {}
-                for param_name, provider_value in parameters.items():
-                    param_schemas[param_name] = {
-                        "type": provider_value.json_schema_type,
-                        "default": provider_value.default_value,
-                        "description": provider_value.description,
-                    }
+                # Get parameter model class
+                params_model_class = preview_generator_class.get_parameters()
 
-                preview_generator_schemas[preview_generator_key] = param_schemas
+                # Build parameter schemas
+                param_schemas: dict[str, ParameterSchema] = {}
+                for param_name, field_info in params_model_class.model_fields.items():
+                    json_schema_type = params_model_class.get_json_schema_type(param_name)
 
-            schemas[provider_key] = {
-                "preview_generation": {
-                    "preview_format": {
-                        "type": "string",
-                        "enum": provider_formats,
-                        "default": default_format,
-                        "description": f"{provider_friendly_name} format for generated previews",
-                    },
-                    "preview_generator": {
-                        "type": "string",
-                        "enum": sorted(preview_generator_names),
-                        "default": default_preview_generator_name,
-                        "description": "Preview generator to use for creating previews",
-                    },
-                    "preview_generator_configurations": preview_generator_schemas,
-                }
-            }
+                    param_schemas[param_name] = ParameterSchema(
+                        type=json_schema_type,
+                        default=field_info.default,
+                        description=field_info.description,
+                    )
 
-        return schemas
+                generator_configs[preview_generator_key] = GeneratorParametersSchema(root=param_schemas)
+
+            # Build provider schema
+            provider_schemas[provider_key] = ProviderSchema(
+                preview_generation=PreviewGenerationSchema(
+                    preview_format=PreviewFormatSchema(
+                        enum=provider_formats,
+                        default=default_format,
+                        description=f"{provider_friendly_name} format for generated previews",
+                    ),
+                    preview_generator=PreviewGeneratorSchema(
+                        enum=sorted(preview_generator_names),
+                        default=default_preview_generator_name,
+                        description="Preview generator to use for creating previews",
+                    ),
+                    preview_generator_configurations=GeneratorConfigurationsSchema(root=generator_configs),
+                )
+            )
+
+        return ArtifactSchemas(root=provider_schemas)
 
     def _register_provider_settings(self, provider_class: type) -> None:
         """Register provider settings and default generators in config system.
+
+        Validates existing config values and only writes defaults if invalid or missing.
+        Preserves valid user settings.
 
         Args:
             provider_class: The provider class to register settings for
@@ -944,29 +984,16 @@ class ArtifactManager:
             Default generators are registered WITHOUT instantiating the provider (lazy instantiation).
             Generator settings are registered statically using class methods.
         """
-        # Register provider-level settings
-        config_schema = self._registry.get_provider_config_schema(provider_class)
+        # Validate and write provider-level settings (format, generator name)
+        self._validate_and_write_provider_settings(provider_class)
 
-        for key, default_value in config_schema.items():
-            request = SetConfigValueRequest(category_and_key=key, value=default_value)
-            GriptapeNodes.handle_request(request)
-
-        # Register default preview generators and their settings WITHOUT instantiating provider
-        for preview_generator_class in provider_class.get_default_generators():
-            # Register with registry
+        # Register default preview generators and validate their settings
+        for preview_generator_class in provider_class.get_default_preview_generators():
+            # Register with runtime registry
             self._registry.register_preview_generator_with_provider(provider_class, preview_generator_class)
 
-            # Register generator settings using static method (no provider instantiation)
-            from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-                BaseArtifactProvider,
-            )
-
-            config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-                provider_class, preview_generator_class
-            )
-            for key, default_value in config_schema.items():
-                request = SetConfigValueRequest(category_and_key=key, value=default_value)
-                GriptapeNodes.handle_request(request)
+            # Validate and conditionally write generator settings
+            self._validate_and_register_generator_settings(provider_class, preview_generator_class)
 
     def _get_default_params_for_generator(self, generator_class: type[BaseArtifactPreviewGenerator]) -> dict[str, Any]:
         """Get default parameter values for a preview generator.
@@ -977,11 +1004,172 @@ class ArtifactManager:
         Returns:
             Dictionary of parameter names to default values
         """
-        parameters = generator_class.get_parameters()
-        default_params = {}
-        for param_name, provider_value in parameters.items():
-            default_params[param_name] = provider_value.default_value
-        return default_params
+        params_model_class = generator_class.get_parameters()
+        return params_model_class().model_dump()
+
+    def _read_generator_config(
+        self, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> dict[str, Any] | None:
+        """Read all parameters for a generator from config.
+
+        Args:
+            provider_class: The provider class
+            generator_class: The generator class
+
+        Returns:
+            Dictionary of parameter names to values, or None if no config exists
+        """
+        key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
+
+        request = GetConfigCategoryRequest(category=key_prefix)
+        result = GriptapeNodes.handle_request(request)
+
+        # Config category doesn't exist - no settings written yet
+        if not isinstance(result, GetConfigCategoryResultSuccess):
+            return None
+
+        return result.contents
+
+    def _write_generator_config(
+        self,
+        provider_class: type[BaseArtifactProvider],
+        generator_class: type[BaseArtifactPreviewGenerator],
+        params: dict[str, Any] | None = None,
+    ) -> None:
+        """Write generator config parameters using batch category write.
+
+        Args:
+            provider_class: The provider class
+            generator_class: The generator class
+            params: Parameter dict to write. If None, uses defaults from get_parameters()
+        """
+        if params is None:
+            params = self._get_default_params_for_generator(generator_class)
+
+        key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
+
+        # Single batched write for all parameters
+        request = SetConfigCategoryRequest(category=key_prefix, contents=params)
+        GriptapeNodes.handle_request(request)
+
+    def _write_provider_default_settings(self, provider_class: type[BaseArtifactProvider]) -> None:
+        """Write provider-level default settings (format and generator name) in one batch.
+
+        Args:
+            provider_class: The provider class
+        """
+        # Use canonical helper methods - avoids all brittle string construction
+        settings = {
+            provider_class.get_preview_format_leaf_key(): provider_class.get_default_preview_format(),
+            provider_class.get_preview_generator_leaf_key(): provider_class.get_default_preview_generator(),
+        }
+
+        category = provider_class.get_config_key_prefix()
+        request = SetConfigCategoryRequest(category=category, contents=settings)
+        GriptapeNodes.handle_request(request)
+
+    def _validate_and_register_generator_settings(
+        self, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
+    ) -> None:
+        """Validate and conditionally write generator settings to config.
+
+        Preserves valid user settings. Resets ALL settings to defaults if invalid.
+
+        Args:
+            provider_class: The provider class
+            generator_class: The generator class to register settings for
+        """
+        existing_config = self._read_generator_config(provider_class, generator_class)
+        generator_name = generator_class.get_friendly_name()
+
+        # No config exists - this is first initialization for this generator
+        if existing_config is None:
+            logger.debug(
+                "Initializing artifact preview generator '%s': No config found, writing defaults", generator_name
+            )
+            self._write_generator_config(provider_class, generator_class)
+            return
+
+        # Validate existing config using Pydantic model
+        params_model_class = generator_class.get_parameters()
+        try:
+            params_model_class.model_validate(existing_config)
+        except ValidationError as e:
+            # Invalid - reset to defaults
+            error_count = e.error_count()
+            # Format errors for logging: field -> error type
+            error_summary = ", ".join(f"{err['loc'][0] if err['loc'] else 'root'}: {err['type']}" for err in e.errors())
+            logger.warning(
+                "Validating artifact preview generator '%s': Invalid config (%d errors: %s). Resetting ALL parameters to defaults.",
+                generator_name,
+                error_count,
+                error_summary,
+            )
+            self._write_generator_config(provider_class, generator_class)
+        else:
+            # Valid config - check if all fields are present
+
+            # TODO: Remove this manual check after https://github.com/griptape-ai/griptape-nodes/issues/3980
+            # Once we normalize config on write, typos will be fixed automatically
+
+            # Check if all model fields are present in user's config
+            # Missing fields (even with defaults) may indicate typos
+            model_fields = set(params_model_class.model_fields.keys())
+            config_fields = set(existing_config.keys())
+            missing_fields = model_fields - config_fields
+
+            if missing_fields:
+                # Fields are missing (incomplete config)
+                # Write back normalized config to add defaults
+                logger.warning(
+                    "Validating artifact preview generator '%s': Config is missing fields: %s. "
+                    "Writing normalized config to add defaults.",
+                    generator_name,
+                    ", ".join(sorted(missing_fields)),
+                )
+                self._write_generator_config(provider_class, generator_class)
+            else:
+                # All fields present - keep existing settings
+                return
+
+    def _validate_and_write_provider_settings(self, provider_class: type[BaseArtifactProvider]) -> None:
+        """Validate provider-level settings. Resets to defaults if missing or invalid.
+
+        Args:
+            provider_class: The provider class to validate settings for
+        """
+        provider_name = provider_class.get_friendly_name()
+
+        format_key = provider_class.get_preview_format_config_key()
+        generator_key = provider_class.get_preview_generator_config_key()
+
+        # Check format validity
+        format_result = GriptapeNodes.handle_request(GetConfigValueRequest(category_and_key=format_key))
+        format_valid = (
+            isinstance(format_result, GetConfigValueResultSuccess)
+            and format_result.value in provider_class.get_preview_formats()
+        )
+
+        # Check generator validity
+        generator_result = GriptapeNodes.handle_request(GetConfigValueRequest(category_and_key=generator_key))
+        registered_generators = self._registry.get_preview_generators_for_provider(provider_class)
+        registered_names = [gen.get_friendly_name() for gen in registered_generators]
+        generator_valid = (
+            isinstance(generator_result, GetConfigValueResultSuccess) and generator_result.value in registered_names
+        )
+
+        # Write defaults if either invalid or missing
+        if not format_valid or not generator_valid:
+            if not format_valid:
+                logger.debug(
+                    "Initializing artifact provider '%s': Invalid or missing format, writing defaults", provider_name
+                )
+            if not generator_valid:
+                logger.debug(
+                    "Initializing artifact provider '%s': Invalid or missing generator, writing defaults", provider_name
+                )
+
+            self._write_provider_default_settings(provider_class)
 
     def _get_preview_settings_from_config(
         self, provider_class: type[BaseArtifactProvider], provider_name: str
@@ -1044,7 +1232,7 @@ class ArtifactManager:
         # Step 3: Read params (only if generator from config was registered)
         if generator_from_config_is_registered:
             # Generator from config is valid - read its params from config
-            generator_key = generator_name.lower().replace(" ", "_")
+            generator_key = normalize_friendly_name_to_key(generator_name)
             params_config_key = (
                 f"{provider_class.get_config_key_prefix()}.preview_generator_configurations.{generator_key}"
             )
@@ -1122,6 +1310,10 @@ class ArtifactManager:
         preview_format: str,
     ) -> ResolvedPreviewPath:
         """Resolve preview path using project situation template.
+
+        Uses the project's "save_preview" situation to determine where to save
+        the preview artifact. Decomposes the source path and provides variables
+        to the macro resolver.
 
         Args:
             source_path: Absolute path to source file

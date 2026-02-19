@@ -17,7 +17,6 @@ from typing import Any, ClassVar, NamedTuple
 import aioshutil
 import portalocker
 import send2trash
-from binaryornot.check import is_binary
 from rich.console import Console
 
 from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
@@ -25,6 +24,15 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
+from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
+from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
+from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
+from griptape_nodes.files.path_utils import path_needs_expansion
+from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -82,6 +90,9 @@ from griptape_nodes.retained_mode.managers.resource_types.compute_resource impor
 from griptape_nodes.retained_mode.managers.resource_types.cpu_resource import CPUResourceType
 from griptape_nodes.retained_mode.managers.resource_types.os_resource import Architecture, OSResourceType, Platform
 
+# File is not in static directory (or not a local file), create small preview
+from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+
 console = Console()
 
 # Windows MAX_PATH limit - paths longer than this need \\?\ prefix
@@ -98,16 +109,6 @@ class DiskSpaceInfo:
     total: int
     used: int
     free: int
-
-
-class FileContentResult(NamedTuple):
-    """Result from reading file content."""
-
-    content: str | bytes
-    encoding: str | None
-    mime_type: str
-    compression_encoding: str | None
-    file_size: int
 
 
 class FileWriteAttemptResult(NamedTuple):
@@ -132,34 +133,6 @@ class CopyTreeValidationResult:
     dest_normalized: str
     source_path: Path
     destination_path: Path
-
-
-class FilenameParts(NamedTuple):
-    """Components of a filename for suffix injection strategy.
-
-    Attributes:
-        directory: Parent directory path
-        basename: Filename without extension or suffix
-        extension: File extension including dot (e.g., ".png"), empty string if no extension
-    """
-
-    directory: Path
-    basename: str
-    extension: str
-
-
-class DecomposedPath(NamedTuple):
-    """Components of a decomposed source path for preview generation.
-
-    Attributes:
-        drive_volume_mount: Optional drive/volume/mount (e.g., "C", "Volumes/Backup")
-        source_relative_path: Optional subdirectories (e.g., "images/subdir")
-        source_file_name: Filename with extension (e.g., "photo.png")
-    """
-
-    drive_volume_mount: str | None
-    source_relative_path: str | None
-    source_file_name: str
 
 
 class WindowsSpecialFolderError(OSError):
@@ -212,6 +185,34 @@ class WindowsSpecialFolderResult(NamedTuple):
 
     special_path: Path | None
     remaining_parts: list[str] | None
+
+
+class FilenameParts(NamedTuple):
+    """Components of a filename for suffix injection strategy.
+
+    Attributes:
+        directory: Parent directory path
+        basename: Filename without extension or suffix
+        extension: File extension including dot
+    """
+
+    directory: Path
+    basename: str
+    extension: str
+
+
+class DecomposedPath(NamedTuple):
+    """Components of a decomposed source path for preview generation.
+
+    Attributes:
+        drive_volume_mount: Optional drive/volume/mount (e.g., "C", "Volumes/Backup")
+        source_relative_path: Optional subdirectories (e.g., "images/subdir")
+        source_file_name: Source file basename with extension
+    """
+
+    drive_volume_mount: str | None
+    source_relative_path: str | None
+    source_file_name: str
 
 
 class OSManager:
@@ -282,121 +283,6 @@ class OSManager:
                 normalized = normalized[len(userprofile) :].lstrip("/\\")
         parts = [p.lower() for p in normalized.split("/") if p]
         return parts
-
-    @staticmethod
-    def decompose_source_path(  # noqa: C901, PLR0912
-        absolute_path: Path,
-        workspace_dir: Path,
-    ) -> DecomposedPath:
-        r"""Decompose source path into semantic components for preview path generation.
-
-        This function breaks down a file path into three components:
-        - Drive/volume/mount identifier (optional): For Windows drives, macOS volumes, Linux mounts
-        - Subdirectories (optional): Directory path between the root/drive and the filename
-        - Filename (required): The actual file name with extension
-
-        Cross-platform support: This method detects path patterns from all platforms (Windows drives,
-        macOS volumes, Linux mounts, UNC paths) regardless of the current OS. This is necessary because
-        preview paths must be consistently decomposed even when a project created on one platform is
-        opened on another (e.g., a Windows path "C:\temp\file.txt" stored in project metadata must
-        be correctly decomposed when opened on macOS).
-
-        Args:
-            absolute_path: Source file path to decompose (should be absolute)
-            workspace_dir: Workspace directory for relative path detection.
-                          If path is within workspace, drive/volume component is omitted.
-
-        Returns:
-            DecomposedPath with three components
-        """
-        # Extract filename first (always present)
-        source_file_name = absolute_path.name
-
-        # Convert path to string for pattern matching
-        path_str = str(absolute_path)
-
-        # Normalize path - convert backslashes to forward slashes
-        normalized_path = path_str.replace("\\", "/")
-
-        # Strip Windows long path prefix (\\?\ or \\?\UNC\) if present
-        # This ensures paths written with normalize_path_for_platform can be decomposed correctly
-        if normalized_path.upper().startswith("//?/UNC/"):
-            # Windows long UNC path: \\?\UNC\server\share → //server/share
-            normalized_path = "//" + normalized_path[8:]
-        elif normalized_path.startswith("//?/"):
-            # Windows long path: \\?\C:\path → C:/path
-            normalized_path = normalized_path[4:]
-
-        # Initialize result variables
-        drive_volume_mount: str | None = None
-        source_relative_path: str | None = None
-
-        # Check for UNC paths (Windows network paths like \\server\share\file.txt)
-        unc_match = OSManager.WINDOWS_UNC_PATTERN.match(normalized_path)
-        if unc_match:
-            server = unc_match.group(1)
-            share = unc_match.group(2)
-            remainder = unc_match.group(3)
-
-            drive_volume_mount = f"{server}/{share}"
-
-            if remainder:
-                remainder_parts = remainder.split("/")
-                if len(remainder_parts) > 1:
-                    source_relative_path = "/".join(remainder_parts[:-1])
-
-        # Check if path is within workspace (only if not UNC and workspace_dir provided)
-        elif workspace_dir and absolute_path.is_relative_to(workspace_dir):
-            relative_to_workspace = absolute_path.relative_to(workspace_dir)
-
-            if relative_to_workspace.parent != Path():
-                source_relative_path = relative_to_workspace.parent.as_posix()
-
-        # Path is outside workspace - detect drive/volume/mount prefix
-        else:
-            remaining_path = normalized_path
-
-            # Check for Windows drive letter (C:, D:, etc.)
-            drive_match = OSManager.WINDOWS_DRIVE_PATTERN.match(normalized_path)
-            if drive_match:
-                drive_volume_mount = drive_match.group(1).upper()
-                remaining_path = re.sub(
-                    OSManager._WINDOWS_DRIVE_STRIP_PATTERN, "", normalized_path, flags=re.IGNORECASE
-                )
-
-            # Check for macOS volume (/Volumes/VolumeName)
-            elif normalized_path.startswith("/Volumes/"):
-                volume_match = OSManager.MACOS_VOLUME_PATTERN.match(normalized_path)
-                if volume_match:
-                    volume_name = volume_match.group(1)
-                    drive_volume_mount = f"Volumes/{volume_name}"
-                    remaining_path = re.sub(OSManager._MACOS_VOLUME_STRIP_PATTERN, "", normalized_path)
-
-            # Check for Linux mounts (/mnt/mountname or /media/mountname)
-            elif OSManager.LINUX_MOUNT_PATTERN.match(normalized_path):
-                mount_match = OSManager.LINUX_MOUNT_PATTERN.match(normalized_path)
-                if mount_match:
-                    mount_type = mount_match.group(1)
-                    mount_name = mount_match.group(2)
-                    drive_volume_mount = f"{mount_type}/{mount_name}"
-                    remaining_path = re.sub(OSManager._LINUX_MOUNT_STRIP_PATTERN, "", normalized_path)
-
-            # Unix/Linux absolute paths (starting with /)
-            elif normalized_path.startswith("/"):
-                remaining_path = normalized_path.lstrip("/")
-
-            # Extract subdirectories from remaining path
-            if remaining_path:
-                parts = remaining_path.split("/")
-                if len(parts) > 1:
-                    source_relative_path = "/".join(parts[:-1])
-
-        # SUCCESS PATH: Return decomposed components
-        return DecomposedPath(
-            drive_volume_mount=drive_volume_mount,
-            source_relative_path=source_relative_path,
-            source_file_name=source_file_name,
-        )
 
     def try_resolve_windows_special_folder(self, parts: list[str]) -> WindowsSpecialFolderResult | None:
         """Resolve Windows special folder from path parts.
@@ -473,10 +359,29 @@ class OSManager:
             # Store event_manager for direct access during resource registration
             self._event_manager = event_manager
 
+            # Initialize file read drivers for multi-source file reading
+            self._initialize_file_drivers()
+
             # Register system resources immediately using the event_manager directly
             # This must happen before libraries are loaded so they can check requirements
             # We use event_manager directly to avoid singleton recursion issues
             self._register_system_resources_direct()
+
+    def _initialize_file_drivers(self) -> None:
+        """Initialize file drivers for multi-source file reading.
+
+        Drivers are automatically sorted by priority on registration.
+        """
+        FileDriverRegistry.register(StaticServerFileDriver())
+        FileDriverRegistry.register(HttpFileDriver())
+        FileDriverRegistry.register(DataUriFileDriver())
+
+        cloud_driver = GriptapeCloudFileDriver.create_from_env()
+        if cloud_driver:
+            FileDriverRegistry.register(cloud_driver)
+
+        FileDriverRegistry.register(Base64FileDriver())
+        FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
         """Get the workspace path from config."""
@@ -554,7 +459,7 @@ class OSManager:
 
         # Success path at the end - compute final path and return
         if resolved is not None and resolved.special_path is not None:
-            extra_parts: list[str] = resolved.remaining_parts if resolved.remaining_parts else []
+            extra_parts: list[str] = resolved.remaining_parts or []
             if extra_parts:
                 final_path = resolved.special_path / Path(*extra_parts)
             else:
@@ -600,20 +505,7 @@ class OSManager:
             resolve_path_safely(Path("/abs/nonexistent/path"))
             → Path("/abs/nonexistent/path")  # NOT resolved relative to CWD
         """
-        # Convert to absolute if relative
-        if not path.is_absolute():
-            path = Path.cwd() / path
-
-        # Normalize (remove . and .., collapse slashes) without resolving symlinks
-        # This works consistently even for non-existent paths on Windows
-        return Path(os.path.normpath(path))
-
-    def _path_needs_expansion(self, path_str: str) -> bool:
-        """Return True if path contains env vars, is absolute, or starts with ~ (needs _expand_path)."""
-        has_env_vars = "%" in path_str or "$" in path_str
-        is_absolute = Path(path_str).is_absolute()
-        starts_with_tilde = path_str.startswith("~")
-        return has_env_vars or is_absolute or starts_with_tilde
+        return pr_resolve(path)
 
     def _resolve_file_path(self, path_str: str, *, workspace_only: bool = False) -> Path:
         """Resolve a file path, handling absolute, relative, and tilde paths.
@@ -626,7 +518,7 @@ class OSManager:
             Resolved Path object
         """
         try:
-            if self._path_needs_expansion(path_str):
+            if path_needs_expansion(path_str):
                 return self._expand_path(path_str)
             return self.resolve_path_safely(self._get_workspace_path() / path_str)
         except (ValueError, RuntimeError):
@@ -788,12 +680,9 @@ class OSManager:
         Returns:
             Path string with surrounding quotes removed if present
         """
-        if len(path_str) >= 2 and (  # noqa: PLR2004
-            (path_str.startswith("'") and path_str.endswith("'"))
-            or (path_str.startswith('"') and path_str.endswith('"'))
-        ):
-            return path_str[1:-1]
-        return path_str
+        from griptape_nodes.files.path_utils import strip_surrounding_quotes as pr_strip
+
+        return pr_strip(path_str)
 
     def sanitize_path_string(self, path: str | Path | Any) -> str | Any:
         r"""Clean path strings by removing newlines, carriage returns, shell escapes, and quotes.
@@ -839,40 +728,9 @@ class OSManager:
         Returns:
             Sanitized path string, or original value if not a string/Path
         """
-        # Convert Path objects to strings
-        if isinstance(path, Path):
-            path = str(path)
+        from griptape_nodes.files.path_utils import sanitize_path_string as pr_sanitize
 
-        if not isinstance(path, str):
-            return path
-
-        # First, strip surrounding quotes
-        path_str = OSManager.strip_surrounding_quotes(path)
-
-        # Handle Windows extended-length paths (\\?\...) specially
-        # These are used for paths longer than 260 characters on Windows
-        # We need to sanitize the path part but preserve the prefix
-        extended_length_prefix = ""
-        if path_str.startswith("\\\\?\\"):
-            extended_length_prefix = "\\\\?\\"
-            path_str = path_str[4:]  # Remove prefix temporarily
-
-        # Remove shell escape characters (backslashes before special chars only)
-        # Matches: space ' " ( ) { } [ ] & | ; < > $ ` ! * ? /
-        # Does NOT match: \U \t \f etc in Windows paths like C:\Users
-        path_str = re.sub(r"\\([ '\"(){}[\]&|;<>$`!*?/])", r"\1", path_str)
-
-        # Remove newlines and carriage returns from anywhere in the path
-        path_str = path_str.replace("\n", "").replace("\r", "")
-
-        # Strip leading/trailing whitespace
-        path_str = path_str.strip()
-
-        # Restore extended-length prefix if it was present
-        if extended_length_prefix:
-            path_str = extended_length_prefix + path_str
-
-        return path_str
+        return pr_sanitize(path)
 
     def normalize_path_for_platform(self, path: Path) -> str:
         r"""Convert Path to string with Windows long path support if needed.
@@ -893,21 +751,31 @@ class OSManager:
             String representation of path, cleaned of newlines/carriage returns,
             with Windows long path prefix if needed
         """
-        path_str = str(path.resolve())
+        from griptape_nodes.files.path_utils import normalize_path_for_platform as pr_normalize
 
-        # Clean path to remove newlines/carriage returns, shell escapes, and quotes
-        # This handles cases where merge_texts nodes accidentally add newlines between path components
-        path_str = self.sanitize_path_string(path_str)
+        return pr_normalize(path)
 
-        # Windows long path handling (paths > WINDOWS_MAX_PATH chars need \\?\ prefix)
-        if self.is_windows() and len(path_str) >= WINDOWS_MAX_PATH and not path_str.startswith("\\\\?\\"):
-            # UNC paths (\\server\share) need \\?\UNC\ prefix
-            if path_str.startswith("\\\\"):
-                return f"\\\\?\\UNC\\{path_str[2:]}"
-            # Regular paths need \\?\ prefix
-            return f"\\\\?\\{path_str}"
+    @staticmethod
+    def format_command_line(args: list[str]) -> str:
+        """Format a list of arguments as a single command-line string safe to copy-paste into a shell.
 
-        return path_str
+        Uses subprocess.list2cmdline on Windows and shlex.quote on Unix; quotes are added
+        only when required for correct parsing (e.g. paths with spaces).
+
+        Args:
+            args: List of command and arguments (e.g. [sys.executable, script_path]).
+
+        Returns:
+            Single string that can be pasted into a terminal.
+        """
+        if not args:
+            return ""
+        if OSManager.is_windows():
+            return subprocess.list2cmdline(args)
+
+        import shlex
+
+        return " ".join(shlex.quote(arg) for arg in args)
 
     # ============================================================================
     # CREATE_NEW File Collision Policy - Helper Methods
@@ -1067,94 +935,55 @@ class OSManager:
 
         return None
 
-    def _parse_filename_parts(self, path: Path) -> FilenameParts:
-        """Parse filename into directory, basename, and extension for suffix injection.
+    def _handle_parent_directory_failure(
+        self,
+        parent_failure_reason: FileIOFailureReason,
+        candidate_path: Path,
+    ) -> WriteFileResultFailure:
+        """Create failure result for parent directory errors.
 
         Args:
-            path: Full file path to parse
+            parent_failure_reason: The failure reason from _ensure_parent_directory_ready
+            candidate_path: The file path that failed
 
         Returns:
-            FilenameParts with directory, basename, extension
-
-        Examples:
-            /path/to/render.png → FilenameParts(Path("/path/to"), "render", ".png")
-            /path/to/file → FilenameParts(Path("/path/to"), "file", "")
-            /path/to/.dotfile → FilenameParts(Path("/path/to"), ".dotfile", "")
-            /path/to/file.tar.gz → FilenameParts(Path("/path/to"), "file.tar", ".gz")
+            WriteFileResultFailure with appropriate error message
         """
-        directory = path.parent
-        filename = path.name
+        match parent_failure_reason:
+            case FileIOFailureReason.PERMISSION_DENIED:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+            case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+            case _:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+        return WriteFileResultFailure(
+            failure_reason=parent_failure_reason,
+            result_details=msg,
+        )
 
-        # Handle dotfiles (files starting with .)
-        if filename.startswith(".") and filename.count(".") == 1:
-            # .dotfile with no extension
-            return FilenameParts(directory=directory, basename=filename, extension="")
-
-        # Find last dot for extension
-        if "." in filename:
-            last_dot = filename.rfind(".")
-            basename = filename[:last_dot]
-            extension = filename[last_dot:]
-            return FilenameParts(directory=directory, basename=basename, extension=extension)
-
-        # No extension
-        return FilenameParts(directory=directory, basename=filename, extension="")
-
-    def _build_suffix_glob_pattern(self, directory: Path, basename: str, extension: str) -> str:
-        """Build glob pattern for suffix injection strategy.
+    def _find_next_index_with_gap_fill(self, existing_indices: list[int]) -> int:
+        """Find next available index using fill-gaps strategy.
 
         Args:
-            directory: Parent directory
-            basename: Filename without extension
-            extension: File extension including dot
+            existing_indices: List of existing indices
 
         Returns:
-            Glob pattern string
+            Next available index (1-based)
 
         Examples:
-            ("render", ".png") → "render_*.png"
-            ("file", "") → "file_*"
+            [] -> 1
+            [1, 2, 3] -> 4
+            [1, 3, 4] -> 2 (fills gap)
         """
-        if extension:
-            return str(directory / f"{basename}_*{extension}")
-        return str(directory / f"{basename}_*")
+        if not existing_indices:
+            return 1
 
-    def _extract_suffix_index(self, filename: str, basename: str, extension: str) -> int | None:
-        """Extract numeric index from suffix in filename.
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
 
-        Args:
-            filename: Full filename (e.g., "render_123.png")
-            basename: Expected base name (e.g., "render")
-            extension: Expected extension (e.g., ".png")
-
-        Returns:
-            Integer index if found, None otherwise
-
-        Examples:
-            ("render_123.png", "render", ".png") → 123
-            ("render_1.png", "render", ".png") → 1
-            ("render.png", "render", ".png") → None (no suffix)
-            ("other_123.png", "render", ".png") → None (different basename)
-        """
-        # Remove extension if present
-        if extension and filename.endswith(extension):
-            name_without_ext = filename[: -len(extension)]
-        else:
-            name_without_ext = filename
-
-        # Check if it starts with basename
-        expected_prefix = f"{basename}_"
-        if not name_without_ext.startswith(expected_prefix):
-            return None
-
-        # Extract suffix after basename_
-        suffix = name_without_ext[len(expected_prefix) :]
-
-        # Try to parse as integer
-        if suffix.isdigit():
-            return int(suffix)
-
-        return None
+        return max(existing_indices) + 1
 
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
@@ -1274,67 +1103,7 @@ class OSManager:
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
-        if not existing_indices:
-            # No existing indexed files - start at 1
-            return 1
-
-        # Sort indices to find first gap
-        existing_indices.sort()
-
-        # Find first gap starting from 1
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i  # Found a gap
-
-        # No gaps - use max + 1
-        return max(existing_indices) + 1
-
-    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
-        """Validate read file request and return resolved file path and path string."""
-        # Validate that exactly one of file_path or file_entry is provided
-        if request.file_path is None and request.file_entry is None:
-            msg = "Either file_path or file_entry must be provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        if request.file_path is not None and request.file_entry is not None:
-            msg = "Only one of file_path or file_entry should be provided, not both"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Get the file path to read - handle paths consistently
-        if request.file_entry is not None:
-            file_path_str = request.file_entry.path
-        elif request.file_path is not None:
-            file_path_str = request.file_path
-        else:
-            msg = "No valid file path provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Sanitize path to handle shell escapes and quotes (e.g., from macOS Finder "Copy as Pathname")
-        file_path_str = self.sanitize_path_string(file_path_str)
-
-        file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
-
-        # Check if file exists and is actually a file
-        if not file_path.exists():
-            msg = f"File does not exist: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-        if not file_path.is_file():
-            msg = f"File is not a file: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-
-        # Check workspace constraints
-        is_workspace_path, _ = self._validate_workspace_path(file_path)
-        if request.workspace_only and not is_workspace_path:
-            msg = f"File is outside workspace: {file_path}"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        return file_path, file_path_str
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     @staticmethod
     def platform() -> str:
@@ -1527,7 +1296,7 @@ class OSManager:
             # Get the directory path to list
             if request.directory_path is None:
                 directory = self._get_workspace_path()
-            elif self._path_needs_expansion(request.directory_path):
+            elif path_needs_expansion(request.directory_path):
                 directory = self._expand_path(request.directory_path)
             else:
                 directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
@@ -1689,163 +1458,198 @@ class OSManager:
             logger.error(msg)
             return ListDirectoryResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
 
-    def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:  # noqa: PLR0911
-        """Handle a request to read file contents with automatic text/binary detection."""
-        # Validate request and get file path
+    def _detect_mime_type_from_location(self, location: str) -> str:
+        """Detect MIME type from location string.
+
+        Args:
+            location: URL, data URI, or file path
+
+        Returns:
+            MIME type string (default: "text/plain")
+        """
+        if location.startswith("data:"):
+            # Extract MIME type from data URI (e.g., "data:image/png;base64,...")
+            if ";" in location:
+                mime_part = location.split(";", maxsplit=1)[0].replace("data:", "")
+                return mime_part or "text/plain"
+            return "text/plain"
+
+        # Use mimetypes module for URLs and paths
+        mime_type, _ = mimetypes.guess_type(location, strict=True)
+        return mime_type or "text/plain"
+
+    def _is_text_content(self, content: bytes, mime_type: str) -> bool:
+        """Check if content is text based on MIME type and content analysis.
+
+        Args:
+            content: File content as bytes
+            mime_type: MIME type string
+
+        Returns:
+            True if content should be treated as text
+        """
+        # Check MIME type first
+        if mime_type.startswith(("text/", "application/json", "application/xml", "application/yaml")):
+            return True
+
+        # For binary MIME types, return False
+        if mime_type.startswith(("image/", "audio/", "video/", "application/octet-stream")):
+            return False
+
+        # For unknown types, try detecting from content
         try:
-            file_path, _file_path_str = self._validate_read_file_request(request)
+            content.decode("utf-8")
+        except (UnicodeDecodeError, AttributeError):
+            return False
+        else:
+            return True
+
+    async def _read_via_driver(
+        self, location: str, request: ReadFileRequest
+    ) -> ReadFileResultSuccess | ReadFileResultFailure:
+        """Read file using FileDriver system.
+
+        Driver handles validation (existence, permissions, format).
+        OSManager adds metadata enrichment and thumbnail generation for images.
+
+        Args:
+            location: Location string (URL, data URI, cloud path, or local path)
+            request: ReadFileRequest containing options like should_transform_image_content_to_thumbnail
+
+        Returns:
+            ReadFileResultSuccess with content and metadata, or ReadFileResultFailure
+        """
+        try:
+            # Get appropriate driver
+            driver = FileDriverRegistry.get_driver(location)
+
+            # Driver validates and reads
+            content = await driver.read(location, timeout=120.0)
+
+            # Add basic metadata
+            file_size = len(content)
+            mime_type = self._detect_mime_type_from_location(location)
+            is_text = self._is_text_content(content, mime_type)
+            encoding = "utf-8" if is_text else None
+
+            # Handle image thumbnail generation (if requested)
+            if mime_type.startswith("image/") and request.should_transform_image_content_to_thumbnail and not is_text:
+                content = self._generate_thumbnail_from_image_content(content, location, mime_type)
+                # Thumbnail returns a string (URL or data URI), not bytes
+                decoded_content: str | bytes = content
+                encoding = None
+            # Decode text content to str (API contract: text files return str, binary returns bytes)
+            elif is_text and encoding:
+                try:
+                    decoded_content = content.decode(encoding)
+                except UnicodeDecodeError:
+                    # If decoding fails, fall back to binary
+                    decoded_content = content
+                    encoding = None
+            else:
+                decoded_content = content
+
+            return ReadFileResultSuccess(
+                content=decoded_content,
+                file_size=file_size,
+                mime_type=mime_type,
+                encoding=encoding,
+                compression_encoding=None,
+                result_details="File read successfully.",
+            )
+        except (FileDriverNotFoundError, ValueError) as e:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details=str(e),
+            )
         except FileNotFoundError as e:
-            msg = f"File not found: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=str(e))
         except PermissionError as e:
-            msg = f"Permission denied: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except (ValueError, RuntimeError) as e:
-            msg = f"Invalid path: {e}"
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=str(e))
+        except IsADirectoryError as e:
+            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=str(e))
+        except Exception as e:
+            return ReadFileResultFailure(
+                failure_reason=FileIOFailureReason.IO_ERROR, result_details=f"Error reading from {location}: {e}"
+            )
+
+    async def on_read_file_request(self, request: ReadFileRequest) -> ResultPayload:
+        """Handle a request to read file contents with automatic text/binary detection.
+
+        All file reading is delegated to FileDriver system.
+        """
+        # Get location string from request
+        if request.file_entry is not None:
+            location = request.file_entry.path
+        elif request.file_path is not None:
+            location = request.file_path
+        else:
+            msg = "Either file_path or file_entry must be provided"
             logger.error(msg)
             return ReadFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error validating path: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
 
-        # Read file content
-        try:
-            result = self._read_file_content(file_path, request)
-        except PermissionError as e:
-            msg = f"Permission denied for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)
-        except IsADirectoryError:
-            msg = f"Path is a directory, not a file: {file_path}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IS_DIRECTORY, result_details=msg)
-        except UnicodeDecodeError as e:
-            msg = f"Encoding error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.ENCODING_ERROR, result_details=msg)
-        except OSError as e:
-            msg = f"I/O error for file {file_path}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.IO_ERROR, result_details=msg)
-        except Exception as e:
-            msg = f"Unexpected error reading file {file_path}: {type(e).__name__}: {e}"
-            logger.error(msg)
-            return ReadFileResultFailure(failure_reason=FileIOFailureReason.UNKNOWN, result_details=msg)
+        # Sanitize path string (basic cleanup)
+        location = self.sanitize_path_string(location)
 
-        # SUCCESS PATH - Only reached if no exceptions occurred
-        return ReadFileResultSuccess(
-            content=result.content,
-            file_size=result.file_size,
-            mime_type=result.mime_type,
-            encoding=result.encoding,
-            compression_encoding=result.compression_encoding,
-            result_details="File read successfully.",
-        )
+        # Read via driver system (driver handles all validation and I/O)
+        return await self._read_via_driver(location, request)
 
-    def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
-        """Read file content and return FileContentResult with all file information."""
-        # Get file size
-        file_size = file_path.stat().st_size
+    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
+        """Handle image content by creating previews or returning static URLs.
 
-        # Determine MIME type and compression encoding
-        normalized_path = self.normalize_path_for_platform(file_path)
-        mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
-        if mime_type is None:
-            mime_type = "text/plain"
+        Args:
+            content: Image bytes
+            file_path: File location (Path object, local path string, URL, or data URI)
+            mime_type: Image MIME type
 
-        # Determine if file is binary
-        try:
-            is_binary_file = is_binary(normalized_path)
-        except Exception as e:
-            msg = f"binaryornot detection failed for {file_path}: {e}"
-            logger.warning(msg)
-            is_binary_file = not mime_type.startswith(
-                ("text/", "application/json", "application/xml", "application/yaml")
-            )
-
-        # Read file content
-        if not is_binary_file:
-            content, encoding = self._read_text_file(file_path, request.encoding)
-        else:
-            content, encoding = self._read_binary_file(
-                file_path,
-                mime_type,
-                should_transform_to_thumbnail=request.should_transform_image_content_to_thumbnail,
-            )
-
-        return FileContentResult(
-            content=content,
-            encoding=encoding,
-            mime_type=mime_type,
-            compression_encoding=compression_encoding,
-            file_size=file_size,
-        )
-
-    def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
-        """Read file as text with fallback encodings."""
-        try:
-            with file_path.open(encoding=requested_encoding) as f:
-                return f.read(), requested_encoding
-        except UnicodeDecodeError:
-            try:
-                with file_path.open(encoding="utf-8") as f:
-                    return f.read(), "utf-8"
-            except UnicodeDecodeError:
-                with file_path.open("rb") as f:
-                    return f.read(), None
-
-    def _read_binary_file(
-        self, file_path: Path, mime_type: str, *, should_transform_to_thumbnail: bool
-    ) -> tuple[bytes | str, None]:
-        """Read file as binary, with optional thumbnail generation for images."""
-        with file_path.open("rb") as f:
-            content = f.read()
-
-        if mime_type.startswith("image/") and should_transform_to_thumbnail:
-            content = self._generate_thumbnail_from_image_content(content, file_path, mime_type)
-
-        return content, None
-
-    def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path, mime_type: str) -> str:
-        """Handle image content by creating previews or returning static URLs."""
+        Returns:
+            URL string (http://localhost:8124/workspace/...) or data URI
+        """
         # Store original bytes for preview creation
         original_image_bytes = content
 
-        # Check if file is already in the static files directory
-        config_manager = GriptapeNodes.ConfigManager()
-        static_dir = config_manager.workspace_path
-
+        # Check if file is already in the static files directory (only for local paths)
         try:
-            # Check if file is within the static files directory
-            file_relative_to_static = file_path.relative_to(static_dir)
-            # File is in static directory, construct URL directly
-            static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
-            msg = f"Image already in workspace directory, returning URL: {static_url}"
-            logger.debug(msg)
-        except ValueError:
-            # File is not in static directory, create small preview
-            from griptape_nodes.utils.image_preview import create_image_preview_from_bytes
+            # Convert to Path object if it's a string
+            path_obj = Path(file_path) if isinstance(file_path, str) else file_path
 
-            preview_data_url = create_image_preview_from_bytes(
-                original_image_bytes,  # type: ignore[arg-type]
-                max_width=200,
-                max_height=200,
-                quality=85,
-                image_format="WEBP",
-            )
+            # Only check workspace directory for absolute local paths
+            if path_obj.is_absolute():
+                config_manager = GriptapeNodes.ConfigManager()
+                static_dir = config_manager.workspace_path
 
-            if preview_data_url:
-                logger.debug("Image preview created (file not moved)")
-                return preview_data_url
-            # Fallback to data URL if preview creation fails
-            data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
-            logger.debug("Fallback to full image data URL")
-            return data_url
-        else:
-            return static_url
+                try:
+                    # Check if file is within the static files directory
+                    file_relative_to_static = path_obj.relative_to(static_dir)
+                except ValueError:
+                    # File is not in static directory, continue to preview creation
+                    pass
+                else:
+                    # File is in static directory, construct URL directly
+                    static_url = f"http://localhost:8124/workspace/{file_relative_to_static}"
+                    msg = f"Image already in workspace directory, returning URL: {static_url}"
+                    logger.debug(msg)
+                    return static_url
+        except (ValueError, OSError, TypeError):
+            # Not a valid local path (might be URL or data URI), continue to preview
+            pass
+
+        preview_data_url = create_image_preview_from_bytes(
+            original_image_bytes,  # type: ignore[arg-type]
+            max_width=200,
+            max_height=200,
+            quality=85,
+            image_format="WEBP",
+        )
+
+        if preview_data_url:
+            logger.debug("Image preview created (file not moved)")
+            return preview_data_url
+
+        # Fallback to data URL if preview creation fails
+        data_url = f"data:{mime_type};base64,{base64.b64encode(original_image_bytes).decode('utf-8')}"
+        logger.debug("Fallback to full image data URL")
+        return data_url
 
     def on_get_next_unused_filename_request(self, request: GetNextUnusedFilenameRequest) -> ResultPayload:
         """Handle a request to find the next available filename (preview only - no file creation)."""
@@ -2051,11 +1855,9 @@ class OSManager:
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
                     # we'll take their file name and turn it into a macro that appends _<index> to it.
                     # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
-                    macro_path = (
-                        self._convert_str_path_to_macro_with_index(request.file_path)
-                        if isinstance(request.file_path, str)
-                        else request.file_path
-                    )
+                    # For MacroPath inputs, the path is already fully resolved at this point,
+                    # so convert the resolved path string to inject {_index} as well.
+                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path))
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 
@@ -2076,7 +1878,8 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
+                        # This should not happen since we always inject {_index} above
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to missing index variable after conversion"
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.INVALID_PATH,
                             result_details=msg,
@@ -2139,17 +1942,7 @@ class OSManager:
                             create_parents=request.create_parents,
                         )
                         if parent_failure_reason is not None:
-                            match parent_failure_reason:
-                                case FileIOFailureReason.PERMISSION_DENIED:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                case _:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                            return WriteFileResultFailure(
-                                failure_reason=parent_failure_reason,
-                                result_details=msg,
-                            )
+                            return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 
@@ -3615,3 +3408,121 @@ class OSManager:
         except AttributeError:
             # Windows doesn't have os.uname(), return basic platform info
             return sys.platform
+
+    @staticmethod
+    def decompose_source_path(  # noqa: C901, PLR0912
+        absolute_path: Path,
+        workspace_dir: Path,
+    ) -> DecomposedPath:
+        r"""Decompose source path into semantic components for preview path generation.
+
+        This function breaks down a file path into three components:
+        - Drive/volume/mount identifier (optional): For Windows drives, macOS volumes, Linux mounts
+        - Subdirectories (optional): Directory path between the root/drive and the filename
+        - Filename (required): The actual file name with extension
+
+        Cross-platform support: This method detects path patterns from all platforms (Windows drives,
+        macOS volumes, Linux mounts, UNC paths) regardless of the current OS. This is necessary because
+        preview paths must be consistently decomposed even when a project created on one platform is
+        opened on another (e.g., a Windows path "C:\temp\file.txt" stored in project metadata must
+        be correctly decomposed when opened on macOS).
+
+        Args:
+            absolute_path: Source file path to decompose (should be absolute)
+            workspace_dir: Workspace directory for relative path detection.
+                          If path is within workspace, drive/volume component is omitted.
+
+        Returns:
+            DecomposedPath with three components
+        """
+        # Extract filename first (always present)
+        source_file_name = absolute_path.name
+
+        # Convert path to string for pattern matching
+        path_str = str(absolute_path)
+
+        # Normalize path - convert backslashes to forward slashes
+        normalized_path = path_str.replace("\\", "/")
+
+        # Strip Windows long path prefix (\\?\ or \\?\UNC\) if present
+        # This ensures paths written with normalize_path_for_platform can be decomposed correctly
+        if normalized_path.upper().startswith("//?/UNC/"):
+            # Windows long UNC path: \\?\UNC\server\share → //server/share
+            normalized_path = "//" + normalized_path[8:]
+        elif normalized_path.startswith("//?/"):
+            # Windows long path: \\?\C:\path → C:/path
+            normalized_path = normalized_path[4:]
+
+        # Initialize result variables
+        drive_volume_mount: str | None = None
+        source_relative_path: str | None = None
+
+        # Check for UNC paths (Windows network paths like \\server\share\file.txt)
+        unc_match = OSManager.WINDOWS_UNC_PATTERN.match(normalized_path)
+        if unc_match:
+            server = unc_match.group(1)
+            share = unc_match.group(2)
+            rest = unc_match.group(3) or ""  # Subdirectories after share (may be empty)
+
+            drive_volume_mount = f"{server}/{share}"
+            if rest:
+                # Extract subdirectories (everything except the filename)
+                rest_path = Path(rest)
+                if rest_path.parent != Path():
+                    source_relative_path = rest_path.parent.as_posix()
+
+            return DecomposedPath(
+                drive_volume_mount=drive_volume_mount,
+                source_relative_path=source_relative_path,
+                source_file_name=source_file_name,
+            )
+
+        # Check if path is within workspace
+        try:
+            relative_to_workspace = absolute_path.relative_to(workspace_dir)
+
+            if relative_to_workspace.parent != Path():
+                source_relative_path = relative_to_workspace.parent.as_posix()
+
+        # Path is outside workspace - detect drive/volume/mount prefix
+        except ValueError:
+            remaining_path = normalized_path
+
+            # Check for Windows drive letter (C:, D:, etc.)
+            drive_match = OSManager.WINDOWS_DRIVE_PATTERN.match(normalized_path)
+            if drive_match:
+                drive_volume_mount = drive_match.group(1).upper()
+                remaining_path = re.sub(
+                    OSManager._WINDOWS_DRIVE_STRIP_PATTERN, "", normalized_path, flags=re.IGNORECASE
+                )
+
+            # Check for macOS volume (/Volumes/VolumeName/...)
+            volume_match = OSManager.MACOS_VOLUME_PATTERN.match(normalized_path)
+            if volume_match:
+                drive_volume_mount = f"Volumes/{volume_match.group(1)}"
+                remaining_path = re.sub(OSManager._MACOS_VOLUME_STRIP_PATTERN, "", normalized_path)
+
+            # Check for Linux mount points (/mnt/... or /media/...)
+            mount_match = OSManager.LINUX_MOUNT_PATTERN.match(normalized_path)
+            if mount_match:
+                mount_type = mount_match.group(1)  # "mnt" or "media"
+                mount_name = mount_match.group(2)
+                drive_volume_mount = f"{mount_type}/{mount_name}"
+                remaining_path = re.sub(OSManager._LINUX_MOUNT_STRIP_PATTERN, "", normalized_path)
+
+            # Extract subdirectories from remaining path
+            if remaining_path and remaining_path != "/":
+                remaining_path_obj = Path(remaining_path)
+                parent_path = remaining_path_obj.parent
+                # Check if there's an actual parent directory (not root, not current dir)
+                if parent_path != Path() and str(parent_path) != ".":
+                    relative_str = parent_path.as_posix().lstrip("/")
+                    # Only set if we have a non-empty, non-dot path
+                    if relative_str and relative_str != ".":
+                        source_relative_path = relative_str
+
+        return DecomposedPath(
+            drive_volume_mount=drive_volume_mount,
+            source_relative_path=source_relative_path,
+            source_file_name=source_file_name,
+        )

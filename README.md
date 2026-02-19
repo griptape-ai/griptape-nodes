@@ -1,4 +1,7 @@
-# 🎨 Griptape Nodes
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/img/griptape_nodes_from_foundry_white.svg">
+  <img alt="Griptape Nodes" src="docs/assets/img/griptape_nodes_from_foundry_black.svg" width="600">
+</picture>
 
 Griptape Nodes is a powerful, visual, node-based workflow builder designed for professional artists and creators. Build and execute complex AI workflows through the cloud-based [Griptape Nodes IDE](https://app.nodes.griptape.ai/) - an intuitive drag-and-drop interface.
 

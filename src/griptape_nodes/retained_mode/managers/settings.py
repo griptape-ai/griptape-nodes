@@ -114,9 +114,9 @@ class AppInitializationComplete(BaseModel):
         description="Libraries to automatically load when the engine starts. Can contain paths to individual griptape_nodes_library.json files or directory paths (scanned recursively for library JSON files).",
     )
     workflows_to_register: list[str] = Field(default_factory=list)
-    secrets_to_register: list[str] = Field(
-        default_factory=lambda: ["HF_TOKEN", "GT_CLOUD_API_KEY"],
-        description="Core secrets to register in the secrets manager. Library-specific secrets are registered automatically from library settings.",
+    secrets_to_register: list[str] | dict[str, str] = Field(
+        default_factory=lambda: {"HF_TOKEN": "", "GT_CLOUD_API_KEY": ""},
+        description="Core secrets to register. Can be a list of secret names (default to empty values) or a dict mapping names to default values. Library-specific secrets are registered automatically from library settings.",
     )
     models_to_download: list[str] = Field(default_factory=list)
     projects_to_register: list[str] = Field(
@@ -224,6 +224,24 @@ class Settings(BaseModel):
         category=EXECUTION,
         default=5,
         description="Maximum number of nodes executing at a time for parallel execution.",
+    )
+    heuristic_has_connection_from_previous_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes connected to the previously executed node",
+        ge=0.0,
+    )
+    heuristic_distance_to_node_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes based on graph distance from recently executed nodes",
+        ge=0.0,
+    )
+    heuristic_top_left_to_bottom_right_weight: float = Field(
+        category=EXECUTION,
+        default=1.0,
+        description="Weight for prioritizing nodes based on visual position (top-left to bottom-right)",
+        ge=0.0,
     )
     storage_backend: Literal["local", "gtc"] = Field(category=STORAGE, default="local")
     auto_inject_workflow_metadata: bool = Field(

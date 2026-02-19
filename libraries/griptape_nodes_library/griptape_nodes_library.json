@@ -1,38 +1,42 @@
 {
   "name": "Griptape Nodes Library",
-  "library_schema_version": "0.1.0",
+  "library_schema_version": "0.6.0",
   "settings": [
     {
       "description": "API keys required by nodes in this library",
       "category": "app_events.on_app_initialization_complete",
       "contents": {
-        "secrets_to_register": [
-          "OPENAI_API_KEY",
-          "ANTHROPIC_API_KEY",
-          "COHERE_API_KEY",
-          "GROK_API_KEY",
-          "GROQ_API_KEY",
-          "NVIDIA_API_KEY",
-          "AWS_ACCESS_KEY_ID",
-          "AWS_SECRET_ACCESS_KEY",
-          "AWS_DEFAULT_REGION",
-          "GOOGLE_API_KEY",
-          "GOOGLE_API_SEARCH_ID",
-          "EXA_API_KEY",
-          "ELEVEN_LABS_API_KEY"
-        ]
+        "secrets_to_register": {
+          "OPENAI_API_KEY": "",
+          "ANTHROPIC_API_KEY": "",
+          "COHERE_API_KEY": "",
+          "GROK_API_KEY": "",
+          "GROQ_API_KEY": "",
+          "NVIDIA_API_KEY": "",
+          "AWS_ACCESS_KEY_ID": "",
+          "AWS_SECRET_ACCESS_KEY": "",
+          "AWS_DEFAULT_REGION": "",
+          "GOOGLE_API_KEY": "",
+          "GOOGLE_API_SEARCH_ID": "",
+          "EXA_API_KEY": "",
+          "ELEVEN_LABS_API_KEY": "",
+          "OPENBLAS_NUM_THREADS": "1"
+        }
       }
     }
   ],
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.63.1",
-    "engine_version": "0.71.0",
-    "tags": ["Griptape", "AI"],
+    "library_version": "0.63.7",
+    "engine_version": "0.74.0",
+    "tags": [
+      "Griptape",
+      "AI"
+    ],
     "dependencies": {
       "pip_dependencies": [
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.8.12",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.9.3",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1",
@@ -2040,7 +2044,7 @@
         "category": "misc",
         "description": "Create a group node to organize your workflow",
         "display_name": "Group",
-        "icon": "vault",
+        "icon": "group",
         "group": "create",
         "is_node_group": true
       }

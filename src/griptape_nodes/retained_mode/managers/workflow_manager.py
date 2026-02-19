@@ -27,6 +27,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -160,7 +161,6 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -1005,11 +1005,12 @@ class WorkflowManager:
                 )
             )
 
-        # Success path at end
-        run_command = f"{sys.executable} {complete_file_path}"
+        # Success path at end: quote paths so run_command works on Windows (spaces in path) and when copy-pasted into a shell
+        run_command = OSManager.format_command_line([sys.executable, str(complete_file_path)])
         return GetWorkflowRunCommandResultSuccess(
             run_command=run_command,
             workflow_shape=workflow_shape,
+            engine_os=GriptapeNodes.OSManager()._get_platform_name(),
             result_details=ResultDetails(message=f"Run command: {run_command}", level=logging.DEBUG),
         )
 

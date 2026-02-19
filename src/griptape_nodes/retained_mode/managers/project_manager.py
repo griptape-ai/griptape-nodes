@@ -23,6 +23,7 @@ from griptape_nodes.common.project_templates import (
     SituationTemplate,
     load_project_template_from_yaml,
 )
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
@@ -63,7 +64,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     SetCurrentProjectResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.utils.path_utils import resolve_workspace_path
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.config_manager import ConfigManager

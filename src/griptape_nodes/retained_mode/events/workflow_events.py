@@ -401,17 +401,19 @@ class GetWorkflowRunCommandRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class GetWorkflowRunCommandResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
-    """Workflow run command retrieved successfully.
+    r"""Workflow run command retrieved successfully.
 
     Only returned when the workflow has Start and End nodes. When absent, the request fails with GetWorkflowRunCommandResultFailure.
 
     Args:
-        run_command: Full command string: python_executable_path workflow_file_path
+        run_command: Full command string; paths are quoted only when required (e.g. spaces), e.g. python.exe workflow.py or "C:\...\python.exe" "C:\...\workflow.py"
         workflow_shape: Input and output shape from StartNodes/EndNodes (inputs/outputs per node)
+        engine_os: Platform StrEnum value where the engine is running (windows, darwin, linux)
     """
 
     run_command: str
     workflow_shape: WorkflowShape
+    engine_os: str
 
 
 @dataclass

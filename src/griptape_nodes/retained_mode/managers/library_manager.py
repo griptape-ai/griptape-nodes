@@ -28,6 +28,7 @@ from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -39,6 +40,7 @@ from griptape_nodes.node_library.library_registry import (
 )
 from griptape_nodes.retained_mode.events.app_events import (
     AppInitializationComplete,
+    ConfigChanged,
     EngineInitializationProgress,
     GetEngineVersionRequest,
     GetEngineVersionResultSuccess,
@@ -170,7 +172,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.libraries import (
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.retained_mode.managers.settings import LIBRARIES_TO_DOWNLOAD_KEY, LIBRARIES_TO_REGISTER_KEY
 from griptape_nodes.utils.async_utils import subprocess_run
-from griptape_nodes.utils.dict_utils import merge_dicts
+from griptape_nodes.utils.dict_utils import merge_dicts, normalize_secrets_to_register
 from griptape_nodes.utils.file_utils import find_file_in_directory, find_files_recursive
 from griptape_nodes.utils.git_utils import (
     GitCloneError,
@@ -194,7 +196,6 @@ from griptape_nodes.utils.library_utils import (
     filter_old_xdg_library_paths,
     is_monorepo,
 )
-from griptape_nodes.utils.path_utils import resolve_workspace_path
 from griptape_nodes.utils.uv_utils import find_uv_bin
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -403,6 +404,10 @@ class LibraryManager:
         event_manager.add_listener_to_app_event(
             AppInitializationComplete,
             self.on_app_initialization_complete,
+        )
+        event_manager.add_listener_to_app_event(
+            ConfigChanged,
+            self.on_config_changed,
         )
 
     def print_library_load_status(self) -> None:
@@ -843,6 +848,7 @@ class LibraryManager:
             library_name = existing_schema.name
             library_metadata = existing_schema.metadata
             categories = existing_schema.categories
+            widgets = existing_schema.widgets
 
             # Update schema version to latest
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
@@ -854,36 +860,7 @@ class LibraryManager:
                 sandbox_directory,
             )
 
-            # Create placeholder node definitions (original behavior)
-            node_definitions = []
-            for candidate in sandbox_node_candidates:
-                # Use placeholder class name to make it obvious when discovery hasn't run yet
-                class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
-                file_name = candidate.name
-
-                # Create a placeholder node definition - we can't get the actual class metadata
-                # without importing, so we use defaults
-                node_metadata = NodeMetadata(
-                    category=self.SANDBOX_CATEGORY_NAME,
-                    description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
-                    display_name=file_name,
-                    icon="square-dashed",
-                    color=None,
-                )
-                node_definition = NodeDefinition(
-                    class_name=class_name,
-                    file_path=str(candidate.relative_to(sandbox_directory)),
-                    metadata=node_metadata,
-                )
-                node_definitions.append(node_definition)
-
-            if not node_definitions:
-                logger.debug(
-                    "No valid node files found in sandbox directory '%s'. Creating empty sandbox library metadata.",
-                    sandbox_directory,
-                )
-                # Continue with empty list - create valid schema with 0 nodes
-                node_definitions = []
+            node_definitions = self._create_placeholder_node_definitions(sandbox_node_candidates, sandbox_directory)
 
             # Create default metadata
             sandbox_category = CategoryDefinition(
@@ -918,6 +895,7 @@ class LibraryManager:
             ]
             library_name = LibraryManager.SANDBOX_LIBRARY_NAME
             library_schema_version = LibrarySchema.LATEST_SCHEMA_VERSION
+            widgets = None  # Fresh schemas have no widgets defined yet
 
         # Create the library schema (now using variables set by either path)
         library_schema = LibrarySchema(
@@ -926,6 +904,7 @@ class LibraryManager:
             metadata=library_metadata,
             categories=categories,
             nodes=node_definitions,
+            widgets=widgets,
         )
 
         # Sandbox libraries are never git repositories - always set to None
@@ -940,6 +919,40 @@ class LibraryManager:
             git_ref=git_ref,
             result_details=details,
         )
+
+    def _create_placeholder_node_definitions(
+        self,
+        sandbox_node_candidates: list[Path],
+        sandbox_directory: Path,
+    ) -> list[NodeDefinition]:
+        """Create placeholder node definitions for sandbox files that haven't been imported yet.
+
+        Args:
+            sandbox_node_candidates: List of Python files found in sandbox directory
+            sandbox_directory: Path to sandbox directory for computing relative paths
+
+        Returns:
+            List of placeholder NodeDefinitions
+        """
+        node_definitions = []
+        for candidate in sandbox_node_candidates:
+            class_name = self.UNRESOLVED_SANDBOX_CLASS_NAME
+            file_name = candidate.name
+
+            node_metadata = NodeMetadata(
+                category=self.SANDBOX_CATEGORY_NAME,
+                description=f"'{file_name}' may contain one or more nodes defined in this candidate file.",
+                display_name=file_name,
+                icon="square-dashed",
+                color=None,
+            )
+            node_definition = NodeDefinition(
+                class_name=class_name,
+                file_path=str(candidate.relative_to(sandbox_directory)),
+                metadata=node_metadata,
+            )
+            node_definitions.append(node_definition)
+        return node_definitions
 
     def _merge_sandbox_nodes(
         self,
@@ -1352,6 +1365,8 @@ class LibraryManager:
                         EvaluateLibraryFitnessRequest(schema=metadata_result.library_schema)
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
+                        library_info.fitness = evaluate_result.fitness
+                        library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)
 
@@ -1491,10 +1506,21 @@ class LibraryManager:
                                         logger.error(details)
                                         continue
                                 else:
+                                    # Normalize secrets_to_register before merge (handles list/dict format mismatch)
+                                    library_contents = dict(library_data_setting.contents)
+                                    existing_contents = dict(get_category_result.contents)
+                                    if "secrets_to_register" in library_contents:
+                                        library_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            library_contents["secrets_to_register"]
+                                        )
+                                    if "secrets_to_register" in existing_contents:
+                                        existing_contents["secrets_to_register"] = normalize_secrets_to_register(
+                                            existing_contents["secrets_to_register"]
+                                        )
                                     # Merge with existing category
                                     existing_category_contents = merge_dicts(
-                                        library_data_setting.contents,
-                                        get_category_result.contents,
+                                        library_contents,
+                                        existing_contents,
                                         add_keys=True,
                                         merge_lists=True,
                                     )
@@ -2146,6 +2172,40 @@ class LibraryManager:
             current = current.__cause__
         return current
 
+    @staticmethod
+    def _check_engine_version_compatibility(required_engine_version: str) -> tuple[bool, str]:
+        """Check if a required engine version is compatible with the current engine.
+
+        Args:
+            required_engine_version: The engine version required by the library.
+
+        Returns:
+            A tuple of (is_compatible, current_engine_version).
+            is_compatible is True if required_engine_version <= current_engine_version.
+            If version comparison fails, returns (True, current_engine_version) to allow the operation.
+        """
+        engine_version_result = GriptapeNodes.handle_request(GetEngineVersionRequest())
+        if not isinstance(engine_version_result, GetEngineVersionResultSuccess):
+            logger.warning("Failed to get engine version for compatibility check, allowing operation to proceed")
+            return True, ""
+
+        current_engine_version = (
+            f"{engine_version_result.major}.{engine_version_result.minor}.{engine_version_result.patch}"
+        )
+
+        if not required_engine_version:
+            return True, current_engine_version
+
+        try:
+            required_ver = Version.parse(required_engine_version)
+            current_ver = Version.parse(current_engine_version)
+            is_compatible = required_ver <= current_ver
+        except ValueError:
+            # If version parsing fails, assume compatible
+            return True, current_engine_version
+        else:
+            return is_compatible, current_engine_version
+
     def _load_module_from_file(self, file_path: Path | str, library_name: str) -> ModuleType:
         """Dynamically load a module from a Python file with support for hot reloading.
 
@@ -2549,6 +2609,25 @@ class LibraryManager:
         )
         console.print(message)
 
+    async def on_config_changed(self, event: ConfigChanged) -> None:
+        """Handle config changes to reload libraries when needed.
+
+        Responds to:
+        - libraries_to_register changes: Full library reload
+        """
+        if event.key == LIBRARIES_TO_REGISTER_KEY:
+            logger.info("Config change detected for %s, triggering library reload", event.key)
+
+            # Use existing ReloadAllLibrariesRequest instead of manual reload
+            # This clears workflow state and does a full reload (safer when libraries change)
+            reload_request = ReloadAllLibrariesRequest()
+            reload_result = await GriptapeNodes.ahandle_request(reload_request)
+
+            if reload_result.succeeded():
+                logger.info("Successfully reloaded libraries after %s change", event.key)
+            else:
+                logger.error("Failed to reload libraries after %s change: %s", event.key, reload_result.result_details)
+
     def _load_advanced_library_module(
         self,
         library_data: LibrarySchema,
@@ -2824,6 +2903,7 @@ class LibraryManager:
             metadata=library_schema.metadata,
             categories=library_schema.categories,
             nodes=actual_node_definitions,
+            widgets=library_schema.widgets,
         )
 
         # Save the schema with real class names back to disk
@@ -3432,6 +3512,21 @@ class LibraryManager:
 
         except ValueError as e:
             details = f"Failed to parse version strings for Library '{library_name}': {e}"
+            return CheckLibraryUpdateResultFailure(result_details=details)
+
+        # Check engine version compatibility
+        library_required_engine_version = version_info.engine_version
+        is_compatible, current_engine_version = self._check_engine_version_compatibility(
+            library_required_engine_version
+        )
+
+        if not is_compatible:
+            details = (
+                f"Cannot update Library '{library_name}'. "
+                f"The update requires engine version {library_required_engine_version} "
+                f"but the current engine version is {current_engine_version}. "
+                f"Please update your engine first."
+            )
             return CheckLibraryUpdateResultFailure(result_details=details)
 
         details = f"Successfully checked for updates for Library '{library_name}'. Current version: {current_version}, Latest version: {latest_version}, Has update: {has_update} ({update_reason})"

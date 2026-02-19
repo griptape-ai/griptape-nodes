@@ -209,12 +209,11 @@ class TestReadFileRequest:
 
     def test_read_text_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully reading a text file."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("Test content")
 
         request = ReadFileRequest(file_path=str(file_path))
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultSuccess)
         assert result.content == "Test content"
@@ -222,13 +221,12 @@ class TestReadFileRequest:
 
     def test_read_binary_file_success(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test successfully reading a binary file."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.bin"
         content = b"\x00\x01\x02\x03"
         file_path.write_bytes(content)
 
         request = ReadFileRequest(file_path=str(file_path))
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultSuccess)
         # Binary files might be returned as base64 or bytes
@@ -236,17 +234,15 @@ class TestReadFileRequest:
 
     def test_read_file_not_found(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test reading non-existent file returns FILE_NOT_FOUND."""
-        os_manager = griptape_nodes.OSManager()
         request = ReadFileRequest(file_path=str(temp_dir / "nonexistent.txt"))
 
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
 
     def test_read_file_permission_denied(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test reading file without permission."""
-        os_manager = griptape_nodes.OSManager()
         file_path = temp_dir / "test.txt"
         file_path.write_text("Content")
 
@@ -254,22 +250,21 @@ class TestReadFileRequest:
 
         # Mock the file operation to raise PermissionError
         with patch.object(Path, "open", side_effect=PermissionError("Permission denied")):
-            result = os_manager.on_read_file_request(request)
+            result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
         assert result.failure_reason == FileIOFailureReason.PERMISSION_DENIED
 
     def test_read_file_invalid_path(self, griptape_nodes: GriptapeNodes) -> None:
-        """Test reading with invalid path - empty resolves to directory."""
-        os_manager = griptape_nodes.OSManager()
-        # Empty path resolves to directory, which isn't a file
+        """Test reading with invalid path - empty path."""
+        # Empty path is invalid
         request = ReadFileRequest(file_path="")
 
-        result = os_manager.on_read_file_request(request)
+        result = griptape_nodes.handle_request(request)
 
         assert isinstance(result, ReadFileResultFailure)
-        # FILE_NOT_FOUND is returned when path exists but is not a file
-        assert result.failure_reason == FileIOFailureReason.FILE_NOT_FOUND
+        # INVALID_PATH is returned for empty path
+        assert result.failure_reason == FileIOFailureReason.INVALID_PATH
 
 
 class TestCreateFileRequest:
@@ -1319,6 +1314,46 @@ class TestCreateNewFilePolicy:
         assert isinstance(result, WriteFileResultSuccess)
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
+
+    def test_create_new_with_fully_resolved_macro_should_use_suffix_injection(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test CREATE_NEW policy with fully-resolved MacroPath falls back to suffix injection.
+
+        When a MacroPath has all variables resolved and no index variable, the CREATE_NEW
+        policy should fall back to parsing the filename and adding _N suffix. Currently
+        this fails with "no index variable found".
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.retained_mode.events.project_events import MacroPath
+
+        os_manager = griptape_nodes.OSManager()
+
+        # Create first file manually
+        first_file = temp_dir / "render.png"
+        first_file.write_text("Original")
+
+        # Use MacroPath with all variables resolved (no index variable)
+        macro_path = MacroPath(
+            parsed_macro=ParsedMacro(f"{temp_dir}/render.png"),
+            variables={},  # No variables to resolve
+        )
+
+        # This should fall back to suffix injection and create render_1.png
+        request = WriteFileRequest(
+            file_path=macro_path,
+            content="Second file",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+
+        result = os_manager.on_write_file_request(request)
+
+        # EXPECTED: Should succeed and create render_1.png
+        # ACTUAL: Currently fails with WriteFileResultFailure
+        assert isinstance(result, WriteFileResultSuccess)
+        expected_path = temp_dir / "render_1.png"
+        assert Path(result.final_file_path).resolve() == expected_path.resolve()
+        assert expected_path.read_text() == "Second file"
 
 
 class TestDecomposeSourcePath:
