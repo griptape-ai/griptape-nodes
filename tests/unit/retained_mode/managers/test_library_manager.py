@@ -1,12 +1,19 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from griptape_nodes.node_library.library_registry import LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.library_events import (
+    GetAllInfoForAllLibrariesRequest,
+    GetAllInfoForAllLibrariesResultFailure,
+    GetAllInfoForAllLibrariesResultSuccess,
     InstallLibraryDependenciesResultFailure,
     InstallLibraryDependenciesResultSuccess,
+    ListRegisteredLibrariesRequest,
+    ListRegisteredLibrariesResultSuccess,
     LoadLibrariesRequest,
     LoadLibrariesResultSuccess,
     LoadLibraryMetadataFromFileResultSuccess,
@@ -699,3 +706,105 @@ class TestLibraryManagerConfigChangeHandling:
             mock_handle.assert_called_once()
             request = mock_handle.call_args[0][0]
             assert isinstance(request, ReloadAllLibrariesRequest)
+
+
+class TestListRegisteredLibraries:
+    """Test the on_list_registered_libraries_request functionality in LibraryManager."""
+
+    @pytest.mark.asyncio
+    async def test_waits_for_loading_complete_before_returning_libraries(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the handler blocks until _libraries_loading_complete is set."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        # Ensure the event is not set so the handler will block
+        library_manager._libraries_loading_complete.clear()
+
+        mock_libraries = ["LibA", "LibB"]
+
+        with patch.object(LibraryRegistry, "list_libraries", return_value=mock_libraries):
+            request = ListRegisteredLibrariesRequest()
+            task = asyncio.create_task(library_manager.on_list_registered_libraries_request(request))
+
+            # Yield control so the task can start and block on the event
+            await asyncio.sleep(0)
+
+            # The task should still be waiting because the event is not set
+            assert not task.done()
+
+            # Signal that loading is complete
+            library_manager._libraries_loading_complete.set()
+
+            result = await task
+
+        assert isinstance(result, ListRegisteredLibrariesResultSuccess)
+        assert result.libraries == mock_libraries
+
+    @pytest.mark.asyncio
+    async def test_returns_library_list_when_loading_already_complete(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the handler returns the library list immediately when loading is already done."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        # Simulate loading already finished
+        library_manager._libraries_loading_complete.set()
+
+        mock_libraries = ["LibA", "LibB", "LibC"]
+
+        with patch.object(LibraryRegistry, "list_libraries", return_value=mock_libraries):
+            request = ListRegisteredLibrariesRequest()
+            result = await library_manager.on_list_registered_libraries_request(request)
+
+        assert isinstance(result, ListRegisteredLibrariesResultSuccess)
+        assert result.libraries == mock_libraries
+
+    @pytest.mark.asyncio
+    async def test_returns_copy_of_library_list(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the returned library list is a copy and not the original reference."""
+        library_manager = griptape_nodes.LibraryManager()
+        library_manager._libraries_loading_complete.set()
+
+        mock_libraries = ["LibA"]
+
+        with patch.object(LibraryRegistry, "list_libraries", return_value=mock_libraries):
+            request = ListRegisteredLibrariesRequest()
+            result = await library_manager.on_list_registered_libraries_request(request)
+
+        assert isinstance(result, ListRegisteredLibrariesResultSuccess)
+        # Mutating the result should not affect the original list
+        result.libraries.append("LibB")
+        assert mock_libraries == ["LibA"]
+
+
+class TestGetAllInfoForAllLibraries:
+    """Test the get_all_info_for_all_libraries_request functionality in LibraryManager."""
+
+    def test_calls_library_registry_directly(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the method reads libraries from LibraryRegistry without going through on_list_registered_libraries_request."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        with (
+            patch.object(LibraryRegistry, "list_libraries", return_value=[]) as mock_list,
+            patch.object(library_manager, "on_list_registered_libraries_request") as mock_handler,
+        ):
+            request = GetAllInfoForAllLibrariesRequest()
+            result = library_manager.get_all_info_for_all_libraries_request(request)
+
+        mock_list.assert_called_once()
+        mock_handler.assert_not_called()
+        assert isinstance(result, GetAllInfoForAllLibrariesResultSuccess)
+
+    def test_returns_failure_when_individual_library_info_fails(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test that the method returns failure when retrieving info for a library fails."""
+        library_manager = griptape_nodes.LibraryManager()
+
+        mock_failure = MagicMock()
+        mock_failure.succeeded.return_value = False
+
+        with (
+            patch.object(LibraryRegistry, "list_libraries", return_value=["BadLib"]),
+            patch.object(library_manager, "get_all_info_for_library_request", return_value=mock_failure),
+        ):
+            request = GetAllInfoForAllLibrariesRequest()
+            result = library_manager.get_all_info_for_all_libraries_request(request)
+
+        assert isinstance(result, GetAllInfoForAllLibrariesResultFailure)
+        assert "BadLib" in str(result.result_details)

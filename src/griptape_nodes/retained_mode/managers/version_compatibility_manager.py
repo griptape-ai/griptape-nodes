@@ -258,8 +258,7 @@ class VersionCompatibilityManager:
         issues: list[WorkflowVersionCompatibilityIssue] = []
 
         # Get list of registered libraries once (silent check - no error logging)
-        list_request = ListRegisteredLibrariesRequest()
-        list_result = GriptapeNodes.LibraryManager().on_list_registered_libraries_request(list_request)
+        list_result = GriptapeNodes.handle_request(ListRegisteredLibrariesRequest())
 
         if not isinstance(list_result, ListRegisteredLibrariesResultSuccess):
             # Should not happen, but handle gracefully - return empty issues
