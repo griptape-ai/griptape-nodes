@@ -3,7 +3,7 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from PIL import Image
@@ -1064,7 +1064,7 @@ class TestGeneratorValidation:
         assert validated_params.max_height == 1024  # Uses default value  # noqa: PLR2004
 
     def test_pil_thumbnail_validate_parameters_extra_key(self) -> None:
-        """Test PILThumbnailGenerator rejects unknown parameters."""
+        """Test PILThumbnailGenerator ignores unknown parameters (backward compatibility)."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
@@ -1072,11 +1072,14 @@ class TestGeneratorValidation:
         params = {"max_width": 1024, "max_height": 768, "unknown_param": 42}
         params_model_class = PILThumbnailGenerator.get_parameters()
 
-        with pytest.raises(ValidationError) as exc_info:
-            params_model_class.model_validate(params)
+        # Extra fields are ignored (for backward compatibility with old configs)
+        # See https://github.com/griptape-ai/griptape-nodes/issues/3980
+        validated_params = cast("PILThumbnailParameters", params_model_class.model_validate(params))
 
-        errors = exc_info.value.errors()
-        assert any(e["type"] == "extra_forbidden" for e in errors)
+        # Only known fields are included in the model
+        assert validated_params.max_width == 1024  # noqa: PLR2004
+        assert validated_params.max_height == 768  # noqa: PLR2004
+        assert not hasattr(validated_params, "unknown_param")
 
     def test_pil_rounded_validate_parameters_valid(self) -> None:
         """Test PILRoundedPreviewGenerator validates correct parameters."""

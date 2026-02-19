@@ -51,7 +51,7 @@ class BaseGeneratorParameters(BaseModel):
     Enforces:
     - All fields must have descriptions (via custom Field())
     - All fields must specify editor_schema_type (via custom Field())
-    - No extra fields allowed (strict validation)
+    - Extra fields are ignored (allows backward compatibility with old config)
     - Supports dict[str, Any] input/output for config compatibility
 
     Usage:
@@ -65,7 +65,7 @@ class BaseGeneratorParameters(BaseModel):
     """
 
     model_config = ConfigDict(
-        extra="forbid",  # Reject unknown parameters (replaces validate_structure check)
+        extra="ignore",  # TODO: Change to "forbid" after https://github.com/griptape-ai/griptape-nodes/issues/3980
         validate_assignment=True,  # Validate on attribute assignment
         str_strip_whitespace=True,  # Clean string inputs
     )

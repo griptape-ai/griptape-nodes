@@ -1067,8 +1067,30 @@ class ArtifactManager:
             )
             self._write_generator_config(provider_class, generator_class)
         else:
-            # Valid - keep existing settings
-            return
+            # Valid config - check if all fields are present
+
+            # TODO: Remove this manual check after https://github.com/griptape-ai/griptape-nodes/issues/3980
+            # Once we normalize config on write, typos will be fixed automatically
+
+            # Check if all model fields are present in user's config
+            # Missing fields (even with defaults) may indicate typos
+            model_fields = set(params_model_class.model_fields.keys())
+            config_fields = set(existing_config.keys())
+            missing_fields = model_fields - config_fields
+
+            if missing_fields:
+                # Fields are missing (incomplete config)
+                # Write back normalized config to add defaults
+                logger.warning(
+                    "Validating artifact preview generator '%s': Config is missing fields: %s. "
+                    "Writing normalized config to add defaults.",
+                    generator_name,
+                    ", ".join(sorted(missing_fields)),
+                )
+                self._write_generator_config(provider_class, generator_class)
+            else:
+                # All fields present - keep existing settings
+                return
 
     def _validate_and_write_provider_settings(self, provider_class: type[BaseArtifactProvider]) -> None:
         """Validate provider-level settings. Resets to defaults if missing or invalid.
