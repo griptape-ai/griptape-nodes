@@ -8,7 +8,6 @@ from contextlib import suppress
 from io import BytesIO
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
@@ -19,6 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_three_d import Parameter3D
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
@@ -527,28 +527,11 @@ class Rodin23DGeneration(GriptapeProxyNode):
         return mime_map.get(image_format, "image/png")
 
     async def _string_to_bytes(self, value: str) -> bytes | None:
-        """Convert a string (URL or base64) to raw bytes."""
-        import base64
-
-        # If it's a URL, download the image
-        if value.startswith(("http://", "https://")):
-            return await self._download_bytes_from_url(value)
-
-        # If it's a data URI, extract and decode the base64 part
-        if value.startswith("data:image/"):
-            try:
-                # Format: data:image/png;base64,<base64data>
-                _, b64_data = value.split(",", 1)
-                return base64.b64decode(b64_data)
-            except Exception as e:
-                self._log(f"Failed to decode data URI: {e}")
-                return None
-
-        # Assume it's raw base64
+        """Convert a string (URL, data URI, file path, or base64) to raw bytes."""
         try:
-            return base64.b64decode(value)
-        except Exception as e:
-            self._log(f"Failed to decode base64: {e}")
+            return await File(value).aread_bytes()
+        except FileLoadError as e:
+            self._log(f"Failed to load bytes from {value}: {e}")
             return None
 
     def _log_form_data(self, form_data: dict[str, Any], num_files: int) -> None:
@@ -603,7 +586,7 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             try:
                 self._log(f"Downloading file: {file_name}")
-                file_bytes = await self._download_bytes_from_url(file_url)
+                file_bytes = await File(file_url).aread_bytes()
 
                 if file_bytes:
                     # Create safe filename
@@ -730,14 +713,3 @@ class Rodin23DGeneration(GriptapeProxyNode):
         self._set_safe_defaults()
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

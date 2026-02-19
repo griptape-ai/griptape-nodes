@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import time
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
@@ -20,6 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -502,13 +501,15 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
         if not video_url:
             return None
 
+        # Already a data URI — return as-is
         if video_url.startswith("data:video/"):
             return video_url
 
-        if video_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(video_url, "video/mp4")
-
-        return video_url
+        try:
+            return await File(video_url).aread_data_uri(fallback_mime="video/mp4")
+        except FileLoadError as e:
+            logger.debug("%s failed to load video from %s: %s", self.name, video_url, e)
+            return None
 
     async def _prepare_audio_data_url_async(self, audio_input: Any) -> str | None:
         if not audio_input:
@@ -518,29 +519,15 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
         if not audio_url:
             return None
 
+        # Already a data URI — return as-is
         if audio_url.startswith("data:audio/"):
             return audio_url
 
-        if audio_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(audio_url, "audio/mpeg")
-
-        return audio_url
-
-    async def _inline_external_url_async(self, url: str, default_content_type: str) -> str | None:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.debug("%s failed to inline URL: %s", self.name, e)
+            return await File(audio_url).aread_data_uri(fallback_mime="audio/mpeg")
+        except FileLoadError as e:
+            logger.debug("%s failed to load audio from %s: %s", self.name, audio_url, e)
             return None
-        else:
-            content_type = (resp.headers.get("content-type") or default_content_type).split(";")[0]
-            if not content_type.startswith(("audio/", "video/")):
-                content_type = default_content_type
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
 
     @staticmethod
     def _coerce_video_url_or_data_uri(val: Any) -> str | None:
@@ -601,7 +588,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.debug("Downloading video bytes from provider URL")
-            video_bytes = await self._download_bytes_from_url(extracted_url)
+            video_bytes = await File(extracted_url).aread_bytes()
         except Exception as e:
             logger.debug("Failed to download video: %s", e)
             video_bytes = None
@@ -719,14 +706,3 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
         if isinstance(video_url, str) and video_url.startswith("http"):
             return video_url
         return None
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

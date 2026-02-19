@@ -6,7 +6,6 @@ import logging
 from copy import deepcopy
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -18,6 +17,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
@@ -455,9 +455,12 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         if image_str.startswith("data:image/"):
             return self._parse_data_uri(image_str)
 
-        # Handle URL - download and convert
-        if image_str.startswith(("http://", "https://")):
-            return self._download_url_to_base64_dict(image_str)
+        # Handle URL or path - use File to load and convert to data URI, then parse
+        try:
+            data_uri = File(image_str).read_data_uri(fallback_mime="image/png")
+            return self._parse_data_uri(data_uri)
+        except FileLoadError:
+            pass
 
         # Assume raw base64 string
         return {"bytesBase64Encoded": image_str, "mimeType": "image/png"}
@@ -518,22 +521,6 @@ class Veo3VideoGeneration(GriptapeProxyNode):
                 mime_type = mime_part
 
         return {"bytesBase64Encoded": base64_data, "mimeType": mime_type}
-
-    def _download_url_to_base64_dict(self, url: str) -> dict[str, str] | None:
-        """Download image from URL and convert to base64 dict."""
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                resp = client.get(url)
-                resp.raise_for_status()
-
-            content_type = (resp.headers.get("content-type") or "image/png").split(";")[0]
-            mime_type = content_type if content_type.startswith("image/") else "image/png"
-            base64_data = base64.b64encode(resp.content).decode("utf-8")
-        except Exception as e:
-            self._log(f"Warning: failed to download image from URL: {e}")
-            return None
-        else:
-            return {"bytesBase64Encoded": base64_data, "mimeType": mime_type}
 
     async def _build_payload(self) -> dict[str, Any]:  # noqa: C901, PLR0912
         params = self._get_parameters()

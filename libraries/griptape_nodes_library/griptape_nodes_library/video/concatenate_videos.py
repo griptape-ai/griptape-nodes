@@ -5,13 +5,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.video_utils import to_video_artifact
@@ -271,7 +271,7 @@ class ConcatenateVideos(BaseVideoProcessor):
             yield lambda: self._process_concatenation(**custom_params)
             self.append_value_to_parameter("logs", "[Finished video concatenation.]\n")
 
-        except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, httpx.HTTPError) as e:
+        except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, FileLoadError) as e:
             error_message = str(e)
             msg = f"{self.name}: Error concatenating videos: {error_message}"
             self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
@@ -306,7 +306,7 @@ class ConcatenateVideos(BaseVideoProcessor):
             # Prepare video inputs and create concat list
             try:
                 temp_files, concat_list_file = self._prepare_video_inputs(video_inputs)
-            except (ValueError, OSError, httpx.HTTPError) as e:
+            except (ValueError, OSError, FileLoadError) as e:
                 error_message = str(e)
                 msg = f"{self.name}: Error preparing video inputs: {error_message}"
                 self.append_value_to_parameter("logs", f"ERROR: {msg}\n")
@@ -559,24 +559,21 @@ class ConcatenateVideos(BaseVideoProcessor):
     def _download_video(self, video_url: str, output_path: str) -> None:
         """Download a video from URL to local file."""
         try:
-            response = httpx.get(video_url, timeout=30.0)
-            response.raise_for_status()
-
-            output_file = Path(output_path)
-            with output_file.open("wb") as f:
-                for chunk in response.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
-
-            # Verify file was downloaded
-            if not output_file.exists() or output_file.stat().st_size == 0:
-                self._raise_download_error("Downloaded video file is empty or does not exist")
-
-        except httpx.HTTPError as e:
+            video_bytes = File(video_url).read_bytes()
+        except FileLoadError as e:
             msg = f"Error downloading video from {video_url}: {e!s}"
-            self._raise_download_error(msg, e)
+            raise ValueError(msg) from e
+
+        try:
+            Path(output_path).write_bytes(video_bytes)
         except OSError as e:
             msg = f"Error saving video to {output_path}: {e!s}"
             self._raise_download_error(msg, e)
+
+        # Verify file was downloaded
+        output_file = Path(output_path)
+        if not output_file.exists() or output_file.stat().st_size == 0:
+            self._raise_download_error("Downloaded video file is empty or does not exist")
 
     def _get_video_dimensions(self, video_path: str) -> tuple[int, int]:
         """Get video dimensions using ffprobe.
