@@ -2655,6 +2655,16 @@
       }
     },
     {
+      "class_name": "FileSelector",
+      "file_path": "griptape_nodes_library/files/file_selector.py",
+      "metadata": {
+        "category": "files",
+        "description": "Select a file and resolve it to a macro path using project situations.",
+        "display_name": "File Selector",
+        "icon": "FileSearch"
+      }
+    },
+    {
       "class_name": "PathJoin",
       "file_path": "griptape_nodes_library/files/path_join.py",
       "metadata": {
