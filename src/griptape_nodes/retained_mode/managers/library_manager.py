@@ -600,8 +600,8 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-
-            result = GetLibraryMetadataResultFailure(result_details=details)
+            problems = self.get_collated_problems_for_library(request.library)
+            result = GetLibraryMetadataResultFailure(result_details=details, problems=problems)
             return result
 
         # Get the metadata off of it.
