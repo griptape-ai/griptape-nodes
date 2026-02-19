@@ -5,10 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
-from griptape_nodes.exe_types.node_groups import SubflowNodeGroup
 from griptape_nodes.exe_types.node_types import (
-    LOCAL_EXECUTION,
     BaseNode,
     NodeResolutionState,
 )
@@ -19,7 +16,6 @@ from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
     CurrentControlNodeEvent,
     InvolvedNodesEvent,
-    SelectedControlOutputEvent,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.node_manager import NodeManager
@@ -80,53 +76,6 @@ class ControlFlowContext:
         self.pickle_control_flow_result = pickle_control_flow_result
         self.is_isolated = is_isolated
 
-    def get_next_nodes(self, output_parameter: Parameter | None = None) -> list[NextNodeInfo]:
-        """Get all next nodes from the current nodes.
-
-        Returns:
-            list[NextNodeInfo]: List of next nodes to process
-        """
-        next_nodes = []
-        for current_node in self.current_nodes:
-            if output_parameter is not None:
-                # Get connected node from control flow
-                node_connection = (
-                    GriptapeNodes.FlowManager()
-                    .get_connections()
-                    .get_connected_node(current_node, output_parameter, include_internal=False)
-                )
-                if node_connection is not None:
-                    node, entry_parameter = node_connection
-                    next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
-            # Get next control output for this node
-            else:
-                next_output = current_node.get_next_control_output()
-                if next_output is not None:
-                    if isinstance(current_node, BaseIterativeStartNode):
-                        if current_node.end_node is None:
-                            msg = "Iterative start node has no end node"
-                            raise ValueError(msg)
-                        next_nodes.append(NextNodeInfo(node=current_node.end_node, entry_parameter=None))
-                        continue
-                    node_connection = (
-                        GriptapeNodes.FlowManager()
-                        .get_connections()
-                        .get_connected_node(current_node, next_output, include_internal=False)
-                    )
-                    if node_connection is not None:
-                        node, entry_parameter = node_connection
-                        next_nodes.append(NextNodeInfo(node=node, entry_parameter=entry_parameter))
-                else:
-                    logger.debug("Control Flow: Node '%s' has no control output", current_node.name)
-
-        # If no connections found, check execution queue
-        if not next_nodes and not self.is_isolated:
-            node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
-            if node is not None:
-                next_nodes.append(NextNodeInfo(node=node, entry_parameter=None))
-
-        return next_nodes
-
     def reset(self, *, cancel: bool = False) -> None:
         if self.current_nodes is not None:
             for node in self.current_nodes:
@@ -183,39 +132,6 @@ class ResolveNodeState(State):
                 context.current_nodes = [last_resolved_node]
             return CompleteState
         return None
-
-
-def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple[BaseNode, Parameter | None]:
-    """Resolve the target node, replacing children with their parent node group if necessary.
-
-    If the target node is inside a non-local node group, returns the parent node group instead.
-
-    Args:
-        next_node_info: Information about the next node to process
-
-    Returns:
-        Tuple of (resolved_node, entry_parameter)
-    """
-    target_node = next_node_info.node
-    entry_parameter = next_node_info.entry_parameter
-
-    # Check if node has a parent and if parent is not local execution
-    if target_node.parent_group is not None and isinstance(target_node.parent_group, SubflowNodeGroup):
-        parent_group = target_node.parent_group
-        execution_env = parent_group.get_parameter_value(parent_group.execution_environment.name)
-        if execution_env != LOCAL_EXECUTION:
-            logger.info(
-                "Control Flow: Redirecting from child node '%s' to parent node group '%s' (execution environment: %s)",
-                target_node.name,
-                parent_group.name,
-                execution_env,
-            )
-            # Move to parent instead of child
-            target_node = parent_group
-            # Entry parameter should be None for the parent node group
-            entry_parameter = None
-
-    return target_node, entry_parameter
 
 
 class CompleteState(State):
