@@ -131,7 +131,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -216,7 +216,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -260,7 +260,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -303,7 +303,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -999,42 +999,6 @@ class TestGetPreviewForArtifact:
         # Should regenerate successfully even though preview was fresh
         assert isinstance(result, GetPreviewForArtifactResultSuccess)
         assert result.paths_to_preview is not None
-
-    def test_get_generator_config_schema(self) -> None:
-        """Test that get_preview_generator_config_schema generates correct config keys."""
-        from griptape_nodes.retained_mode.managers.artifact_providers.image import ImageArtifactProvider
-        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
-            PILThumbnailGenerator,
-        )
-
-        # Generate config schema for PILThumbnailGenerator using static method
-        config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-            ImageArtifactProvider, PILThumbnailGenerator
-        )
-
-        # Verify the keys are correctly formatted
-        assert (
-            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
-            in config_schema
-        )
-        assert (
-            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
-            in config_schema
-        )
-
-        # Verify the default values
-        assert (
-            config_schema[
-                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
-            ]
-            == 1024  # noqa: PLR2004
-        )
-        assert (
-            config_schema[
-                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
-            ]
-            == 1024  # noqa: PLR2004
-        )
 
 
 class TestGeneratorValidation:

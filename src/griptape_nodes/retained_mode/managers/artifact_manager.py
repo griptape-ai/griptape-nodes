@@ -613,12 +613,13 @@ class ArtifactManager:
                 if has_validity_issue:
                     should_regenerate_preview = True
                 else:
-                    # Check if settings match
+                    # Check if preview matches current generator settings
                     preview_settings = self._get_preview_settings_from_config(
                         provider_class, request.artifact_provider_name
                     )
-                    settings_match = self._does_preview_match_current_settings(
-                        metadata, preview_settings.generator_name, preview_settings.generator_params
+                    settings_match = (
+                        metadata.preview_generator_name == preview_settings.generator_name
+                        and metadata.preview_generator_parameters == preview_settings.generator_params
                     )
                     if not settings_match:
                         should_regenerate_preview = True
@@ -923,7 +924,7 @@ class ArtifactManager:
         self._validate_and_write_provider_settings(provider_class)
 
         # Register default preview generators and validate their settings
-        for preview_generator_class in provider_class.get_default_generators():
+        for preview_generator_class in provider_class.get_default_preview_generators():
             # Register with runtime registry
             self._registry.register_preview_generator_with_provider(provider_class, preview_generator_class)
 
@@ -1192,24 +1193,3 @@ class ArtifactManager:
             True if source file has changed (stale), False otherwise
         """
         return metadata.source_file_size != source_size or metadata.source_file_modified_time != source_mtime
-
-    def _does_preview_match_current_settings(
-        self,
-        metadata: PreviewMetadata,
-        current_generator_name: str,
-        current_generator_params: dict[str, Any],
-    ) -> bool:
-        """Check if preview was generated with current generator settings.
-
-        Args:
-            metadata: Preview metadata containing stored generator info
-            current_generator_name: Current generator name from config
-            current_generator_params: Current generator parameters from config
-
-        Returns:
-            True if settings match, False otherwise
-        """
-        return (
-            metadata.preview_generator_name == current_generator_name
-            and metadata.preview_generator_parameters == current_generator_params
-        )

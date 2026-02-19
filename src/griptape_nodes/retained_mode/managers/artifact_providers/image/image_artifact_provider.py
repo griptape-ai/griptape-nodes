@@ -23,22 +23,12 @@ class ImageArtifactProvider(BaseArtifactProvider):
     """
 
     def __init__(self, registry: ProviderRegistry) -> None:
-        """Initialize with default preview generators.
+        """Initialize the image artifact provider.
 
         Args:
             registry: The ProviderRegistry that manages this provider
         """
         super().__init__(registry)
-
-        # Do lazy imports here to only instantiate when the provider gets rezzed up.
-        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
-            PILRoundedPreviewGenerator,
-            PILThumbnailGenerator,
-        )
-
-        # Register default generators with config
-        self.register_preview_generator_with_config(PILThumbnailGenerator)
-        self.register_preview_generator_with_config(PILRoundedPreviewGenerator)
 
     @classmethod
     def get_friendly_name(cls) -> str:
@@ -61,7 +51,7 @@ class ImageArtifactProvider(BaseArtifactProvider):
         return "webp"
 
     @classmethod
-    def get_default_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
+    def get_default_preview_generators(cls) -> list[type[BaseArtifactPreviewGenerator]]:
         """Get default preview generator classes."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILRoundedPreviewGenerator,
