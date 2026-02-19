@@ -49,8 +49,8 @@ class TestHandleRequestBroadcast:
 
         mock_put.assert_not_called()
 
-    def test_broadcast_true_overrides_request_broadcast_result(self) -> None:
-        """broadcast=True forces queueing even when request.broadcast_result=False."""
+    def test_instance_broadcast_result_overrides_class_default(self) -> None:
+        """broadcast_result set on the instance at construction time is respected."""
         event_mgr = GriptapeNodes.EventManager()
         mock_result_event = MagicMock()
 
@@ -60,23 +60,9 @@ class TestHandleRequestBroadcast:
             patch.object(event_mgr, "put_event") as mock_put,
             patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodeEvent"),
         ):
-            GriptapeNodes.handle_request(ReadFileRequest(), broadcast=True)
+            GriptapeNodes.handle_request(ReadFileRequest(broadcast_result=True))
 
         mock_put.assert_called_once()
-
-    def test_broadcast_false_overrides_request_broadcast_result(self) -> None:
-        """broadcast=False skips queueing even when request.broadcast_result=True."""
-        event_mgr = GriptapeNodes.EventManager()
-        mock_result_event = MagicMock()
-
-        with (
-            patch.object(event_mgr, "handle_request", return_value=mock_result_event),
-            patch.object(event_mgr, "should_suppress_event", return_value=False),
-            patch.object(event_mgr, "put_event") as mock_put,
-        ):
-            GriptapeNodes.handle_request(_BroadcastingRequest(), broadcast=False)
-
-        mock_put.assert_not_called()
 
     def test_skips_broadcast_when_event_is_suppressed(self) -> None:
         """handle_request does not queue when the event is suppressed."""
@@ -126,8 +112,8 @@ class TestAHandleRequestBroadcast:
         mock_aput.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_broadcast_true_overrides_request_broadcast_result(self) -> None:
-        """broadcast=True forces queueing even when request.broadcast_result=False."""
+    async def test_instance_broadcast_result_overrides_class_default(self) -> None:
+        """broadcast_result set on the instance at construction time is respected."""
         event_mgr = GriptapeNodes.EventManager()
         mock_result_event = MagicMock()
 
@@ -137,24 +123,9 @@ class TestAHandleRequestBroadcast:
             patch.object(event_mgr, "aput_event") as mock_aput,
             patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodeEvent"),
         ):
-            await GriptapeNodes.ahandle_request(ReadFileRequest(), broadcast=True)
+            await GriptapeNodes.ahandle_request(ReadFileRequest(broadcast_result=True))
 
         mock_aput.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_broadcast_false_overrides_request_broadcast_result(self) -> None:
-        """broadcast=False skips queueing even when request.broadcast_result=True."""
-        event_mgr = GriptapeNodes.EventManager()
-        mock_result_event = MagicMock()
-
-        with (
-            patch.object(event_mgr, "ahandle_request", return_value=mock_result_event),
-            patch.object(event_mgr, "should_suppress_event", return_value=False),
-            patch.object(event_mgr, "aput_event") as mock_aput,
-        ):
-            await GriptapeNodes.ahandle_request(_BroadcastingRequest(), broadcast=False)
-
-        mock_aput.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_broadcast_when_event_is_suppressed(self) -> None:
