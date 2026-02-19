@@ -1080,7 +1080,7 @@ class TestGeneratorValidation:
         errors = PILThumbnailGenerator.validate_parameters(params)
 
         assert errors is not None
-        assert any("Missing required parameters" in err for err in errors)
+        assert any("Missing required parameter" in err for err in errors)
 
     def test_pil_thumbnail_validate_parameters_extra_key(self) -> None:
         """Test PILThumbnailGenerator rejects unknown parameters."""

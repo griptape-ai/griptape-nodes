@@ -126,32 +126,18 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
         }
 
     @classmethod
-    def validate_parameters(cls, params: dict[str, Any]) -> list[str] | None:
-        """Validate parameters against schema.
+    def validate_values(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameter values against constraints.
 
         Args:
-            params: Parameter dict to validate
+            params: Parameter dict to validate (structure assumed valid)
 
         Returns:
             None if valid, otherwise list of error messages
         """
         errors = []
-        schema = cls.get_parameters()
 
-        # Check structural match (keys present)
-        schema_keys = set(schema.keys())
-        param_keys = set(params.keys())
-
-        if schema_keys != param_keys:
-            missing = schema_keys - param_keys
-            extra = param_keys - schema_keys
-            if missing:
-                errors.append(f"Missing required parameters: {missing}")
-            if extra:
-                errors.append(f"Unknown parameters: {extra}")
-            return errors
-
-        # Validate each parameter
+        # Validate each parameter value
         cls._validate_positive_int(params, "max_width", errors)
         cls._validate_positive_int(params, "max_height", errors)
         cls._validate_non_negative_int(params, "corner_radius", errors)

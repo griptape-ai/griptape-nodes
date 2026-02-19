@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
+
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
@@ -12,7 +14,7 @@ if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
 
 
-class ProviderValue(NamedTuple):
+class ProviderValue(BaseModel):
     """Metadata for a generator parameter.
 
     Attributes:

@@ -90,11 +90,35 @@ class BaseArtifactPreviewGenerator(ABC):
 
     @classmethod
     @abstractmethod
-    def validate_parameters(cls, params: dict[str, Any]) -> list[str] | None:
-        """Validate parameters against generator schema.
+    def validate_values(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameter values against constraints (types, ranges, etc.).
 
-        Validates structural requirements (correct keys, types) and value constraints
+        Validates only value constraints like positive integers, valid ranges, correct types.
+        Does NOT check structural requirements (keys, required fields) - use validate_structure() for that.
+
+        Args:
+            params: Parameter dict to validate (assumes structure is already valid)
+
+        Returns:
+            None if validation passes, otherwise list of error messages
+
+        Example:
+            errors = PILThumbnailGenerator.validate_values({
+                "max_width": -5,
+                "max_height": 768
+            })
+            # Returns ["max_width must be positive, got -5"]
+        """
+        ...
+
+    @classmethod
+    def validate_parameters(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameters against generator schema (structure and values).
+
+        Validates both structural requirements (correct keys, required fields) and value constraints
         (positive integers, valid ranges, etc.). Can be called without instantiation.
+
+        This is a convenience method that calls validate_structure() then validate_values().
 
         Args:
             params: Parameter dict to validate
@@ -110,7 +134,52 @@ class BaseArtifactPreviewGenerator(ABC):
             if errors:
                 print(f"Validation failed: {errors}")
         """
-        ...
+        # Check structure first
+        errors = cls.validate_structure(params)
+        if errors:
+            return errors
+
+        # Then check values
+        return cls.validate_values(params)
+
+    @classmethod
+    def validate_structure(cls, params: dict[str, Any]) -> list[str] | None:
+        """Validate parameter structure against schema (keys and required fields only).
+
+        Checks that:
+        - All required parameters are present
+        - No extra parameters exist
+
+        Does NOT validate types or value constraints. Use validate_parameters() for full validation.
+
+        Args:
+            params: Parameter dict to validate
+
+        Returns:
+            None if structure is valid, otherwise list of error messages
+
+        Example:
+            errors = PILThumbnailGenerator.validate_structure({"max_width": 1024})
+            # Returns error about missing max_height
+        """
+        errors = []
+        schema = cls.get_parameters()
+
+        # Check for required parameters
+        for param_name, provider_value in schema.items():
+            if provider_value.required and param_name not in params:
+                errors.append(f"Missing required parameter: {param_name}")
+
+        # Check for extra parameters
+        schema_keys = set(schema.keys())
+        param_keys = set(params.keys())
+        extra = param_keys - schema_keys
+        if extra:
+            errors.append(f"Unknown parameters: {extra}")
+
+        if errors:
+            return errors
+        return None
 
     @classmethod
     def get_config_key_prefix(cls, provider_friendly_name: str) -> str:

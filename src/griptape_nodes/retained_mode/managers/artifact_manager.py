@@ -1015,14 +1015,14 @@ class ArtifactManager:
             self._write_generator_config(provider_class, generator_class)
             return
 
-        # Validate existing config using generator's validation logic
+        # Validate existing config (structure and values)
         errors = generator_class.validate_parameters(existing_config)
 
         # Config is valid - preserve user's settings
         if errors is None:
             return
 
-        # Invalid - reset ALL params to defaults
+        # Invalid config - reset ALL params to defaults
         logger.warning(
             "Validating artifact preview generator '%s': Invalid config (%s). Resetting ALL parameters to defaults.",
             generator_name,
