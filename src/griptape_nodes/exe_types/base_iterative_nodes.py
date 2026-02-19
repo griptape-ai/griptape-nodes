@@ -145,12 +145,14 @@ class BaseIterativeStartNode(BaseNode):
         self._connected_parameters: set[str] = set()
 
         # Main control flow
-        self.exec_in = ControlParameterInput(tooltip="Start Loop", name=IterativeNodeParam.EXEC_IN)
+        self.exec_in = ControlParameterInput(tooltip="Start Loop", name=IterativeNodeParam.EXEC_IN.value)
         self.exec_in.ui_options = {"display_name": "Start Loop"}
         self.add_parameter(self.exec_in)
 
         # On Each Item control output - moved outside group for proper rendering
-        self.exec_out = ControlParameterOutput(tooltip=self._get_exec_out_tooltip(), name=IterativeNodeParam.EXEC_OUT)
+        self.exec_out = ControlParameterOutput(
+            tooltip=self._get_exec_out_tooltip(), name=IterativeNodeParam.EXEC_OUT.value
+        )
         self.exec_out.ui_options = {"display_name": self._get_exec_out_display_name()}
         self.add_parameter(self.exec_out)
 
@@ -158,7 +160,7 @@ class BaseIterativeStartNode(BaseNode):
         with ParameterGroup(name=self._get_parameter_group_name()) as group:
             # Add index parameter that all iterative nodes have
             self.index_count = Parameter(
-                name=IterativeNodeParam.INDEX,
+                name=IterativeNodeParam.INDEX.value,
                 tooltip="Current index of the iteration",
                 type=ParameterTypeBuiltin.INT.value,
                 allowed_modes={ParameterMode.PROPERTY, ParameterMode.OUTPUT},
@@ -170,7 +172,7 @@ class BaseIterativeStartNode(BaseNode):
 
         # Explicit tethering to corresponding End node (hidden)
         self.loop = Parameter(
-            name=IterativeNodeParam.LOOP,
+            name=IterativeNodeParam.LOOP.value,
             tooltip="Connected Loop End Node",
             output_type=ParameterTypeBuiltin.ALL.value,
             allowed_modes={ParameterMode.OUTPUT},
@@ -181,20 +183,20 @@ class BaseIterativeStartNode(BaseNode):
         # Hidden signal inputs from End node
         self.trigger_next_iteration_signal = ControlParameterInput(
             tooltip="Signal from End to continue to next iteration",
-            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL,
+            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL.value,
         )
         self.trigger_next_iteration_signal.ui_options = {"hide": True, "display_name": "Next Iteration Signal"}
         self.trigger_next_iteration_signal.settable = False
 
         self.break_loop_signal = ControlParameterInput(
-            tooltip="Signal from End to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL
+            tooltip="Signal from End to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL.value
         )
         self.break_loop_signal.ui_options = {"hide": True, "display_name": "Break Loop Signal"}
         self.break_loop_signal.settable = False
 
         # Hidden control output - loop end condition
         self.loop_end_condition_met_signal = ControlParameterOutput(
-            tooltip="Signal to End when loop should end", name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL
+            tooltip="Signal to End when loop should end", name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL.value
         )
         self.loop_end_condition_met_signal.ui_options = {"hide": True, "display_name": "Loop End Signal"}
         self.loop_end_condition_met_signal.settable = False
@@ -210,7 +212,7 @@ class BaseIterativeStartNode(BaseNode):
 
         # Status message parameter - moved to bottom
         self.status_message = ParameterMessage(
-            name=IterativeNodeParam.STATUS_MESSAGE,
+            name=IterativeNodeParam.STATUS_MESSAGE.value,
             variant="info",
             value="",
         )
@@ -614,7 +616,7 @@ class BaseIterativeEndNode(BaseNode):
 
         # Explicit tethering to Start node
         self.from_start = Parameter(
-            name=IterativeNodeParam.FROM_START,
+            name=IterativeNodeParam.FROM_START.value,
             tooltip="Connected Loop Start Node",
             input_types=[ParameterTypeBuiltin.ALL.value],
             allowed_modes={ParameterMode.INPUT},
@@ -623,13 +625,13 @@ class BaseIterativeEndNode(BaseNode):
 
         # Main control input and data parameter
         self.add_item_control = ControlParameterInput(
-            tooltip="Add current item to output and continue loop", name=IterativeNodeParam.ADD_ITEM
+            tooltip="Add current item to output and continue loop", name=IterativeNodeParam.ADD_ITEM.value
         )
         self.add_item_control.ui_options = {"display_name": "Add Item to Output"}
 
         # Data input for the item to add - positioned right under Add Item control
         self.new_item_to_add = Parameter(
-            name=IterativeNodeParam.NEW_ITEM_TO_ADD,
+            name=IterativeNodeParam.NEW_ITEM_TO_ADD.value,
             tooltip="Item to add to results list",
             type=ParameterTypeBuiltin.ANY.value,
             allowed_modes={ParameterMode.INPUT},
@@ -637,13 +639,13 @@ class BaseIterativeEndNode(BaseNode):
 
         # Loop completion output
         self.exec_out = ControlParameterOutput(
-            tooltip="Triggered when loop completes", name=IterativeNodeParam.EXEC_OUT
+            tooltip="Triggered when loop completes", name=IterativeNodeParam.EXEC_OUT.value
         )
         self.exec_out.ui_options = {"display_name": "On Loop Complete"}
 
         # Results output - positioned below On Loop Complete
         self.results = Parameter(
-            name=IterativeNodeParam.RESULTS,
+            name=IterativeNodeParam.RESULTS.value,
             tooltip="Collected loop results",
             output_type="list",
             allowed_modes={ParameterMode.OUTPUT},
@@ -651,19 +653,19 @@ class BaseIterativeEndNode(BaseNode):
 
         # Advanced control options for skip and break
         self.skip_control = ControlParameterInput(
-            tooltip="Skip current item and continue to next iteration", name=IterativeNodeParam.SKIP_ITERATION
+            tooltip="Skip current item and continue to next iteration", name=IterativeNodeParam.SKIP_ITERATION.value
         )
         self.skip_control.ui_options = {"display_name": "Skip to Next Iteration"}
 
         self.break_control = ControlParameterInput(
-            tooltip="Break out of loop immediately", name=IterativeNodeParam.BREAK_LOOP
+            tooltip="Break out of loop immediately", name=IterativeNodeParam.BREAK_LOOP.value
         )
         self.break_control.ui_options = {"display_name": "Break Out of Loop"}
 
         # Hidden inputs from Start
         self.loop_end_condition_met_signal_input = ControlParameterInput(
             tooltip="Signal from Start when loop should end",
-            name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT,
+            name=IterativeNodeParam.LOOP_END_CONDITION_MET_SIGNAL_INPUT.value,
         )
         self.loop_end_condition_met_signal_input.ui_options = {"hide": True, "display_name": "Loop End Signal Input"}
         self.loop_end_condition_met_signal_input.settable = False
@@ -671,7 +673,7 @@ class BaseIterativeEndNode(BaseNode):
         # Hidden outputs to Start
         self.trigger_next_iteration_signal_output = ControlParameterOutput(
             tooltip="Signal to Start to continue to next iteration",
-            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT,
+            name=IterativeNodeParam.TRIGGER_NEXT_ITERATION_SIGNAL_OUTPUT.value,
         )
         self.trigger_next_iteration_signal_output.ui_options = {
             "hide": True,
@@ -680,7 +682,7 @@ class BaseIterativeEndNode(BaseNode):
         self.trigger_next_iteration_signal_output.settable = False
 
         self.break_loop_signal_output = ControlParameterOutput(
-            tooltip="Signal to Start to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT
+            tooltip="Signal to Start to break out of loop", name=IterativeNodeParam.BREAK_LOOP_SIGNAL_OUTPUT.value
         )
         self.break_loop_signal_output.ui_options = {"hide": True, "display_name": "Break Loop Signal Output"}
         self.break_loop_signal_output.settable = False
