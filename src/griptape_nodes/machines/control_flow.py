@@ -14,7 +14,6 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
-from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
 from griptape_nodes.retained_mode.events.execution_events import (
     ControlFlowResolvedEvent,
@@ -46,7 +45,7 @@ logger = logging.getLogger("griptape_nodes")
 class ControlFlowContext:
     flow: ControlFlow
     current_nodes: list[BaseNode]
-    resolution_machine: ParallelResolutionMachine | SequentialResolutionMachine
+    resolution_machine: ParallelResolutionMachine
     selected_output: Parameter | None
     paused: bool = False
     flow_name: str
@@ -59,28 +58,24 @@ class ControlFlowContext:
         flow_name: str,
         max_nodes_in_parallel: int,
         *,
-        execution_type: WorkflowExecutionMode = WorkflowExecutionMode.SEQUENTIAL,
         pickle_control_flow_result: bool = False,
         is_isolated: bool = False,
     ) -> None:
         self.flow_name = flow_name
-        if execution_type == WorkflowExecutionMode.PARALLEL:
-            # Get the global DagBuilder from FlowManager
-            from griptape_nodes.machines.dag_builder import DagBuilder
-            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            # Create isolated DagBuilder for independent subflows
-            if is_isolated:
-                dag_builder = DagBuilder()
-                logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
-            else:
-                dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+        # ALWAYS create ParallelResolutionMachine (SEQUENTIAL mode now maps to PARALLEL with max_nodes_in_parallel=1)
+        # Get the global DagBuilder from FlowManager
+        from griptape_nodes.machines.dag_builder import DagBuilder
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
-            self.resolution_machine = ParallelResolutionMachine(
-                flow_name, max_nodes_in_parallel, dag_builder=dag_builder
-            )
+        # Create isolated DagBuilder for independent subflows
+        if is_isolated:
+            dag_builder = DagBuilder()
+            logger.debug("Created isolated DagBuilder for flow '%s'", flow_name)
         else:
-            self.resolution_machine = SequentialResolutionMachine()
+            dag_builder = GriptapeNodes.FlowManager().global_dag_builder
+
+        self.resolution_machine = ParallelResolutionMachine(flow_name, max_nodes_in_parallel, dag_builder=dag_builder)
         self.current_nodes = []
         self.pickle_control_flow_result = pickle_control_flow_result
         self.is_isolated = is_isolated
@@ -183,14 +178,10 @@ class ResolveNodeState(State):
         await context.resolution_machine.resolve_node(current_node)
         if context.resolution_machine.is_complete():
             # Get the last resolved node from the DAG and set it as current
-            if isinstance(context.resolution_machine, ParallelResolutionMachine):
-                last_resolved_node = context.resolution_machine.get_last_resolved_node()
-                if last_resolved_node:
-                    context.current_nodes = [last_resolved_node]
-                return CompleteState
-            if context.end_node == current_node:
-                return CompleteState
-            return NextNodeState
+            last_resolved_node = context.resolution_machine.get_last_resolved_node()
+            if last_resolved_node:
+                context.current_nodes = [last_resolved_node]
+            return CompleteState
         return None
 
 
@@ -225,64 +216,6 @@ def _resolve_target_node_for_control_flow(next_node_info: NextNodeInfo) -> tuple
             entry_parameter = None
 
     return target_node, entry_parameter
-
-
-class NextNodeState(State):
-    @staticmethod
-    async def on_enter(context: ControlFlowContext) -> type[State] | None:
-        if len(context.current_nodes) == 0:
-            return CompleteState
-
-        # Check for stop_flow on any current nodes
-        for current_node in context.current_nodes[:]:
-            if current_node.stop_flow:
-                current_node.stop_flow = False
-                context.current_nodes.remove(current_node)
-
-        # If all nodes stopped flow, complete
-        if len(context.current_nodes) == 0:
-            return CompleteState
-
-        # Get all next nodes from current nodes
-        next_node_infos = context.get_next_nodes()
-
-        # Broadcast selected control output events for nodes with outputs
-        for current_node in context.current_nodes:
-            next_output = current_node.get_next_control_output()
-            if next_output is not None:
-                context.selected_output = next_output
-                GriptapeNodes.EventManager().put_event(
-                    ExecutionGriptapeNodeEvent(
-                        wrapped_event=ExecutionEvent(
-                            payload=SelectedControlOutputEvent(
-                                node_name=current_node.name,
-                                selected_output_parameter_name=next_output.name,
-                            )
-                        )
-                    )
-                )
-
-        # If no next nodes, we're complete
-        if not next_node_infos:
-            return CompleteState
-
-        # Set up next nodes as current nodes
-        # If a node has a parent (is in a node group), move to the parent instead
-        next_nodes = []
-        for next_node_info in next_node_infos:
-            target_node, entry_parameter = _resolve_target_node_for_control_flow(next_node_info)
-            target_node.set_entry_control_parameter(entry_parameter)
-            next_nodes.append(target_node)
-
-        context.current_nodes = next_nodes
-        context.selected_output = None
-        if not context.paused:
-            return ResolveNodeState
-        return None
-
-    @staticmethod
-    async def on_update(context: ControlFlowContext) -> type[State] | None:  # noqa: ARG004
-        return ResolveNodeState
 
 
 class CompleteState(State):
@@ -328,10 +261,14 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
             "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
         )
         max_nodes_in_parallel = GriptapeNodes.ConfigManager().get_config_value("max_nodes_in_parallel", default=5)
+
+        # SEQUENTIAL mode uses ParallelResolutionMachine with max_nodes_in_parallel=1
+        if execution_type == WorkflowExecutionMode.SEQUENTIAL:
+            max_nodes_in_parallel = 1
+
         context = ControlFlowContext(
             flow_name,
             max_nodes_in_parallel,
-            execution_type=execution_type,
             pickle_control_flow_result=pickle_control_flow_result,
             is_isolated=is_isolated,
         )
@@ -341,17 +278,7 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self, start_node: BaseNode, end_node: BaseNode | None = None, *, debug_mode: bool = False
     ) -> None:
         # If using DAG resolution, process data_nodes from queue first
-        if isinstance(self._context.resolution_machine, ParallelResolutionMachine):
-            current_nodes = await self._process_nodes_for_dag(start_node)
-        else:
-            current_nodes = [start_node]
-            if isinstance(start_node.parent_group, SubflowNodeGroup):
-                # In sequential mode, we aren't going to run this. Just continue.
-                node = GriptapeNodes.FlowManager().get_next_node_from_execution_queue()
-                if node is not None:
-                    await self.start_flow(node, end_node, debug_mode=debug_mode)
-                    return
-            # For control flow/sequential: emit all nodes in flow as involved
+        current_nodes = await self._process_nodes_for_dag(start_node)
         self._context.current_nodes = current_nodes
         self._context.end_node = end_node
         # Set entry control parameter for initial node (None for workflow start)
@@ -420,9 +347,6 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         For isolated subflows, this skips the global queue entirely and just
         processes the start node, as subflows are self-contained.
         """
-        if not isinstance(self._context.resolution_machine, ParallelResolutionMachine):
-            return []
-
         # Use the DagBuilder from the resolution machine context (may be isolated or global)
         dag_builder = self._context.resolution_machine.context.dag_builder
         if dag_builder is None:
@@ -506,5 +430,5 @@ class ControlFlowMachine(FSM[ControlFlowContext]):
         self._current_state = None
 
     @property
-    def resolution_machine(self) -> ParallelResolutionMachine | SequentialResolutionMachine:
+    def resolution_machine(self) -> ParallelResolutionMachine:
         return self._context.resolution_machine

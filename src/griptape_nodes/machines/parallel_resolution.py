@@ -608,6 +608,7 @@ class ExecuteDagState(State):
                 if task.cancelled():
                     # Task was cancelled - this is expected during flow cancellation
                     context.task_to_node.pop(task)
+                    logger.info("Task execution was cancelled.")
                     return ErrorState
                 if task.exception():
                     exc = task.exception()
