@@ -342,3 +342,35 @@ class GetPreviewGeneratorDetailsResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetPreviewGeneratorDetailsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failed to get preview generator details."""
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactSchemasRequest(RequestPayload):
+    """Request artifact configuration schemas for all registered providers.
+
+    This retrieves the complete schema structure including providers, formats,
+    generators, and their parameters. Used by ConfigManager to build the
+    configuration UI schema.
+
+    Results: GetArtifactSchemasResultSuccess | GetArtifactSchemasResultFailure
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactSchemasResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Successfully retrieved artifact schemas.
+
+    Attributes:
+        schemas: Complete artifact schema structure mapping provider keys
+                 (e.g., "image") to their configuration schemas
+    """
+
+    schemas: dict[str, Any]
+
+
+@dataclass
+@PayloadRegistry.register
+class GetArtifactSchemasResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Failed to retrieve artifact schemas."""

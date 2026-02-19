@@ -50,7 +50,7 @@ class TestProviderRegistry:
                 return "jpg"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
@@ -82,7 +82,7 @@ class TestProviderRegistry:
                 return {"jpg"}
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         class Provider2(BaseArtifactProvider):
@@ -99,7 +99,7 @@ class TestProviderRegistry:
                 return {"png"}
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
@@ -125,7 +125,7 @@ class TestProviderRegistry:
                 return {"jpg"}
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         class LowerProvider(BaseArtifactProvider):
@@ -142,7 +142,7 @@ class TestProviderRegistry:
                 return {"png"}
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
@@ -223,7 +223,7 @@ class TestProviderRegistry:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
@@ -280,7 +280,7 @@ class TestProviderRegistry:
                 return "jpg"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         class TestProvider2(BaseArtifactProvider):
@@ -305,7 +305,7 @@ class TestProviderRegistry:
                 return "png"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
@@ -345,7 +345,7 @@ class TestProviderRegistry:
                 return "jpg"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         registry = ProviderRegistry()
