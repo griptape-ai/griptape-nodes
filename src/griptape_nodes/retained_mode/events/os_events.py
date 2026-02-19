@@ -202,6 +202,7 @@ class ReadFileRequest(RequestPayload):
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
 
+    broadcast_result: bool = False
     file_path: str | None = None
     file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
