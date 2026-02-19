@@ -1057,10 +1057,13 @@ class ArtifactManager:
         except ValidationError as e:
             # Invalid - reset to defaults
             error_count = e.error_count()
+            # Format errors for logging: field -> error type
+            error_summary = ", ".join(f"{err['loc'][0] if err['loc'] else 'root'}: {err['type']}" for err in e.errors())
             logger.warning(
-                "Validating artifact preview generator '%s': Invalid config (%d errors). Resetting ALL parameters to defaults.",
+                "Validating artifact preview generator '%s': Invalid config (%d errors: %s). Resetting ALL parameters to defaults.",
                 generator_name,
                 error_count,
+                error_summary,
             )
             self._write_generator_config(provider_class, generator_class)
         else:
