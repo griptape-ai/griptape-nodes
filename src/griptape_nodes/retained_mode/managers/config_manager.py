@@ -448,7 +448,8 @@ class ConfigManager:
             library_schemas = LibraryRegistry.get_all_library_schemas()
 
             # Get artifact schemas (dynamically generated from registered providers/generators)
-            artifact_schemas = GriptapeNodes.ArtifactManager().get_artifact_schemas()
+            artifact_schemas_model = GriptapeNodes.ArtifactManager().get_artifact_schemas()
+            artifact_schemas = artifact_schemas_model.model_dump()
 
             # Return clean structure
             schema_with_defaults = {

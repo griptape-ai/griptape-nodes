@@ -66,6 +66,16 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     ImageArtifactProvider,
     ProviderRegistry,
 )
+from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import (
+    ArtifactSchemas,
+    GeneratorConfigurationsSchema,
+    GeneratorParametersSchema,
+    ParameterSchema,
+    PreviewFormatSchema,
+    PreviewGenerationSchema,
+    PreviewGeneratorSchema,
+    ProviderSchema,
+)
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -834,20 +844,15 @@ class ArtifactManager:
             parameters=parameters_dict,
         )
 
-    def get_artifact_schemas(self) -> dict:
+    def get_artifact_schemas(self) -> ArtifactSchemas:
         """Generate artifact configuration schemas for all registered providers.
 
         NO INSTANTIATION: Uses static methods and registry tracking to avoid loading heavyweight dependencies.
 
-        Returns detailed schema information including:
-        - Enum values for format and generator dropdowns
-        - Type information for generator parameters
-        - Default values and descriptions
-
         Returns:
-            Dictionary mapping provider keys to their schemas
+            ArtifactSchemas model containing all provider schemas with type safety
         """
-        schemas = {}
+        provider_schemas: dict[str, ProviderSchema] = {}
 
         for provider_class in self._registry.get_all_provider_classes():
             provider_friendly_name = provider_class.get_friendly_name()
@@ -858,9 +863,9 @@ class ArtifactManager:
             default_preview_generator_name = provider_class.get_default_preview_generator()
 
             preview_generator_names = []
-            preview_generator_schemas = {}
+            generator_configs: dict[str, GeneratorParametersSchema] = {}
 
-            # Get preview generators from registry without instantiation
+            # Build generator configurations
             for preview_generator_class in self._registry.get_preview_generators_for_provider(provider_class):
                 preview_generator_friendly_name = preview_generator_class.get_friendly_name()
                 preview_generator_key = preview_generator_friendly_name.lower().replace(" ", "_")
@@ -869,38 +874,37 @@ class ArtifactManager:
                 # Get parameter model class
                 params_model_class = preview_generator_class.get_parameters()
 
-                # Extract parameter schemas from Pydantic model
-                param_schemas = {}
+                # Build parameter schemas
+                param_schemas: dict[str, ParameterSchema] = {}
                 for param_name, field_info in params_model_class.model_fields.items():
                     json_schema_type = params_model_class.get_json_schema_type(param_name)
 
-                    param_schemas[param_name] = {
-                        "type": json_schema_type,
-                        "default": field_info.default,
-                        "description": field_info.description,
-                    }
+                    param_schemas[param_name] = ParameterSchema(
+                        type=json_schema_type,
+                        default=field_info.default,
+                        description=field_info.description,
+                    )
 
-                preview_generator_schemas[preview_generator_key] = param_schemas
+                generator_configs[preview_generator_key] = GeneratorParametersSchema(root=param_schemas)
 
-            schemas[provider_key] = {
-                "preview_generation": {
-                    "preview_format": {
-                        "type": "string",
-                        "enum": provider_formats,
-                        "default": default_format,
-                        "description": f"{provider_friendly_name} format for generated previews",
-                    },
-                    "preview_generator": {
-                        "type": "string",
-                        "enum": sorted(preview_generator_names),
-                        "default": default_preview_generator_name,
-                        "description": "Preview generator to use for creating previews",
-                    },
-                    "preview_generator_configurations": preview_generator_schemas,
-                }
-            }
+            # Build provider schema
+            provider_schemas[provider_key] = ProviderSchema(
+                preview_generation=PreviewGenerationSchema(
+                    preview_format=PreviewFormatSchema(
+                        enum=provider_formats,
+                        default=default_format,
+                        description=f"{provider_friendly_name} format for generated previews",
+                    ),
+                    preview_generator=PreviewGeneratorSchema(
+                        enum=sorted(preview_generator_names),
+                        default=default_preview_generator_name,
+                        description="Preview generator to use for creating previews",
+                    ),
+                    preview_generator_configurations=GeneratorConfigurationsSchema(root=generator_configs),
+                )
+            )
 
-        return schemas
+        return ArtifactSchemas(root=provider_schemas)
 
     def _register_provider_settings(self, provider_class: type) -> None:
         """Register provider settings and default generators in config system.

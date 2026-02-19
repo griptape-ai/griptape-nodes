@@ -1161,3 +1161,67 @@ class TestGeneratorValidation:
                     destination_preview_file_name="preview.webp",
                     params=invalid_params,
                 )
+
+    @pytest.mark.asyncio
+    async def test_get_artifact_schemas_structure(self) -> None:
+        """Test that get_artifact_schemas returns properly structured Pydantic model."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+        from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import ArtifactSchemas
+
+        artifact_manager = ArtifactManager()
+
+        # Register default providers (Image provider with its generators)
+        await artifact_manager.on_app_initialization_complete(AppInitializationComplete())
+
+        schemas = artifact_manager.get_artifact_schemas()
+
+        # Verify it's the correct model type
+        assert isinstance(schemas, ArtifactSchemas)
+
+        # Verify we can serialize to dict
+        schemas_dict = schemas.model_dump()
+        assert isinstance(schemas_dict, dict)
+
+        # Verify structure
+        assert "image" in schemas_dict
+        image_schema = schemas_dict["image"]
+        assert "preview_generation" in image_schema
+
+        preview_gen = image_schema["preview_generation"]
+        assert "preview_format" in preview_gen
+        assert "preview_generator" in preview_gen
+        assert "preview_generator_configurations" in preview_gen
+
+        # Verify format schema structure
+        format_schema = preview_gen["preview_format"]
+        assert format_schema["type"] == "string"
+        assert "enum" in format_schema
+        assert "default" in format_schema
+        assert "description" in format_schema
+        assert isinstance(format_schema["enum"], list)
+        assert format_schema["default"] in format_schema["enum"]
+
+        # Verify generator schema structure
+        gen_schema = preview_gen["preview_generator"]
+        assert gen_schema["type"] == "string"
+        assert "enum" in gen_schema
+        assert "default" in gen_schema
+        assert gen_schema["default"] in gen_schema["enum"]
+
+        # Verify generator configurations structure
+        gen_configs = preview_gen["preview_generator_configurations"]
+        assert isinstance(gen_configs, dict)
+        assert len(gen_configs) > 0  # At least one generator registered
+
+        # Check parameter schema structure
+        first_gen_key = next(iter(gen_configs.keys()))
+        first_gen_params = gen_configs[first_gen_key]
+        assert isinstance(first_gen_params, dict)
+
+        # All parameters should have type, default, description
+        for param_schema in first_gen_params.values():
+            assert "type" in param_schema
+            assert "default" in param_schema
+            assert "description" in param_schema
+            assert isinstance(param_schema["type"], str)
+            assert isinstance(param_schema["description"], str)
