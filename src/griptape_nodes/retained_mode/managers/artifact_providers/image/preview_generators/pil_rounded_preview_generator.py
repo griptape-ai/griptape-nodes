@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw
+from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
 
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
@@ -19,9 +20,36 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
     BaseArtifactPreviewGenerator,
 )
-from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-    ProviderValue,
+from griptape_nodes.retained_mode.managers.artifact_providers.base_generator_parameters import (
+    BaseGeneratorParameters,
+    Field,
 )
+
+
+class PILRoundedParameters(BaseGeneratorParameters):
+    """Parameters for PIL rounded preview generation."""
+
+    max_width: PositiveInt = Field(
+        default=1024,
+        description="Maximum width in pixels for generated preview (1-8192)",
+        editor_schema_type="integer",
+        le=8192,
+    )
+
+    max_height: PositiveInt = Field(
+        default=1024,
+        description="Maximum height in pixels for generated preview (1-8192)",
+        editor_schema_type="integer",
+        le=8192,
+    )
+
+    corner_radius_percent: float = Field(
+        default=2.0,
+        description="Corner radius as percentage of smaller dimension (0-10%)",
+        editor_schema_type="number",
+        ge=0.0,
+        le=10.0,
+    )
 
 
 class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
@@ -49,7 +77,7 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
             params: Generator-specific parameters
 
         Raises:
-            TypeError: If parameters are invalid (wrong type or value)
+            ValidationError: If parameters are invalid
         """
         super().__init__(
             source_file_location,
@@ -59,16 +87,9 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
             params,
         )
 
-        # Validate parameters using class method
-        errors = self.validate_parameters(params)
-        if errors:
-            msg = f"Invalid parameters: {', '.join(errors)}"
-            raise ValueError(msg)
-
-        # Extract validated parameters
-        self.max_width = params["max_width"]
-        self.max_height = params["max_height"]
-        self.corner_radius = params["corner_radius"]
+        # Validate and convert dict -> Pydantic model
+        # Raises ValidationError if invalid
+        self.params = PILRoundedParameters.model_validate(params)
 
     @classmethod
     def get_friendly_name(cls) -> str:
@@ -98,72 +119,9 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
         return {"webp", "jpg", "png"}
 
     @classmethod
-    def get_parameters(cls) -> dict[str, ProviderValue]:
-        """Get metadata about generator parameters.
-
-        Returns:
-            Dict mapping parameter names to their metadata
-        """
-        return {
-            "max_width": ProviderValue(
-                default_value=1024,
-                required=True,
-                json_schema_type="integer",
-                description="Maximum width in pixels for generated preview",
-            ),
-            "max_height": ProviderValue(
-                default_value=1024,
-                required=True,
-                json_schema_type="integer",
-                description="Maximum height in pixels for generated preview",
-            ),
-            "corner_radius": ProviderValue(
-                default_value=20,
-                required=True,
-                json_schema_type="integer",
-                description="Radius of rounded corners in pixels (0 = no rounding)",
-            ),
-        }
-
-    @classmethod
-    def validate_values(cls, params: dict[str, Any]) -> list[str] | None:
-        """Validate parameter values against constraints.
-
-        Args:
-            params: Parameter dict to validate (structure assumed valid)
-
-        Returns:
-            None if valid, otherwise list of error messages
-        """
-        errors = []
-
-        # Validate each parameter value
-        cls._validate_positive_int(params, "max_width", errors)
-        cls._validate_positive_int(params, "max_height", errors)
-        cls._validate_non_negative_int(params, "corner_radius", errors)
-
-        if errors:
-            return errors
-
-        return None
-
-    @staticmethod
-    def _validate_positive_int(params: dict[str, Any], key: str, errors: list[str]) -> None:
-        """Validate that a parameter is a positive integer."""
-        value = params.get(key)
-        if not isinstance(value, int):
-            errors.append(f"{key} must be an integer, got {type(value).__name__}")
-        elif value <= 0:
-            errors.append(f"{key} must be positive, got {value}")
-
-    @staticmethod
-    def _validate_non_negative_int(params: dict[str, Any], key: str, errors: list[str]) -> None:
-        """Validate that a parameter is a non-negative integer."""
-        value = params.get(key)
-        if not isinstance(value, int):
-            errors.append(f"{key} must be an integer, got {type(value).__name__}")
-        elif value < 0:
-            errors.append(f"{key} must be non-negative, got {value}")
+    def get_parameters(cls) -> type[BaseGeneratorParameters]:
+        """Get parameter model class."""
+        return PILRoundedParameters
 
     async def attempt_generate_preview(self) -> str:
         """Attempt to generate preview file with rounded corners.
@@ -199,7 +157,8 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
         # Step 3: Process image with PIL
         with Image.open(BytesIO(image_data)) as img:
             # Resize to fit max dimensions (preserves aspect ratio)
-            img.thumbnail((self.max_width, self.max_height), Image.Resampling.LANCZOS)
+            # Access validated parameters via self.params - fully type-safe
+            img.thumbnail((self.params.max_width, self.params.max_height), Image.Resampling.LANCZOS)
 
             # Convert to RGBA for alpha channel support
             if img.mode != "RGBA":
@@ -208,7 +167,7 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
                 rgba_img = img
 
             # Apply rounded corners
-            rounded_img = self._apply_rounded_corners(rgba_img, self.corner_radius)
+            rounded_img = self._apply_rounded_corners(rgba_img)
 
             # Handle format-specific output
             if self.preview_format.lower() in ("jpg", "jpeg"):
@@ -244,23 +203,26 @@ class PILRoundedPreviewGenerator(BaseArtifactPreviewGenerator):
 
         return self.destination_preview_file_name
 
-    def _apply_rounded_corners(self, img: Image.Image, radius: int) -> Image.Image:
+    def _apply_rounded_corners(self, img: Image.Image) -> Image.Image:
         """Apply rounded corners to image using alpha mask.
 
         Args:
-            img: Source image (will be converted to RGBA if needed)
-            radius: Corner radius in pixels (will be clamped to prevent over-rounding)
+            img: Source image (RGBA mode)
 
         Returns:
             RGBA image with transparent rounded corners
         """
-        # Skip if no rounding requested
-        if radius <= 0:
+        # Calculate pixel radius from percentage of smaller dimension
+        smaller_dimension = min(img.width, img.height)
+        radius_pixels = int((self.params.corner_radius_percent / 100.0) * smaller_dimension)
+
+        # Skip if no rounding requested (0% or rounds to 0 pixels)
+        if radius_pixels <= 0:
             return img
 
         # Clamp radius to prevent over-rounding
-        max_radius = min(img.width, img.height) // 2
-        effective_radius = min(radius, max_radius)
+        max_radius = smaller_dimension // 2
+        effective_radius = min(radius_pixels, max_radius)
 
         # Create mask for rounded corners
         mask = Image.new("L", img.size, 0)

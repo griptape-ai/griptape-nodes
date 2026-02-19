@@ -811,15 +811,19 @@ class ArtifactManager:
             friendly_name = generator_class.get_friendly_name()
             source_formats = generator_class.get_supported_source_formats()
             preview_formats = generator_class.get_supported_preview_formats()
-            parameters = generator_class.get_parameters()
+            params_model_class = generator_class.get_parameters()
         except Exception as e:
             return GetPreviewGeneratorDetailsResultFailure(
                 result_details=f"Attempted to get preview generator details for '{request.preview_generator_friendly_name}' "
                 f"in provider '{request.provider_friendly_name}'. Failed due to: metadata access error - {e}"
             )
 
-        # Convert ProviderValue to tuple for serialization
-        parameters_dict = {name: (pv.default_value, pv.required) for name, pv in parameters.items()}
+        # Extract parameters from Pydantic model for serialization
+        parameters_dict = {}
+        for param_name, field_info in params_model_class.model_fields.items():
+            default_value = field_info.default
+            required = field_info.is_required()
+            parameters_dict[param_name] = (default_value, required)
 
         # SUCCESS PATH: Return generator details
         return GetPreviewGeneratorDetailsResultSuccess(
@@ -862,13 +866,18 @@ class ArtifactManager:
                 preview_generator_key = preview_generator_friendly_name.lower().replace(" ", "_")
                 preview_generator_names.append(preview_generator_friendly_name)
 
-                parameters = preview_generator_class.get_parameters()
+                # Get parameter model class
+                params_model_class = preview_generator_class.get_parameters()
+
+                # Extract parameter schemas from Pydantic model
                 param_schemas = {}
-                for param_name, provider_value in parameters.items():
+                for param_name, field_info in params_model_class.model_fields.items():
+                    json_schema_type = params_model_class.get_json_schema_type(param_name)
+
                     param_schemas[param_name] = {
-                        "type": provider_value.json_schema_type,
-                        "default": provider_value.default_value,
-                        "description": provider_value.description,
+                        "type": json_schema_type,
+                        "default": field_info.default,
+                        "description": field_info.description,
                     }
 
                 preview_generator_schemas[preview_generator_key] = param_schemas
@@ -926,11 +935,8 @@ class ArtifactManager:
         Returns:
             Dictionary of parameter names to default values
         """
-        parameters = generator_class.get_parameters()
-        default_params = {}
-        for param_name, provider_value in parameters.items():
-            default_params[param_name] = provider_value.default_value
-        return default_params
+        params_model_class = generator_class.get_parameters()
+        return params_model_class().model_dump()
 
     def _read_generator_config(
         self, provider_class: type[BaseArtifactProvider], generator_class: type[BaseArtifactPreviewGenerator]
@@ -1015,20 +1021,22 @@ class ArtifactManager:
             self._write_generator_config(provider_class, generator_class)
             return
 
-        # Validate existing config (structure and values)
-        errors = generator_class.validate_parameters(existing_config)
-
-        # Config is valid - preserve user's settings
-        if errors is None:
+        # Validate existing config using Pydantic model
+        params_model_class = generator_class.get_parameters()
+        try:
+            params_model_class.model_validate(existing_config)
+        except ValidationError as e:
+            # Invalid - reset to defaults
+            error_count = e.error_count()
+            logger.warning(
+                "Validating artifact preview generator '%s': Invalid config (%d errors). Resetting ALL parameters to defaults.",
+                generator_name,
+                error_count,
+            )
+            self._write_generator_config(provider_class, generator_class)
+        else:
+            # Valid - keep existing settings
             return
-
-        # Invalid config - reset ALL params to defaults
-        logger.warning(
-            "Validating artifact preview generator '%s': Invalid config (%s). Resetting ALL parameters to defaults.",
-            generator_name,
-            errors,
-        )
-        self._write_generator_config(provider_class, generator_class)
 
     def _validate_and_write_provider_settings(self, provider_class: type[BaseArtifactProvider]) -> None:
         """Validate provider-level settings. Resets to defaults if missing or invalid.

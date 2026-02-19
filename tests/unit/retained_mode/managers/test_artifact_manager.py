@@ -3,9 +3,11 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.artifact_events import (
@@ -33,6 +35,11 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators.pil_thumbnail_generator import (
+        PILThumbnailParameters,
+    )
 
 # ==================================================================================
 # CRITICAL WARNING: Config Isolation for Tests
@@ -1040,9 +1047,9 @@ class TestGeneratorValidation:
         )
 
         params = {"max_width": 1024, "max_height": 768}
-        errors = PILThumbnailGenerator.validate_parameters(params)
-
-        assert errors is None
+        params_model_class = PILThumbnailGenerator.get_parameters()
+        # Should not raise ValidationError
+        params_model_class.model_validate(params)
 
     def test_pil_thumbnail_validate_parameters_invalid_type(self) -> None:
         """Test PILThumbnailGenerator rejects invalid types."""
@@ -1051,11 +1058,14 @@ class TestGeneratorValidation:
         )
 
         params = {"max_width": "not_a_number", "max_height": 768}
-        errors = PILThumbnailGenerator.validate_parameters(params)
+        params_model_class = PILThumbnailGenerator.get_parameters()
 
-        assert errors is not None
-        assert len(errors) == 1
-        assert "max_width must be an integer" in errors[0]
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "max_width" for e in errors)
 
     def test_pil_thumbnail_validate_parameters_invalid_value(self) -> None:
         """Test PILThumbnailGenerator rejects negative values."""
@@ -1064,23 +1074,30 @@ class TestGeneratorValidation:
         )
 
         params = {"max_width": -100, "max_height": 768}
-        errors = PILThumbnailGenerator.validate_parameters(params)
+        params_model_class = PILThumbnailGenerator.get_parameters()
 
-        assert errors is not None
-        assert len(errors) == 1
-        assert "max_width must be positive" in errors[0]
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "max_width" and "greater_than" in e["type"] for e in errors)
 
     def test_pil_thumbnail_validate_parameters_missing_key(self) -> None:
-        """Test PILThumbnailGenerator rejects missing parameters."""
+        """Test PILThumbnailGenerator uses defaults for missing parameters."""
+        from typing import cast
+
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
 
         params = {"max_width": 1024}
-        errors = PILThumbnailGenerator.validate_parameters(params)
+        params_model_class = PILThumbnailGenerator.get_parameters()
 
-        assert errors is not None
-        assert any("Missing required parameter" in err for err in errors)
+        # With Pydantic, fields with defaults are optional - should use default value
+        validated_params = cast("PILThumbnailParameters", params_model_class.model_validate(params))
+        assert validated_params.max_width == 1024  # noqa: PLR2004
+        assert validated_params.max_height == 1024  # Uses default value  # noqa: PLR2004
 
     def test_pil_thumbnail_validate_parameters_extra_key(self) -> None:
         """Test PILThumbnailGenerator rejects unknown parameters."""
@@ -1089,10 +1106,13 @@ class TestGeneratorValidation:
         )
 
         params = {"max_width": 1024, "max_height": 768, "unknown_param": 42}
-        errors = PILThumbnailGenerator.validate_parameters(params)
+        params_model_class = PILThumbnailGenerator.get_parameters()
 
-        assert errors is not None
-        assert any("Unknown parameters" in err for err in errors)
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert any(e["type"] == "extra_forbidden" for e in errors)
 
     def test_pil_rounded_validate_parameters_valid(self) -> None:
         """Test PILRoundedPreviewGenerator validates correct parameters."""
@@ -1100,26 +1120,29 @@ class TestGeneratorValidation:
             PILRoundedPreviewGenerator,
         )
 
-        params = {"max_width": 1024, "max_height": 768, "corner_radius": 20}
-        errors = PILRoundedPreviewGenerator.validate_parameters(params)
+        params = {"max_width": 1024, "max_height": 768, "corner_radius_percent": 2.0}
+        params_model_class = PILRoundedPreviewGenerator.get_parameters()
+        # Should not raise ValidationError
+        params_model_class.model_validate(params)
 
-        assert errors is None
-
-    def test_pil_rounded_validate_parameters_invalid_corner_radius(self) -> None:
-        """Test PILRoundedPreviewGenerator rejects negative corner_radius."""
+    def test_pil_rounded_validate_parameters_invalid_corner_radius_percent(self) -> None:
+        """Test PILRoundedPreviewGenerator rejects negative corner_radius_percent."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILRoundedPreviewGenerator,
         )
 
-        params = {"max_width": 1024, "max_height": 768, "corner_radius": -5}
-        errors = PILRoundedPreviewGenerator.validate_parameters(params)
+        params = {"max_width": 1024, "max_height": 768, "corner_radius_percent": -1.0}
+        params_model_class = PILRoundedPreviewGenerator.get_parameters()
 
-        assert errors is not None
-        assert len(errors) == 1
-        assert "corner_radius must be non-negative" in errors[0]
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "corner_radius_percent" and "greater_than_equal" in e["type"] for e in errors)
 
     def test_generator_constructor_uses_validation(self) -> None:
-        """Test generator constructors call validate_parameters and raise ValueError on invalid params."""
+        """Test generator constructors use Pydantic validation and raise ValidationError on invalid params."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
@@ -1130,7 +1153,7 @@ class TestGeneratorValidation:
             source_path = Path(tmpdir) / "test.png"
             dest_dir = Path(tmpdir) / "preview"
 
-            with pytest.raises(ValueError, match="Invalid parameters"):
+            with pytest.raises(ValidationError):
                 PILThumbnailGenerator(
                     source_file_location=str(source_path),
                     preview_format="webp",

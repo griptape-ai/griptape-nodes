@@ -5,29 +5,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
-
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
         BaseArtifactPreviewGenerator,
     )
     from griptape_nodes.retained_mode.managers.artifact_providers.provider_registry import ProviderRegistry
-
-
-class ProviderValue(BaseModel):
-    """Metadata for a generator parameter.
-
-    Attributes:
-        default_value: Default value if parameter not provided
-        required: Whether parameter must be provided
-        json_schema_type: JSON Schema type (e.g., 'integer', 'string', 'number', 'boolean')
-        description: Human-readable description of the parameter
-    """
-
-    default_value: Any
-    required: bool
-    json_schema_type: str = "string"
-    description: str = ""
 
 
 class BaseArtifactProvider(ABC):
@@ -197,13 +179,13 @@ class BaseArtifactProvider(ABC):
             raise ValueError(msg)
 
         # Get generator metadata
-        generator_params = generator_class.get_parameters()
+        params_model_class = generator_class.get_parameters()
         supported_formats = generator_class.get_supported_preview_formats()
 
         # FAILURE CASE: Validate required parameters are provided
         missing_params = []
-        for param_name, param_value in generator_params.items():
-            if param_value.required and param_name not in params:
+        for param_name, field_info in params_model_class.model_fields.items():
+            if field_info.is_required() and param_name not in params:
                 missing_params.append(param_name)
 
         if missing_params:
@@ -269,9 +251,9 @@ class BaseArtifactProvider(ABC):
         """
         key_prefix = generator_class.get_config_key_prefix(provider_class.get_friendly_name())
 
-        parameters = generator_class.get_parameters()
+        params_model_class = generator_class.get_parameters()
         config = {}
-        for param_name, provider_value in parameters.items():
-            config[f"{key_prefix}.{param_name}"] = provider_value.default_value
+        for param_name, field_info in params_model_class.model_fields.items():
+            config[f"{key_prefix}.{param_name}"] = field_info.default
 
         return config

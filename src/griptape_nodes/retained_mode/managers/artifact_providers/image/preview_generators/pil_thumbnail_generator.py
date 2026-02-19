@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image
+from pydantic import PositiveInt  # noqa: TC002 - Runtime validation, not type-only
 
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
@@ -19,9 +20,28 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_preview_generator import (
     BaseArtifactPreviewGenerator,
 )
-from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-    ProviderValue,
+from griptape_nodes.retained_mode.managers.artifact_providers.base_generator_parameters import (
+    BaseGeneratorParameters,
+    Field,
 )
+
+
+class PILThumbnailParameters(BaseGeneratorParameters):
+    """Parameters for PIL thumbnail generation."""
+
+    max_width: PositiveInt = Field(
+        default=1024,
+        description="Maximum width in pixels for generated preview (1-8192)",
+        editor_schema_type="integer",
+        le=8192,
+    )
+
+    max_height: PositiveInt = Field(
+        default=1024,
+        description="Maximum height in pixels for generated preview (1-8192)",
+        editor_schema_type="integer",
+        le=8192,
+    )
 
 
 class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
@@ -45,21 +65,18 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
             preview_format: Target format (webp, jpg, png)
             destination_preview_directory: Directory where the preview should be saved
             destination_preview_file_name: Filename for the preview
-            params: Generator parameters (max_width, max_height - both required)
+            params: Generator parameters (max_width, max_height)
+
+        Raises:
+            ValidationError: If parameters are invalid
         """
         super().__init__(
             source_file_location, preview_format, destination_preview_directory, destination_preview_file_name, params
         )
 
-        # Validate parameters using class method
-        errors = self.validate_parameters(params)
-        if errors:
-            msg = f"Invalid parameters: {', '.join(errors)}"
-            raise ValueError(msg)
-
-        # Extract validated parameters
-        self.max_width = params["max_width"]
-        self.max_height = params["max_height"]
+        # Validate and convert dict -> Pydantic model
+        # Raises ValidationError if invalid
+        self.params = PILThumbnailParameters.model_validate(params)
 
     @classmethod
     def get_friendly_name(cls) -> str:
@@ -77,52 +94,9 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
         return {"webp", "jpg", "png"}
 
     @classmethod
-    def get_parameters(cls) -> dict[str, ProviderValue]:
-        """Generator-specific parameters."""
-        return {
-            "max_width": ProviderValue(
-                default_value=1024,
-                required=True,
-                json_schema_type="integer",
-                description="Maximum width in pixels for generated preview",
-            ),
-            "max_height": ProviderValue(
-                default_value=1024,
-                required=True,
-                json_schema_type="integer",
-                description="Maximum height in pixels for generated preview",
-            ),
-        }
-
-    @classmethod
-    def validate_values(cls, params: dict[str, Any]) -> list[str] | None:
-        """Validate parameter values against constraints.
-
-        Args:
-            params: Parameter dict to validate (structure assumed valid)
-
-        Returns:
-            None if valid, otherwise list of error messages
-        """
-        errors = []
-
-        # Validate each parameter value
-        cls._validate_positive_int(params, "max_width", errors)
-        cls._validate_positive_int(params, "max_height", errors)
-
-        if errors:
-            return errors
-
-        return None
-
-    @staticmethod
-    def _validate_positive_int(params: dict[str, Any], key: str, errors: list[str]) -> None:
-        """Validate that a parameter is a positive integer."""
-        value = params.get(key)
-        if not isinstance(value, int):
-            errors.append(f"{key} must be an integer, got {type(value).__name__}")
-        elif value <= 0:
-            errors.append(f"{key} must be positive, got {value}")
+    def get_parameters(cls) -> type[BaseGeneratorParameters]:
+        """Get parameter model class."""
+        return PILThumbnailParameters
 
     async def attempt_generate_preview(self) -> str:
         """Execute preview generation.
@@ -150,7 +124,8 @@ class PILThumbnailGenerator(BaseArtifactPreviewGenerator):
 
         with Image.open(BytesIO(image_data)) as img:
             # Calculate thumbnail size (preserves aspect ratio, fits within max dimensions)
-            img.thumbnail((self.max_width, self.max_height), Image.Resampling.LANCZOS)
+            # Access validated parameters via self.params - fully type-safe
+            img.thumbnail((self.params.max_width, self.params.max_height), Image.Resampling.LANCZOS)
 
             # Save to BytesIO
             output_buffer = BytesIO()
