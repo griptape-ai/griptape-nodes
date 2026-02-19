@@ -1828,7 +1828,9 @@ class ErrorProxyNode(BaseNode):
             f"This placeholder stands in for the '{self.original_node_type}' node "
             f"from the '{self.original_library_name}' library, which could not be loaded.\n\n"
             f"The technical issue:\n{self.failure_reason}\n\n"
-            f"Your original node will be restored automatically once the issue is resolved."
+            f"Your original node will be restored automatically once the issue is resolved. "
+            f"This may require updating your engine, registering the appropriate library, "
+            f"or getting a fix from the node author."
         )
 
     def on_attempt_set_parameter_value(self, param_name: str) -> None:
