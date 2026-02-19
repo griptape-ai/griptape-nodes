@@ -75,6 +75,7 @@ from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactPreviewGenerator,
     BaseArtifactProvider,
+    BaseGeneratorParameters,
     ImageArtifactProvider,
     ProviderRegistry,
 )
@@ -139,12 +140,12 @@ class PreviewSettings(BaseModel):
     Attributes:
         format: Preview format (e.g., 'png', 'webp')
         generator_name: Friendly name of preview generator
-        generator_params: Generator-specific parameters
+        generator_params: Validated generator-specific parameters (Pydantic model instance)
     """
 
     format: str
     generator_name: str
-    generator_params: dict[str, Any]
+    generator_params: BaseGeneratorParameters  # Will be a specific BaseGeneratorParameters subclass
 
 
 class ArtifactManager:
@@ -430,16 +431,21 @@ class ArtifactManager:
                 f"Failed due to: provider '{request.artifact_provider_name}' not found"
             )
 
-        # Read settings from config with fallback (no validation)
-        settings = self._get_preview_settings_from_config(provider_class, request.artifact_provider_name)
+        # Read settings from config with validation
+        try:
+            settings = self._get_preview_settings_from_config(provider_class, request.artifact_provider_name)
+        except RuntimeError as e:
+            return GeneratePreviewFromDefaultsResultFailure(
+                result_details=f"Attempted to generate preview using defaults. Failed due to: {e}"
+            )
 
-        # Delegate to GeneratePreviewRequest (provider will validate)
+        # Delegate to GeneratePreviewRequest
         generate_request = GeneratePreviewRequest(
             macro_path=request.macro_path,
             artifact_provider_name=request.artifact_provider_name,
             format=settings.format,
             preview_generator_name=settings.generator_name,
-            preview_generator_parameters=settings.generator_params,
+            preview_generator_parameters=settings.generator_params.model_dump(),
             generate_preview_metadata_json=True,
         )
 
@@ -659,9 +665,15 @@ class ArtifactManager:
                     should_regenerate_preview = True
                 else:
                     # Check if preview matches current generator settings
-                    preview_settings = self._get_preview_settings_from_config(
-                        provider_class, request.artifact_provider_name
-                    )
+                    try:
+                        preview_settings = self._get_preview_settings_from_config(
+                            provider_class, request.artifact_provider_name
+                        )
+                    except RuntimeError as e:
+                        return GetPreviewForArtifactResultFailure(
+                            result_details=f"Attempted to get preview for '{source_path}'. Failed due to: {e}"
+                        )
+
                     settings_match = self._does_preview_match_current_settings(
                         metadata, preview_settings.generator_name, preview_settings.generator_params
                     )
@@ -1173,22 +1185,26 @@ class ArtifactManager:
 
             self._write_provider_default_settings(provider_class)
 
-    def _get_preview_settings_from_config(
+    def _get_preview_settings_from_config(  # noqa: PLR0912
         self, provider_class: type[BaseArtifactProvider], provider_name: str
     ) -> PreviewSettings:
-        """Read preview settings from config with intelligent fallback.
+        """Read preview settings from config with intelligent fallback and validation.
 
-        NO VALIDATION - just reads config and falls back to defaults if missing.
-        Prevents "half-valid" states by checking if generator is registered.
+        Reads config and falls back to defaults if missing, then validates parameters
+        through Pydantic models. Prevents "half-valid" states by checking if generator
+        is registered.
 
         Args:
             provider_class: The provider class
             provider_name: The provider friendly name (for logging)
 
         Returns:
-            PreviewSettings object containing format, generator_name, and generator_params
+            PreviewSettings object containing format, generator_name, and validated generator_params
             - All values are from config OR defaults, never mixed
-            - Provider's generate_preview() will validate these values
+            - Parameters are validated through Pydantic models
+
+        Raises:
+            RuntimeError: If generator not found in registry or parameters are invalid
         """
         # Step 1: Read format from config (or use default if missing)
         format_config_key = provider_class.get_preview_format_config_key()
@@ -1232,6 +1248,14 @@ class ArtifactManager:
             generator_name = provider_class.get_default_preview_generator()
 
         # Step 3: Read params (only if generator from config was registered)
+        generator_class = self._registry.get_preview_generator_by_name(provider_class, generator_name)
+        if generator_class is None:
+            if generator_from_config_is_registered:
+                msg = f"Generator '{generator_name}' not found in registry but was validated as registered"
+            else:
+                msg = f"Default generator '{generator_name}' not found in registry but provider claims it as default"
+            raise RuntimeError(msg)
+
         if generator_from_config_is_registered:
             # Generator from config is valid - read its params from config
             generator_key = normalize_friendly_name_to_key(generator_name)
@@ -1242,29 +1266,29 @@ class ArtifactManager:
             params_result = GriptapeNodes.handle_request(params_request)
 
             if isinstance(params_result, GetConfigValueResultSuccess):
-                # Params exist in config - use them (provider will validate later)
-                generator_params = params_result.value
+                # Params exist in config - validate them through Pydantic
+                generator_params_dict = params_result.value
             else:
                 # Params missing from config - use defaults for this generator
-                generator_class = self._registry.get_preview_generator_by_name(provider_class, generator_name)
-                if generator_class is None:
-                    msg = f"Generator '{generator_name}' not found in registry but was validated as registered"
-                    raise RuntimeError(msg)
-                generator_params = self._get_default_params_for_generator(generator_class)
+                generator_params_dict = self._get_default_params_for_generator(generator_class)
         else:
             # Generator from config was invalid OR missing - use default params
             # This prevents "half-valid" states (user's params with default generator)
-            generator_class = self._registry.get_preview_generator_by_name(provider_class, generator_name)
-            if generator_class is None:
-                msg = f"Default generator '{generator_name}' not found in registry but provider claims it as default"
-                raise RuntimeError(msg)
-            generator_params = self._get_default_params_for_generator(generator_class)
+            generator_params_dict = self._get_default_params_for_generator(generator_class)
 
-        # Return all settings (provider will validate them)
+        # Validate parameters through Pydantic model
+        params_model_class = generator_class.get_parameters()
+        try:
+            validated_params = params_model_class.model_validate(generator_params_dict)
+        except ValidationError as e:
+            msg = f"Invalid parameters for generator '{generator_name}': {e}"
+            raise RuntimeError(msg) from e
+
+        # Return all settings with validated parameters
         return PreviewSettings(
             format=preview_format,
             generator_name=generator_name,
-            generator_params=generator_params,
+            generator_params=validated_params,
         )
 
     def _is_preview_source_stale(
@@ -1289,22 +1313,32 @@ class ArtifactManager:
         self,
         metadata: PreviewMetadata,
         current_generator_name: str,
-        current_generator_params: dict[str, Any],
+        current_generator_params: BaseGeneratorParameters,
     ) -> bool:
         """Check if preview was generated with current generator settings.
 
         Args:
             metadata: Preview metadata containing stored generator info
             current_generator_name: Current generator name from config
-            current_generator_params: Current generator parameters from config
+            current_generator_params: Validated current generator parameters (BaseGeneratorParameters instance)
 
         Returns:
             True if settings match, False otherwise
         """
-        return (
-            metadata.preview_generator_name == current_generator_name
-            and metadata.preview_generator_parameters == current_generator_params
-        )
+        # FAILURE CASE: Generator names don't match
+        if metadata.preview_generator_name != current_generator_name:
+            return False
+
+        # Validate metadata parameters through the same Pydantic model
+        params_model_class = type(current_generator_params)
+        try:
+            metadata_params_model = params_model_class.model_validate(metadata.preview_generator_parameters)
+        except ValidationError:
+            # Metadata parameters are invalid - they don't match
+            return False
+
+        # Compare the normalized Pydantic models
+        return metadata_params_model == current_generator_params
 
     def _resolve_preview_path(
         self,
