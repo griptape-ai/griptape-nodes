@@ -311,12 +311,13 @@ class ArtifactManager:
         source_path_obj = Path(source_path)
         try:
             resolved_path = self._resolve_preview_path(source_path, preview_format)
-            destination_dir = resolved_path.destination_dir
-            preview_file_name = resolved_path.file_name
-        except RuntimeError as e:
+        except Exception as e:
             return GeneratePreviewResultFailure(
                 result_details=f"Attempted to generate preview for '{source_path}'. Failed due to: {e}"
             )
+
+        destination_dir = resolved_path.destination_dir
+        preview_file_name = resolved_path.file_name
 
         # FAILURE CASE: Call provider and get returned filenames
         try:
@@ -499,13 +500,14 @@ class ArtifactManager:
         # FAILURE CASE: Calculate metadata path using same logic as preview path (metadata uses .json extension)
         try:
             resolved_path = self._resolve_preview_path(source_path, "json")
-            destination_dir = resolved_path.destination_dir
-            metadata_file_name = resolved_path.file_name
-            metadata_path = str(destination_dir / metadata_file_name)
-        except RuntimeError as e:
+        except Exception as e:
             return GetPreviewForArtifactResultFailure(
                 result_details=f"Attempted to get preview for '{source_path}'. Failed due to: {e}"
             )
+
+        destination_dir = resolved_path.destination_dir
+        metadata_file_name = resolved_path.file_name
+        metadata_path = str(destination_dir / metadata_file_name)
 
         # Check if metadata file exists
         metadata_info_request = GetFileInfoRequest(path=metadata_path, workspace_only=False)
