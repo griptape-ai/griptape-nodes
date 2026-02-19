@@ -1316,6 +1316,46 @@ class TestCreateNewFilePolicy:
         expected_path = temp_dir / "render_2.png"
         assert Path(result.final_file_path).resolve() == expected_path.resolve()
 
+    def test_create_new_with_fully_resolved_macro_should_use_suffix_injection(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path
+    ) -> None:
+        """Test CREATE_NEW policy with fully-resolved MacroPath falls back to suffix injection.
+
+        When a MacroPath has all variables resolved and no index variable, the CREATE_NEW
+        policy should fall back to parsing the filename and adding _N suffix. Currently
+        this fails with "no index variable found".
+        """
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.retained_mode.events.project_events import MacroPath
+
+        os_manager = griptape_nodes.OSManager()
+
+        # Create first file manually
+        first_file = temp_dir / "render.png"
+        first_file.write_text("Original")
+
+        # Use MacroPath with all variables resolved (no index variable)
+        macro_path = MacroPath(
+            parsed_macro=ParsedMacro(f"{temp_dir}/render.png"),
+            variables={},  # No variables to resolve
+        )
+
+        # This should fall back to suffix injection and create render_1.png
+        request = WriteFileRequest(
+            file_path=macro_path,
+            content="Second file",
+            existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+        )
+
+        result = os_manager.on_write_file_request(request)
+
+        # EXPECTED: Should succeed and create render_1.png
+        # ACTUAL: Currently fails with WriteFileResultFailure
+        assert isinstance(result, WriteFileResultSuccess)
+        expected_path = temp_dir / "render_1.png"
+        assert Path(result.final_file_path).resolve() == expected_path.resolve()
+        assert expected_path.read_text() == "Second file"
+
 
 class TestReadFileWithThumbnailGeneration:
     """Test ReadFileRequest with thumbnail generation for different file sources."""

@@ -1,12 +1,12 @@
 """File driver for Griptape Cloud asset locations."""
 
 import os
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
-from griptape_nodes.file.base_file_driver import BaseFileDriver
+from griptape_nodes.files.base_file_driver import BaseFileDriver
 
 # HTTP status code threshold for success
 _HTTP_SUCCESS_THRESHOLD = 400
@@ -18,6 +18,15 @@ class GriptapeCloudFileDriver(BaseFileDriver):
     Handles locations matching: https://cloud.griptape.ai/buckets/{id}/assets/{path}
     Reads files via signed URLs. For writing files, use storage drivers directly.
     """
+
+    @property
+    def priority(self) -> int:
+        """Return priority 10 to be checked before HttpFileDriver (50).
+
+        Returns:
+            Priority value of 10
+        """
+        return 10
 
     def __init__(self, bucket_id: str, api_key: str, base_url: str = "https://cloud.griptape.ai") -> None:
         """Initialize GriptapeCloudFileDriver.
@@ -62,6 +71,26 @@ class GriptapeCloudFileDriver(BaseFileDriver):
         """
         return GriptapeCloudStorageDriver.is_cloud_asset_url(location, self.base_url)
 
+    def _extract_bucket_id_from_url(self, location: str) -> str | None:
+        """Extract bucket ID from Griptape Cloud asset URL.
+
+        Args:
+            location: Cloud asset URL (e.g., https://cloud.griptape.ai/buckets/{id}/assets/{path})
+
+        Returns:
+            Bucket ID string, or None if not found
+        """
+        parsed = urlparse(location)
+        path = parsed.path
+        # Pattern: /buckets/{bucket_id}/assets/...
+        if "/buckets/" in path and "/assets/" in path:
+            parts = path.split("/buckets/", 1)
+            if len(parts) > 1:
+                # Get everything after /buckets/ up to /assets/
+                bucket_part = parts[1].split("/assets/", 1)[0]
+                return bucket_part
+        return None
+
     async def read(self, location: str, timeout: float) -> bytes:  # noqa: ASYNC109
         """Download file from Griptape Cloud storage.
 
@@ -81,7 +110,10 @@ class GriptapeCloudFileDriver(BaseFileDriver):
             msg = f"Failed to extract workspace path from cloud URL: {location}"
             raise RuntimeError(msg)
 
-        api_url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{workspace_path}")
+        # Extract bucket ID from URL, fallback to configured bucket_id
+        bucket_id = self._extract_bucket_id_from_url(location) or self.bucket_id
+
+        api_url = urljoin(self.base_url, f"/api/buckets/{bucket_id}/asset-urls/{workspace_path}")
 
         try:
             async with httpx.AsyncClient() as client:
@@ -111,7 +143,10 @@ class GriptapeCloudFileDriver(BaseFileDriver):
         if not workspace_path:
             return False
 
-        api_url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{workspace_path}")
+        # Extract bucket ID from URL, fallback to configured bucket_id
+        bucket_id = self._extract_bucket_id_from_url(location) or self.bucket_id
+
+        api_url = urljoin(self.base_url, f"/api/buckets/{bucket_id}/asset-urls/{workspace_path}")
 
         try:
             async with httpx.AsyncClient() as client:
@@ -138,7 +173,10 @@ class GriptapeCloudFileDriver(BaseFileDriver):
         if not workspace_path:
             return 0
 
-        api_url = urljoin(self.base_url, f"/api/buckets/{self.bucket_id}/asset-urls/{workspace_path}")
+        # Extract bucket ID from URL, fallback to configured bucket_id
+        bucket_id = self._extract_bucket_id_from_url(location) or self.bucket_id
+
+        api_url = urljoin(self.base_url, f"/api/buckets/{bucket_id}/asset-urls/{workspace_path}")
 
         try:
             with httpx.Client() as client:

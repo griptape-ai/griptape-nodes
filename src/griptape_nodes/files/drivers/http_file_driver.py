@@ -2,7 +2,7 @@
 
 import httpx
 
-from griptape_nodes.file.base_file_driver import BaseFileDriver
+from griptape_nodes.files.base_file_driver import BaseFileDriver
 
 # HTTP status code threshold for success
 _HTTP_SUCCESS_THRESHOLD = 400

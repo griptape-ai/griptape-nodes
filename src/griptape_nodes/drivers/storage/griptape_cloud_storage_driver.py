@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from griptape_nodes.drivers.storage.base_storage_driver import BaseStorageDriver, CreateSignedUploadUrlResponse
-from griptape_nodes.file.path_utils import get_workspace_relative_path
+from griptape_nodes.files.path_utils import get_workspace_relative_path
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 
 logger = logging.getLogger("griptape_nodes")
@@ -516,6 +516,49 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             return parts[1]
         except Exception:
             return None
+
+    @staticmethod
+    def extract_bucket_id_from_url(url_str: str) -> str | None:
+        """Extract bucket_id from a Griptape Cloud asset URL.
+
+        Static version for use without driver instance.
+        Parses URLs like: https://cloud.griptape.ai/buckets/{bucket_id}/assets/{workspace_path}
+        or /buckets/{bucket_id}/assets/{workspace_path}
+        Returns just the {bucket_id} portion.
+
+        Args:
+            url_str: Cloud asset URL or path string
+
+        Returns:
+            Bucket ID if URL matches cloud asset pattern, None otherwise
+        """
+        if not url_str:
+            return None
+
+        # Parse URL to extract path component
+        parsed = urlparse(url_str)
+        path = parsed.path if parsed.path else url_str
+
+        # Check for required patterns
+        if "/buckets/" not in path or "/assets/" not in path:
+            return None
+
+        # Extract bucket_id from: /buckets/{bucket_id}/assets/{workspace_path}
+        expected_parts = 2
+        try:
+            parts = path.split("/buckets/", 1)
+            if len(parts) != expected_parts:
+                return None
+
+            bucket_part = parts[1]
+            bucket_id = bucket_part.split("/assets/")[0]
+
+            if not bucket_id:
+                return None
+        except (IndexError, AttributeError):
+            return None
+        else:
+            return bucket_id
 
     @staticmethod
     def create_signed_download_url_from_asset_url(

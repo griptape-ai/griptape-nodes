@@ -242,3 +242,181 @@ class TestStaticFilesManagerSaveStaticFile:
             # 2. Correct file path returned
             assert result == expected_file_path
             assert TEST_ALTERNATIVE_NAME in result
+
+
+class TestStaticFilesManagerCreateDownloadUrlFromPath:
+    """Test StaticFilesManager.on_handle_create_static_file_download_url_from_path_request() method."""
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Mock ConfigManager for StaticFilesManager initialization."""
+        mock_config = Mock()
+        mock_config.get_config_value.side_effect = lambda key, default=None: {
+            "storage_backend": "local",
+            "workspace_directory": "/mock/workspace",
+            "static_files_directory": "staticfiles",
+        }.get(key, default)
+        mock_config.workspace_path = Path("/mock/workspace")
+        return mock_config
+
+    @pytest.fixture
+    def mock_secrets_manager(self) -> Mock:
+        """Mock SecretsManager for StaticFilesManager initialization."""
+        mock = Mock()
+        mock.get_secret.return_value = "test-api-key"
+        return mock
+
+    @pytest.fixture
+    def mock_static_files_manager(self, mock_config_manager: Mock, mock_secrets_manager: Mock) -> StaticFilesManager:
+        """Create StaticFilesManager instance with mocked dependencies."""
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(
+                config_manager=mock_config_manager, secrets_manager=mock_secrets_manager, event_manager=None
+            )
+            manager.storage_driver = Mock()
+            return manager
+
+    def test_create_download_url_from_path_local_file(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Test creating download URL from local file path."""
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
+
+        # Mock storage driver response
+        mock_static_files_manager.storage_driver.create_signed_download_url.return_value = "http://signed-url.com"
+        mock_static_files_manager.storage_driver.get_asset_url.return_value = "http://asset-url.com"
+
+        # Test with local file path
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="file:///path/to/file.txt")
+
+        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+        # Verify success
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlResultSuccess
+
+        assert isinstance(result, CreateStaticFileDownloadUrlResultSuccess)
+        assert result.url == "http://signed-url.com"
+        assert result.file_url == "http://asset-url.com"
+
+        # Verify local storage driver was used
+        assert mock_static_files_manager.storage_driver.create_signed_download_url.called
+
+    def test_create_download_url_from_path_cloud_url(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Test creating download URL from Griptape Cloud URL."""
+        from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
+
+        # Test with cloud URL
+        cloud_url = "https://cloud.griptape.ai/buckets/test-bucket-123/assets/file.txt"
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path=cloud_url)
+
+        with (
+            patch.object(
+                GriptapeCloudStorageDriver, "extract_bucket_id_from_url", return_value="test-bucket-123"
+            ) as mock_extract,
+            patch.object(mock_static_files_manager, "_create_cloud_storage_driver") as mock_create_driver,
+        ):
+            # Mock cloud storage driver
+            mock_cloud_driver = Mock()
+            mock_cloud_driver.create_signed_download_url.return_value = "http://cloud-signed-url.com"
+            mock_cloud_driver.get_asset_url.return_value = "http://cloud-asset-url.com"
+            mock_create_driver.return_value = mock_cloud_driver
+
+            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+            # Verify extract_bucket_id_from_url was called
+            mock_extract.assert_called_once_with(cloud_url)
+
+            # Verify cloud driver was created
+            mock_create_driver.assert_called_once_with("test-bucket-123")
+
+            # Verify success
+            from griptape_nodes.retained_mode.events.static_file_events import (
+                CreateStaticFileDownloadUrlResultSuccess,
+            )
+
+            assert isinstance(result, CreateStaticFileDownloadUrlResultSuccess)
+            assert result.url == "http://cloud-signed-url.com"
+            assert result.file_url == "http://cloud-asset-url.com"
+
+    def test_create_download_url_from_path_cloud_url_no_api_key(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """Test failure when cloud URL is used but API key is not available."""
+        from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
+
+        # Test with cloud URL
+        cloud_url = "https://cloud.griptape.ai/buckets/test-bucket-123/assets/file.txt"
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path=cloud_url)
+
+        with (
+            patch.object(
+                GriptapeCloudStorageDriver, "extract_bucket_id_from_url", return_value="test-bucket-123"
+            ) as mock_extract,
+            patch.object(mock_static_files_manager, "_create_cloud_storage_driver") as mock_create_driver,
+        ):
+            # Mock that API key is not available
+            mock_create_driver.return_value = None
+
+            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+            # Verify extract_bucket_id_from_url was called
+            mock_extract.assert_called_once_with(cloud_url)
+
+            # Verify failure
+            from griptape_nodes.retained_mode.events.static_file_events import (
+                CreateStaticFileDownloadUrlResultFailure,
+            )
+
+            assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
+            assert "GT_CLOUD_API_KEY secret is not available" in result.error
+
+    def test_create_download_url_from_path_non_cloud_url(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Test that non-cloud URLs use local storage driver."""
+        from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
+
+        # Mock storage driver response
+        mock_static_files_manager.storage_driver.create_signed_download_url.return_value = "http://signed-url.com"
+        mock_static_files_manager.storage_driver.get_asset_url.return_value = "http://asset-url.com"
+
+        # Test with non-cloud URL (regular http URL)
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="http://example.com/file.txt")
+
+        with patch.object(GriptapeCloudStorageDriver, "extract_bucket_id_from_url", return_value=None) as mock_extract:
+            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+            # Verify extract_bucket_id_from_url was called
+            mock_extract.assert_called_once_with("http://example.com/file.txt")
+
+            # Verify success with local driver
+            from griptape_nodes.retained_mode.events.static_file_events import (
+                CreateStaticFileDownloadUrlResultSuccess,
+            )
+
+            assert isinstance(result, CreateStaticFileDownloadUrlResultSuccess)
+            assert result.url == "http://signed-url.com"
+
+            # Verify local storage driver was used
+            assert mock_static_files_manager.storage_driver.create_signed_download_url.called
+
+    def test_create_download_url_from_path_exception_handling(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """Test exception handling when creating download URL fails."""
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlFromPathRequest
+
+        # Mock storage driver to raise exception
+        mock_static_files_manager.storage_driver.create_signed_download_url.side_effect = RuntimeError(
+            "Failed to create URL"
+        )
+
+        # Test with local file path
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="file:///path/to/file.txt")
+
+        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+        # Verify failure
+        from griptape_nodes.retained_mode.events.static_file_events import CreateStaticFileDownloadUrlResultFailure
+
+        assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
+        assert "Failed to create presigned URL" in result.error

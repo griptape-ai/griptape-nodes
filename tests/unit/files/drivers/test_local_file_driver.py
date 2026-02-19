@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
-from griptape_nodes.file.path_utils import parse_file_uri
+from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.files.path_utils import parse_file_uri
 
 
 class TestLocalFileDriver:

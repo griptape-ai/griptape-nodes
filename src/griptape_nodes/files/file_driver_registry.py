@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    from griptape_nodes.file.base_file_driver import BaseFileDriver
+    from griptape_nodes.files.base_file_driver import BaseFileDriver
 
 
 class FileDriverNotFoundError(Exception):

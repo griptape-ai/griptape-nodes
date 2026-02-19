@@ -16,7 +16,6 @@ from typing import Any, ClassVar, NamedTuple
 import aioshutil
 import portalocker
 import send2trash
-from binaryornot.check import is_binary
 from rich.console import Console
 
 from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
@@ -24,13 +23,15 @@ from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailure
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
 from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable
-from griptape_nodes.file.drivers.data_uri_file_driver import DataUriFileDriver
-from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
-from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
-from griptape_nodes.file.drivers.local_file_driver import LocalFileDriver
-from griptape_nodes.file.file_driver import FileDriverNotFoundError, FileDriverRegistry
-from griptape_nodes.file.path_utils import path_needs_expansion
-from griptape_nodes.file.path_utils import resolve_path_safely as pr_resolve
+from griptape_nodes.files.drivers.base64_file_driver import Base64FileDriver
+from griptape_nodes.files.drivers.data_uri_file_driver import DataUriFileDriver
+from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
+from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
+from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
+from griptape_nodes.files.path_utils import path_needs_expansion
+from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
 from griptape_nodes.retained_mode.events.base_events import ResultDetails, ResultPayload
 from griptape_nodes.retained_mode.events.os_events import (
     CopyFileRequest,
@@ -109,16 +110,6 @@ class DiskSpaceInfo:
     free: int
 
 
-class FileContentResult(NamedTuple):
-    """Result from reading file content."""
-
-    content: str | bytes
-    encoding: str | None
-    mime_type: str
-    compression_encoding: str | None
-    file_size: int
-
-
 class FileWriteAttemptResult(NamedTuple):
     """Result of attempting to write a file.
 
@@ -141,20 +132,6 @@ class CopyTreeValidationResult:
     dest_normalized: str
     source_path: Path
     destination_path: Path
-
-
-class FilenameParts(NamedTuple):
-    """Components of a filename for suffix injection strategy.
-
-    Attributes:
-        directory: Parent directory path
-        basename: Filename without extension or suffix
-        extension: File extension including dot (e.g., ".png"), empty string if no extension
-    """
-
-    directory: Path
-    basename: str
-    extension: str
 
 
 class WindowsSpecialFolderError(OSError):
@@ -351,6 +328,7 @@ class OSManager:
 
         Drivers are automatically sorted by priority on registration.
         """
+        FileDriverRegistry.register(StaticServerFileDriver())
         FileDriverRegistry.register(HttpFileDriver())
         FileDriverRegistry.register(DataUriFileDriver())
 
@@ -358,6 +336,7 @@ class OSManager:
         if cloud_driver:
             FileDriverRegistry.register(cloud_driver)
 
+        FileDriverRegistry.register(Base64FileDriver())
         FileDriverRegistry.register(LocalFileDriver())
 
     def _get_workspace_path(self) -> Path:
@@ -657,7 +636,7 @@ class OSManager:
         Returns:
             Path string with surrounding quotes removed if present
         """
-        from griptape_nodes.file.path_utils import strip_surrounding_quotes as pr_strip
+        from griptape_nodes.files.path_utils import strip_surrounding_quotes as pr_strip
 
         return pr_strip(path_str)
 
@@ -705,7 +684,7 @@ class OSManager:
         Returns:
             Sanitized path string, or original value if not a string/Path
         """
-        from griptape_nodes.file.path_utils import sanitize_path_string as pr_sanitize
+        from griptape_nodes.files.path_utils import sanitize_path_string as pr_sanitize
 
         return pr_sanitize(path)
 
@@ -728,7 +707,7 @@ class OSManager:
             String representation of path, cleaned of newlines/carriage returns,
             with Windows long path prefix if needed
         """
-        from griptape_nodes.file.path_utils import normalize_path_for_platform as pr_normalize
+        from griptape_nodes.files.path_utils import normalize_path_for_platform as pr_normalize
 
         return pr_normalize(path)
 
@@ -912,94 +891,55 @@ class OSManager:
 
         return None
 
-    def _parse_filename_parts(self, path: Path) -> FilenameParts:
-        """Parse filename into directory, basename, and extension for suffix injection.
+    def _handle_parent_directory_failure(
+        self,
+        parent_failure_reason: FileIOFailureReason,
+        candidate_path: Path,
+    ) -> WriteFileResultFailure:
+        """Create failure result for parent directory errors.
 
         Args:
-            path: Full file path to parse
+            parent_failure_reason: The failure reason from _ensure_parent_directory_ready
+            candidate_path: The file path that failed
 
         Returns:
-            FilenameParts with directory, basename, extension
-
-        Examples:
-            /path/to/render.png → FilenameParts(Path("/path/to"), "render", ".png")
-            /path/to/file → FilenameParts(Path("/path/to"), "file", "")
-            /path/to/.dotfile → FilenameParts(Path("/path/to"), ".dotfile", "")
-            /path/to/file.tar.gz → FilenameParts(Path("/path/to"), "file.tar", ".gz")
+            WriteFileResultFailure with appropriate error message
         """
-        directory = path.parent
-        filename = path.name
+        match parent_failure_reason:
+            case FileIOFailureReason.PERMISSION_DENIED:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
+            case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
+            case _:
+                msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
+        return WriteFileResultFailure(
+            failure_reason=parent_failure_reason,
+            result_details=msg,
+        )
 
-        # Handle dotfiles (files starting with .)
-        if filename.startswith(".") and filename.count(".") == 1:
-            # .dotfile with no extension
-            return FilenameParts(directory=directory, basename=filename, extension="")
-
-        # Find last dot for extension
-        if "." in filename:
-            last_dot = filename.rfind(".")
-            basename = filename[:last_dot]
-            extension = filename[last_dot:]
-            return FilenameParts(directory=directory, basename=basename, extension=extension)
-
-        # No extension
-        return FilenameParts(directory=directory, basename=filename, extension="")
-
-    def _build_suffix_glob_pattern(self, directory: Path, basename: str, extension: str) -> str:
-        """Build glob pattern for suffix injection strategy.
+    def _find_next_index_with_gap_fill(self, existing_indices: list[int]) -> int:
+        """Find next available index using fill-gaps strategy.
 
         Args:
-            directory: Parent directory
-            basename: Filename without extension
-            extension: File extension including dot
+            existing_indices: List of existing indices
 
         Returns:
-            Glob pattern string
+            Next available index (1-based)
 
         Examples:
-            ("render", ".png") → "render_*.png"
-            ("file", "") → "file_*"
+            [] -> 1
+            [1, 2, 3] -> 4
+            [1, 3, 4] -> 2 (fills gap)
         """
-        if extension:
-            return str(directory / f"{basename}_*{extension}")
-        return str(directory / f"{basename}_*")
+        if not existing_indices:
+            return 1
 
-    def _extract_suffix_index(self, filename: str, basename: str, extension: str) -> int | None:
-        """Extract numeric index from suffix in filename.
+        existing_indices.sort()
+        for i in range(1, max(existing_indices) + 1):
+            if i not in existing_indices:
+                return i
 
-        Args:
-            filename: Full filename (e.g., "render_123.png")
-            basename: Expected base name (e.g., "render")
-            extension: Expected extension (e.g., ".png")
-
-        Returns:
-            Integer index if found, None otherwise
-
-        Examples:
-            ("render_123.png", "render", ".png") → 123
-            ("render_1.png", "render", ".png") → 1
-            ("render.png", "render", ".png") → None (no suffix)
-            ("other_123.png", "render", ".png") → None (different basename)
-        """
-        # Remove extension if present
-        if extension and filename.endswith(extension):
-            name_without_ext = filename[: -len(extension)]
-        else:
-            name_without_ext = filename
-
-        # Check if it starts with basename
-        expected_prefix = f"{basename}_"
-        if not name_without_ext.startswith(expected_prefix):
-            return None
-
-        # Extract suffix after basename_
-        suffix = name_without_ext[len(expected_prefix) :]
-
-        # Try to parse as integer
-        if suffix.isdigit():
-            return int(suffix)
-
-        return None
+        return max(existing_indices) + 1
 
     def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
@@ -1119,67 +1059,7 @@ class OSManager:
             if extracted_index is not None:
                 existing_indices.append(extracted_index)
 
-        if not existing_indices:
-            # No existing indexed files - start at 1
-            return 1
-
-        # Sort indices to find first gap
-        existing_indices.sort()
-
-        # Find first gap starting from 1
-        for i in range(1, max(existing_indices) + 1):
-            if i not in existing_indices:
-                return i  # Found a gap
-
-        # No gaps - use max + 1
-        return max(existing_indices) + 1
-
-    def _validate_read_file_request(self, request: ReadFileRequest) -> tuple[Path, str]:
-        """Validate read file request and return resolved file path and path string."""
-        # Validate that exactly one of file_path or file_entry is provided
-        if request.file_path is None and request.file_entry is None:
-            msg = "Either file_path or file_entry must be provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        if request.file_path is not None and request.file_entry is not None:
-            msg = "Only one of file_path or file_entry should be provided, not both"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Get the file path to read - handle paths consistently
-        if request.file_entry is not None:
-            file_path_str = request.file_entry.path
-        elif request.file_path is not None:
-            file_path_str = request.file_path
-        else:
-            msg = "No valid file path provided"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        # Sanitize path to handle shell escapes and quotes (e.g., from macOS Finder "Copy as Pathname")
-        file_path_str = self.sanitize_path_string(file_path_str)
-
-        file_path = self._resolve_file_path(file_path_str, workspace_only=request.workspace_only is True)
-
-        # Check if file exists and is actually a file
-        if not file_path.exists():
-            msg = f"File does not exist: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-        if not file_path.is_file():
-            msg = f"File is not a file: {file_path}"
-            logger.error(msg)
-            raise FileNotFoundError(msg)
-
-        # Check workspace constraints
-        is_workspace_path, _ = self._validate_workspace_path(file_path)
-        if request.workspace_only and not is_workspace_path:
-            msg = f"File is outside workspace: {file_path}"
-            logger.error(msg)
-            raise ValueError(msg)
-
-        return file_path, file_path_str
+        return self._find_next_index_with_gap_fill(existing_indices)
 
     @staticmethod
     def platform() -> str:
@@ -1670,70 +1550,6 @@ class OSManager:
         # Read via driver system (driver handles all validation and I/O)
         return await self._read_via_driver(location, request)
 
-    def _read_file_content(self, file_path: Path, request: ReadFileRequest) -> FileContentResult:
-        """Read file content and return FileContentResult with all file information."""
-        # Get file size
-        file_size = file_path.stat().st_size
-
-        # Determine MIME type and compression encoding
-        normalized_path = self.normalize_path_for_platform(file_path)
-        mime_type, compression_encoding = mimetypes.guess_type(normalized_path, strict=True)
-        if mime_type is None:
-            mime_type = "text/plain"
-
-        # Determine if file is binary
-        try:
-            is_binary_file = is_binary(normalized_path)
-        except Exception as e:
-            msg = f"binaryornot detection failed for {file_path}: {e}"
-            logger.warning(msg)
-            is_binary_file = not mime_type.startswith(
-                ("text/", "application/json", "application/xml", "application/yaml")
-            )
-
-        # Read file content
-        if not is_binary_file:
-            content, encoding = self._read_text_file(file_path, request.encoding)
-        else:
-            content, encoding = self._read_binary_file(
-                file_path,
-                mime_type,
-                should_transform_to_thumbnail=request.should_transform_image_content_to_thumbnail,
-            )
-
-        return FileContentResult(
-            content=content,
-            encoding=encoding,
-            mime_type=mime_type,
-            compression_encoding=compression_encoding,
-            file_size=file_size,
-        )
-
-    def _read_text_file(self, file_path: Path, requested_encoding: str) -> tuple[bytes | str, str | None]:
-        """Read file as text with fallback encodings."""
-        try:
-            with file_path.open(encoding=requested_encoding) as f:
-                return f.read(), requested_encoding
-        except UnicodeDecodeError:
-            try:
-                with file_path.open(encoding="utf-8") as f:
-                    return f.read(), "utf-8"
-            except UnicodeDecodeError:
-                with file_path.open("rb") as f:
-                    return f.read(), None
-
-    def _read_binary_file(
-        self, file_path: Path, mime_type: str, *, should_transform_to_thumbnail: bool
-    ) -> tuple[bytes | str, None]:
-        """Read file as binary, with optional thumbnail generation for images."""
-        with file_path.open("rb") as f:
-            content = f.read()
-
-        if mime_type.startswith("image/") and should_transform_to_thumbnail:
-            content = self._generate_thumbnail_from_image_content(content, file_path, mime_type)
-
-        return content, None
-
     def _generate_thumbnail_from_image_content(self, content: bytes, file_path: Path | str, mime_type: str) -> str:
         """Handle image content by creating previews or returning static URLs.
 
@@ -1995,11 +1811,9 @@ class OSManager:
                     # Convert to indexed MacroPath for scanning. If the user didn't give us a macro to start with,
                     # we'll take their file name and turn it into a macro that appends _<index> to it.
                     # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
-                    macro_path = (
-                        self._convert_str_path_to_macro_with_index(request.file_path)
-                        if isinstance(request.file_path, str)
-                        else request.file_path
-                    )
+                    # For MacroPath inputs, the path is already fully resolved at this point,
+                    # so convert the resolved path string to inject {_index} as well.
+                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path))
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 
@@ -2020,7 +1834,8 @@ class OSManager:
                         )
 
                     if index_info is None:
-                        msg = f"Attempted to write to file '{path_display}'. Failed due to no index variable found in path template"
+                        # This should not happen since we always inject {_index} above
+                        msg = f"Attempted to write to file '{path_display}'. Failed due to missing index variable after conversion"
                         return WriteFileResultFailure(
                             failure_reason=FileIOFailureReason.INVALID_PATH,
                             result_details=msg,
@@ -2083,17 +1898,7 @@ class OSManager:
                             create_parents=request.create_parents,
                         )
                         if parent_failure_reason is not None:
-                            match parent_failure_reason:
-                                case FileIOFailureReason.PERMISSION_DENIED:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to permission denied creating parent directory {candidate_path.parent}"
-                                case FileIOFailureReason.POLICY_NO_CREATE_PARENT_DIRS:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to the parent directory not existing, and a policy was specified to NOT create parent directories: {candidate_path.parent}"
-                                case _:
-                                    msg = f"Attempted to write to file '{candidate_path}'. Failed due to error creating parent directory {candidate_path.parent}"
-                            return WriteFileResultFailure(
-                                failure_reason=parent_failure_reason,
-                                result_details=msg,
-                            )
+                            return self._handle_parent_directory_failure(parent_failure_reason, candidate_path)
 
                         normalized_candidate_path = self.normalize_path_for_platform(candidate_path)
 

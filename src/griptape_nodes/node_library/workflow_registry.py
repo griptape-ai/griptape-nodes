@@ -8,7 +8,7 @@ from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
@@ -46,7 +46,7 @@ class WorkflowShape(BaseModel):
 
 
 class WorkflowMetadata(BaseModel):
-    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.15.0"
+    LATEST_SCHEMA_VERSION: ClassVar[str] = "0.15.1"
 
     name: str
     schema_version: str
