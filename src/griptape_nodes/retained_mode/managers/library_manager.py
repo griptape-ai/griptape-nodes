@@ -468,26 +468,8 @@ class LibraryManager:
             library_name_with_details.overflow = "fold"
 
             # Problems column - collate by type then format
-            if not lib_info.problems:
-                problems = "No problems detected."
-            else:
-                # Group problems by type
-                problems_by_type = defaultdict(list)
-                for problem in lib_info.problems:
-                    problems_by_type[type(problem)].append(problem)
-
-                # Collate each group
-                collated_strings = []
-                for problem_class, instances in problems_by_type.items():
-                    collated_display = problem_class.collate_problems_for_display(instances)
-                    collated_strings.append(collated_display)
-
-                # Format for display
-                if len(collated_strings) == 1:
-                    problems = collated_strings[0]
-                else:
-                    # Number the problems when there's more than one
-                    problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
+            collated = self._collate_problems_for_lib_info(lib_info)
+            problems = collated if collated is not None else "No problems detected."
 
             # Add the row to the table
             table.add_row(library_name_with_details, problems)
@@ -509,6 +491,35 @@ class LibraryManager:
             if library_info.library_name == library_name:
                 return library_info
         return None
+
+    def _collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
+        """Return a collated display string for a LibraryInfo's problems, or None if there are none."""
+        if not lib_info.problems:
+            return None
+
+        # Group problems by type
+        problems_by_type: defaultdict[type, list] = defaultdict(list)
+        for problem in lib_info.problems:
+            problems_by_type[type(problem)].append(problem)
+
+        # Collate each group
+        collated_strings = []
+        for problem_class, instances in problems_by_type.items():
+            collated_display = problem_class.collate_problems_for_display(instances)
+            collated_strings.append(collated_display)
+
+        if len(collated_strings) == 1:
+            return collated_strings[0]
+
+        # Number the problems when there's more than one
+        return "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
+
+    def get_collated_problems_for_library(self, library_name: str) -> str | None:
+        """Return a collated display string for a library's fitness problems, or None if not found or no problems."""
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info is None:
+            return None
+        return self._collate_problems_for_lib_info(library_info)
 
     def on_register_event_handler(
         self,
@@ -1367,6 +1378,7 @@ class LibraryManager:
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
                         library_info.fitness = evaluate_result.fitness
+                        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
                         library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)

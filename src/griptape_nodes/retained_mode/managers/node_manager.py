@@ -462,12 +462,21 @@ class NodeManager:
             # Check if we should create an Error Proxy node instead of failing
             if request.create_error_proxy_on_failure:
                 try:
+                    # Use fitness problem details if available for a more actionable error message
+                    collated_problems = GriptapeNodes.LibraryManager().get_collated_problems_for_library(
+                        request.specific_library_name or ""
+                    )
+                    if collated_problems is not None:
+                        failure_reason = collated_problems
+                    else:
+                        failure_reason = str(err)
+
                     # Create ErrorProxyNode directly since it needs special initialization
                     node = ErrorProxyNode(
                         name=final_node_name,
                         original_node_type=request.node_type,
                         original_library_name=request.specific_library_name or "Unknown",
-                        failure_reason=str(err),
+                        failure_reason=failure_reason,
                         metadata=request.metadata,
                     )
 

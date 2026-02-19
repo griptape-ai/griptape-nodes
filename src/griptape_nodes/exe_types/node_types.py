@@ -1825,13 +1825,10 @@ class ErrorProxyNode(BaseNode):
     def _get_base_error_message(self) -> str:
         """Generate the base error message for this ErrorProxyNode."""
         return (
-            f"This is a placeholder for a node of type '{self.original_node_type}'"
-            f"\nfrom the '{self.original_library_name}' library."
-            f"\nIt encountered a problem when loading."
-            f"\nThe technical issue:\n{self.failure_reason}\n\n"
-            f"Your original node will be restored once the issue above is fixed "
-            f"(which may require registering the appropriate library, or getting "
-            f"a code fix from the node author)."
+            f"This placeholder stands in for the '{self.original_node_type}' node "
+            f"from the '{self.original_library_name}' library, which could not be loaded.\n\n"
+            f"The technical issue:\n{self.failure_reason}\n\n"
+            f"Your original node will be restored automatically once the issue is resolved."
         )
 
     def on_attempt_set_parameter_value(self, param_name: str) -> None:
@@ -1931,17 +1928,11 @@ class ErrorProxyNode(BaseNode):
 
         # Add connection modification warning if applicable
         if self._has_connection_modifications:
-            connection_warning = (
-                "\n\nWARNING: You have modified connections to this placeholder node."
-                "\nThis may require manual fixes when the original node is restored."
-            )
+            connection_warning = "\n\nWARNING: You have modified connections to this placeholder. These may require manual fixes after restoration."
             final_message = base_message + connection_warning
         else:
             # Add the general note only if no modifications have been made
-            general_warning = (
-                "\n\nNote: Making changes to this node may require manual fixes when restored,"
-                "\nas we can't predict how all node authors craft their custom nodes."
-            )
+            general_warning = "\n\nNote: Changes made to this placeholder may require manual fixes after restoration."
             final_message = base_message + general_warning
 
         # Update the error message value
