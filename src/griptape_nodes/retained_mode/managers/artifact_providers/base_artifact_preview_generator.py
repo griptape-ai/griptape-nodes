@@ -5,6 +5,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
+    normalize_friendly_name_to_key,
+)
+
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.artifact_providers.base_generator_parameters import (
         BaseGeneratorParameters,
@@ -98,12 +102,8 @@ class BaseArtifactPreviewGenerator(ABC):
         Returns:
             Config key prefix (e.g., 'artifacts.image.preview_generation.preview_generator_configurations.rounded_image_preview_generation')
         """
-        # Lazy import required: circular dependency between this module and artifact_manager
-        # artifact_manager imports artifact_providers, which imports this file
-        from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
-
-        provider_key = ArtifactManager.normalize_friendly_name_to_key(provider_friendly_name)
-        generator_key = ArtifactManager.normalize_friendly_name_to_key(cls.get_friendly_name())
+        provider_key = normalize_friendly_name_to_key(provider_friendly_name)
+        generator_key = normalize_friendly_name_to_key(cls.get_friendly_name())
         return f"artifacts.{provider_key}.preview_generation.preview_generator_configurations.{generator_key}"
 
     @abstractmethod

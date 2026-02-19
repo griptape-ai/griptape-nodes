@@ -1140,7 +1140,7 @@ class TestGeneratorValidation:
         # Register default providers (Image provider with its generators)
         await artifact_manager.on_app_initialization_complete(AppInitializationComplete())
 
-        schemas = artifact_manager.get_artifact_schemas()
+        schemas = artifact_manager._get_artifact_schemas()
 
         # Verify it's the correct model type
         assert isinstance(schemas, ArtifactSchemas)

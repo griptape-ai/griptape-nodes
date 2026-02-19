@@ -9,6 +9,10 @@ from pydantic import ValidationError
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.node_library.library_registry import LibraryRegistry
+from griptape_nodes.retained_mode.events.artifact_events import (
+    GetArtifactSchemasRequest,
+    GetArtifactSchemasResultSuccess,
+)
 from griptape_nodes.retained_mode.events.base_events import ResultPayload
 from griptape_nodes.retained_mode.events.config_events import (
     GetConfigCategoryRequest,
@@ -448,8 +452,14 @@ class ConfigManager:
             library_schemas = LibraryRegistry.get_all_library_schemas()
 
             # Get artifact schemas (dynamically generated from registered providers/generators)
-            artifact_schemas_model = GriptapeNodes.ArtifactManager().get_artifact_schemas()
-            artifact_schemas = artifact_schemas_model.model_dump()
+            schemas_request = GetArtifactSchemasRequest()
+            schemas_result = GriptapeNodes.handle_request(schemas_request)
+
+            if not isinstance(schemas_result, GetArtifactSchemasResultSuccess):
+                result_details = f"Failed to retrieve artifact schemas: {schemas_result.result_details}"
+                return GetConfigSchemaResultFailure(result_details=result_details)
+
+            artifact_schemas = schemas_result.schemas
 
             # Return clean structure
             schema_with_defaults = {

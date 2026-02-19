@@ -20,6 +20,9 @@ from griptape_nodes.retained_mode.events.artifact_events import (
     GetArtifactProviderDetailsRequest,
     GetArtifactProviderDetailsResultFailure,
     GetArtifactProviderDetailsResultSuccess,
+    GetArtifactSchemasRequest,
+    GetArtifactSchemasResultFailure,
+    GetArtifactSchemasResultSuccess,
     GetPreviewForArtifactRequest,
     GetPreviewForArtifactResultFailure,
     GetPreviewForArtifactResultSuccess,
@@ -75,6 +78,9 @@ from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_mo
     PreviewGenerationSchema,
     PreviewGeneratorSchema,
     ProviderSchema,
+)
+from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
+    normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
 
@@ -163,35 +169,14 @@ class ArtifactManager:
             event_manager.assign_manager_to_request_type(
                 GetPreviewGeneratorDetailsRequest, self.on_handle_get_preview_generator_details_request
             )
+            event_manager.assign_manager_to_request_type(
+                GetArtifactSchemasRequest, self.on_handle_get_artifact_schemas_request
+            )
 
             event_manager.add_listener_to_app_event(
                 AppInitializationComplete,
                 self.on_app_initialization_complete,
             )
-
-    @staticmethod
-    def normalize_friendly_name_to_key(friendly_name: str) -> str:
-        """Normalize a friendly name to a config key component.
-
-        Converts friendly names (e.g., "Image", "Standard Thumbnail Generation")
-        to normalized config key components (e.g., "image", "standard_thumbnail_generation").
-
-        This normalization is used throughout the config system to ensure consistent
-        key formatting across providers, generators, and manager logic.
-
-        Args:
-            friendly_name: Human-readable name with possible spaces and mixed case
-
-        Returns:
-            Lowercased name with spaces replaced by underscores
-
-        Examples:
-            >>> ArtifactManager.normalize_friendly_name_to_key("Image")
-            "image"
-            >>> ArtifactManager.normalize_friendly_name_to_key("Standard Thumbnail Generation")
-            "standard_thumbnail_generation"
-        """
-        return friendly_name.lower().replace(" ", "_")
 
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event.
@@ -869,7 +854,29 @@ class ArtifactManager:
             parameters=parameters_dict,
         )
 
-    def get_artifact_schemas(self) -> ArtifactSchemas:
+    def on_handle_get_artifact_schemas_request(
+        self,
+        request: GetArtifactSchemasRequest,  # noqa: ARG002
+    ) -> GetArtifactSchemasResultSuccess | GetArtifactSchemasResultFailure:
+        """Handle request for artifact configuration schemas.
+
+        Args:
+            request: The get schemas request (no parameters needed)
+
+        Returns:
+            Success with schemas dict or failure result
+        """
+        # No failure cases - this is a simple query operation
+
+        # SUCCESS PATH: Generate and return schemas
+        artifact_schemas_model = self._get_artifact_schemas()
+        schemas_dict = artifact_schemas_model.model_dump()
+        return GetArtifactSchemasResultSuccess(
+            result_details="Successfully retrieved artifact configuration schemas",
+            schemas=schemas_dict,
+        )
+
+    def _get_artifact_schemas(self) -> ArtifactSchemas:
         """Generate artifact configuration schemas for all registered providers.
 
         NO INSTANTIATION: Uses static methods and registry tracking to avoid loading heavyweight dependencies.
@@ -881,7 +888,7 @@ class ArtifactManager:
 
         for provider_class in self._registry.get_all_provider_classes():
             provider_friendly_name = provider_class.get_friendly_name()
-            provider_key = self.normalize_friendly_name_to_key(provider_friendly_name)
+            provider_key = normalize_friendly_name_to_key(provider_friendly_name)
 
             provider_formats = sorted(provider_class.get_preview_formats())
             default_format = provider_class.get_default_preview_format()
@@ -893,7 +900,7 @@ class ArtifactManager:
             # Build generator configurations
             for preview_generator_class in self._registry.get_preview_generators_for_provider(provider_class):
                 preview_generator_friendly_name = preview_generator_class.get_friendly_name()
-                preview_generator_key = self.normalize_friendly_name_to_key(preview_generator_friendly_name)
+                preview_generator_key = normalize_friendly_name_to_key(preview_generator_friendly_name)
                 preview_generator_names.append(preview_generator_friendly_name)
 
                 # Get parameter model class
@@ -1192,7 +1199,7 @@ class ArtifactManager:
         # Step 3: Read params (only if generator from config was registered)
         if generator_from_config_is_registered:
             # Generator from config is valid - read its params from config
-            generator_key = self.normalize_friendly_name_to_key(generator_name)
+            generator_key = normalize_friendly_name_to_key(generator_name)
             params_config_key = (
                 f"{provider_class.get_config_key_prefix()}.preview_generator_configurations.{generator_key}"
             )
