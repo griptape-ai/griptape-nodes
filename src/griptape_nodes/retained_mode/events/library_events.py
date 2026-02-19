@@ -463,7 +463,13 @@ class GetLibraryMetadataResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSucc
 @dataclass
 @PayloadRegistry.register
 class GetLibraryMetadataResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
-    """Library metadata retrieval failed. Common causes: library not found, library not loaded."""
+    """Library metadata retrieval failed. Common causes: library not found, library not loaded.
+
+    Args:
+        problems: Collated description of known fitness problems for this library, if any.
+    """
+
+    problems: str | None = None
 
 
 @dataclass

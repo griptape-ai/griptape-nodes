@@ -65,6 +65,7 @@ from griptape_nodes.retained_mode.events.flow_events import (
 )
 from griptape_nodes.retained_mode.events.library_events import (
     GetLibraryMetadataRequest,
+    GetLibraryMetadataResultFailure,
     GetLibraryMetadataResultSuccess,
 )
 from griptape_nodes.retained_mode.events.node_events import (
@@ -462,12 +463,24 @@ class NodeManager:
             # Check if we should create an Error Proxy node instead of failing
             if request.create_error_proxy_on_failure:
                 try:
+                    # Use fitness problem details if available for a more actionable error message
+                    library_metadata_result = GriptapeNodes.handle_request(
+                        GetLibraryMetadataRequest(library=request.specific_library_name or "")
+                    )
+                    if (
+                        isinstance(library_metadata_result, GetLibraryMetadataResultFailure)
+                        and library_metadata_result.problems is not None
+                    ):
+                        failure_reason = library_metadata_result.problems
+                    else:
+                        failure_reason = str(err)
+
                     # Create ErrorProxyNode directly since it needs special initialization
                     node = ErrorProxyNode(
                         name=final_node_name,
                         original_node_type=request.node_type,
                         original_library_name=request.specific_library_name or "Unknown",
-                        failure_reason=str(err),
+                        failure_reason=failure_reason,
                         metadata=request.metadata,
                     )
 
