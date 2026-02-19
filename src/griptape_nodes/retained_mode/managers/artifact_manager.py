@@ -169,6 +169,30 @@ class ArtifactManager:
                 self.on_app_initialization_complete,
             )
 
+    @staticmethod
+    def normalize_friendly_name_to_key(friendly_name: str) -> str:
+        """Normalize a friendly name to a config key component.
+
+        Converts friendly names (e.g., "Image", "Standard Thumbnail Generation")
+        to normalized config key components (e.g., "image", "standard_thumbnail_generation").
+
+        This normalization is used throughout the config system to ensure consistent
+        key formatting across providers, generators, and manager logic.
+
+        Args:
+            friendly_name: Human-readable name with possible spaces and mixed case
+
+        Returns:
+            Lowercased name with spaces replaced by underscores
+
+        Examples:
+            >>> ArtifactManager.normalize_friendly_name_to_key("Image")
+            "image"
+            >>> ArtifactManager.normalize_friendly_name_to_key("Standard Thumbnail Generation")
+            "standard_thumbnail_generation"
+        """
+        return friendly_name.lower().replace(" ", "_")
+
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event.
 
@@ -857,7 +881,7 @@ class ArtifactManager:
 
         for provider_class in self._registry.get_all_provider_classes():
             provider_friendly_name = provider_class.get_friendly_name()
-            provider_key = provider_friendly_name.lower().replace(" ", "_")
+            provider_key = self.normalize_friendly_name_to_key(provider_friendly_name)
 
             provider_formats = sorted(provider_class.get_preview_formats())
             default_format = provider_class.get_default_preview_format()
@@ -869,7 +893,7 @@ class ArtifactManager:
             # Build generator configurations
             for preview_generator_class in self._registry.get_preview_generators_for_provider(provider_class):
                 preview_generator_friendly_name = preview_generator_class.get_friendly_name()
-                preview_generator_key = preview_generator_friendly_name.lower().replace(" ", "_")
+                preview_generator_key = self.normalize_friendly_name_to_key(preview_generator_friendly_name)
                 preview_generator_names.append(preview_generator_friendly_name)
 
                 # Get parameter model class
@@ -1143,7 +1167,7 @@ class ArtifactManager:
         # Step 3: Read params (only if generator from config was registered)
         if generator_from_config_is_registered:
             # Generator from config is valid - read its params from config
-            generator_key = generator_name.lower().replace(" ", "_")
+            generator_key = self.normalize_friendly_name_to_key(generator_name)
             params_config_key = (
                 f"{provider_class.get_config_key_prefix()}.preview_generator_configurations.{generator_key}"
             )

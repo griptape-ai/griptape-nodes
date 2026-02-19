@@ -100,8 +100,12 @@ class BaseArtifactProvider(ABC):
         Returns:
             Config key prefix (e.g., 'artifacts.image.preview_generation')
         """
+        # Lazy import to avoid circular dependency
+        # (artifact_manager imports base_artifact_provider, so we import here)
+        from griptape_nodes.retained_mode.managers.artifact_manager import ArtifactManager
+
         friendly_name = cls.get_friendly_name()
-        provider_key = friendly_name.lower().replace(" ", "_")
+        provider_key = ArtifactManager.normalize_friendly_name_to_key(friendly_name)
         return f"artifacts.{provider_key}.preview_generation"
 
     @classmethod
