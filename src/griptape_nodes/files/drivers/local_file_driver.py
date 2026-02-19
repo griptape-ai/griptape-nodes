@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from griptape_nodes.file.base_file_driver import BaseFileDriver
-from griptape_nodes.file.path_utils import (
+from griptape_nodes.files.base_file_driver import BaseFileDriver
+from griptape_nodes.files.path_utils import (
     expand_path,
     normalize_path_for_platform,
     parse_file_uri,

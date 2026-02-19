@@ -1,6 +1,6 @@
 """Various utility functions."""
 
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.utils.async_utils import call_function
 from griptape_nodes.utils.http_file_patch import install_file_url_support
 from griptape_nodes.utils.url_utils import get_content_type_from_extension

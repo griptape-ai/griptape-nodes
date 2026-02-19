@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from griptape_nodes.file.drivers.http_file_driver import HttpFileDriver
+from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
 
 
 class TestHttpFileDriver:

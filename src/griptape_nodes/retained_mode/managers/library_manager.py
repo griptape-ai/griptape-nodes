@@ -28,7 +28,7 @@ from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,

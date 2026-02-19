@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from griptape_nodes.file.path_utils import (
+from griptape_nodes.files.path_utils import (
     expand_path,
     normalize_path_for_platform,
     parse_file_uri,
