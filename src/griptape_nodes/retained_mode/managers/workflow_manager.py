@@ -1280,10 +1280,7 @@ class WorkflowManager:
             problems.append(MissingLastModifiedDateProblem(default_date=str(WorkflowManager.EPOCH_START)))
 
         # Get list of registered libraries once (silent check - no error logging)
-        list_libraries_request = ListRegisteredLibrariesRequest()
-        list_libraries_result = GriptapeNodes.LibraryManager().on_list_registered_libraries_request(
-            list_libraries_request
-        )
+        list_libraries_result = GriptapeNodes.handle_request(ListRegisteredLibrariesRequest())
 
         if not isinstance(list_libraries_result, ListRegisteredLibrariesResultSuccess):
             # Should not happen, but handle gracefully - treat as no libraries registered

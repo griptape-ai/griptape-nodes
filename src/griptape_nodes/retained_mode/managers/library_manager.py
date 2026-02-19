@@ -547,7 +547,8 @@ class LibraryManager:
             result_details=f"Successfully listed {len(handler_mappings)} capable library event handlers",
         )
 
-    def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
+    async def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
+        await self._libraries_loading_complete.wait()
         # Make a COPY of the list
         snapshot_list = LibraryRegistry.list_libraries()
         event_copy = snapshot_list.copy()
@@ -1878,20 +1879,13 @@ class LibraryManager:
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        list_libraries_request = ListRegisteredLibrariesRequest()
-        list_libraries_result = self.on_list_registered_libraries_request(list_libraries_request)
-
-        if not list_libraries_result.succeeded():
-            details = "Attempted to get all info for all libraries, but listing the registered libraries failed."
-            return GetAllInfoForAllLibrariesResultFailure(result_details=details)
+        libraries = LibraryRegistry.list_libraries()
 
         try:
-            list_libraries_success = cast("ListRegisteredLibrariesResultSuccess", list_libraries_result)
-
             # Create a mapping of library name to all its info.
             library_name_to_all_info = {}
 
-            for library_name in list_libraries_success.libraries:
+            for library_name in libraries:
                 library_all_info_request = GetAllInfoForLibraryRequest(library=library_name)
                 library_all_info_result = self.get_all_info_for_library_request(library_all_info_request)
 
@@ -2550,7 +2544,7 @@ class LibraryManager:
 
         # Load workflows specified by libraries.
         library_workflow_files_to_register = []
-        library_result = self.on_list_registered_libraries_request(ListRegisteredLibrariesRequest())
+        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
         if isinstance(library_result, ListRegisteredLibrariesResultSuccess):
             for library_name in library_result.libraries:
                 try:
