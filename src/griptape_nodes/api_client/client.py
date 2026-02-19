@@ -267,9 +267,10 @@ class Client:
         serialized = json.dumps(message)
         if len(serialized) > LARGE_PAYLOAD_WARNING_THRESHOLD:
             logger.warning(
-                "Sending large WebSocket message: type=%s, size=%d bytes. "
+                "Sending large WebSocket message: type=%s (%s), size=%d bytes. "
                 "Large messages can saturate the send buffer and cause connected clients (e.g. the editor) to stall or disconnect.",
                 message.get("type"),
+                message.get("payload", {}).get("result_type"),
                 len(serialized),
             )
         try:
