@@ -2684,6 +2684,26 @@
       }
     },
     {
+      "class_name": "FileSelector",
+      "file_path": "griptape_nodes_library/files/file_selector.py",
+      "metadata": {
+        "category": "files",
+        "description": "Select a file and resolve it to a macro path using project situations.",
+        "display_name": "File Selector",
+        "icon": "FileSearch"
+      }
+    },
+    {
+      "class_name": "SaveToProject",
+      "file_path": "griptape_nodes_library/files/save_to_project.py",
+      "metadata": {
+        "category": "files",
+        "description": "Move a file into a project directory and output its macro path. Use after nodes that produce files (e.g., Train LoRA) to save outputs back to the project.",
+        "display_name": "Save To Project",
+        "icon": "FolderInput"
+      }
+    },
+    {
       "class_name": "PathJoin",
       "file_path": "griptape_nodes_library/files/path_join.py",
       "metadata": {
