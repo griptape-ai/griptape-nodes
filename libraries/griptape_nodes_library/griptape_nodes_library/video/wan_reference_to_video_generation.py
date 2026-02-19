@@ -588,7 +588,7 @@ class WanReferenceToVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.debug("Downloading video bytes from provider URL")
-            video_bytes = await File(extracted_url).aread_bytes()
+            video_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             logger.debug("Failed to download video: %s", e)
             video_bytes = None

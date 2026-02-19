@@ -586,7 +586,7 @@ class Rodin23DGeneration(GriptapeProxyNode):
 
             try:
                 self._log(f"Downloading file: {file_name}")
-                file_bytes = await File(file_url).aread_bytes()
+                file_bytes = await self._download_bytes_from_url(file_url)
 
                 if file_bytes:
                     # Create safe filename

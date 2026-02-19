@@ -988,7 +988,7 @@ class TopazImageEnhance(GriptapeProxyNode):
         """Download and save the image from the provided URL."""
         try:
             self._log("Downloading image from URL")
-            image_bytes = await File(image_url).aread_bytes()
+            image_bytes = await self._download_bytes_from_url(image_url)
             if image_bytes:
                 filename = f"topaz_enhanced_{int(time.time())}.jpg"
                 static_files_manager = GriptapeNodes.StaticFilesManager()

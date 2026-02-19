@@ -599,7 +599,10 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
     async def _save_video_bytes(url: str) -> str | None:
         """Download video bytes from URL and save to static storage."""
         try:
-            video_bytes = await File(url).aread_bytes()
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=120)
+                resp.raise_for_status()
+                video_bytes = resp.content
             video_filename = f"omnihuman_video_{int(time.time())}.mp4"
             GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, video_filename)
         except Exception:

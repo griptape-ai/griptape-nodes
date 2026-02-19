@@ -497,7 +497,7 @@ class WanTextToVideoGeneration(GriptapeProxyNode):
         """Download and save the video from the provided URL."""
         try:
             logger.info("Downloading video from URL")
-            video_bytes = await File(video_url).aread_bytes()
+            video_bytes = await self._download_bytes_from_url(video_url)
             if video_bytes:
                 filename = f"wan_video_{int(time.time())}.mp4"
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes

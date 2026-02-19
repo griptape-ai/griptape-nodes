@@ -626,7 +626,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         """
         try:
             self._log(f"Downloading image {index} from URL")
-            image_bytes = await File(image_url).aread_bytes()
+            image_bytes = await self._download_bytes_from_url(image_url)
             if not image_bytes:
                 self._log(f"Could not download image {index}, using provider URL")
                 return ImageUrlArtifact(value=image_url)

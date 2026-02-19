@@ -520,7 +520,7 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         # Download video bytes
         try:
             self._log("Downloading video bytes from provider URL")
-            video_bytes = await File(extracted_url).aread_bytes()
+            video_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             self._log(f"Failed to download video: {e}")
             video_bytes = None

@@ -423,7 +423,7 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
 
         try:
             logger.info("%s downloading video from provider URL", self.name)
-            video_bytes = await File(download_url).aread_bytes()
+            video_bytes = await self._download_bytes_from_url(download_url)
         except Exception as e:
             logger.warning("%s failed to download video: %s", self.name, e)
             video_bytes = None

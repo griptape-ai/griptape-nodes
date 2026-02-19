@@ -288,7 +288,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
 
         try:
             logger.info("Downloading image bytes from provider URL")
-            image_bytes = await File(extracted_url).aread_bytes()
+            image_bytes = await self._download_bytes_from_url(extracted_url)
         except Exception as e:
             msg = f"Failed to download image: {e}"
             logger.info(msg)

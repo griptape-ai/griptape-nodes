@@ -265,7 +265,7 @@ class GrokVideoGeneration(GriptapeProxyNode):
             return
 
         try:
-            video_bytes = await File(video_url).aread_bytes()
+            video_bytes = await self._download_bytes_from_url(video_url)
         except Exception as e:
             with suppress(Exception):
                 logger.warning("%s failed to download video: %s", self.name, e)
