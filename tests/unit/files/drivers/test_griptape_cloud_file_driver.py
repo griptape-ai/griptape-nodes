@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from griptape_nodes.file.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
+from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeCloudFileDriver
 
 
 class TestGriptapeCloudFileDriver:
@@ -22,7 +22,7 @@ class TestGriptapeCloudFileDriver:
     @pytest.fixture
     def mock_cloud_storage_driver(self) -> Any:
         """Mock GriptapeCloudStorageDriver static methods."""
-        with patch("griptape_nodes.file.drivers.griptape_cloud_file_driver.GriptapeCloudStorageDriver") as mock:
+        with patch("griptape_nodes.files.drivers.griptape_cloud_file_driver.GriptapeCloudStorageDriver") as mock:
             mock.is_cloud_asset_url = Mock(return_value=True)
             mock.extract_workspace_path_from_cloud_url = Mock(return_value="assets/test.txt")
             yield mock
