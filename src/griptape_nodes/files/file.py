@@ -229,6 +229,26 @@ class File:
             size=success.file_size,
         )
 
+    def resolve_path(self) -> str:
+        """Resolve and return the absolute path string for this file.
+
+        Useful when a caller needs the path for writing (not reading). Macro
+        variables in the path are resolved against the current project at call time.
+
+        Returns:
+            Absolute path string.
+
+        Raises:
+            FileLoadError: If macro resolution fails (e.g. no project loaded).
+        """
+        resolved = _resolve_file_path(self._file_path)
+        if resolved is None:
+            raise FileLoadError(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details="Cannot resolve path: file_path is None",
+            )
+        return resolved
+
     def read(self, encoding: str = "utf-8") -> FileContent:
         """Read the file and return a FileContent with content and metadata.
 

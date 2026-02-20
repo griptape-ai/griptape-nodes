@@ -19,6 +19,32 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 
+def parse_filename_components(filename: str, default_extension: str = "png") -> tuple[str, str]:
+    """Parse filename into base and extension.
+
+    Args:
+        filename: Filename to parse (e.g., "image.png", "output.tar.gz", "test")
+        default_extension: Extension to use if filename has none
+
+    Returns:
+        Tuple of (base, extension) where extension has no leading dot
+
+    Examples:
+        parse_filename_components("image.png")
+        -> ("image", "png")
+
+        parse_filename_components("output.tar.gz")
+        -> ("output.tar", "gz")
+
+        parse_filename_components("test")
+        -> ("test", "png")
+    """
+    path = Path(filename)
+    if path.suffix:
+        return path.stem, path.suffix.lstrip(".")
+    return str(path), default_extension
+
+
 def parse_file_uri(location: str) -> str | None:
     """Parse file:// URI and return local path, or None if not a valid file URI.
 
