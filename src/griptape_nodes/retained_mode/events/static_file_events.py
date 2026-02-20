@@ -130,11 +130,15 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
                    - Absolute paths (e.g., "/absolute/path/to/file.jpg")
                    - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
                    - Macro paths (e.g., "{outputs}/file.png")
+        macro_variables: Optional variable substitutions for macro paths
+                         (e.g., {"file_name": "output", "file_ext": "png"}).
+                         Ignored for non-macro paths.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_path: str
+    macro_variables: dict[str, str | int] = field(default_factory=dict)
 
 
 @dataclass

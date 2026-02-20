@@ -484,3 +484,20 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "macro resolution failed" in result.error
+
+    def test_create_download_url_from_path_macro_syntax_error(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """Test failure when the file path has invalid macro syntax (e.g. unclosed brace)."""
+        from griptape_nodes.retained_mode.events.static_file_events import (
+            CreateStaticFileDownloadUrlFromPathRequest,
+            CreateStaticFileDownloadUrlResultFailure,
+        )
+
+        # Unclosed brace triggers MacroSyntaxError
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="{outputs/file.png")
+
+        result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+        assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
+        assert "invalid macro syntax" in result.error

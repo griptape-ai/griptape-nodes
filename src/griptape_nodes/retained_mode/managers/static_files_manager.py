@@ -14,7 +14,10 @@ from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriv
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.project_events import GetPathForMacroRequest, GetPathForMacroResultFailure
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+)
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
     CreateStaticFileDownloadUrlRequest,
@@ -230,15 +233,19 @@ class StaticFilesManager:
         # Resolve macro paths (e.g. "{outputs}/file.png") before further processing
         try:
             parsed = ParsedMacro(file_path)
-        except MacroSyntaxError:
-            parsed = None
+        except MacroSyntaxError as e:
+            msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because the path has invalid macro syntax: {e}"
+            logger.warning(msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
-        if parsed is not None and parsed.get_variables():
-            resolve_result = GriptapeNodes.handle_request(GetPathForMacroRequest(parsed_macro=parsed, variables={}))
-            if isinstance(resolve_result, GetPathForMacroResultFailure):
+        if parsed.get_variables():
+            resolve_result = GriptapeNodes.handle_request(
+                GetPathForMacroRequest(parsed_macro=parsed, variables=request.macro_variables)
+            )
+            if not isinstance(resolve_result, GetPathForMacroResultSuccess):
                 msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because macro resolution failed: {resolve_result.result_details}"
                 return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
-            file_path = str(resolve_result.absolute_path)  # type: ignore[union-attr]
+            file_path = str(resolve_result.absolute_path)
 
         # Detect if this is a Griptape Cloud URL and extract bucket_id
         bucket_id = GriptapeCloudStorageDriver.extract_bucket_id_from_url(file_path)
