@@ -12,8 +12,7 @@ from griptape_nodes.retained_mode.managers.version_compatibility_manager import 
     LibraryVersionCompatibilityCheck,
     LibraryVersionCompatibilityIssue,
 )
-from griptape_nodes.utils.version_utils import engine_version
-from griptape_nodes.utils.version_utils import get_install_source
+from griptape_nodes.utils.version_utils import engine_version, get_install_source
 
 if TYPE_CHECKING:
     from griptape_nodes.node_library.library_registry import LibrarySchema
