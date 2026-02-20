@@ -143,8 +143,9 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check_library returns UNUSABLE severity for PyPI installs."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
-            f"{_MODULE}.get_install_source", return_value=("pypi", None)
+        with (
+            patch(f"{_MODULE}.engine_version", "0.70.0"),
+            patch(f"{_MODULE}.get_install_source", return_value=("pypi", None)),
         ):
             issues = check.check_library(mock_library_data)
 
@@ -160,8 +161,9 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check_library returns FLAWED severity for git installs."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
-            f"{_MODULE}.get_install_source", return_value=("git", "abc1234")
+        with (
+            patch(f"{_MODULE}.engine_version", "0.70.0"),
+            patch(f"{_MODULE}.get_install_source", return_value=("git", "abc1234")),
         ):
             issues = check.check_library(mock_library_data)
 
@@ -174,8 +176,9 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check_library returns FLAWED severity for local file installs."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
-            f"{_MODULE}.get_install_source", return_value=("file", None)
+        with (
+            patch(f"{_MODULE}.engine_version", "0.70.0"),
+            patch(f"{_MODULE}.get_install_source", return_value=("file", None)),
         ):
             issues = check.check_library(mock_library_data)
 
