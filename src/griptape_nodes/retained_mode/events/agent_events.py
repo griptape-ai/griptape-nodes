@@ -390,3 +390,39 @@ class AgentStreamEvent(ExecutionPayload):
     """
 
     token: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAvailableModelsRequest(RequestPayload):
+    """List all available LLM models from Griptape Cloud.
+
+    Use when: Populating model dropdowns, validating model selections,
+    displaying available models to users, checking for new model availability.
+
+    Results: ListAvailableModelsResultSuccess (with models list) | ListAvailableModelsResultFailure (API error)
+    """
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAvailableModelsResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Available models retrieved successfully.
+
+    Args:
+        prompt_models: List of available prompt/chat model names
+        image_models: List of available image generation model names
+        default_prompt_model: Name of the default prompt model
+        default_image_model: Name of the default image model
+    """
+
+    prompt_models: list[str]
+    image_models: list[str]
+    default_prompt_model: str
+    default_image_model: str
+
+
+@dataclass
+@PayloadRegistry.register
+class ListAvailableModelsResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Available models retrieval failed. Common causes: API unavailable, authentication error, network error."""

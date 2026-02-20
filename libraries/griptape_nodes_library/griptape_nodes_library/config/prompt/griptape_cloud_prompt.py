@@ -24,28 +24,57 @@ BASE_URL = "https://cloud.griptape.ai"
 API_KEY_URL = f"{BASE_URL}/configuration/api-keys"
 CHAT_MODELS_URL = f"{BASE_URL}/api/models?model_type=chat"
 MODEL_CHOICES_ARGS = [
+    # Anthropic Claude models
     {
-        "name": "claude-sonnet-4-20250514",
+        "name": "claude-3-5-haiku",
         "icon": "logos/anthropic.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+        "args": {"stream": True, "max_tokens": 64000},
     },
     {
         "name": "claude-3-7-sonnet",
         "icon": "logos/anthropic.svg",
-        "args": {"stream": True, "structured_output_strategy": "tool", "max_tokens": 64000},
+        "args": {"stream": True, "max_tokens": 64000},
     },
+    {
+        "name": "claude-4-5-sonnet",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "max_tokens": 64000},
+    },
+    {
+        "name": "claude-sonnet-4-20250514",
+        "icon": "logos/anthropic.svg",
+        "args": {"stream": True, "max_tokens": 64000},
+    },
+    # DeepSeek models
     {
         "name": "deepseek.r1-v1",
         "icon": "logos/deepseek.svg",
         "args": {"stream": False, "structured_output_strategy": "tool", "top_p": None},
     },
+    # Google Gemini models
     {
         "name": "gemini-2.5-flash",
         "icon": "logos/google.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
     {
-        "name": "llama3-3-70b-instruct-v1",
+        "name": "gemini-2.5-flash-lite",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "gemini-2.5-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    {
+        "name": "gemini-3-pro",
+        "icon": "logos/google.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    # Meta Llama models
+    {
+        "name": "llama3-1-8b-instruct-v1",
         "icon": "logos/meta.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
@@ -54,12 +83,22 @@ MODEL_CHOICES_ARGS = [
         "icon": "logos/meta.svg",
         "args": {"stream": True, "structured_output_strategy": "tool"},
     },
+    {
+        "name": "llama3-3-70b-instruct-v1",
+        "icon": "logos/meta.svg",
+        "args": {"stream": True, "structured_output_strategy": "tool"},
+    },
+    # OpenAI models
     {"name": "gpt-4.1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-4.1-nano", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4.5-preview", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-4o", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "gpt-5", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "gpt-5.1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o1-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
+    {"name": "o3", "icon": "logos/openai.svg", "args": {"stream": True}},
     {"name": "o3-mini", "icon": "logos/openai.svg", "args": {"stream": True}},
 ]
 
@@ -104,14 +143,40 @@ class GriptapeCloudPrompt(BasePrompt):
         # --- Customize Inherited Parameters ---
 
         # Update the 'model' parameter for Griptape Cloud specifics.
-        models, default_model = self._list_models()
-        logger.debug(f"All models on Griptape Cloud: {models}")
-        logger.debug(f"Default model on Griptape Cloud: {default_model}")
+        # Fetch models from API with fallback to hardcoded list
+        try:
+            models, default_model = self._list_models()
+            logger.debug(f"All models on Griptape Cloud: {models}")
+            logger.debug(f"Default model on Griptape Cloud: {default_model}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch models from API, using hardcoded list: {e}")
+            models = MODEL_CHOICES
+            default_model = DEFAULT_MODEL
 
-        self._update_option_choices(param="model", choices=MODEL_CHOICES, default=DEFAULT_MODEL)
+        # Use API-fetched models instead of hardcoded list
+        self._update_option_choices(param="model", choices=models, default=default_model)
+
+        # Build dynamic ui_options from fetched models
+        model_ui_data = []
+        model_configs_map = {m["name"]: m for m in MODEL_CHOICES_ARGS}
+
+        for model_name in models:
+            if model_name in model_configs_map:
+                # Use known config
+                model_ui_data.append(model_configs_map[model_name])
+            else:
+                # Default config for unknown models
+                model_ui_data.append(
+                    {
+                        "name": model_name,
+                        "icon": "logos/openai.svg",  # Default icon
+                        "args": {"stream": True},  # Safe defaults
+                    }
+                )
+
         model_param = self.get_parameter_by_name("model")
         if model_param is not None:
-            model_param.ui_options = {"data": MODEL_CHOICES_ARGS}
+            model_param.ui_options = {"data": model_ui_data}
 
         # Remove the 'seed' parameter as it's not directly used by GriptapeCloudPromptDriver.
         self.remove_parameter_element_by_name("seed")

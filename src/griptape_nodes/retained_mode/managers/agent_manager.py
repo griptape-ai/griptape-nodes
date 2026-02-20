@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar
 
+import requests
 from attrs import define, field
 from griptape.artifacts import ErrorArtifact, ImageUrlArtifact
 from griptape.drivers.image_generation import BaseImageGenerationDriver
@@ -46,6 +47,9 @@ from griptape_nodes.retained_mode.events.agent_events import (
     GetConversationMemoryRequest,
     GetConversationMemoryResultFailure,
     GetConversationMemoryResultSuccess,
+    ListAvailableModelsRequest,
+    ListAvailableModelsResultFailure,
+    ListAvailableModelsResultSuccess,
     ListThreadsRequest,
     ListThreadsResultFailure,
     ListThreadsResultSuccess,
@@ -81,6 +85,9 @@ logger = logging.getLogger("griptape_nodes")
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
+BASE_URL = "https://cloud.griptape.ai"
+CHAT_MODELS_URL = f"{BASE_URL}/api/models?model_type=chat"
+IMAGE_MODELS_URL = f"{BASE_URL}/api/models?model_type=image_generation"
 GTN_MCP_SERVER_PORT = int(os.getenv("GTN_MCP_SERVER_PORT", "9927"))
 
 config_manager = ConfigManager()
@@ -129,6 +136,7 @@ class AgentManager:
         self.image_tool = None
         self.mcp_tool = None
         self.static_files_manager = static_files_manager
+        self.model_configurations = {}  # Store model configs: {model_name: {args, supports_output_schema}}
 
         # Thread management
         self._threads_dir = xdg_data_home() / "griptape_nodes" / "threads"
@@ -153,6 +161,11 @@ class AgentManager:
             event_manager.assign_manager_to_request_type(ArchiveThreadRequest, self.on_handle_archive_thread_request)
             event_manager.assign_manager_to_request_type(
                 UnarchiveThreadRequest, self.on_handle_unarchive_thread_request
+            )
+
+            # Model management handlers
+            event_manager.assign_manager_to_request_type(
+                ListAvailableModelsRequest, self.on_handle_list_available_models_request
             )
 
             event_manager.add_listener_to_app_event(
@@ -316,6 +329,43 @@ class AgentManager:
             logger.error(details)
             return UnarchiveThreadResultFailure(result_details=details)
 
+    def on_handle_list_available_models_request(self, _request: ListAvailableModelsRequest) -> ResultPayload:
+        """Handle request to list available prompt and image models from Griptape Cloud."""
+        try:
+            # Fetch models from Griptape Cloud API
+            api_key = secrets_manager.get_secret(API_KEY_ENV_VAR)
+            if not api_key:
+                details = f"Secret '{API_KEY_ENV_VAR}' not found"
+                return ListAvailableModelsResultFailure(result_details=details)
+
+            headers = {"Authorization": f"Bearer {api_key}"}
+
+            # Fetch prompt/chat models
+            prompt_response = requests.get(CHAT_MODELS_URL, headers=headers, timeout=10)
+            prompt_response.raise_for_status()
+            prompt_data = prompt_response.json()["models"]
+            prompt_models = [model["model_name"] for model in prompt_data]
+            default_prompt_model = next(filter(lambda x: x["default"], prompt_data))["model_name"]
+
+            # Fetch image generation models
+            image_response = requests.get(IMAGE_MODELS_URL, headers=headers, timeout=10)
+            image_response.raise_for_status()
+            image_data = image_response.json()["models"]
+            image_models = [model["model_name"] for model in image_data]
+            default_image_model = next(filter(lambda x: x["default"], image_data))["model_name"]
+
+            return ListAvailableModelsResultSuccess(
+                prompt_models=prompt_models,
+                image_models=image_models,
+                default_prompt_model=default_prompt_model,
+                default_image_model=default_image_model,
+                result_details="Successfully retrieved available models from Griptape Cloud.",
+            )
+        except Exception as e:
+            details = f"Error listing available models: {e}"
+            logger.error(details)
+            return ListAvailableModelsResultFailure(result_details=details)
+
     def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         secrets_manager = GriptapeNodes.SecretsManager()
         api_key = secrets_manager.get_secret("GT_CLOUD_API_KEY")
@@ -342,7 +392,21 @@ class AgentManager:
                 for url_artifact in request.url_artifacts
                 if url_artifact["type"] == "ImageUrlArtifact"
             ]
+            # Log prompt driver configuration BEFORE creating agent
+            if self.prompt_driver:
+                logger.info("AgentManager prompt_driver model: %s", self.prompt_driver.model)
+                logger.info(
+                    "AgentManager prompt_driver structured_output_strategy: %s",
+                    getattr(self.prompt_driver, "structured_output_strategy", "NOT SET"),
+                )
+                logger.info("AgentManager prompt_driver stream: %s", self.prompt_driver.stream)
+
             agent = self._create_agent(thread_id=thread_id, additional_mcp_servers=request.additional_mcp_servers)
+
+            # Log agent configuration after creation
+            logger.info("Agent output_schema type: %s", type(agent.output_schema))
+            logger.info("Agent output_schema: %s", agent.output_schema)
+
             event_stream = agent.run_stream([request.input, *artifacts])
             self._process_agent_stream(event_stream)
 
