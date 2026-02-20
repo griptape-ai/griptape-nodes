@@ -73,6 +73,11 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileRequest,
     WriteFileResultFailure,
 )
+from griptape_nodes.retained_mode.events.project_events import (
+    LoadProjectTemplateRequest,
+    LoadProjectTemplateResultSuccess,
+    SetCurrentProjectRequest,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
     BranchWorkflowResultFailure,
@@ -161,6 +166,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -672,6 +678,28 @@ class WorkflowManager:
             execution_details=f"Succeeded in running workflow on path '{complete_file_path}'.",
         )
 
+    def _load_and_set_project_for_workflow(self, complete_file_path: str) -> None:
+        """Check for project.yml in workflow's directory and set it as current project.
+
+        If project.yml exists, loads it and sets it as the current project.
+        If project.yml does not exist, reverts to system defaults.
+        Logs warnings on failure but never raises — project loading is best-effort.
+        """
+        workflow_dir = Path(complete_file_path).parent
+        project_yml_path = workflow_dir / "project.yml"
+        if project_yml_path.exists():
+            load_result = GriptapeNodes.handle_request(LoadProjectTemplateRequest(project_path=project_yml_path))
+            if not isinstance(load_result, LoadProjectTemplateResultSuccess):
+                logger.warning(
+                    "Attempted to load project.yml for workflow '%s'. Failed to load '%s'.",
+                    complete_file_path,
+                    project_yml_path,
+                )
+                return
+            GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
+        else:
+            GriptapeNodes.handle_request(SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY))
+
     async def on_run_workflow_from_scratch_request(self, request: RunWorkflowFromScratchRequest) -> ResultPayload:
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it into a blank slate.
         with WorkflowManager.WorkflowSquelchContext(self):
@@ -691,11 +719,12 @@ class WorkflowManager:
 
             # Run the file, goddamn it
             execution_result = await self.run_workflow(relative_file_path=relative_file_path)
-            if execution_result.execution_successful:
-                return RunWorkflowFromScratchResultSuccess(result_details=execution_result.execution_details)
+            if not execution_result.execution_successful:
+                logger.error(execution_result.execution_details)
+                return RunWorkflowFromScratchResultFailure(result_details=execution_result.execution_details)
 
-            logger.error(execution_result.execution_details)
-            return RunWorkflowFromScratchResultFailure(result_details=execution_result.execution_details)
+        self._load_and_set_project_for_workflow(complete_file_path)
+        return RunWorkflowFromScratchResultSuccess(result_details=execution_result.execution_details)
 
     async def on_run_workflow_with_current_state_request(
         self, request: RunWorkflowWithCurrentStateRequest
@@ -707,10 +736,12 @@ class WorkflowManager:
             return RunWorkflowWithCurrentStateResultFailure(result_details=details)
         execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
-        if execution_result.execution_successful:
-            return RunWorkflowWithCurrentStateResultSuccess(result_details=execution_result.execution_details)
-        logger.error(execution_result.execution_details)
-        return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
+        if not execution_result.execution_successful:
+            logger.error(execution_result.execution_details)
+            return RunWorkflowWithCurrentStateResultFailure(result_details=execution_result.execution_details)
+
+        self._load_and_set_project_for_workflow(complete_file_path)
+        return RunWorkflowWithCurrentStateResultSuccess(result_details=execution_result.execution_details)
 
     async def on_run_workflow_from_registry_request(self, request: RunWorkflowFromRegistryRequest) -> ResultPayload:
         await self._workflows_loading_complete.wait()
@@ -759,6 +790,8 @@ class WorkflowManager:
                 return RunWorkflowFromRegistryResultFailure(result_details=ResultDetails(*result_messages))
 
         # Success!
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
+        self._load_and_set_project_for_workflow(complete_file_path)
         result_messages = []
         if context_warning:
             result_messages.append(ResultDetail(message=context_warning, level=logging.WARNING))
