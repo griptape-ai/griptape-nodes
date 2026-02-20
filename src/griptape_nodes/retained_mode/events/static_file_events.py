@@ -122,13 +122,14 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
     """Create a presigned URL for downloading a file from an arbitrary path.
 
     Use when: Need to create download URLs for files outside the staticfiles directory,
-    working with absolute paths, file:// URLs, or workspace-relative paths.
+    working with absolute paths, file:// URLs, workspace-relative paths, or macro paths.
 
     Args:
         file_path: File path or URL. Accepts:
                    - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
                    - Absolute paths (e.g., "/absolute/path/to/file.jpg")
                    - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+                   - Macro paths (e.g., "{outputs}/file.png")
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """

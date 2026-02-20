@@ -420,3 +420,67 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "Failed to create presigned URL" in result.error
+
+    def test_create_download_url_from_path_macro_path(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Test creating download URL from a macro path like {outputs}/file.png."""
+        from pathlib import Path
+
+        from griptape_nodes.retained_mode.events.project_events import GetPathForMacroResultSuccess
+        from griptape_nodes.retained_mode.events.static_file_events import (
+            CreateStaticFileDownloadUrlFromPathRequest,
+            CreateStaticFileDownloadUrlResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        resolved_path = Path("/mock/workspace/outputs/file.png")
+
+        mock_static_files_manager.storage_driver.create_signed_download_url.return_value = "http://signed-url.com"
+        mock_static_files_manager.storage_driver.get_asset_url.return_value = "http://asset-url.com"
+
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="{outputs}/file.png")
+
+        with patch.object(
+            GriptapeNodes,
+            "handle_request",
+            return_value=GetPathForMacroResultSuccess(
+                result_details="resolved",
+                resolved_path=Path("outputs/file.png"),
+                absolute_path=resolved_path,
+            ),
+        ):
+            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+        assert isinstance(result, CreateStaticFileDownloadUrlResultSuccess)
+        # Verify the storage driver was called with the resolved path
+        call_args = mock_static_files_manager.storage_driver.create_signed_download_url.call_args
+        assert call_args[0][0] == Path("/mock/workspace/outputs/file.png")
+
+    def test_create_download_url_from_path_macro_path_resolution_failure(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """Test failure when macro path resolution fails."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultFailure,
+            PathResolutionFailureReason,
+        )
+        from griptape_nodes.retained_mode.events.static_file_events import (
+            CreateStaticFileDownloadUrlFromPathRequest,
+            CreateStaticFileDownloadUrlResultFailure,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        request = CreateStaticFileDownloadUrlFromPathRequest(file_path="{outputs}/file.png")
+
+        with patch.object(
+            GriptapeNodes,
+            "handle_request",
+            return_value=GetPathForMacroResultFailure(
+                result_details="missing variables",
+                failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+                missing_variables={"outputs"},
+            ),
+        ):
+            result = mock_static_files_manager.on_handle_create_static_file_download_url_from_path_request(request)
+
+        assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
+        assert "macro resolution failed" in result.error
