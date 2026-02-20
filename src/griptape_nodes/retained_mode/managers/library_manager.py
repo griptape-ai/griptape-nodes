@@ -345,6 +345,7 @@ class LibraryManager:
             type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
         ] = {}
         self._libraries_loading_complete = asyncio.Event()
+        self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
