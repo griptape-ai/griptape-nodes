@@ -4,10 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from griptape_nodes.retained_mode.events.app_events import (
-    GetEngineVersionResultFailure,
-    GetEngineVersionResultSuccess,
-)
 from griptape_nodes.retained_mode.managers.fitness_problems.libraries.library_engine_version_too_new_problem import (
     LibraryEngineVersionTooNewProblem,
 )
@@ -15,6 +11,8 @@ from griptape_nodes.retained_mode.managers.library_manager import LibraryManager
 from griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check import (
     IncompatibleEngineVersionCheck,
 )
+
+_MODULE = "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check"
 
 
 class TestLibraryEngineVersionTooNewProblem:
@@ -90,14 +88,10 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check applies when library requires newer engine version."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is True
+        assert result is True
 
     def test_does_not_apply_when_library_version_equal_to_engine(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -105,14 +99,10 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check does not apply when library version equals engine version."""
         mock_library_data.metadata.engine_version = "0.70.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is False
+        assert result is False
 
     def test_does_not_apply_when_library_version_less_than_engine(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -120,29 +110,21 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check does not apply when library version is older than engine."""
         mock_library_data.metadata.engine_version = "0.60.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is False
+        assert result is False
 
-    def test_does_not_apply_when_engine_version_request_fails(
+    def test_does_not_apply_when_engine_version_invalid(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
     ) -> None:
-        """Test that check does not apply when engine version cannot be determined."""
+        """Test that check does not apply when engine version string cannot be parsed."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultFailure(result_details="Error")
-
+        with patch(f"{_MODULE}.engine_version", "invalid-version"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is False
+        assert result is False
 
     def test_does_not_apply_when_library_version_invalid(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -150,46 +132,55 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check does not apply when library version is invalid."""
         mock_library_data.metadata.engine_version = "invalid-version"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is False
+        assert result is False
 
-    def test_check_library_returns_unusable_issue(
+    def test_check_library_returns_unusable_for_pypi_install(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
     ) -> None:
-        """Test that check_library returns UNUSABLE severity issue."""
+        """Test that check_library returns UNUSABLE severity for PyPI installs."""
         mock_library_data.metadata.engine_version = "1.0.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
+            f"{_MODULE}.get_install_source", return_value=("pypi", None)
+        ):
             issues = check.check_library(mock_library_data)
 
-            assert len(issues) == 1
-            assert issues[0].severity == LibraryManager.LibraryFitness.UNUSABLE
-            assert isinstance(issues[0].problem, LibraryEngineVersionTooNewProblem)
-            assert issues[0].problem.library_engine_version == "1.0.0"
-            assert issues[0].problem.current_engine_version == "0.70.0"
+        assert len(issues) == 1
+        assert issues[0].severity == LibraryManager.LibraryFitness.UNUSABLE
+        assert isinstance(issues[0].problem, LibraryEngineVersionTooNewProblem)
+        assert issues[0].problem.library_engine_version == "1.0.0"
+        assert issues[0].problem.current_engine_version == "0.70.0"
 
-    def test_check_library_returns_empty_when_engine_version_fails(
+    def test_check_library_returns_flawed_for_git_install(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
     ) -> None:
-        """Test that check_library returns empty list when engine version request fails."""
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultFailure(result_details="Error")
+        """Test that check_library returns FLAWED severity for git installs."""
+        mock_library_data.metadata.engine_version = "1.0.0"
 
+        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
+            f"{_MODULE}.get_install_source", return_value=("git", "abc1234")
+        ):
             issues = check.check_library(mock_library_data)
 
-            assert len(issues) == 0
+        assert len(issues) == 1
+        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
+
+    def test_check_library_returns_flawed_for_file_install(
+        self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
+    ) -> None:
+        """Test that check_library returns FLAWED severity for local file installs."""
+        mock_library_data.metadata.engine_version = "1.0.0"
+
+        with patch(f"{_MODULE}.engine_version", "0.70.0"), patch(
+            f"{_MODULE}.get_install_source", return_value=("file", None)
+        ):
+            issues = check.check_library(mock_library_data)
+
+        assert len(issues) == 1
+        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
 
     def test_applies_with_patch_version_difference(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -197,14 +188,10 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check applies correctly when only patch version differs."""
         mock_library_data.metadata.engine_version = "0.70.1"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=0, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.0"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is True
+        assert result is True
 
     def test_does_not_apply_with_lower_patch_version(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
@@ -212,11 +199,7 @@ class TestIncompatibleEngineVersionCheck:
         """Test that check does not apply when library has lower patch version."""
         mock_library_data.metadata.engine_version = "0.70.0"
 
-        with patch(
-            "griptape_nodes.version_compatibility.versions.general.incompatible_engine_version_check.GriptapeNodes.handle_request"
-        ) as mock_handle:
-            mock_handle.return_value = GetEngineVersionResultSuccess(major=0, minor=70, patch=5, result_details="OK")
-
+        with patch(f"{_MODULE}.engine_version", "0.70.5"):
             result = check.applies_to_library(mock_library_data)
 
-            assert result is False
+        assert result is False
