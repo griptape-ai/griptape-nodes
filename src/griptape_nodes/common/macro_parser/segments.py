@@ -9,6 +9,9 @@ if TYPE_CHECKING:
     from griptape_nodes.common.macro_parser.formats import FormatSpec
 
 
+MacroVariables = dict[str, str | int]
+
+
 class VariableInfo(NamedTuple):
     """Metadata about a variable in a macro template.
 

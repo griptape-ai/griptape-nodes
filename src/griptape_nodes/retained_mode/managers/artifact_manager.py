@@ -9,7 +9,7 @@ from typing import Any, ClassVar, NamedTuple
 import semver
 from pydantic import BaseModel, ValidationError
 
-from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.macro_parser import MacroVariables, ParsedMacro
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.artifact_events import (
     GeneratePreviewFromDefaultsRequest,
@@ -1384,7 +1384,7 @@ class ArtifactManager:
             raise RuntimeError(msg)  # noqa: TRY004
 
         # Build variables dict for macro resolution
-        variables: dict[str, str | int] = {
+        variables: MacroVariables = {
             "source_file_name": decomposed.source_file_name,
             "preview_format": preview_format,
         }

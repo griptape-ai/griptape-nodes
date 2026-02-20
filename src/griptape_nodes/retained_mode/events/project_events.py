@@ -17,12 +17,9 @@ from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from griptape_nodes.common.macro_parser import MacroMatchFailure, ParsedMacro, VariableInfo
+    from griptape_nodes.common.macro_parser import MacroMatchFailure, MacroVariables, ParsedMacro, VariableInfo
     from griptape_nodes.common.project_templates import ProjectTemplate, ProjectValidationInfo, SituationTemplate
     from griptape_nodes.retained_mode.managers.project_manager import ProjectID, ProjectInfo
-
-# Type alias for macro variable dictionaries (used by ParsedMacro)
-MacroVariables = dict[str, str | int]
 
 
 class MacroPath(NamedTuple):

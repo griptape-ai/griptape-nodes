@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from griptape_nodes.common.macro_parser import MacroVariables
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -138,7 +139,7 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
     """
 
     file_path: str
-    macro_variables: dict[str, str | int] = field(default_factory=dict)
+    macro_variables: MacroVariables = field(default_factory=dict)
 
 
 @dataclass
