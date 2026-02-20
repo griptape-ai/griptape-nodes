@@ -4,6 +4,7 @@ import ctypes
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -186,6 +187,34 @@ class WindowsSpecialFolderResult(NamedTuple):
     remaining_parts: list[str] | None
 
 
+class FilenameParts(NamedTuple):
+    """Components of a filename for suffix injection strategy.
+
+    Attributes:
+        directory: Parent directory path
+        basename: Filename without extension or suffix
+        extension: File extension including dot
+    """
+
+    directory: Path
+    basename: str
+    extension: str
+
+
+class DecomposedPath(NamedTuple):
+    """Components of a decomposed source path for preview generation.
+
+    Attributes:
+        drive_volume_mount: Optional drive/volume/mount (e.g., "C", "Volumes/Backup")
+        source_relative_path: Optional subdirectories (e.g., "images/subdir")
+        source_file_name: Source file basename with extension
+    """
+
+    drive_volume_mount: str | None
+    source_relative_path: str | None
+    source_file_name: str
+
+
 class OSManager:
     """A class to manage OS-level scenarios.
 
@@ -203,6 +232,21 @@ class OSManager:
         "videos": 0x000E,  # CSIDL_MYVIDEO
         "music": 0x000D,  # CSIDL_MYMUSIC
     }
+
+    # Path decomposition pattern strings (single source of truth)
+    _WINDOWS_DRIVE_MATCH_PATTERN = r"^([A-Z]):"
+    _WINDOWS_DRIVE_STRIP_PATTERN = r"^[A-Z]:/"
+    _WINDOWS_UNC_MATCH_PATTERN = r"^//([^/]+)/([^/]+)(?:/(.+))?$"
+    _MACOS_VOLUME_MATCH_PATTERN = r"^/Volumes/([^/]+)"
+    _MACOS_VOLUME_STRIP_PATTERN = r"^/Volumes/[^/]+/?"
+    _LINUX_MOUNT_MATCH_PATTERN = r"^/(mnt|media)/([^/]+)"
+    _LINUX_MOUNT_STRIP_PATTERN = r"^/(mnt|media)/[^/]+/?"
+
+    # Path decomposition patterns (compiled once for performance)
+    WINDOWS_DRIVE_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_WINDOWS_DRIVE_MATCH_PATTERN, re.IGNORECASE)
+    WINDOWS_UNC_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_WINDOWS_UNC_MATCH_PATTERN)
+    MACOS_VOLUME_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_MACOS_VOLUME_MATCH_PATTERN)
+    LINUX_MOUNT_PATTERN: ClassVar[re.Pattern[str]] = re.compile(_LINUX_MOUNT_MATCH_PATTERN)
 
     @staticmethod
     def normalize_path_parts_for_special_folder(path_str: str) -> list[str]:
@@ -3364,3 +3408,121 @@ class OSManager:
         except AttributeError:
             # Windows doesn't have os.uname(), return basic platform info
             return sys.platform
+
+    @staticmethod
+    def decompose_source_path(  # noqa: C901, PLR0912
+        absolute_path: Path,
+        workspace_dir: Path,
+    ) -> DecomposedPath:
+        r"""Decompose source path into semantic components for preview path generation.
+
+        This function breaks down a file path into three components:
+        - Drive/volume/mount identifier (optional): For Windows drives, macOS volumes, Linux mounts
+        - Subdirectories (optional): Directory path between the root/drive and the filename
+        - Filename (required): The actual file name with extension
+
+        Cross-platform support: This method detects path patterns from all platforms (Windows drives,
+        macOS volumes, Linux mounts, UNC paths) regardless of the current OS. This is necessary because
+        preview paths must be consistently decomposed even when a project created on one platform is
+        opened on another (e.g., a Windows path "C:\temp\file.txt" stored in project metadata must
+        be correctly decomposed when opened on macOS).
+
+        Args:
+            absolute_path: Source file path to decompose (should be absolute)
+            workspace_dir: Workspace directory for relative path detection.
+                          If path is within workspace, drive/volume component is omitted.
+
+        Returns:
+            DecomposedPath with three components
+        """
+        # Extract filename first (always present)
+        source_file_name = absolute_path.name
+
+        # Convert path to string for pattern matching
+        path_str = str(absolute_path)
+
+        # Normalize path - convert backslashes to forward slashes
+        normalized_path = path_str.replace("\\", "/")
+
+        # Strip Windows long path prefix (\\?\ or \\?\UNC\) if present
+        # This ensures paths written with normalize_path_for_platform can be decomposed correctly
+        if normalized_path.upper().startswith("//?/UNC/"):
+            # Windows long UNC path: \\?\UNC\server\share → //server/share
+            normalized_path = "//" + normalized_path[8:]
+        elif normalized_path.startswith("//?/"):
+            # Windows long path: \\?\C:\path → C:/path
+            normalized_path = normalized_path[4:]
+
+        # Initialize result variables
+        drive_volume_mount: str | None = None
+        source_relative_path: str | None = None
+
+        # Check for UNC paths (Windows network paths like \\server\share\file.txt)
+        unc_match = OSManager.WINDOWS_UNC_PATTERN.match(normalized_path)
+        if unc_match:
+            server = unc_match.group(1)
+            share = unc_match.group(2)
+            rest = unc_match.group(3) or ""  # Subdirectories after share (may be empty)
+
+            drive_volume_mount = f"{server}/{share}"
+            if rest:
+                # Extract subdirectories (everything except the filename)
+                rest_path = Path(rest)
+                if rest_path.parent != Path():
+                    source_relative_path = rest_path.parent.as_posix()
+
+            return DecomposedPath(
+                drive_volume_mount=drive_volume_mount,
+                source_relative_path=source_relative_path,
+                source_file_name=source_file_name,
+            )
+
+        # Check if path is within workspace
+        try:
+            relative_to_workspace = absolute_path.relative_to(workspace_dir)
+
+            if relative_to_workspace.parent != Path():
+                source_relative_path = relative_to_workspace.parent.as_posix()
+
+        # Path is outside workspace - detect drive/volume/mount prefix
+        except ValueError:
+            remaining_path = normalized_path
+
+            # Check for Windows drive letter (C:, D:, etc.)
+            drive_match = OSManager.WINDOWS_DRIVE_PATTERN.match(normalized_path)
+            if drive_match:
+                drive_volume_mount = drive_match.group(1).upper()
+                remaining_path = re.sub(
+                    OSManager._WINDOWS_DRIVE_STRIP_PATTERN, "", normalized_path, flags=re.IGNORECASE
+                )
+
+            # Check for macOS volume (/Volumes/VolumeName/...)
+            volume_match = OSManager.MACOS_VOLUME_PATTERN.match(normalized_path)
+            if volume_match:
+                drive_volume_mount = f"Volumes/{volume_match.group(1)}"
+                remaining_path = re.sub(OSManager._MACOS_VOLUME_STRIP_PATTERN, "", normalized_path)
+
+            # Check for Linux mount points (/mnt/... or /media/...)
+            mount_match = OSManager.LINUX_MOUNT_PATTERN.match(normalized_path)
+            if mount_match:
+                mount_type = mount_match.group(1)  # "mnt" or "media"
+                mount_name = mount_match.group(2)
+                drive_volume_mount = f"{mount_type}/{mount_name}"
+                remaining_path = re.sub(OSManager._LINUX_MOUNT_STRIP_PATTERN, "", normalized_path)
+
+            # Extract subdirectories from remaining path
+            if remaining_path and remaining_path != "/":
+                remaining_path_obj = Path(remaining_path)
+                parent_path = remaining_path_obj.parent
+                # Check if there's an actual parent directory (not root, not current dir)
+                if parent_path != Path() and str(parent_path) != ".":
+                    relative_str = parent_path.as_posix().lstrip("/")
+                    # Only set if we have a non-empty, non-dot path
+                    if relative_str and relative_str != ".":
+                        source_relative_path = relative_str
+
+        return DecomposedPath(
+            drive_volume_mount=drive_volume_mount,
+            source_relative_path=source_relative_path,
+            source_file_name=source_file_name,
+        )
