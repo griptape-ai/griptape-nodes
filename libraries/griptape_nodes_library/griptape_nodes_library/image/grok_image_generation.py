@@ -12,6 +12,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -297,7 +298,7 @@ class GrokImageGeneration(GriptapeProxyNode):
         self, image_url: str, generation_id: str | None = None, index: int = 0
     ) -> ImageUrlArtifact | None:
         try:
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = await File(image_url).aread_bytes()
             if not image_bytes:
                 return ImageUrlArtifact(value=image_url)
 

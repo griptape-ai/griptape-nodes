@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-import base64
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any, ClassVar
-from urllib.parse import urlparse
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
-from griptape_nodes_library.utils.image_utils import resolve_localhost_url_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -127,13 +123,13 @@ class GrokVideoEdit(GriptapeProxyNode):
 
     def _extract_video_value(self, video_input: Any) -> str | None:
         if isinstance(video_input, str):
-            return resolve_localhost_url_to_path(video_input)
+            return video_input
 
         try:
             if hasattr(video_input, "value"):
                 value = getattr(video_input, "value", None)
                 if isinstance(value, str):
-                    return resolve_localhost_url_to_path(value)
+                    return value
             if hasattr(video_input, "base64"):
                 b64 = getattr(video_input, "base64", None)
                 if isinstance(b64, str) and b64:
@@ -142,51 +138,6 @@ class GrokVideoEdit(GriptapeProxyNode):
             return None
 
         return None
-
-    def _guess_video_mime_type(self, video_url: str) -> str:
-        ext = Path(urlparse(video_url).path).suffix.lower()
-        content_type_map = {
-            ".mp4": "video/mp4",
-            ".mov": "video/quicktime",
-            ".avi": "video/x-msvideo",
-            ".webm": "video/webm",
-            ".mkv": "video/x-matroska",
-            ".m4v": "video/mp4",
-        }
-        return content_type_map.get(ext, "video/mp4")
-
-    async def _download_and_encode_video(self, url: str) -> str | None:
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException):
-                return None
-            else:
-                content_type = (resp.headers.get("content-type") or "video/mp4").split(";")[0]
-                if not content_type.startswith("video/"):
-                    content_type = self._guess_video_mime_type(url)
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                return f"data:{content_type};base64,{b64}"
-
-    async def _read_local_video_and_encode(self, video_value: str) -> str | None:
-        try:
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
-            file_path = workspace_path / video_value
-            if not file_path.exists() or not file_path.is_file():
-                file_path = Path(video_value)
-                if not file_path.exists() or not file_path.is_file():
-                    return None
-
-            video_bytes = file_path.read_bytes()
-            if not video_bytes:
-                return None
-        except (OSError, PermissionError):
-            return None
-        else:
-            content_type = self._guess_video_mime_type(str(file_path))
-            b64 = base64.b64encode(video_bytes).decode("utf-8")
-            return f"data:{content_type};base64,{b64}"
 
     async def _prepare_video_data_uri(self, video_input: Any) -> str | None:
         if not video_input:
@@ -199,13 +150,10 @@ class GrokVideoEdit(GriptapeProxyNode):
         if video_value.startswith("data:"):
             return video_value
 
-        if video_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_video(video_value)
-
-        data_uri = await self._read_local_video_and_encode(video_value)
-        if data_uri:
-            return data_uri
-        return f"data:video/mp4;base64,{video_value}"
+        try:
+            return await File(video_value).aread_data_uri(fallback_mime="video/mp4")
+        except FileLoadError:
+            return None
 
     def _get_api_model_id(self) -> str:
         model_name = self.get_parameter_value("model") or "Grok Imagine Video"
