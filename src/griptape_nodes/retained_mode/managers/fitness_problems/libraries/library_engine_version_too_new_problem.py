@@ -15,8 +15,6 @@ class LibraryEngineVersionTooNewProblem(LibraryProblem):
     This occurs when a library's engine_version metadata is greater than the current
     engine version, meaning the library was built for a newer engine and may use
     features that don't exist yet.
-
-    This severity is UNUSABLE - the library cannot be loaded.
     """
 
     library_engine_version: str
