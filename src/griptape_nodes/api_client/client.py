@@ -25,6 +25,7 @@ logger = logging.getLogger("griptape_nodes_client")
 # Messages above this threshold can saturate the WebSocket send buffer and cause
 # connected clients (e.g. the editor) to stall or disconnect.
 LARGE_PAYLOAD_WARNING_THRESHOLD = 100_000
+LARGE_PAYLOAD_ERROR_THRESHOLD = 1_000_000
 
 
 def get_default_websocket_url() -> str:
@@ -265,15 +266,24 @@ class Client:
             raise ConnectionError(msg)
 
         serialized = json.dumps(message)
-        if len(serialized) > LARGE_PAYLOAD_WARNING_THRESHOLD:
-            logger.warning(
-                "Sending large WebSocket message: type=%s (%s), size=%d bytes. "
-                "Large messages can saturate the send buffer and cause connected clients (e.g. the editor) to stall or disconnect.",
-                message.get("type"),
-                message.get("payload", {}).get("result_type"),
-                len(serialized),
+
+        if len(serialized) > LARGE_PAYLOAD_ERROR_THRESHOLD:
+            msg = (
+                f"Payload size {len(serialized)} bytes exceeds the maximum allowed threshold of {LARGE_PAYLOAD_ERROR_THRESHOLD} bytes "
+                f"(type={message.get('type')}, result_type={message.get('payload', {}).get('result_type')})."
             )
+            logger.error(msg)
+            return
+
         try:
+            if len(serialized) > LARGE_PAYLOAD_WARNING_THRESHOLD:
+                logger.warning(
+                    "Sending large WebSocket message: type=%s (%s), size=%d bytes. "
+                    "Large messages can saturate the send buffer and cause connected clients (e.g. the editor) to stall or disconnect.",
+                    message.get("type"),
+                    message.get("payload", {}).get("result_type"),
+                    len(serialized),
+                )
             await self._websocket.send(serialized)
             logger.debug("Sent message type: %s", message.get("type"))
         except Exception as e:
