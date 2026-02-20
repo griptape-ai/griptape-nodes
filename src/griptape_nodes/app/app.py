@@ -83,6 +83,10 @@ config_manager = GriptapeNodes.ConfigManager()
 install_file_url_support()
 
 
+# Maximum length for log messages forwarded to the GUI.
+LOG_MESSAGE_MAX_LENGTH = 500
+
+
 class EventLogHandler(logging.Handler):
     """Custom logging handler that emits log messages as AppEvents.
 
@@ -92,8 +96,11 @@ class EventLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         log_level_no = logging.getLevelNamesMapping()[config_manager.get_config_value("log_level").upper()]
         if record.levelno >= log_level_no:
+            message = record.getMessage()
+            if len(message) > LOG_MESSAGE_MAX_LENGTH:
+                message = message[:LOG_MESSAGE_MAX_LENGTH] + "... (truncated; full output available in engine logs)"
             log_event = AppEvent(
-                payload=LogHandlerEvent(message=record.getMessage(), levelname=record.levelname, created=record.created)
+                payload=LogHandlerEvent(message=message, levelname=record.levelname, created=record.created)
             )
             griptape_nodes.EventManager().put_event(log_event)
 
