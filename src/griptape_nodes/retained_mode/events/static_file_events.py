@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 
+from griptape_nodes.common.macro_parser import MacroVariables
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -122,18 +123,23 @@ class CreateStaticFileDownloadUrlFromPathRequest(RequestPayload):
     """Create a presigned URL for downloading a file from an arbitrary path.
 
     Use when: Need to create download URLs for files outside the staticfiles directory,
-    working with absolute paths, file:// URLs, or workspace-relative paths.
+    working with absolute paths, file:// URLs, workspace-relative paths, or macro paths.
 
     Args:
         file_path: File path or URL. Accepts:
                    - file:// URLs (e.g., "file:///absolute/path/to/file.jpg")
                    - Absolute paths (e.g., "/absolute/path/to/file.jpg")
                    - Workspace-relative paths (e.g., "relative/path/to/file.jpg")
+                   - Macro paths (e.g., "{outputs}/file.png")
+        macro_variables: Optional variable substitutions for macro paths
+                         (e.g., {"file_name": "output", "file_ext": "png"}).
+                         Ignored for non-macro paths.
 
     Results: CreateStaticFileDownloadUrlResultSuccess (with URL) | CreateStaticFileDownloadUrlResultFailure (URL creation error)
     """
 
     file_path: str
+    macro_variables: MacroVariables = field(default_factory=dict)
 
 
 @dataclass

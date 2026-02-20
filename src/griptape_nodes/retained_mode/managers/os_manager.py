@@ -19,7 +19,7 @@ import portalocker
 import send2trash
 from rich.console import Console
 
-from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, ParsedMacro
+from griptape_nodes.common.macro_parser import MacroResolutionError, MacroResolutionFailure, MacroVariables, ParsedMacro
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionFailureReason
 from griptape_nodes.common.macro_parser.formats import NumericPaddingFormat
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
@@ -781,9 +781,7 @@ class OSManager:
     # CREATE_NEW File Collision Policy - Helper Methods
     # ============================================================================
 
-    def _identify_index_variable(
-        self, parsed_macro: ParsedMacro, variables: dict[str, str | int]
-    ) -> ParsedVariable | None:
+    def _identify_index_variable(self, parsed_macro: ParsedMacro, variables: MacroVariables) -> ParsedVariable | None:
         """Identify which variable should be used for auto-incrementing.
 
         Analyzes the macro to find unresolved required variables. Returns None if all
@@ -888,7 +886,7 @@ class OSManager:
         return "".join(pattern_parts)
 
     def _extract_index_from_filename(
-        self, filename: str, parsed_macro: ParsedMacro, index_var_name: str, variables: dict[str, str | int]
+        self, filename: str, parsed_macro: ParsedMacro, index_var_name: str, variables: MacroVariables
     ) -> int | None:
         """Extract index value from a filename by reverse-matching against macro.
 
@@ -1027,7 +1025,7 @@ class OSManager:
     def _scan_for_next_available_index(
         self,
         parsed_macro: ParsedMacro,
-        variables: dict[str, str | int],
+        variables: MacroVariables,
         index_var: ParsedVariable,
     ) -> int | None:
         """Scan existing files and return next available index (preview only - no file creation).

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from griptape_nodes.common.macro_parser.segments import MacroVariables
 
 
 class MacroSyntaxError(Exception):
@@ -99,7 +103,7 @@ class MacroMatchFailure:
 
     failure_reason: MacroMatchFailureReason
     expected_pattern: str
-    known_variables_used: dict[str, str | int]
+    known_variables_used: MacroVariables
     error_details: str
 
 
