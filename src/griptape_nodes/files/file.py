@@ -7,10 +7,14 @@ from typing import NamedTuple, cast
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
     FileIOFailureReason,
     ReadFileRequest,
     ReadFileResultFailure,
     ReadFileResultSuccess,
+    WriteFileRequest,
+    WriteFileResultFailure,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
@@ -40,6 +44,26 @@ class FileLoadError(Exception):
         self.result_details = result_details
         self.missing_variables = missing_variables
         self.conflicting_variables = conflicting_variables
+        super().__init__(result_details)
+
+
+class FileWriteError(Exception):
+    """Raised when a file write operation fails.
+
+    Attributes:
+        failure_reason: Classification of why the write failed.
+        result_details: Human-readable error message.
+    """
+
+    def __init__(
+        self,
+        failure_reason: FileIOFailureReason,
+        result_details: str,
+        missing_variables: set[str] | None = None,
+    ) -> None:
+        self.failure_reason = failure_reason
+        self.result_details = result_details
+        self.missing_variables = missing_variables
         super().__init__(result_details)
 
 
@@ -130,17 +154,22 @@ async def _aresolve_file_path(file_path: str | MacroPath | None) -> str | None:
 
 
 class File:
-    """Path-like object for reading files via the retained mode API.
+    """Path-like object for reading and writing files via the retained mode API.
 
     The constructor stores a file reference without performing any I/O.
-    Call instance methods like ``read_bytes()``, ``read_text()``, or
-    ``read_data_uri()`` to perform the actual read.
+    Call instance methods like ``read_bytes()``, ``read_text()``,
+    ``read_data_uri()``, ``write_bytes()``, or ``write_text()`` to perform
+    the actual I/O.
 
     Supports MacroPath resolution: pass a MacroPath (which contains variables)
     or a plain string path.
     """
 
-    def __init__(self, file_path: str | MacroPath) -> None:
+    def __init__(
+        self,
+        file_path: str | MacroPath,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+    ) -> None:
         """Store file reference. No I/O is performed.
 
         Plain strings containing macro variables (e.g. ``"{outputs}/file.png"``) are
@@ -149,8 +178,10 @@ class File:
         MacroPath objects are stored as-is.
 
         Args:
-            file_path: Path to the file to read. Can be a plain string or a MacroPath
+            file_path: Path to the file. Can be a plain string or a MacroPath
                 (which contains macro variables).
+            existing_file_policy: How to handle an existing file during write
+                operations. Defaults to OVERWRITE.
         """
         if isinstance(file_path, str):
             try:
@@ -164,6 +195,7 @@ class File:
                     self._file_path = file_path
         else:
             self._file_path = file_path
+        self._existing_file_policy = existing_file_policy
 
     def _read(self, encoding: str = "utf-8") -> FileContent:
         """Perform the sync file read and return a FileContent.
@@ -248,6 +280,142 @@ class File:
                 result_details="Cannot resolve path: file_path is None",
             )
         return resolved
+
+    def _write_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+        """Perform the sync file write.
+
+        Args:
+            content: Content to write (str or bytes).
+            encoding: Text encoding to use when writing text content.
+
+        Returns:
+            The actual path where the file was written (may differ from the
+            requested path if CREATE_NEW policy is in effect).
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        resolved_path = _resolve_file_path(self._file_path)
+
+        if resolved_path is None:
+            raise FileWriteError(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details="Cannot write: file_path is None",
+            )
+
+        request = WriteFileRequest(
+            file_path=resolved_path,
+            content=content,
+            encoding=encoding,
+            existing_file_policy=self._existing_file_policy,
+        )
+        result = GriptapeNodes.handle_request(request)
+
+        if isinstance(result, WriteFileResultFailure):
+            raise FileWriteError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+                missing_variables=result.missing_variables,
+            )
+
+        return cast("WriteFileResultSuccess", result).final_file_path
+
+    async def _awrite_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+        """Async version of _write_content.
+
+        Args:
+            content: Content to write (str or bytes).
+            encoding: Text encoding to use when writing text content.
+
+        Returns:
+            The actual path where the file was written (may differ from the
+            requested path if CREATE_NEW policy is in effect).
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        resolved_path = await _aresolve_file_path(self._file_path)
+
+        if resolved_path is None:
+            raise FileWriteError(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details="Cannot write: file_path is None",
+            )
+
+        request = WriteFileRequest(
+            file_path=resolved_path,
+            content=content,
+            encoding=encoding,
+            existing_file_policy=self._existing_file_policy,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, WriteFileResultFailure):
+            raise FileWriteError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+                missing_variables=result.missing_variables,
+            )
+
+        return cast("WriteFileResultSuccess", result).final_file_path
+
+    def write_bytes(self, content: bytes) -> str:
+        """Write bytes to the file.
+
+        Args:
+            content: The bytes to write.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return self._write_content(content)
+
+    async def awrite_bytes(self, content: bytes) -> str:
+        """Async version of write_bytes().
+
+        Args:
+            content: The bytes to write.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return await self._awrite_content(content)
+
+    def write_text(self, content: str, encoding: str = "utf-8") -> str:
+        """Write text to the file.
+
+        Args:
+            content: The text to write.
+            encoding: Text encoding to use when writing.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return self._write_content(content, encoding=encoding)
+
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> str:
+        """Async version of write_text().
+
+        Args:
+            content: The text to write.
+            encoding: Text encoding to use when writing.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return await self._awrite_content(content, encoding=encoding)
 
     def read(self, encoding: str = "utf-8") -> FileContent:
         """Read the file and return a FileContent with content and metadata.

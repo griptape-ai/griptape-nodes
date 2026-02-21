@@ -3,10 +3,12 @@
 import logging
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.exe_types.core_types import NodeMessageResult, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.file import File
 from griptape_nodes.files.path_utils import parse_filename_components
+from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
@@ -21,6 +23,13 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 logger = logging.getLogger("griptape_nodes")
 
 _FALLBACK_MACRO_TEMPLATE = "{outputs}/{node_name?:_}{file_name_base}{_index?:03}.{file_extension}"
+
+_SITUATION_TO_FILE_POLICY: dict[str, ExistingFilePolicy] = {
+    SituationFilePolicy.CREATE_NEW: ExistingFilePolicy.CREATE_NEW,
+    SituationFilePolicy.OVERWRITE: ExistingFilePolicy.OVERWRITE,
+    SituationFilePolicy.FAIL: ExistingFilePolicy.FAIL,
+    SituationFilePolicy.PROMPT: ExistingFilePolicy.CREATE_NEW,  # PROMPT has no direct mapping; fall back to CREATE_NEW
+}
 
 
 class ProjectFileParameter:
@@ -67,11 +76,15 @@ class ProjectFileParameter:
         self._default_filename = default_filename
         self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
 
-        # Fetch situation's macro template directly via GetSituationRequest
+        # Fetch situation's macro template and policy directly via GetSituationRequest
         get_situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation))
 
         if isinstance(get_situation_result, GetSituationResultSuccess):
             self._macro_template = get_situation_result.situation.macro
+            self._existing_file_policy = _SITUATION_TO_FILE_POLICY.get(
+                get_situation_result.situation.policy.on_collision,
+                ExistingFilePolicy.CREATE_NEW,
+            )
         else:
             logger.error(
                 "%s: Failed to load situation '%s', using fallback macro template",
@@ -79,6 +92,7 @@ class ProjectFileParameter:
                 situation,
             )
             self._macro_template = _FALLBACK_MACRO_TEMPLATE
+            self._existing_file_policy = ExistingFilePolicy.CREATE_NEW
 
     def add_parameter(self) -> None:
         """Create and add the file path parameter to the node."""
@@ -155,7 +169,7 @@ class ProjectFileParameter:
         }
 
         macro_path = MacroPath(ParsedMacro(self._macro_template), variables)
-        return File(macro_path)
+        return File(macro_path, existing_file_policy=self._existing_file_policy)
 
     def _on_configure_button_clicked(
         self,

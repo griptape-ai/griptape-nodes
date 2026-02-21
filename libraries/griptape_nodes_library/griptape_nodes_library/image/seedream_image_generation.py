@@ -18,7 +18,7 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input, normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -648,14 +648,15 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             png_bytes = png_buffer.getvalue()
 
             # Resolve output path from ProjectFileParameter and write to project directory
-            output_file = self._output_file_param.build_file(_index=index)
-            absolute_path = output_file.resolve_path()
-            abs_path = Path(absolute_path)
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            abs_path.write_bytes(png_bytes)
-            self._log(f"Saved image {index} to {absolute_path}")
+            output_file = self._output_file_param.build_file()
+            try:
+                actual_path = await output_file.awrite_bytes(png_bytes)
+            except FileWriteError as e:
+                self._log(f"Failed to write image {index}: {e}")
+                return ImageUrlArtifact(value=image_url)
+            self._log(f"Saved image {index} to {actual_path}")
 
-            return ImageUrlArtifact(value=absolute_path, name=abs_path.name)
+            return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
 
         except Exception as e:
             self._log(f"Failed to save image {index} from URL: {e}")
