@@ -9,6 +9,7 @@ from griptape_nodes.exe_types.node_types import (
     BaseNode,
     NodeResolutionState,
 )
+from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.machines.fsm import FSM, State
 from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
 from griptape_nodes.retained_mode.events.base_events import ExecutionEvent, ExecutionGriptapeNodeEvent
@@ -61,8 +62,6 @@ class ControlFlowContext:
 
         # ALWAYS create ParallelResolutionMachine (SEQUENTIAL mode now maps to PARALLEL with max_nodes_in_parallel=1)
         # Get the global DagBuilder from FlowManager
-        from griptape_nodes.machines.dag_builder import DagBuilder
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
         # Create isolated DagBuilder for independent subflows
         if is_isolated:

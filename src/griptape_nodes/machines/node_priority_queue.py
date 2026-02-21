@@ -34,8 +34,8 @@ class NodePriorityQueue:
         # Initialize heuristics with fixed weights
         self._heuristics: list[NodeHeuristic] = [
             HasConnectionFromPrevious(context, weight=1.0),
-            DistanceToNode(context, weight=1.5),
-            TopLeftToBottomRight(context, weight=2.0),
+            DistanceToNode(context, weight=0.75),
+            TopLeftToBottomRight(context, weight=1.0),
         ]
 
     def add_node(self, dag_node: DagNode) -> str:
