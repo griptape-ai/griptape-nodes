@@ -197,70 +197,6 @@ class File:
             self._file_path = file_path
         self._existing_file_policy = existing_file_policy
 
-    def _read(self, encoding: str = "utf-8") -> FileContent:
-        """Perform the sync file read and return a FileContent.
-
-        Args:
-            encoding: Text encoding to use if file is detected as text.
-
-        Raises:
-            FileLoadError: If the file cannot be read.
-        """
-        resolved_path = _resolve_file_path(self._file_path)
-
-        request = ReadFileRequest(
-            file_path=resolved_path,
-            encoding=encoding,
-            should_transform_image_content_to_thumbnail=False,
-        )
-        result = GriptapeNodes.handle_request(request)
-
-        if isinstance(result, ReadFileResultFailure):
-            raise FileLoadError(
-                failure_reason=result.failure_reason,
-                result_details=str(result.result_details),
-            )
-
-        success = cast("ReadFileResultSuccess", result)
-        return FileContent(
-            content=success.content,
-            mime_type=success.mime_type,
-            encoding=success.encoding,
-            size=success.file_size,
-        )
-
-    async def _aread(self, encoding: str = "utf-8") -> FileContent:
-        """Perform the async file read and return a FileContent.
-
-        Args:
-            encoding: Text encoding to use if file is detected as text.
-
-        Raises:
-            FileLoadError: If the file cannot be read.
-        """
-        resolved_path = await _aresolve_file_path(self._file_path)
-
-        request = ReadFileRequest(
-            file_path=resolved_path,
-            encoding=encoding,
-            should_transform_image_content_to_thumbnail=False,
-        )
-        result = await GriptapeNodes.ahandle_request(request)
-
-        if isinstance(result, ReadFileResultFailure):
-            raise FileLoadError(
-                failure_reason=result.failure_reason,
-                result_details=str(result.result_details),
-            )
-
-        success = cast("ReadFileResultSuccess", result)
-        return FileContent(
-            content=success.content,
-            mime_type=success.mime_type,
-            encoding=success.encoding,
-            size=success.file_size,
-        )
-
     def resolve_path(self) -> str:
         """Resolve and return the absolute path string for this file.
 
@@ -280,84 +216,6 @@ class File:
                 result_details="Cannot resolve path: file_path is None",
             )
         return resolved
-
-    def _write_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
-        """Perform the sync file write.
-
-        Args:
-            content: Content to write (str or bytes).
-            encoding: Text encoding to use when writing text content.
-
-        Returns:
-            The actual path where the file was written (may differ from the
-            requested path if CREATE_NEW policy is in effect).
-
-        Raises:
-            FileWriteError: If the file cannot be written.
-        """
-        resolved_path = _resolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
-        request = WriteFileRequest(
-            file_path=resolved_path,
-            content=content,
-            encoding=encoding,
-            existing_file_policy=self._existing_file_policy,
-        )
-        result = GriptapeNodes.handle_request(request)
-
-        if isinstance(result, WriteFileResultFailure):
-            raise FileWriteError(
-                failure_reason=result.failure_reason,
-                result_details=str(result.result_details),
-                missing_variables=result.missing_variables,
-            )
-
-        return cast("WriteFileResultSuccess", result).final_file_path
-
-    async def _awrite_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
-        """Async version of _write_content.
-
-        Args:
-            content: Content to write (str or bytes).
-            encoding: Text encoding to use when writing text content.
-
-        Returns:
-            The actual path where the file was written (may differ from the
-            requested path if CREATE_NEW policy is in effect).
-
-        Raises:
-            FileWriteError: If the file cannot be written.
-        """
-        resolved_path = await _aresolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
-        request = WriteFileRequest(
-            file_path=resolved_path,
-            content=content,
-            encoding=encoding,
-            existing_file_policy=self._existing_file_policy,
-        )
-        result = await GriptapeNodes.ahandle_request(request)
-
-        if isinstance(result, WriteFileResultFailure):
-            raise FileWriteError(
-                failure_reason=result.failure_reason,
-                result_details=str(result.result_details),
-                missing_variables=result.missing_variables,
-            )
-
-        return cast("WriteFileResultSuccess", result).final_file_path
 
     def write_bytes(self, content: bytes) -> str:
         """Write bytes to the file.
@@ -533,6 +391,148 @@ class File:
         """
         fc = await self._aread()
         return _to_data_uri(fc, fallback_mime)
+
+    def _read(self, encoding: str = "utf-8") -> FileContent:
+        """Perform the sync file read and return a FileContent.
+
+        Args:
+            encoding: Text encoding to use if file is detected as text.
+
+        Raises:
+            FileLoadError: If the file cannot be read.
+        """
+        resolved_path = _resolve_file_path(self._file_path)
+
+        request = ReadFileRequest(
+            file_path=resolved_path,
+            encoding=encoding,
+            should_transform_image_content_to_thumbnail=False,
+        )
+        result = GriptapeNodes.handle_request(request)
+
+        if isinstance(result, ReadFileResultFailure):
+            raise FileLoadError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+            )
+
+        success = cast("ReadFileResultSuccess", result)
+        return FileContent(
+            content=success.content,
+            mime_type=success.mime_type,
+            encoding=success.encoding,
+            size=success.file_size,
+        )
+
+    async def _aread(self, encoding: str = "utf-8") -> FileContent:
+        """Perform the async file read and return a FileContent.
+
+        Args:
+            encoding: Text encoding to use if file is detected as text.
+
+        Raises:
+            FileLoadError: If the file cannot be read.
+        """
+        resolved_path = await _aresolve_file_path(self._file_path)
+
+        request = ReadFileRequest(
+            file_path=resolved_path,
+            encoding=encoding,
+            should_transform_image_content_to_thumbnail=False,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, ReadFileResultFailure):
+            raise FileLoadError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+            )
+
+        success = cast("ReadFileResultSuccess", result)
+        return FileContent(
+            content=success.content,
+            mime_type=success.mime_type,
+            encoding=success.encoding,
+            size=success.file_size,
+        )
+
+    def _write_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+        """Perform the sync file write.
+
+        Args:
+            content: Content to write (str or bytes).
+            encoding: Text encoding to use when writing text content.
+
+        Returns:
+            The actual path where the file was written (may differ from the
+            requested path if CREATE_NEW policy is in effect).
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        resolved_path = _resolve_file_path(self._file_path)
+
+        if resolved_path is None:
+            raise FileWriteError(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details="Cannot write: file_path is None",
+            )
+
+        request = WriteFileRequest(
+            file_path=resolved_path,
+            content=content,
+            encoding=encoding,
+            existing_file_policy=self._existing_file_policy,
+        )
+        result = GriptapeNodes.handle_request(request)
+
+        if isinstance(result, WriteFileResultFailure):
+            raise FileWriteError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+                missing_variables=result.missing_variables,
+            )
+
+        return cast("WriteFileResultSuccess", result).final_file_path
+
+    async def _awrite_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+        """Async version of _write_content.
+
+        Args:
+            content: Content to write (str or bytes).
+            encoding: Text encoding to use when writing text content.
+
+        Returns:
+            The actual path where the file was written (may differ from the
+            requested path if CREATE_NEW policy is in effect).
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        resolved_path = await _aresolve_file_path(self._file_path)
+
+        if resolved_path is None:
+            raise FileWriteError(
+                failure_reason=FileIOFailureReason.INVALID_PATH,
+                result_details="Cannot write: file_path is None",
+            )
+
+        request = WriteFileRequest(
+            file_path=resolved_path,
+            content=content,
+            encoding=encoding,
+            existing_file_policy=self._existing_file_policy,
+        )
+        result = await GriptapeNodes.ahandle_request(request)
+
+        if isinstance(result, WriteFileResultFailure):
+            raise FileWriteError(
+                failure_reason=result.failure_reason,
+                result_details=str(result.result_details),
+                missing_variables=result.missing_variables,
+            )
+
+        return cast("WriteFileResultSuccess", result).final_file_path
 
 
 def _to_bytes(fc: FileContent) -> bytes:
