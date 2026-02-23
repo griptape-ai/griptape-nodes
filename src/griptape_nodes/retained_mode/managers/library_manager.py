@@ -2001,7 +2001,7 @@ class LibraryManager:
             static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
             # Get the library directory so we can hash each bundle file
             library_info_for_path = self.get_library_info_by_library_name(request.library)
-            library_dir = Path(library_info_for_path.library_path).parent
+            library_dir = Path(library_info_for_path.library_path).parent if library_info_for_path is not None else None
             widgets_info = []
             for widget_def in library_data.widgets:
                 # Construct the full URL for this widget
@@ -2009,8 +2009,11 @@ class LibraryManager:
                 base_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
                 # Append a content hash so browsers re-fetch when the bundle file changes
                 try:
-                    content_hash = hashlib.sha256((library_dir / widget_def.path).read_bytes()).hexdigest()[:8]
-                    bundle_url = f"{base_url}?v={content_hash}"
+                    if library_dir is not None:
+                        content_hash = hashlib.sha256((library_dir / widget_def.path).read_bytes()).hexdigest()[:8]
+                        bundle_url = f"{base_url}?v={content_hash}"
+                    else:
+                        bundle_url = base_url
                 except OSError:
                     bundle_url = base_url
                 logger.debug(
