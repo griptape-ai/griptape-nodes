@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -19,13 +20,44 @@ def get_current_version() -> str:
     return f"v{engine_version}"
 
 
-def get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
+def get_install_source() -> tuple[Literal["git", "file", "pypi", "unknown"], str | None]:
     """Determines the install source of the Griptape Nodes package.
+
+    Searches for the dist-info in the same site-packages directory as the
+    running code to correctly identify the source when multiple installations
+    of the package exist across different environments on sys.path.
 
     Returns:
         tuple: A tuple containing the install source and commit ID (if applicable).
     """
-    dist = importlib.metadata.distribution("griptape_nodes")
+    # Search for the dist-info in the same directory as this running module
+    # (i.e., the site-packages containing the code that is actually executing).
+    # This avoids picking up a different installation that appears earlier in
+    # sys.path when multiple environments coexist (e.g., a uv tool install
+    # alongside a local project install).
+    code_site_packages = next(
+        (p for p in Path(__file__).parents if p.name == "site-packages"),
+        None,
+    )
+    dist = None
+    if code_site_packages is not None:
+        dist = next(
+            (
+                d
+                for d in importlib.metadata.distributions(path=[str(code_site_packages)])
+                if d.metadata.get("Name", "").lower() in ("griptape-nodes", "griptape_nodes")
+            ),
+            None,
+        )
+
+    # Fall back for editable installs where __file__ is in the source tree
+    # rather than site-packages, so the dist-info won't be found above.
+    if dist is None:
+        try:
+            dist = importlib.metadata.distribution("griptape_nodes")
+        except importlib.metadata.PackageNotFoundError:
+            return "unknown", None
+
     direct_url_text = dist.read_text("direct_url.json")
     # installing from pypi doesn't have a direct_url.json file
     if direct_url_text is None:
@@ -36,9 +68,10 @@ def get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
     if url and url.startswith("file://"):
         return "file", None
     if "vcs_info" in direct_url_info:
-        return "git", direct_url_info["vcs_info"].get("commit_id")[:7]
-    # Fall back to pypi if no other source is found
-    return "pypi", None
+        commit_id = direct_url_info["vcs_info"].get("commit_id")
+        return "git", commit_id[:7] if commit_id else None
+    # direct_url.json exists but matches no known pattern (e.g., direct HTTP tarball)
+    return "unknown", None
 
 
 def get_complete_version_string() -> str:
@@ -102,8 +135,7 @@ def get_latest_version_git(package: str, github_url: str, latest_tag: str) -> st
         str: Latest commit SHA (first 7 characters) or current version if fetch fails.
     """
     version = get_current_version()
-    revision = latest_tag
-    update_url = github_url.format(package=package, revision=revision)
+    update_url = github_url.format(package=package, revision=latest_tag)
 
     with httpx.Client(timeout=30.0) as client:
         try:
