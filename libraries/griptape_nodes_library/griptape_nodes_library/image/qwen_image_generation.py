@@ -8,7 +8,6 @@ from copy import deepcopy
 from http import HTTPStatus
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
@@ -17,6 +16,7 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
+from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -290,7 +290,7 @@ class QwenImageGeneration(GriptapeProxyNode):
         """Download and save the image from the provided URL."""
         try:
             logger.info("Downloading image from URL")
-            image_bytes = await self._download_bytes_from_url(image_url)
+            image_bytes = await File(image_url).aread_bytes()
             if image_bytes:
                 filename = f"qwen_image_{int(time.time())}.jpg"
                 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
@@ -435,14 +435,3 @@ class QwenImageGeneration(GriptapeProxyNode):
         self._set_safe_defaults()
         self._set_status_results(was_successful=False, result_details=str(e))
         self._handle_failure_exception(e)
-
-    @staticmethod
-    async def _download_bytes_from_url(url: str) -> bytes | None:
-        """Download bytes from a URL."""
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=120)
-                resp.raise_for_status()
-                return resp.content
-        except Exception:
-            return None

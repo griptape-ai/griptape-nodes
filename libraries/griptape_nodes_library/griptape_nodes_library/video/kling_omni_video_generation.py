@@ -4,7 +4,6 @@ import base64
 import logging
 from typing import Any
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -18,6 +17,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -519,25 +519,13 @@ class KlingOmniVideoGeneration(GriptapeProxyNode):
         if image_url.startswith("data:image/"):
             return image_url
 
-        # If it's an external URL, download and convert to data URL
-        if image_url.startswith(("http://", "https://")):
-            return await self._inline_external_url_async(image_url)
+        try:
+            image_bytes = await File(image_url).aread_bytes()
+        except FileLoadError as e:
+            logger.debug("%s failed to load image from %s: %s", self.name, image_url, e)
+            return None
 
-        return image_url
-
-    async def _inline_external_url_async(self, url: str) -> str | None:
-        """Download external image URL and convert to data URL."""
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, timeout=20)
-                resp.raise_for_status()
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
-                logger.debug("%s failed to inline image URL: %s", self.name, e)
-                return None
-            else:
-                b64 = base64.b64encode(resp.content).decode("utf-8")
-                logger.debug("Image URL converted to data URI for proxy")
-                return b64
+        return base64.b64encode(image_bytes).decode("utf-8")
 
     @staticmethod
     def _coerce_image_url_or_data_uri(val: Any) -> str | None:
