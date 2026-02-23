@@ -185,6 +185,21 @@ class TestIncompatibleEngineVersionCheck:
         assert len(issues) == 1
         assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
 
+    def test_check_library_returns_flawed_for_unknown_install(
+        self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
+    ) -> None:
+        """Test that check_library returns FLAWED severity when install source cannot be determined."""
+        mock_library_data.metadata.engine_version = "1.0.0"
+
+        with (
+            patch(f"{_MODULE}.engine_version", "0.70.0"),
+            patch(f"{_MODULE}.get_install_source", return_value=("unknown", None)),
+        ):
+            issues = check.check_library(mock_library_data)
+
+        assert len(issues) == 1
+        assert issues[0].severity == LibraryManager.LibraryFitness.FLAWED
+
     def test_applies_with_patch_version_difference(
         self, check: IncompatibleEngineVersionCheck, mock_library_data: MagicMock
     ) -> None:
