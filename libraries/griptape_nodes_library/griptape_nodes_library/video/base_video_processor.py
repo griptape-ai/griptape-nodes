@@ -11,6 +11,7 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.traits.options import Options
@@ -81,6 +82,15 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         )
         speed_param.add_trait(Options(choices=["fast", "balanced", "quality"]))
         self.add_parameter(speed_param)
+
+        # Output file path configuration
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="processed_video.mp4",
+        )
+        self._output_file_param.add_parameter()
 
         self.add_parameter(
             ParameterVideo(
@@ -303,14 +313,11 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
             output_path = Path(output_file.name)
         return str(output_path), output_path
 
-    def _save_video_artifact(self, video_bytes: bytes, format_extension: str, suffix: str = "") -> VideoUrlArtifact:
+    def _save_video_artifact(self, video_bytes: bytes, format_extension: str, suffix: str = "") -> VideoUrlArtifact:  # noqa: ARG002
         """Save video bytes to static file and return VideoUrlArtifact."""
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-        # Generate meaningful filename based on workflow and node
-        filename = self._generate_filename(suffix, format_extension)
-        url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
-        return VideoUrlArtifact(url)
+        output_file = self._output_file_param.build_file()
+        actual_path = output_file.write_bytes(video_bytes)
+        return VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
 
     def _run_ffmpeg_command(self, cmd: list[str], timeout: int = 300) -> None:
         """Run FFmpeg command with common error handling."""

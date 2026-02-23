@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -5,15 +6,14 @@ from PIL import UnidentifiedImageError
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.clamp import Clamp
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
-from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     DEFAULT_PLACEHOLDER_HEIGHT,
     DEFAULT_PLACEHOLDER_WIDTH,
@@ -160,6 +160,14 @@ class DisplayImageGrid(ControlNode):
         self.output_format.add_trait(Options(choices=["png", "jpeg", "webp"]))
         self.add_parameter(self.output_format)
 
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="image_grid.png",
+        )
+        self._output_file_param.add_parameter()
+
         # Output parameter
         self.output = ParameterImage(
             name="output",
@@ -263,16 +271,9 @@ class DisplayImageGrid(ControlNode):
             background_color,
             transparent_bg=transparent_bg,
         )
-        filename = generate_filename(
-            node_name=self.name,
-            suffix="_placeholder",
-            extension=output_format,
-        )
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
-            image_to_bytes(placeholder_image, output_format),
-            filename,
-        )
-        return ImageUrlArtifact(value=static_url)
+        output_file = self._output_file_param.build_file()
+        actual_path = output_file.write_bytes(image_to_bytes(placeholder_image, output_format))
+        return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
 
     def _scale_grid_to_fit(self, grid_image: Any, target_width: int, target_height: int) -> tuple[Any, int, int]:
         """Scale grid image to fit within target dimensions.
@@ -413,15 +414,9 @@ class DisplayImageGrid(ControlNode):
                 )
 
             # Save the grid image and create URL
-            filename = generate_filename(
-                node_name=self.name,
-                suffix="_grid",
-                extension=output_format,
-            )
-            static_url = GriptapeNodes.StaticFilesManager().save_static_file(
-                image_to_bytes(grid_image, output_format), filename
-            )
-            url_artifact = ImageUrlArtifact(value=static_url)
+            output_file = self._output_file_param.build_file()
+            actual_path = output_file.write_bytes(image_to_bytes(grid_image, output_format))
+            url_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
             self.publish_update_to_parameter("output", url_artifact)
 
         except (RuntimeError, OSError, UnidentifiedImageError) as e:

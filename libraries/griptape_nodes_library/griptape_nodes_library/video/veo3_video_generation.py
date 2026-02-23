@@ -4,12 +4,14 @@ import base64
 import json
 import logging
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -17,8 +19,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -234,6 +235,14 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         self.add_node_element(video_generation_settings_group)
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="veo3_video.mp4",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -673,7 +682,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
             )
             return
 
-        video_artifacts = self._process_videos_from_result(videos_array, generation_id)
+        video_artifacts = await self._process_videos_from_result(videos_array, generation_id)
         if not video_artifacts:
             logger.warning("%s: No videos could be processed", self.name)
             self._set_safe_defaults()
@@ -685,7 +694,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
 
         self._set_video_output_parameters(video_artifacts)
 
-    def _process_videos_from_result(
+    async def _process_videos_from_result(
         self,
         videos_array: list[dict[str, Any]],
         generation_id: str,
@@ -695,21 +704,19 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         Returns a list of VideoUrlArtifact objects.
         """
         video_artifacts = []
-        static_files_manager = GriptapeNodes.StaticFilesManager()
 
         for idx, video_data in enumerate(videos_array, start=1):
-            artifact = self._process_single_video(video_data, generation_id, idx, static_files_manager)
+            artifact = await self._process_single_video(video_data, generation_id, idx)
             if artifact:
                 video_artifacts.append(artifact)
 
         return video_artifacts
 
-    def _process_single_video(
+    async def _process_single_video(
         self,
         video_data: dict[str, Any],
-        generation_id: str,
+        generation_id: str,  # noqa: ARG002
         idx: int,
-        static_files_manager: Any,
     ) -> VideoUrlArtifact | None:
         """Process a single video from base64 data.
 
@@ -717,7 +724,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         """
         try:
             base64_data = video_data.get("bytesBase64Encoded")
-            mime_type = video_data.get("mimeType", "video/mp4")
+            video_data.get("mimeType", "video/mp4")
 
             if not base64_data:
                 logger.warning("%s: Video %s missing base64 data", self.name, idx)
@@ -726,18 +733,16 @@ class Veo3VideoGeneration(GriptapeProxyNode):
             # Decode base64
             video_bytes = base64.b64decode(base64_data)
 
-            # Determine file extension from mime type
-            extension = "mp4"
-            if "/" in mime_type:
-                extension = mime_type.split("/")[1]
+            output_file = self._output_file_param.build_file()
+            try:
+                actual_path = await output_file.awrite_bytes(video_bytes)
+            except FileWriteError as e:
+                logger.error("%s: Failed to write video %s: %s", self.name, idx, e)
+                return None
 
-            # Save to static storage
-            filename = f"veo3_video_{generation_id}_{idx}.{extension}"
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            logger.info("%s: Saved video %s as %s (%s bytes)", self.name, idx, actual_path, len(video_bytes))
 
-            logger.info("%s: Saved video %s as %s (%s bytes)", self.name, idx, filename, len(video_bytes))
-
-            return VideoUrlArtifact(value=saved_url, name=filename)
+            return VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
 
         except Exception as e:
             logger.error("%s: Failed to process video %s: %s", self.name, idx, e)

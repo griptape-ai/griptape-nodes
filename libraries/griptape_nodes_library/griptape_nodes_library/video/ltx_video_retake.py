@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -11,12 +12,12 @@ from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 from static_ffmpeg import run  # type: ignore[import-untyped]
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -125,6 +126,14 @@ class LTXVideoRetake(GriptapeProxyNode):
         )
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="ltx_retake.mp4",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -431,8 +440,8 @@ class LTXVideoRetake(GriptapeProxyNode):
 
         await self._handle_completion_async(bytes(video_bytes), generation_id)
 
-    async def _handle_completion_async(self, video_bytes: bytes, generation_id: str) -> None:
-        """Handle successful completion by saving the video to static storage.
+    async def _handle_completion_async(self, video_bytes: bytes, generation_id: str) -> None:  # noqa: ARG002
+        """Handle successful completion by saving the video.
 
         Args:
             video_bytes: Raw binary MP4 data received from /result endpoint
@@ -446,22 +455,22 @@ class LTXVideoRetake(GriptapeProxyNode):
             )
             return
 
+        output_file = self._output_file_param.build_file()
         try:
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            filename = f"ltx_video_retake_{generation_id}.mp4"
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-            logger.info("%s saved video to static storage as %s", self.name, filename)
-            self._set_status_results(
-                was_successful=True, result_details=f"Video retake successful and saved as {filename}."
-            )
-        except (OSError, PermissionError) as e:
-            logger.error("%s failed to save to static storage: %s", self.name, e)
+            actual_path = await output_file.awrite_bytes(video_bytes)
+        except FileWriteError as e:
+            logger.error("%s failed to write video: %s", self.name, e)
             self.parameter_output_values["video_url"] = None
             self._set_status_results(
                 was_successful=False,
-                result_details=f"Video generated but failed to save to storage: {e}",
+                result_details=f"Video generated but failed to save: {e}",
             )
+            return
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        logger.info("%s saved video as %s", self.name, actual_path)
+        self._set_status_results(
+            was_successful=True, result_details=f"Video retake successful and saved as {Path(actual_path).name}."
+        )
 
     def _extract_error_message(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0912
         if not response_json:

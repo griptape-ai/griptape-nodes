@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from time import time
+from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
@@ -12,12 +12,13 @@ from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -185,6 +186,15 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
         )
+
+        # Output file parameter
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="google_image.png",
+        )
+        self._output_file_param.add_parameter()
 
         # OUTPUTS
         self.add_parameter(
@@ -452,8 +462,8 @@ class GoogleImageGeneration(GriptapeProxyNode):
         part_idx: int,
         image_artifacts: list[ImageUrlArtifact],
     ) -> None:
-        """Process inline image data and save to static storage."""
-        mime_type = inline_data.get("mimeType", "image/png")
+        """Process inline image data and save to project file."""
+        inline_data.get("mimeType", "image/png")
         base64_data = inline_data.get("data", "")
 
         if not base64_data:
@@ -461,19 +471,24 @@ class GoogleImageGeneration(GriptapeProxyNode):
 
         try:
             image_bytes = base64.b64decode(base64_data)
-            timestamp = int(time())
-            ext = "png" if "png" in mime_type else "jpg"
-            filename = f"google_image_{timestamp}_{candidate_idx}_{part_idx}.{ext}"
-
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(image_bytes, filename)
-            image_artifacts.append(ImageUrlArtifact(value=saved_url, name=filename))
-
-            msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"
-            logger.info(msg)
         except Exception as e:
-            msg = f"{self.name} failed to process image from candidate {candidate_idx + 1}: {e}"
+            msg = f"{self.name} failed to decode image from candidate {candidate_idx + 1}: {e}"
             logger.info(msg)
+            return
+
+        index = len(image_artifacts)
+        extra = {"_index": index} if index > 0 else {}
+        output_file = self._output_file_param.build_file(**extra)
+        try:
+            actual_path = output_file.write_bytes(image_bytes)
+        except FileWriteError as e:
+            msg = f"{self.name} failed to save image from candidate {candidate_idx + 1}: {e}"
+            logger.info(msg)
+            return
+
+        image_artifacts.append(ImageUrlArtifact(value=actual_path, name=Path(actual_path).name))
+        msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"
+        logger.info(msg)
 
     def _store_results(self, image_artifacts: list[ImageUrlArtifact], text_outputs: list[str]) -> None:
         """Store image and text results and set status."""

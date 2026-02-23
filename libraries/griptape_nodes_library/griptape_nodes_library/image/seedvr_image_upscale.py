@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import suppress
-from time import time
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact
@@ -13,13 +13,14 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
@@ -147,6 +148,15 @@ class SeedVRImageUpscale(GriptapeProxyNode):
                 max_val=86400,
             )
         )
+
+        # Output file parameter
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="seedvr_image.png",
+        )
+        self._output_file_param.add_parameter()
 
         # OUTPUTS
         self.add_parameter(
@@ -276,7 +286,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             msg = f"POST {url}\nheaders={dbg_headers}\nbody={json.dumps(payload, indent=2)}"
             logger.info(msg)
 
-    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:  # noqa: ARG002
         extracted_url = self._extract_image_url(last_json)
         if not extracted_url:
             self.parameter_output_values["image"] = None
@@ -294,35 +304,34 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             logger.info(msg)
             image_bytes = None
 
-        if image_bytes:
-            try:
-                filename = (
-                    f"seedvr_image_upscale_{generation_id}.{self.get_parameter_value('output_format')}"
-                    if generation_id
-                    else f"seedvr_image_upscale_{int(time())}.{self.get_parameter_value('output_format')}"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(image_bytes, filename)
-                self.parameter_output_values["image"] = ImageUrlArtifact(value=saved_url, name=filename)
-                msg = f"Saved image to static storage as {filename}"
-                logger.info(msg)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                msg = f"Failed to save to static storage: {e}, using provider URL"
-                logger.info(msg)
-                self.parameter_output_values["image"] = ImageUrlArtifact(value=extracted_url)
-                self._set_status_results(
-                    was_successful=True,
-                    result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
-                )
-        else:
+        if not image_bytes:
             self.parameter_output_values["image"] = ImageUrlArtifact(value=extracted_url)
             self._set_status_results(
                 was_successful=True,
                 result_details="Image generated successfully. Using provider URL (could not download image bytes).",
             )
+            return
+
+        output_file = self._output_file_param.build_file()
+        try:
+            actual_path = await output_file.awrite_bytes(image_bytes)
+        except FileWriteError as e:
+            msg = f"Failed to save to project file: {e}, using provider URL"
+            logger.info(msg)
+            self.parameter_output_values["image"] = ImageUrlArtifact(value=extracted_url)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Image generated successfully. Using provider URL (could not save file: {e}).",
+            )
+            return
+
+        self.parameter_output_values["image"] = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        msg = f"Saved image as {Path(actual_path).name}"
+        logger.info(msg)
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Image generated successfully and saved as {Path(actual_path).name}.",
+        )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response.

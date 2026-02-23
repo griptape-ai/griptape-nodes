@@ -9,9 +9,10 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, SuccessFailureNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
@@ -86,6 +87,15 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         )
         quality_param.add_trait(Options(choices=["50", "60", "70", "80", "85", "90", "95", "100"]))
         self.add_parameter(quality_param)
+
+        # Output file path configuration
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="processed_image.png",
+        )
+        self._output_file_param.add_parameter()
 
         # Add output parameter
         self.add_parameter(
@@ -299,25 +309,23 @@ class BaseImageProcessor(SuccessFailureNode, ABC):
         converted_image = pil_image.copy()
         return converted_image.convert(target_mode)
 
-    def _save_image_artifact(self, pil_image: Image.Image, format_extension: str, suffix: str = "") -> ImageUrlArtifact:
+    def _save_image_artifact(self, pil_image: Image.Image, format_extension: str, suffix: str = "") -> ImageUrlArtifact:  # noqa: ARG002
         """Save PIL image to static file and return ImageUrlArtifact."""
-        # Generate meaningful filename based on workflow and node
-        filename = self._generate_filename(suffix, format_extension)
-
         # Check if image needs conversion for the target format.
         # This will create a copy in the new format ONLY if the source image required a conversion
         # (does not alter the original).
         converted_image = self._create_converted_image_for_format_if_necessary(pil_image, format_extension)
         image_to_save = converted_image if converted_image is not None else pil_image
 
-        # Convert PIL image to bytes and save with our custom filename
+        # Convert PIL image to bytes
         buffer = io.BytesIO()
         image_to_save.save(buffer, format=format_extension.upper())
         image_bytes = buffer.getvalue()
 
-        # Save to static file with our custom filename
-        url = GriptapeNodes.StaticFilesManager().save_static_file(image_bytes, filename)
-        return ImageUrlArtifact(url)
+        # Save to project file
+        output_file = self._output_file_param.build_file()
+        actual_path = output_file.write_bytes(image_bytes)
+        return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
 
     def _pil_to_bytes(self, pil_image: Image.Image, format_extension: str) -> bytes:
         """Convert PIL image to bytes in the specified format."""
