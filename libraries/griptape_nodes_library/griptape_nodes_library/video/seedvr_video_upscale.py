@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from time import time
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -11,12 +11,14 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import FileWriteError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -154,6 +156,14 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
         self.add_node_element(generation_settings_group)
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="seedvr_video.mp4",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -300,35 +310,30 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
         self.parameter_output_values["video"] = None
         self._set_status_results(was_successful=False, result_details=error_details or status)
 
-    async def _handle_video_bytes(self, video_bytes: bytes, generation_id: str | None) -> None:
+    async def _handle_video_bytes(self, video_bytes: bytes, generation_id: str | None) -> None:  # noqa: ARG002
         if not video_bytes:
             self.parameter_output_values["video"] = None
             self._set_status_results(was_successful=False, result_details="Received empty video data from API.")
             return
 
+        output_file = self._output_file_param.build_file()
         try:
-            filename = (
-                f"seedvr_video_upscale_{generation_id}.mp4"
-                if generation_id
-                else f"seedvr_video_upscale_{int(time())}.mp4"
-            )
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
-            self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-            msg = f"Saved video to static storage as {filename}"
-            logger.info(msg)
-            self._set_status_results(
-                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-            )
-        except Exception as e:
-            msg = f"Failed to save to static storage: {e}"
-            logger.info(msg)
+            actual_path = await output_file.awrite_bytes(video_bytes)
+        except FileWriteError as e:
+            self._log(f"Failed to write video: {e}")
             self.parameter_output_values["video"] = None
             self._set_status_results(
                 was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
             )
+            return
+        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        logger.info("Saved video as %s", actual_path)
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+        )
 
-    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:
+    async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:  # noqa: ARG002
         extracted_url = self._extract_video_url(last_json)
         if not extracted_url:
             self.parameter_output_values["video"] = None
@@ -347,28 +352,23 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
             video_bytes = None
 
         if video_bytes:
+            output_file = self._output_file_param.build_file()
             try:
-                filename = (
-                    f"seedvr_video_upscale_{generation_id}.mp4"
-                    if generation_id
-                    else f"seedvr_video_upscale_{int(time())}.mp4"
-                )
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                msg = f"Saved video to static storage as {filename}"
-                logger.info(msg)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            except Exception as e:
-                msg = f"Failed to save to static storage: {e}, using provider URL"
-                logger.info(msg)
+                actual_path = await output_file.awrite_bytes(video_bytes)
+            except FileWriteError as e:
+                self._log(f"Failed to write video: {e}")
                 self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
+                    result_details=f"Video generated successfully. Using provider URL (could not save video: {e}).",
                 )
+                return
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            logger.info("Saved video as %s", actual_path)
+            self._set_status_results(
+                was_successful=True,
+                result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+            )
         else:
             self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)
             self._set_status_results(

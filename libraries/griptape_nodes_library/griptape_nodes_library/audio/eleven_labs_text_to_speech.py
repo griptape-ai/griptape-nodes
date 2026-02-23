@@ -3,17 +3,19 @@ from __future__ import annotations
 import base64
 import logging
 from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.files.file import FileWriteError
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -206,6 +208,14 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
         self.add_node_element(voice_settings_group)
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="eleven_tts.mp3",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -347,7 +357,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                     if isinstance(text_value, str) and len(text_value) > PROMPT_TRUNCATE_LENGTH:
                         sanitized_payload[key] = text_value[:PROMPT_TRUNCATE_LENGTH] + "..."
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
         """Parse the Eleven Labs TTS result and set output parameters."""
         # Check if we received raw audio bytes (in case API returns raw bytes)
         audio_bytes_raw = result_json.get("raw_bytes")
@@ -379,20 +389,19 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 return
 
         # Save audio
+        output_file = self._output_file_param.build_file()
         try:
-            filename = f"eleven_tts_{generation_id}.mp3"
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(audio_bytes, filename)
-            self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved audio to static storage as {filename}")
-        except Exception as e:
-            self._log(f"Failed to save audio: {e}")
+            actual_path = await output_file.awrite_bytes(audio_bytes)
+        except FileWriteError as e:
+            self._log(f"Failed to write audio: {e}")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
                 result_details=f"Failed to save audio file: {e}",
             )
             return
+        self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self._log(f"Saved audio to {actual_path}")
 
         # Extract alignment data
         alignment = result_json.get("alignment")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import time
+from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -11,6 +11,7 @@ from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, Param
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
@@ -19,7 +20,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -266,6 +267,14 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
         self.add_node_element(generation_settings_group)
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="wan_i2v.mp4",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -591,31 +600,27 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
 
     async def _save_video_from_url(self, video_url: str) -> None:
         """Download and save the video from the provided URL."""
-        try:
-            logger.info("Downloading video from URL")
-            video_bytes = await self._download_bytes_from_url(video_url)
-            if video_bytes:
-                filename = f"wan_i2v_{int(time.time())}.mp4"
-                from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
-
-                static_files_manager = GriptapeNodes.StaticFilesManager()
-                saved_url = static_files_manager.save_static_file(video_bytes, filename)
-                self.parameter_output_values["video"] = VideoUrlArtifact(value=saved_url, name=filename)
-                logger.info("Saved video to static storage as %s", filename)
-                self._set_status_results(
-                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-                )
-            else:
-                self._set_status_results(
-                    was_successful=False,
-                    result_details="Video generation completed but could not download video bytes from URL.",
-                )
-        except Exception as e:
-            logger.error("Failed to save video from URL: %s", e)
+        logger.info("Downloading video from URL")
+        video_bytes = await self._download_bytes_from_url(video_url)
+        if not video_bytes:
             self._set_status_results(
                 was_successful=False,
-                result_details=f"Video generation completed but could not save to static storage: {e}",
+                result_details="Video generation completed but could not download video bytes from URL.",
             )
+            return
+
+        output_file = self._output_file_param.build_file()
+        try:
+            actual_path = await output_file.awrite_bytes(video_bytes)
+        except FileWriteError as e:
+            logger.error("Failed to write video: %s", e)
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=video_url)
+            return
+        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        logger.info("Saved video as %s", actual_path)
+        self._set_status_results(
+            was_successful=True, result_details=f"Video generated successfully and saved as {Path(actual_path).name}."
+        )
 
     async def _prepare_audio_data_url_async(self, audio_input: Any) -> str | None:
         if not audio_input:

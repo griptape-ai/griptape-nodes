@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -8,12 +9,12 @@ from PIL import Image, ImageEnhance
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode, DataNode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.files.file import File
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
+from griptape_nodes.retained_mode.griptape_nodes import logger
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.color_utils import parse_color_to_rgba
-from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -104,6 +105,14 @@ class ImageBash(DataNode):
                 allowed_modes={ParameterMode.INPUT},
             )
         )
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="image_bash.png",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             Parameter(
                 name="output_image",
@@ -720,37 +729,13 @@ class ImageBash(DataNode):
             canvas.paste(layer_img, (paste_x, paste_y), layer_img)
 
         # Save composed image and publish
-        filename = self._generate_filename("png")
-        static_url = GriptapeNodes.StaticFilesManager().save_static_file(self._pil_to_bytes(canvas, "PNG"), filename)
-        output_artifact = ImageUrlArtifact(value=static_url)
+        output_file = self._output_file_param.build_file()
+        actual_path = output_file.write_bytes(self._pil_to_bytes(canvas, "PNG"))
+        output_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact
         self.publish_update_to_parameter("output_image", output_artifact)
         logger.debug(f"Output image saved to {output_artifact.value}")
-
-    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
-        """Get output filename suffix."""
-        return "_image_bash"
-
-    def _generate_filename(self, extension: str) -> str:
-        """Generate a meaningful filename based on workflow and node information."""
-        # Get processing suffix
-        processing_suffix = self._get_output_suffix(
-            canvas_size=self.get_parameter_value("canvas_size"),
-            width=self.get_parameter_value("width"),
-            height=self.get_parameter_value("height"),
-            background_color=self.get_parameter_value("background_color"),
-        )
-
-        # Use the general filename utility but with a custom prefix
-        base_filename = generate_filename(
-            node_name=self.name,
-            suffix=processing_suffix,
-            extension=extension,
-        )
-
-        # Add the "image_bash" prefix that this node specifically uses
-        return base_filename.replace(f"{self.name}{processing_suffix}", f"image_bash_{self.name}{processing_suffix}")
 
     def _pil_to_bytes(self, img: Image.Image, img_format: str) -> bytes:
         """Convert PIL Image to bytes."""

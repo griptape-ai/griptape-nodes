@@ -3,20 +3,21 @@ from __future__ import annotations
 import base64
 import io
 import logging
-import time
 from contextlib import suppress
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.files.file import FileWriteError
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.utils.image_utils import dict_to_image_url_artifact, load_pil_from_url
@@ -127,6 +128,14 @@ class SoraVideoGeneration(GriptapeProxyNode):
         self.add_node_element(video_generation_settings_group)
 
         # OUTPUTS
+        self._output_file_param = ProjectFileParameter(
+            node=self,
+            name="output_file",
+            situation="save_node_output",
+            default_filename="sora_video.mp4",
+        )
+        self._output_file_param.add_parameter()
+
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -259,7 +268,7 @@ class SoraVideoGeneration(GriptapeProxyNode):
     async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         # Handle binary response from proxy if returned
         if "raw_bytes" in result_json:
-            self._handle_video_completion(result_json["raw_bytes"])
+            await self._handle_video_completion(result_json["raw_bytes"])
             return
 
         # Check for video URL in response
@@ -397,28 +406,26 @@ class SoraVideoGeneration(GriptapeProxyNode):
             return f"Generation failed with error: {error_msg}\n\nFull error details:\n{top_level_error}"
         return f"Generation failed with error: {top_level_error!s}"
 
-    def _handle_video_completion(self, video_bytes: bytes) -> None:
+    async def _handle_video_completion(self, video_bytes: bytes, original_url: str = "") -> None:
         """Handle completion when video data is received."""
         if not video_bytes:
             self.parameter_output_values["video_url"] = None
             self._set_status_results(was_successful=False, result_details="Received empty video data from API.")
             return
 
+        output_file = self._output_file_param.build_file()
         try:
-            filename = f"sora_video_{int(time.time())}.mp4"
-            static_files_manager = GriptapeNodes.StaticFilesManager()
-            saved_url = static_files_manager.save_static_file(video_bytes, filename)
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
-            self._log(f"Saved video to static storage as {filename}")
-            self._set_status_results(
-                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
-            )
-        except Exception as e:
-            self._log(f"Failed to save video: {e}")
-            self.parameter_output_values["video_url"] = None
-            self._set_status_results(
-                was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
-            )
+            actual_path = await output_file.awrite_bytes(video_bytes)
+        except FileWriteError as e:
+            self._log(f"Failed to write video: {e}")
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=original_url)
+            return
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self._log(f"Saved video to {actual_path}")
+        self._set_status_results(
+            was_successful=True,
+            result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+        )
 
     async def _handle_video_url_completion(self, video_url: str) -> None:
         """Handle completion when a video URL is received."""
@@ -429,7 +436,7 @@ class SoraVideoGeneration(GriptapeProxyNode):
             video_bytes = None
 
         if video_bytes:
-            self._handle_video_completion(video_bytes)
+            await self._handle_video_completion(video_bytes, original_url=video_url)
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=video_url)
             self._set_status_results(
