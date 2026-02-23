@@ -36,11 +36,11 @@ When developing, follow this iteration loop:
 
 1. `__init__` first, followed by other magic/dunder methods
 1. Properties
-1. Public methods
+1. Public methods (including private/underscore-prefixed helpers used by public methods)
 1. Class methods
 1. Static methods
 
-Within public methods, use reading order: put high-level methods first and helper methods below the callers that use them. This lets a developer understand the class by reading the top without scrolling through implementation details.
+Within public methods, use reading order: put high-level methods first and helper methods below the callers that use them. Private methods belong after all public methods, not interleaved with them. This lets a developer understand the class by reading the top without scrolling through implementation details.
 
 ## Exception Handling
 
