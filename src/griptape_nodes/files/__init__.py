@@ -1,7 +1,7 @@
 """File utilities for reading files from multiple sources.
 
 To use the File loader API:
-    from griptape_nodes.files.file import File, FileContent, FileLoadError
+    from griptape_nodes.files.file import File, FileContent, FileDestination, FileLoadError, FileWriteError
 """
 
 from griptape_nodes.files.base_file_driver import BaseFileDriver

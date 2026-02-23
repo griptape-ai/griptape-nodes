@@ -1,4 +1,4 @@
-"""Unit tests for File."""
+"""Unit tests for File and FileDestination."""
 
 import base64
 from pathlib import Path
@@ -7,11 +7,14 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
-from griptape_nodes.files.file import File, FileContent, FileLoadError
+from griptape_nodes.files.file import File, FileContent, FileDestination, FileLoadError, FileWriteError
 from griptape_nodes.retained_mode.events.os_events import (
+    ExistingFilePolicy,
     FileIOFailureReason,
     ReadFileResultFailure,
     ReadFileResultSuccess,
+    WriteFileResultFailure,
+    WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroResultFailure,
@@ -593,3 +596,321 @@ class TestFileAsync:
         assert result.content == "hello"
         expected_call_count = 2
         assert mock_handle.call_count == expected_call_count
+
+
+class TestFileWrite:
+    """Tests for File.write_bytes() and File.write_text()."""
+
+    def test_write_bytes_returns_final_path(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=4,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            path = File("workspace/output.png").write_bytes(b"\x89PNG")
+
+        assert path == "/workspace/output.png"
+
+    def test_write_bytes_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="Permission denied",
+            failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError) as exc_info:
+            File("workspace/output.png").write_bytes(b"\x89PNG")
+
+        assert exc_info.value.failure_reason == FileIOFailureReason.PERMISSION_DENIED
+
+    def test_write_bytes_default_policy_is_overwrite(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=4,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            File("workspace/output.png").write_bytes(b"\x89PNG")
+
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.OVERWRITE
+        assert request.append is False
+        assert request.create_parents is True
+
+    def test_write_bytes_passes_policy_params_to_request(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output_1.png",
+            bytes_written=4,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            File("workspace/output.png").write_bytes(
+                b"\x89PNG",
+                existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+                append=True,
+                create_parents=False,
+            )
+
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
+        assert request.append is True
+        assert request.create_parents is False
+
+    def test_write_text_returns_final_path(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result):
+            path = File("workspace/output.txt").write_text("hello")
+
+        assert path == "/workspace/output.txt"
+
+    def test_write_text_passes_encoding_to_request(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            File("workspace/output.txt").write_text("hello", encoding="latin-1")
+
+        request = mock_handle.call_args.args[0]
+        assert request.encoding == "latin-1"
+
+    def test_write_text_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="File exists",
+            failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError) as exc_info:
+            File("workspace/output.txt").write_text("hello")
+
+        assert exc_info.value.failure_reason == FileIOFailureReason.POLICY_NO_OVERWRITE
+
+
+class TestFileWriteAsync:
+    """Tests for async File write methods."""
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_returns_final_path(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.png",
+            bytes_written=4,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            path = await File("workspace/output.png").awrite_bytes(b"\x89PNG")
+
+        assert path == "/workspace/output.png"
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="Permission denied",
+            failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError):
+            await File("workspace/output.png").awrite_bytes(b"\x89PNG")
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_passes_policy_to_request(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output_1.png",
+            bytes_written=4,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            await File("workspace/output.png").awrite_bytes(
+                b"\x89PNG",
+                existing_file_policy=ExistingFilePolicy.CREATE_NEW,
+            )
+
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
+
+    @pytest.mark.asyncio
+    async def test_awrite_text_returns_final_path(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
+            path = await File("workspace/output.txt").awrite_text("hello")
+
+        assert path == "/workspace/output.txt"
+
+    @pytest.mark.asyncio
+    async def test_awrite_text_passes_encoding_to_request(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            await File("workspace/output.txt").awrite_text("hello", encoding="latin-1")
+
+        request = mock_handle.call_args.args[0]
+        assert request.encoding == "latin-1"
+
+
+class TestFileDestinationConstructor:
+    """Tests that FileDestination constructor stores config without I/O."""
+
+    def test_constructor_does_no_io(self) -> None:
+        with patch(HANDLE_REQUEST_PATH) as mock_handle:
+            FileDestination("workspace/output.png")
+
+        mock_handle.assert_not_called()
+
+    def test_constructor_default_policy_is_overwrite(self) -> None:
+        dest = FileDestination("workspace/output.png")
+
+        assert dest._existing_file_policy == ExistingFilePolicy.OVERWRITE
+        assert dest._append is False
+        assert dest._create_parents is True
+
+    def test_constructor_stores_existing_file_policy(self) -> None:
+        dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.CREATE_NEW)
+
+        assert dest._existing_file_policy == ExistingFilePolicy.CREATE_NEW
+
+    def test_constructor_stores_append_and_create_parents(self) -> None:
+        dest = FileDestination("workspace/output.png", append=True, create_parents=False)
+
+        assert dest._append is True
+        assert dest._create_parents is False
+
+
+class TestFileDestinationWrite:
+    """Tests for FileDestination write methods."""
+
+    def test_write_bytes_uses_stored_policy(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output_1.png",
+            bytes_written=4,
+        )
+        dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.CREATE_NEW)
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = dest.write_bytes(b"\x89PNG")
+
+        assert path == "/workspace/output_1.png"
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
+
+    def test_write_bytes_uses_stored_append_and_create_parents(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=4,
+        )
+        dest = FileDestination("workspace/output.txt", append=True, create_parents=False)
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            dest.write_bytes(b"data")
+
+        request = mock_handle.call_args.args[0]
+        assert request.append is True
+        assert request.create_parents is False
+
+    def test_write_bytes_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="File exists",
+            failure_reason=FileIOFailureReason.POLICY_NO_OVERWRITE,
+        )
+        dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.FAIL)
+        with patch(HANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError) as exc_info:
+            dest.write_bytes(b"\x89PNG")
+
+        assert exc_info.value.failure_reason == FileIOFailureReason.POLICY_NO_OVERWRITE
+
+    def test_write_text_uses_stored_policy(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        dest = FileDestination("workspace/output.txt", existing_file_policy=ExistingFilePolicy.FAIL)
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = dest.write_text("hello")
+
+        assert path == "/workspace/output.txt"
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.FAIL
+
+    def test_write_text_passes_encoding(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        dest = FileDestination("workspace/output.txt")
+        with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            dest.write_text("hello", encoding="latin-1")
+
+        request = mock_handle.call_args.args[0]
+        assert request.encoding == "latin-1"
+
+    def test_resolve_path_returns_path_string(self) -> None:
+        dest = FileDestination("workspace/output.png")
+
+        assert dest.resolve_path() == "workspace/output.png"
+
+
+class TestFileDestinationAsync:
+    """Tests for async FileDestination write methods."""
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_uses_stored_policy(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output_1.png",
+            bytes_written=4,
+        )
+        dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.CREATE_NEW)
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = await dest.awrite_bytes(b"\x89PNG")
+
+        assert path == "/workspace/output_1.png"
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
+
+    @pytest.mark.asyncio
+    async def test_awrite_bytes_failure_raises_file_write_error(self) -> None:
+        failure_result = WriteFileResultFailure(
+            result_details="Permission denied",
+            failure_reason=FileIOFailureReason.PERMISSION_DENIED,
+        )
+        dest = FileDestination("workspace/output.png")
+        with patch(AHANDLE_REQUEST_PATH, return_value=failure_result), pytest.raises(FileWriteError):
+            await dest.awrite_bytes(b"\x89PNG")
+
+    @pytest.mark.asyncio
+    async def test_awrite_text_uses_stored_policy(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        dest = FileDestination("workspace/output.txt", existing_file_policy=ExistingFilePolicy.FAIL)
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            path = await dest.awrite_text("hello")
+
+        assert path == "/workspace/output.txt"
+        request = mock_handle.call_args.args[0]
+        assert request.existing_file_policy == ExistingFilePolicy.FAIL
+
+    @pytest.mark.asyncio
+    async def test_awrite_text_passes_encoding(self) -> None:
+        success_result = WriteFileResultSuccess(
+            result_details="OK",
+            final_file_path="/workspace/output.txt",
+            bytes_written=5,
+        )
+        dest = FileDestination("workspace/output.txt")
+        with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
+            await dest.awrite_text("hello", encoding="latin-1")
+
+        request = mock_handle.call_args.args[0]
+        assert request.encoding == "latin-1"

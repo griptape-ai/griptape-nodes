@@ -163,15 +163,14 @@ class File:
 
     Supports MacroPath resolution: pass a MacroPath (which contains variables)
     or a plain string path.
+
+    For a pre-configured write handle with baked-in write policy, use
+    ``FileDestination`` instead.
     """
 
     def __init__(
         self,
         file_path: str | MacroPath,
-        *,
-        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
-        append: bool = False,
-        create_parents: bool = True,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -183,12 +182,6 @@ class File:
         Args:
             file_path: Path to the file. Can be a plain string or a MacroPath
                 (which contains macro variables).
-            existing_file_policy: How to handle an existing file during write
-                operations. Ignored when append=True. Defaults to OVERWRITE.
-            append: If True, append to an existing file instead of applying
-                existing_file_policy. Defaults to False.
-            create_parents: If True, create parent directories if they do not
-                exist. Defaults to True.
         """
         if isinstance(file_path, str):
             try:
@@ -202,9 +195,6 @@ class File:
                     self._file_path = file_path
         else:
             self._file_path = file_path
-        self._existing_file_policy = existing_file_policy
-        self._append = append
-        self._create_parents = create_parents
 
     def resolve_path(self) -> str:
         """Resolve and return the absolute path string for this file.
@@ -226,11 +216,23 @@ class File:
             )
         return resolved
 
-    def write_bytes(self, content: bytes) -> str:
+    def write_bytes(
+        self,
+        content: bytes,
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Write bytes to the file.
 
         Args:
             content: The bytes to write.
+            existing_file_policy: How to handle an existing file. Ignored when
+                append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file. Defaults to False.
+            create_parents: If True, create parent directories if missing.
+                Defaults to True.
 
         Returns:
             The actual path where the file was written.
@@ -238,13 +240,30 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return self._write_content(content)
+        return self._write_content(
+            content,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+        )
 
-    async def awrite_bytes(self, content: bytes) -> str:
+    async def awrite_bytes(
+        self,
+        content: bytes,
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Async version of write_bytes().
 
         Args:
             content: The bytes to write.
+            existing_file_policy: How to handle an existing file. Ignored when
+                append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file. Defaults to False.
+            create_parents: If True, create parent directories if missing.
+                Defaults to True.
 
         Returns:
             The actual path where the file was written.
@@ -252,14 +271,32 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return await self._awrite_content(content)
+        return await self._awrite_content(
+            content,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+        )
 
-    def write_text(self, content: str, encoding: str = "utf-8") -> str:
+    def write_text(
+        self,
+        content: str,
+        encoding: str = "utf-8",
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Write text to the file.
 
         Args:
             content: The text to write.
             encoding: Text encoding to use when writing.
+            existing_file_policy: How to handle an existing file. Ignored when
+                append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file. Defaults to False.
+            create_parents: If True, create parent directories if missing.
+                Defaults to True.
 
         Returns:
             The actual path where the file was written.
@@ -267,14 +304,33 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return self._write_content(content, encoding=encoding)
+        return self._write_content(
+            content,
+            encoding=encoding,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+        )
 
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> str:
+    async def awrite_text(
+        self,
+        content: str,
+        encoding: str = "utf-8",
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Async version of write_text().
 
         Args:
             content: The text to write.
             encoding: Text encoding to use when writing.
+            existing_file_policy: How to handle an existing file. Ignored when
+                append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file. Defaults to False.
+            create_parents: If True, create parent directories if missing.
+                Defaults to True.
 
         Returns:
             The actual path where the file was written.
@@ -282,7 +338,13 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return await self._awrite_content(content, encoding=encoding)
+        return await self._awrite_content(
+            content,
+            encoding=encoding,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
+        )
 
     def read(self, encoding: str = "utf-8") -> FileContent:
         """Read the file and return a FileContent with content and metadata.
@@ -465,12 +527,23 @@ class File:
             size=success.file_size,
         )
 
-    def _write_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+    def _write_content(
+        self,
+        content: str | bytes,
+        encoding: str = "utf-8",
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Perform the sync file write.
 
         Args:
             content: Content to write (str or bytes).
             encoding: Text encoding to use when writing text content.
+            existing_file_policy: How to handle an existing file.
+            append: If True, append to an existing file.
+            create_parents: If True, create parent directories if missing.
 
         Returns:
             The actual path where the file was written (may differ from the
@@ -491,9 +564,9 @@ class File:
             file_path=resolved_path,
             content=content,
             encoding=encoding,
-            existing_file_policy=self._existing_file_policy,
-            append=self._append,
-            create_parents=self._create_parents,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -506,12 +579,23 @@ class File:
 
         return cast("WriteFileResultSuccess", result).final_file_path
 
-    async def _awrite_content(self, content: str | bytes, encoding: str = "utf-8") -> str:
+    async def _awrite_content(
+        self,
+        content: str | bytes,
+        encoding: str = "utf-8",
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> str:
         """Async version of _write_content.
 
         Args:
             content: Content to write (str or bytes).
             encoding: Text encoding to use when writing text content.
+            existing_file_policy: How to handle an existing file.
+            append: If True, append to an existing file.
+            create_parents: If True, create parent directories if missing.
 
         Returns:
             The actual path where the file was written (may differ from the
@@ -532,9 +616,9 @@ class File:
             file_path=resolved_path,
             content=content,
             encoding=encoding,
-            existing_file_policy=self._existing_file_policy,
-            append=self._append,
-            create_parents=self._create_parents,
+            existing_file_policy=existing_file_policy,
+            append=append,
+            create_parents=create_parents,
         )
         result = await GriptapeNodes.ahandle_request(request)
 
@@ -546,6 +630,132 @@ class File:
             )
 
         return cast("WriteFileResultSuccess", result).final_file_path
+
+
+class FileDestination:
+    """A pre-configured write handle for a file path.
+
+    Bundles a file path with write policy so it can be passed around as a
+    self-contained object. The consumer calls ``write_bytes()`` or
+    ``write_text()`` without needing to know the policy details.
+
+    For a lean path reference that also supports reading, use ``File`` instead.
+    """
+
+    def __init__(
+        self,
+        file_path: str | MacroPath,
+        *,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
+    ) -> None:
+        """Store file path and write configuration. No I/O is performed.
+
+        Args:
+            file_path: Path to the file. Can be a plain string or a MacroPath
+                (which contains macro variables).
+            existing_file_policy: How to handle an existing file. Ignored when
+                append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file. Defaults to False.
+            create_parents: If True, create parent directories if missing.
+                Defaults to True.
+        """
+        self._file = File(file_path)
+        self._existing_file_policy = existing_file_policy
+        self._append = append
+        self._create_parents = create_parents
+
+    def resolve_path(self) -> str:
+        """Resolve and return the absolute path string for this destination.
+
+        Returns:
+            Absolute path string.
+
+        Raises:
+            FileLoadError: If macro resolution fails (e.g. no project loaded).
+        """
+        return self._file.resolve_path()
+
+    def write_bytes(self, content: bytes) -> str:
+        """Write bytes to the file using the configured write policy.
+
+        Args:
+            content: The bytes to write.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return self._file.write_bytes(
+            content,
+            existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
+        )
+
+    async def awrite_bytes(self, content: bytes) -> str:
+        """Async version of write_bytes().
+
+        Args:
+            content: The bytes to write.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return await self._file.awrite_bytes(
+            content,
+            existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
+        )
+
+    def write_text(self, content: str, encoding: str = "utf-8") -> str:
+        """Write text to the file using the configured write policy.
+
+        Args:
+            content: The text to write.
+            encoding: Text encoding to use when writing.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return self._file.write_text(
+            content,
+            encoding,
+            existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
+        )
+
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> str:
+        """Async version of write_text().
+
+        Args:
+            content: The text to write.
+            encoding: Text encoding to use when writing.
+
+        Returns:
+            The actual path where the file was written.
+
+        Raises:
+            FileWriteError: If the file cannot be written.
+        """
+        return await self._file.awrite_text(
+            content,
+            encoding,
+            existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
+        )
 
 
 def _to_bytes(fc: FileContent) -> bytes:
