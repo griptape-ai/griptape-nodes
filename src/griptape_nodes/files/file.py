@@ -168,7 +168,10 @@ class File:
     def __init__(
         self,
         file_path: str | MacroPath,
+        *,
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        append: bool = False,
+        create_parents: bool = True,
     ) -> None:
         """Store file reference. No I/O is performed.
 
@@ -181,7 +184,11 @@ class File:
             file_path: Path to the file. Can be a plain string or a MacroPath
                 (which contains macro variables).
             existing_file_policy: How to handle an existing file during write
-                operations. Defaults to OVERWRITE.
+                operations. Ignored when append=True. Defaults to OVERWRITE.
+            append: If True, append to an existing file instead of applying
+                existing_file_policy. Defaults to False.
+            create_parents: If True, create parent directories if they do not
+                exist. Defaults to True.
         """
         if isinstance(file_path, str):
             try:
@@ -196,6 +203,8 @@ class File:
         else:
             self._file_path = file_path
         self._existing_file_policy = existing_file_policy
+        self._append = append
+        self._create_parents = create_parents
 
     def resolve_path(self) -> str:
         """Resolve and return the absolute path string for this file.
@@ -483,6 +492,8 @@ class File:
             content=content,
             encoding=encoding,
             existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
         )
         result = GriptapeNodes.handle_request(request)
 
@@ -522,6 +533,8 @@ class File:
             content=content,
             encoding=encoding,
             existing_file_policy=self._existing_file_policy,
+            append=self._append,
+            create_parents=self._create_parents,
         )
         result = await GriptapeNodes.ahandle_request(request)
 
