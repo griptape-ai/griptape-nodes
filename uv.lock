@@ -805,15 +805,15 @@ wheels = [
 
 [[package]]
 name = "mdformat-footnote"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mdformat" },
     { name = "mdit-py-plugins" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/25/08e1feac080165330278f31f605f28a963ef51864aee8306dd2039b55a61/mdformat_footnote-0.1.2.tar.gz", hash = "sha256:d8e6a7fece0f902f0c7dfbd009c093182b9b523527ae48f57f57506d79ccb4ec", size = 3358, upload-time = "2025-10-19T09:36:34.381Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/c0/0fe461e3c53eb72b35b642add6c3eaf1f90e43a574a18633955f9e89791d/mdformat_footnote-0.1.3.tar.gz", hash = "sha256:70617e61af87f59d7dea93a392c5093089a6d4551126fa18025c6fddb18bf742", size = 6430, upload-time = "2026-01-30T14:13:05.983Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/47/07544df46d55284cc1862acd49dc30f984e4e5cb1630becbf216692f30b6/mdformat_footnote-0.1.2-py3-none-any.whl", hash = "sha256:fe23888fc8ddb68c080bae9787a65bb1e51253f5de2bea2633feffdb095e59cd", size = 4139, upload-time = "2025-10-19T09:36:33.362Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/ac/60d47237a0e37fe991cbf311f10f096a28cfdbbe25d1932dadf8e9abdac8/mdformat_footnote-0.1.3-py3-none-any.whl", hash = "sha256:3033184237cbaf2a71cc02a4c37f043a97c1f16d3ed6939bc104964e77aad0b3", size = 7767, upload-time = "2026-01-30T14:13:04.944Z" },
 ]
 
 [[package]]
