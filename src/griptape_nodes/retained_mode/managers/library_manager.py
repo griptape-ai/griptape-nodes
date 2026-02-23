@@ -1928,7 +1928,7 @@ class LibraryManager:
         await self._libraries_loading_complete.wait()
         return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
-    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0915, C901
+    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Does this library exist?
         try:
             library = LibraryRegistry.get_library(name=request.library)
