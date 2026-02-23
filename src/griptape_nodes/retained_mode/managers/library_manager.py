@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import json
 import logging
@@ -1927,7 +1928,7 @@ class LibraryManager:
         await self._libraries_loading_complete.wait()
         return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
-    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
+    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Does this library exist?
         try:
             library = LibraryRegistry.get_library(name=request.library)
@@ -1998,11 +1999,23 @@ class LibraryManager:
             )
             # Get the static server base URL for constructing absolute bundle URLs
             static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            # Get the library directory so we can hash each bundle file
+            library_info_for_path = self.get_library_info_by_library_name(request.library)
+            library_dir = Path(library_info_for_path.library_path).parent if library_info_for_path is not None else None
             widgets_info = []
             for widget_def in library_data.widgets:
                 # Construct the full URL for this widget
                 # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/widgets/{path}
-                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                base_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                # Append a content hash so browsers re-fetch when the bundle file changes
+                try:
+                    if library_dir is not None:
+                        content_hash = hashlib.sha256((library_dir / widget_def.path).read_bytes()).hexdigest()[:8]
+                        bundle_url = f"{base_url}?v={content_hash}"
+                    else:
+                        bundle_url = base_url
+                except OSError:
+                    bundle_url = base_url
                 logger.debug(
                     "Widget '%s' from library '%s': bundle_url=%s",
                     widget_def.name,
