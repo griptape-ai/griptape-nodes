@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.metadata
 import json
+import subprocess
+from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -19,16 +21,62 @@ def get_current_version() -> str:
     return f"v{engine_version}"
 
 
+def _get_git_commit_id(repo_dir: Path) -> str | None:
+    """Get the first 7 characters of the HEAD commit SHA from a git repository."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],  # noqa: S607
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()[:7]
+    except Exception:
+        return None
+
+
+def _detect_source_from_package_location() -> tuple[Literal["git"], str | None] | None:
+    """Check if the running source code lives inside a git repository.
+
+    When importlib.metadata reports a PyPI install, the actual executing code
+    may still come from a git checkout (e.g. when a UV tool install coexists
+    with a development clone on sys.path). This function walks up from the
+    current file's directory looking for a .git directory as a fallback signal.
+
+    Returns:
+        ("git", commit_id) if a git repository is found, None otherwise.
+    """
+    try:
+        current = Path(__file__).resolve().parent
+        while current != current.parent:
+            if (current / ".git").is_dir():
+                return "git", _get_git_commit_id(current)
+            current = current.parent
+    except Exception:
+        return None
+    return None
+
+
 def get_install_source() -> tuple[Literal["git", "file", "pypi"], str | None]:
     """Determines the install source of the Griptape Nodes package.
+
+    Checks importlib.metadata for a direct_url.json file first. When that
+    file is absent (indicating a PyPI install), falls back to checking whether
+    the running source code lives inside a git repository. This fallback
+    handles the case where importlib.metadata discovers a PyPI distribution
+    but the code actually executing comes from a git checkout.
 
     Returns:
         tuple: A tuple containing the install source and commit ID (if applicable).
     """
     dist = importlib.metadata.distribution("griptape_nodes")
     direct_url_text = dist.read_text("direct_url.json")
-    # installing from pypi doesn't have a direct_url.json file
     if direct_url_text is None:
+        # Metadata says PyPI — verify against the actual source location
+        source_override = _detect_source_from_package_location()
+        if source_override is not None:
+            return source_override
         return "pypi", None
 
     direct_url_info = json.loads(direct_url_text)
