@@ -15,6 +15,7 @@ from huggingface_hub import list_models, scan_cache_dir, snapshot_download
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
+from griptape_nodes.files.file import File, FileWriteError
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.model_events import (
     DeleteModelDownloadRequest,
@@ -39,7 +40,6 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
-from griptape_nodes.retained_mode.events.os_events import WriteFileRequest, WriteFileResultFailure
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import MODELS_TO_DOWNLOAD_KEY
 from griptape_nodes.utils.async_utils import cancel_subprocess
@@ -284,22 +284,19 @@ class ModelManager:
         return str(local_path)
 
     def _write_download_status(self, status_file: Path, data: dict) -> None:
-        """Write download status data to a file using WriteFileRequest.
+        """Write download status data to a file using File.
 
-        Routing all status file writes through WriteFileRequest ensures they go through
+        Routing all status file writes through File ensures they go through
         os_manager's centralized file I/O with exclusive locking.
 
         Args:
             status_file: Path to the status file to write
             data: Status data dict to serialize as JSON
         """
-        request = WriteFileRequest(
-            file_path=str(status_file),
-            content=json.dumps(data, indent=2),
-        )
-        result = GriptapeNodes.handle_request(request)
-        if isinstance(result, WriteFileResultFailure):
-            logger.warning("Failed to write download status file '%s': %s", status_file, result.result_details)
+        try:
+            File(str(status_file)).write_text(json.dumps(data, indent=2))
+        except FileWriteError as e:
+            logger.warning("Failed to write download status file '%s': %s", status_file, e)
 
     def _get_status_directory(self) -> Path:
         """Get the status directory path for model downloads.
