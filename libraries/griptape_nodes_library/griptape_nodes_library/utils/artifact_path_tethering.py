@@ -4,8 +4,8 @@ from typing import Any, ClassVar
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, Trait
 from griptape_nodes.exe_types.node_types import BaseNode, TransformedParameterValue
+from griptape_nodes.files.path_utils import sanitize_path_string
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.os_manager import OSManager
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.video_utils import validate_url
 
@@ -96,7 +96,7 @@ class ArtifactPathValidator(Trait):
             if not value or not str(value).strip():
                 return  # Empty values are allowed
 
-            path_str = OSManager.strip_surrounding_quotes(str(value).strip())
+            path_str = sanitize_path_string(str(value).strip())
 
             # Only validate URLs eagerly; all other paths (local files, macro paths)
             # are validated at execution time by the node's process() method.
@@ -212,7 +212,7 @@ class ArtifactPathTethering:
         # Skip transformation if we're already in an update cycle to prevent infinite loops
         if parameter == self.artifact_parameter and isinstance(value, str) and self._updating_from_parameter is None:
             if value:
-                stripped_value = OSManager.strip_surrounding_quotes(value.strip())
+                stripped_value = sanitize_path_string(value.strip())
                 artifact_dict = {"value": stripped_value, "type": f"{self.artifact_parameter.output_type}"}
                 artifact = self._to_artifact(artifact_dict)
             else:
@@ -332,7 +332,7 @@ class ArtifactPathTethering:
         as-is in the artifact; resolution of local paths, macro paths (e.g.
         ``{outputs}/file.png``), and URLs happens at execution time in process().
         """
-        path_value = OSManager.strip_surrounding_quotes(str(value).strip()) if value else ""
+        path_value = sanitize_path_string(str(value).strip()) if value else ""
 
         if not path_value:
             self._sync_both_parameters(None, self.path_parameter.name)
