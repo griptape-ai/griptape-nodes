@@ -210,33 +210,7 @@ class LoadImage(SuccessFailureNode):
         if not path_value:
             return None
 
-        # Use the tethering config to validate the path/URL
-        if not self._tethering_config.extract_url_func:
-            # For simple string paths, create a basic ImageUrlArtifact
-            return ImageUrlArtifact(value=path_value)
-
-        # Convert path to artifact using tethering utilities
-        try:
-            from pathlib import Path
-
-            # Check if it's a URL or file path
-            if path_value.startswith(("http://", "https://")):
-                return ImageUrlArtifact(value=path_value)
-
-            # Check if local file exists
-            file_path = Path(path_value)
-            if file_path.exists() and file_path.is_file():
-                # Check extension is supported
-                if file_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
-                    msg = f"Unsupported file extension: {file_path.suffix}"
-                    raise ValueError(msg)  # noqa: TRY301 - Direct raise is clearer than helper function
-                return ImageUrlArtifact(value=str(file_path.absolute()))
-            msg = f"Image file not found: {path_value}"
-            raise FileNotFoundError(msg)  # noqa: TRY301 - Direct raise is clearer than helper function
-
-        except Exception as e:
-            msg = f"Invalid path or URL: {e}"
-            raise RuntimeError(msg) from e
+        return ImageUrlArtifact(value=path_value)
 
     def _verify_image_loadable(self, image_artifact: ImageUrlArtifact) -> None:
         """Verify that the image can actually be loaded."""
