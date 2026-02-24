@@ -23,6 +23,6 @@ def clear_registry() -> Generator[None, None, None]:
     """
     from griptape_nodes.files.file_driver import FileDriverRegistry
 
+    FileDriverRegistry.clear()
     yield
-
     FileDriverRegistry.clear()
