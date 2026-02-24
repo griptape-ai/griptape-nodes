@@ -34,14 +34,16 @@ When developing, follow this iteration loop:
 
 **Class organization order** - Organize class members in this order:
 
-1. `__init__` first, followed by other magic/dunder methods
+1. Class attributes
+1. `__init__`
+1. Other dunder methods
 1. Properties
-1. Public methods
-1. Private methods (underscore-prefixed)
+1. Public instance methods
+1. Private instance methods
 1. Class methods
 1. Static methods
 
-Within each group, use reading order: put high-level methods first and helper methods below the callers that use them. This lets a developer understand the class by reading the top without scrolling through implementation details.
+Instance methods come first because they can call anything. Class methods come next because they can only call class/static methods. Static methods come last because they can't call other class methods. Within each group, put high-level methods first and helper methods below the callers that use them.
 
 ## Exception Handling
 
