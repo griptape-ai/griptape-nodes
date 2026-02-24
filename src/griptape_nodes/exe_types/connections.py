@@ -299,36 +299,36 @@ class Connections:
         return internal_connections
 
     # Used to check data connections for all future nodes to be BAD!
-    def unresolve_future_nodes(self, node: BaseNode) -> None:
-        # Recursive loop
-        # For each parameter
+    def unresolve_future_nodes(self, node: BaseNode, _visited: set[str] | None = None) -> None:
+        if _visited is None:
+            _visited = set()
+        if node.name in _visited:
+            return
+        _visited.add(node.name)
+
         if node.name not in self.outgoing_index:
-            # There are no outgoing connections from this node.
             return
         for parameter in node.parameters:
-            # If it is a data connection and has an OUTPUT type
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
                 and ParameterTypeBuiltin.CONTROL_TYPE.value != parameter.output_type
-                # check if a outgoing connection exists from this parameter
                 and parameter.name in self.outgoing_index[node.name]
             ):
-                # A connection or connections exist
                 connections = self.outgoing_index[node.name][parameter.name]
-                # for each connection, check the next node and do all the same.
                 for connection_id in connections:
                     if connection_id in self.connections:
                         connection = self.connections[connection_id]
                         target_node = connection.target_node
-                        # if that node is already unresolved, we're all good.
                         if target_node.state == NodeResolutionState.RESOLVED:
-                            # Sends an event to the GUI so it knows this node has changed resolution state.
                             target_node.make_node_unresolved(
                                 current_states_to_trigger_change_event=set(
                                     {NodeResolutionState.RESOLVED, NodeResolutionState.RESOLVING}
                                 )
                             )
-                            self.unresolve_future_nodes(target_node)
+                        # Always continue traversal through downstream nodes so that
+                        # resolved nodes beyond an already-unresolved intermediate are
+                        # still reached and unresolved.
+                        self.unresolve_future_nodes(target_node, _visited)
 
     def get_outgoing_connections_to_node(self, node: BaseNode, to_node: BaseNode) -> dict[str, list[Connection]]:
         connections = {}
