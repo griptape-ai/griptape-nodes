@@ -16,6 +16,7 @@ from griptape_nodes.utils.git_utils import (
     GitRefError,
     GitRemoteError,
     GitRepositoryError,
+    _CredentialCallbacks,
     clone_repository,
     extract_repo_name_from_url,
     get_current_ref,
@@ -936,7 +937,9 @@ class TestCloneRepository:
 
             clone_repository("https://github.com/user/repo.git", target_path)
 
-            mock_clone.assert_called_once_with("https://github.com/user/repo.git", str(target_path), callbacks=None)
+            args, kwargs = mock_clone.call_args
+            assert args == ("https://github.com/user/repo.git", str(target_path))
+            assert isinstance(kwargs["callbacks"], _CredentialCallbacks)
 
     def test_clone_repository_raises_error_when_clone_returns_none(self, temp_dir: Path) -> None:
         """Test that GitCloneError is raised when clone returns None."""
