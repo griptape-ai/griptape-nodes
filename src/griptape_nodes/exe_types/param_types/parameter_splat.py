@@ -70,6 +70,7 @@ class ParameterSplat(Parameter):
 
         splat_converters = list(converters) if converters else []
         if accept_any:
+
             def _normalize_splat(value: Any) -> Any:
                 return normalize_artifact_input(value, SplatUrlArtifact)
 

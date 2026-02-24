@@ -17,14 +17,13 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 from griptape_nodes_library.splat.splat_artifact import SplatUrlArtifact
 from griptape_nodes_library.utils.image_utils import (
-    convert_image_value_to_base64_data_uri,
     load_image_from_url_artifact,
-    read_image_from_file_path,
     resolve_localhost_url_to_path,
 )
 
@@ -538,7 +537,6 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
             logger.debug("%s failed to load thumbnail: %s", self.name, e)
             return None
 
-
     async def _process_input_image(self, image_input: Any) -> dict[str, Any] | None:
         if not image_input:
             return None
@@ -608,24 +606,11 @@ class WorldLabsSplatGeneration(GriptapeProxyNode):
         if image_value.startswith("data:image/"):
             return image_value
 
-        if image_value.startswith(("http://", "https://")):
-            return await self._download_and_encode_image(image_value)
-
-        file_path = read_image_from_file_path(image_value, self.name)
-        if file_path:
-            return file_path
-
-        return convert_image_value_to_base64_data_uri(image_value, self.name)
-
-    async def _download_and_encode_image(self, url: str) -> str | None:
         try:
-            image_bytes = await self._download_bytes_from_url(url)
-            if image_bytes:
-                b64_string = base64.b64encode(image_bytes).decode("utf-8")
-                return f"data:image/png;base64,{b64_string}"
-        except Exception as e:
-            logger.error("Failed to download image from URL %s: %s", url, e)
-        return None
+            return await File(image_value).aread_data_uri(fallback_mime="image/png")
+        except FileLoadError:
+            logger.debug("%s failed to load image value: %s", self.name, image_value)
+            return None
 
     async def _convert_video_to_data_uri(self, video_input: Any) -> str | None:
         video_value = self._extract_video_value(video_input)
