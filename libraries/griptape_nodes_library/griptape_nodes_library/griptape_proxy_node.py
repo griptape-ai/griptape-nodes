@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -165,6 +166,48 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         with suppress(Exception):
             logger.info(message)
 
+    def _log_debug_request_body(self, payload: dict[str, Any], api_model_id: str) -> None:
+        """Log sanitized request body in DEBUG mode.
+
+        This strips large/sensitive base64 payloads (for example data URIs) while preserving
+        useful request structure for debugging.
+        """
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+
+        with suppress(Exception):
+            sanitized_payload = self._sanitize_for_debug_log(payload)
+            logger.debug(
+                "%s request body (model=%s): %s",
+                self.name,
+                api_model_id,
+                _json.dumps(sanitized_payload, indent=2),
+            )
+
+    def _sanitize_for_debug_log(self, value: Any) -> Any:
+        """Recursively sanitize values for debug logging."""
+        if isinstance(value, dict):
+            return {key: self._sanitize_for_debug_log(val) for key, val in value.items()}
+
+        if isinstance(value, list):
+            return [self._sanitize_for_debug_log(item) for item in value]
+
+        if isinstance(value, tuple):
+            return [self._sanitize_for_debug_log(item) for item in value]
+
+        if isinstance(value, str):
+            # Data URI with base64 payload, e.g. data:image/png;base64,AAAA...
+            if value.startswith("data:") and ";base64," in value:
+                header, data = value.split(",", 1)
+                return f"{header},<base64 length={len(data)}>"
+
+            # Explicitly tagged base64 fields serialized as plain strings
+            value_lower = value.lower()
+            if value_lower.startswith("base64:"):
+                return f"base64:<length={len(value) - len('base64:')}>"
+
+        return value
+
     async def _submit_generation(
         self, payload: dict[str, Any], headers: dict[str, str], api_model_id: str
     ) -> str | None:
@@ -183,6 +226,7 @@ class GriptapeProxyNode(SuccessFailureNode, ABC):
         """
         proxy_url = urljoin(self._proxy_base, f"models/{api_model_id}")
         self._log(f"Submitting generation request to {proxy_url}")
+        self._log_debug_request_body(payload, api_model_id)
 
         try:
             async with httpx.AsyncClient() as client:
