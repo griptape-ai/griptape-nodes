@@ -34,7 +34,7 @@ class Connections:
         self.outgoing_index = {}
         self.incoming_index = {}
 
-    def add_connection(
+    def add_connection(  # noqa: PLR0913 (waypoints is a required connection attribute)
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
@@ -42,6 +42,7 @@ class Connections:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
+        waypoints: list[dict[str, float]] | None = None,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
@@ -59,6 +60,7 @@ class Connections:
                 target_node,
                 target_parameter,
                 is_node_group_internal=is_node_group_internal,
+                waypoints=waypoints,
             )
             # New index management.
             connection_id = id(connection)
@@ -226,6 +228,29 @@ class Connections:
             conn.target_parameter.name,
         )
         return True
+
+    def get_connection(
+        self,
+        source_node_name: str,
+        source_parameter_name: str,
+        target_node_name: str,
+        target_parameter_name: str,
+    ) -> Connection | None:
+        """Return the connection matching the given endpoints, or None if not found."""
+        try:
+            connection_ids = self.outgoing_index[source_node_name][source_parameter_name]
+        except KeyError:
+            return None
+        for connection_id in connection_ids:
+            if connection_id not in self.connections:
+                continue
+            connection = self.connections[connection_id]
+            if (
+                connection.target_node.name == target_node_name
+                and connection.target_parameter.name == target_parameter_name
+            ):
+                return connection
+        return None
 
     def remove_connection(
         self, source_node: str, source_parameter: str, target_node: str, target_parameter: str

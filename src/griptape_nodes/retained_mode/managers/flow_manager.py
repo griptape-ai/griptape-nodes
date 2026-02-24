@@ -47,6 +47,9 @@ from griptape_nodes.retained_mode.events.connection_events import (
     CreateConnectionRequest,
     CreateConnectionResultFailure,
     CreateConnectionResultSuccess,
+    CreateWaypointRequest,
+    CreateWaypointResultFailure,
+    CreateWaypointResultSuccess,
     DeleteConnectionRequest,
     DeleteConnectionResultFailure,
     DeleteConnectionResultSuccess,
@@ -54,6 +57,12 @@ from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
     OutgoingConnection,
+    RemoveWaypointRequest,
+    RemoveWaypointResultFailure,
+    RemoveWaypointResultSuccess,
+    UpdateWaypointRequest,
+    UpdateWaypointResultFailure,
+    UpdateWaypointResultSuccess,
 )
 from griptape_nodes.retained_mode.events.execution_events import (
     CancelFlowRequest,
@@ -256,6 +265,9 @@ class FlowManager:
         )
         event_manager.assign_manager_to_request_type(CreateConnectionRequest, self.on_create_connection_request)
         event_manager.assign_manager_to_request_type(DeleteConnectionRequest, self.on_delete_connection_request)
+        event_manager.assign_manager_to_request_type(CreateWaypointRequest, self.on_create_waypoint_request)
+        event_manager.assign_manager_to_request_type(RemoveWaypointRequest, self.on_remove_waypoint_request)
+        event_manager.assign_manager_to_request_type(UpdateWaypointRequest, self.on_update_waypoint_request)
         event_manager.assign_manager_to_request_type(StartFlowRequest, self.on_start_flow_request)
         event_manager.assign_manager_to_request_type(StartFlowFromNodeRequest, self.on_start_flow_from_node_request)
         event_manager.assign_manager_to_request_type(SingleNodeStepRequest, self.on_single_node_step_request)
@@ -960,12 +972,14 @@ class FlowManager:
             else:
                 # If not true, we default to the request
                 is_node_group_internal = request.is_node_group_internal
+            waypoints = getattr(request, "waypoints", None) or []
             conn = self._connections.add_connection(
                 source_node=source_node,
                 source_parameter=source_param,
                 target_node=target_node,
                 target_parameter=target_param,
                 is_node_group_internal=is_node_group_internal,
+                waypoints=waypoints if waypoints else None,
             )
             id(conn)
         except ValueError as e:
@@ -1265,6 +1279,99 @@ class FlowManager:
 
         result = DeleteConnectionResultSuccess(result_details=details)
         return result
+
+    def on_create_waypoint_request(self, request: CreateWaypointRequest) -> ResultPayload:
+        conn = self._connections.get_connection(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+        if conn is None:
+            details = (
+                f"Attempted to add waypoint. Failed because no connection exists from "
+                f"'{request.source_node_name}.{request.source_parameter_name}' to "
+                f"'{request.target_node_name}.{request.target_parameter_name}'."
+            )
+            return CreateWaypointResultFailure(result_details=details)
+        wp = request.waypoint
+        if not isinstance(wp.get("x"), (int, float)) or not isinstance(wp.get("y"), (int, float)):
+            details = "Attempted to add waypoint. Failed because waypoint must have numeric 'x' and 'y'."
+            return CreateWaypointResultFailure(result_details=details)
+        waypoint = {"x": float(wp["x"]), "y": float(wp["y"])}
+        insert_index = request.insert_index
+        if insert_index is not None:
+            if insert_index < 0 or insert_index > len(conn.waypoints):
+                details = (
+                    f"Attempted to add waypoint. Failed because insert_index {insert_index} is out of range "
+                    f"(0 to {len(conn.waypoints)} inclusive)."
+                )
+                return CreateWaypointResultFailure(result_details=details)
+            conn.waypoints.insert(insert_index, waypoint)
+        else:
+            conn.waypoints.append(waypoint)
+        return CreateWaypointResultSuccess(
+            result_details="Waypoint added.",
+            waypoints=list(conn.waypoints),
+        )
+
+    def on_remove_waypoint_request(self, request: RemoveWaypointRequest) -> ResultPayload:
+        conn = self._connections.get_connection(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+        if conn is None:
+            details = (
+                f"Attempted to remove waypoint. Failed because no connection exists from "
+                f"'{request.source_node_name}.{request.source_parameter_name}' to "
+                f"'{request.target_node_name}.{request.target_parameter_name}'."
+            )
+            return RemoveWaypointResultFailure(result_details=details)
+        idx = request.waypoint_index
+        if idx < 0 or idx >= len(conn.waypoints):
+            details = (
+                f"Attempted to remove waypoint. Failed because waypoint_index {idx} is out of range "
+                f"(0 to {len(conn.waypoints) - 1} inclusive)."
+            )
+            return RemoveWaypointResultFailure(result_details=details)
+        conn.waypoints.pop(idx)
+        return RemoveWaypointResultSuccess(
+            result_details="Waypoint removed.",
+            waypoints=list(conn.waypoints),
+        )
+
+    def on_update_waypoint_request(self, request: UpdateWaypointRequest) -> ResultPayload:
+        conn = self._connections.get_connection(
+            source_node_name=request.source_node_name,
+            source_parameter_name=request.source_parameter_name,
+            target_node_name=request.target_node_name,
+            target_parameter_name=request.target_parameter_name,
+        )
+        if conn is None:
+            details = (
+                f"Attempted to update waypoint. Failed because no connection exists from "
+                f"'{request.source_node_name}.{request.source_parameter_name}' to "
+                f"'{request.target_node_name}.{request.target_parameter_name}'."
+            )
+            return UpdateWaypointResultFailure(result_details=details)
+        idx = request.waypoint_index
+        if idx < 0 or idx >= len(conn.waypoints):
+            details = (
+                f"Attempted to update waypoint. Failed because waypoint_index {idx} is out of range "
+                f"(0 to {len(conn.waypoints) - 1} inclusive)."
+            )
+            return UpdateWaypointResultFailure(result_details=details)
+        wp = request.waypoint
+        if not isinstance(wp.get("x"), (int, float)) or not isinstance(wp.get("y"), (int, float)):
+            details = "Attempted to update waypoint. Failed because waypoint must have numeric 'x' and 'y'."
+            return UpdateWaypointResultFailure(result_details=details)
+        conn.waypoints[idx] = {"x": float(wp["x"]), "y": float(wp["y"])}
+        return UpdateWaypointResultSuccess(
+            result_details="Waypoint updated.",
+            waypoints=list(conn.waypoints),
+        )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
         self, request: PackageNodesAsSerializedFlowRequest
@@ -3448,6 +3555,7 @@ class FlowManager:
                 source_parameter_name=connection.source_parameter.name,
                 target_node_uuid=target_node_uuid,
                 target_parameter_name=connection.target_parameter.name,
+                waypoints=getattr(connection, "waypoints", []) or [],
             )
             create_connection_commands.append(create_connection_command)
 
@@ -3613,11 +3721,13 @@ class FlowManager:
             target_node_result = node_uuid_to_deserialized_node_result[indirect_connection.target_node_uuid]
             target_node_name = target_node_result.node_name
 
+            waypoints = getattr(indirect_connection, "waypoints", None) or []
             create_connection_request = CreateConnectionRequest(
                 source_node_name=source_node_name,
                 source_parameter_name=indirect_connection.source_parameter_name,
                 target_node_name=target_node_name,
                 target_parameter_name=indirect_connection.target_parameter_name,
+                waypoints=waypoints if waypoints else None,
             )
             create_connection_result = GriptapeNodes.handle_request(create_connection_request)
             if create_connection_result.failed():

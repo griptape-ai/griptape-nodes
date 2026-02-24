@@ -1997,8 +1997,9 @@ class Connection:
     source_parameter: Parameter
     target_parameter: Parameter
     is_node_group_internal: bool
+    waypoints: list[dict[str, float]]
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 (waypoints is a required connection attribute)
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
@@ -2006,12 +2007,14 @@ class Connection:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
+        waypoints: list[dict[str, float]] | None = None,
     ) -> None:
         self.source_node = source_node
         self.target_node = target_node
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
         self.is_node_group_internal = is_node_group_internal
+        self.waypoints = list(waypoints) if waypoints is not None else []
 
     def get_target_node(self) -> BaseNode:
         return self.target_node
