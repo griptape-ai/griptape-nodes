@@ -2278,6 +2278,12 @@ class NodeManager:
         if not parent_flow:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             return SetParameterValueResultFailure(result_details=details)
+        # Snapshot output values to detect side-effect changes from after_value_set.
+        # Some nodes recompute their output in after_value_set when an input changes.
+        # We need to detect those changes and propagate them downstream.
+        should_check_output_side_effects = not request.initial_setup and not request.is_output
+        output_snapshot = dict(node.parameter_output_values) if should_check_output_side_effects else None
+
         try:
             finalized_value, modified = self._set_and_pass_through_values(request, node)
         except Exception as err:
@@ -2314,6 +2320,39 @@ class NodeManager:
                             data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=parameter.name,
+                        )
+                    )
+
+        # Propagate side-effect output changes to downstream nodes.
+        # When after_value_set modifies output parameters, those
+        # changes must reach downstream nodes.
+        if output_snapshot is not None and modified:
+            for output_param_name, new_value in node.parameter_output_values.items():
+                old_value = output_snapshot.get(output_param_name)
+                if old_value is new_value or old_value == new_value:
+                    continue
+                output_param = node.get_parameter_by_name(output_param_name)
+                if output_param is None:
+                    continue
+                if ParameterMode.OUTPUT not in output_param.allowed_modes:
+                    continue
+                is_control = (
+                    ParameterType.attempt_get_builtin(output_param.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+                )
+                if is_control:
+                    continue
+                conn_targets = parent_flow.get_connected_output_parameters(node, output_param)
+                for target_node, target_parameter in conn_targets:
+                    if target_node.lock:
+                        continue
+                    GriptapeNodes.handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=target_parameter.name,
+                            node_name=target_node.name,
+                            value=new_value,
+                            data_type=output_param.output_type,
+                            incoming_connection_source_node_name=node.name,
+                            incoming_connection_source_parameter_name=output_param.name,
                         )
                     )
 
