@@ -212,7 +212,8 @@ class ArtifactPathTethering:
         # Skip transformation if we're already in an update cycle to prevent infinite loops
         if parameter == self.artifact_parameter and isinstance(value, str) and self._updating_from_parameter is None:
             if value:
-                artifact_dict = {"value": value, "type": f"{self.artifact_parameter.output_type}"}
+                stripped_value = OSManager.strip_surrounding_quotes(value.strip())
+                artifact_dict = {"value": stripped_value, "type": f"{self.artifact_parameter.output_type}"}
                 artifact = self._to_artifact(artifact_dict)
             else:
                 artifact = None
@@ -331,7 +332,7 @@ class ArtifactPathTethering:
         as-is in the artifact; resolution of local paths, macro paths (e.g.
         ``{outputs}/file.png``), and URLs happens at execution time in process().
         """
-        path_value = str(value).strip() if value else ""
+        path_value = OSManager.strip_surrounding_quotes(str(value).strip()) if value else ""
 
         if not path_value:
             self._sync_both_parameters(None, self.path_parameter.name)
