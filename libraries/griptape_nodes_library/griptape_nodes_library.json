@@ -1587,7 +1587,7 @@
       "file_path": "griptape_nodes_library/image/seedream_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
+        "description": "Generate images using Seedream models (seedream-5-0-260128, seedream-4-5, seedream-4-0, seedream-3-0-t2i, seededit-3-0-i2i) via Griptape model proxy",
         "display_name": "Seedream Image Generation",
         "group": "create",
         "icon": "Sparkles"
