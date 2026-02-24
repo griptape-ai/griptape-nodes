@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
+import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -75,6 +77,24 @@ class DownloadParams:
     revision: str | None = None
     allow_patterns: list[str] | None = None
     ignore_patterns: list[str] | None = None
+
+
+def _write_status_file_atomic(status_file: Path, data: dict) -> None:
+    """Write status data to a file atomically using a temp file and rename.
+
+    Writing to a temp file in the same directory then calling os.replace() ensures
+    readers never see a partially-written (empty) file, eliminating the race condition
+    between concurrent progress-polling reads and in-progress writes.
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=status_file.parent,
+        delete=False,
+        suffix=".tmp",
+    ) as tmp_f:
+        json.dump(data, tmp_f, indent=2)
+        tmp_path = tmp_f.name
+    os.replace(tmp_path, status_file)
 
 
 def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
@@ -205,8 +225,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                         "progress_percent": 0.0,
                     }
 
-                    with status_file.open("w") as f:
-                        json.dump(data, f, indent=2)
+                    _write_status_file_atomic(status_file, data)
 
             except Exception:
                 logger.exception("ModelDownloadTracker._init_status_file failed")
@@ -250,8 +269,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
                     data.update(update_data)
 
-                    with status_file.open("w") as f:
-                        json.dump(data, f, indent=2)
+                    _write_status_file_atomic(status_file, data)
 
             except Exception:
                 logger.exception("ModelDownloadTracker._update_status_file failed")
@@ -1151,8 +1169,7 @@ class ModelManager:
                 }
             )
 
-            with status_file.open("w") as f:
-                json.dump(data, f, indent=2)
+            _write_status_file_atomic(status_file, data)
 
             logger.debug("Updated status file to 'failed' for model '%s'", model_id)
 
@@ -1187,8 +1204,7 @@ class ModelManager:
                 }
             )
 
-            with status_file.open("w") as f:
-                json.dump(data, f, indent=2)
+            _write_status_file_atomic(status_file, data)
 
             logger.debug("Updated status file to 'completed' for model '%s'", model_id)
 
