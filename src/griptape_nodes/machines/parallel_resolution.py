@@ -272,6 +272,10 @@ class ExecuteDagState(State):
         node_connection = flow_manager.get_connections().get_connected_node(node, next_output, include_internal=False)
         if node_connection is not None:
             next_node, next_parameter = node_connection
+
+            # Add this control successor to the last_resolved_successors set
+            context.node_priority_queue._last_resolved_successors.add(next_node.name)
+
             # Set entry control parameter
             logger.debug(
                 "Parallel Resolution: Setting entry control parameter for node '%s' to '%s'",
@@ -425,11 +429,13 @@ class ExecuteDagState(State):
                 if node_reference.node_reference.lock or node_state == NodeState.DONE:
                     node_reference.node_state = NodeState.DONE
 
-                    # Capture successors BEFORE removing the node
+                    # Initialize successors set with data successors from this network
                     successors = set()
                     for other_node in network.nodes():
                         if node in network._predecessors.get(other_node, set()):
                             successors.add(other_node)
+
+                    # Set initial data successors (control successors will be added in handle_done_nodes)
                     context.node_priority_queue._last_resolved_successors = successors
 
                     network.remove_node(node)
@@ -437,6 +443,7 @@ class ExecuteDagState(State):
                     # Only call handle_done_nodes once per node (first network that processes it)
                     if node not in handled_nodes:
                         handled_nodes.add(node)
+                        # handle_done_nodes will append control successors to the set
                         await ExecuteDagState.handle_done_nodes(context, context.node_to_reference[node], network_name)
 
             # After processing completions in this network, check if any remaining leaf nodes can now be queued

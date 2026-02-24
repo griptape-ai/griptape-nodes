@@ -25,26 +25,17 @@ class NodePriorityQueue:
         Args:
             context: The execution context containing node references and DAG state
         """
-        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
         self._context = context
         self._queued_nodes: list[str] = []  # Node names, sorted by priority (highest first)
         self._blocked_nodes: list[str] = []  # Node names blocked from queuing (not ready yet)
         self._needs_reorder = False  # Lazy reorder flag
         self._last_resolved_successors: set[str] = set()  # Nodes connected to last resolved node
 
-        # Load heuristic weights from config
-        config_manager = GriptapeNodes.ConfigManager()
-        has_connection_weight = config_manager.get_config_value(
-            "heuristic_has_connection_from_previous_weight", default=1.0
-        )
-        distance_weight = config_manager.get_config_value("heuristic_distance_to_node_weight", default=1.0)
-        top_left_weight = config_manager.get_config_value("heuristic_top_left_to_bottom_right_weight", default=1.0)
-
+        # Initialize heuristics with fixed weights
         self._heuristics: list[NodeHeuristic] = [
-            HasConnectionFromPrevious(context, weight=has_connection_weight),
-            DistanceToNode(context, weight=distance_weight),
-            TopLeftToBottomRight(context, weight=top_left_weight),
+            HasConnectionFromPrevious(context, weight=1.0),
+            DistanceToNode(context, weight=0.75),
+            TopLeftToBottomRight(context, weight=1.0),
         ]
 
     def add_node(self, dag_node: DagNode) -> str:

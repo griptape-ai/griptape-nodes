@@ -34,8 +34,6 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.machines.control_flow import CompleteState, ControlFlowMachine
 from griptape_nodes.machines.dag_builder import DagBuilder
-from griptape_nodes.machines.parallel_resolution import ParallelResolutionMachine
-from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType
 from griptape_nodes.retained_mode.events.base_events import (
@@ -159,6 +157,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.image_metadata_injector import FLOW_COMMANDS_KEY
+from griptape_nodes.retained_mode.managers.settings import WorkflowExecutionMode
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
@@ -3983,12 +3982,17 @@ class FlowManager:
             resolution_machine.change_debug_mode(debug_mode=debug_mode)
             node.state = NodeResolutionState.UNRESOLVED
             # Build the DAG for the node
-            if isinstance(resolution_machine, ParallelResolutionMachine):
-                self._global_dag_builder.add_node_with_dependencies(node)
-                resolution_machine.context.dag_builder = self._global_dag_builder
-                involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
-            else:
+            self._global_dag_builder.add_node_with_dependencies(node)
+            resolution_machine.context.dag_builder = self._global_dag_builder
+
+            # In SEQUENTIAL mode, show all flow nodes as involved. In PARALLEL mode, show only DAG nodes.
+            execution_type = GriptapeNodes.ConfigManager().get_config_value(
+                "workflow_execution_mode", default=WorkflowExecutionMode.SEQUENTIAL
+            )
+            if execution_type == WorkflowExecutionMode.SEQUENTIAL:
                 involved_nodes = list(flow.nodes.keys())
+            else:
+                involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
             # Send a InvolvedNodesRequest
 
             GriptapeNodes.EventManager().put_event(
@@ -4093,24 +4097,16 @@ class FlowManager:
             if control_flow_context.current_nodes is not None
             else []
         )
-        if self._global_single_node_resolution and isinstance(
-            control_flow_context.resolution_machine, ParallelResolutionMachine
-        ):
+        if self._global_single_node_resolution:
             involved_nodes = list(self._global_dag_builder.node_to_reference.keys())
         else:
             involved_nodes = list(flow.nodes.keys())
-        # focus_stack is no longer available in the new architecture
-        if isinstance(control_flow_context.resolution_machine, ParallelResolutionMachine):
-            current_resolving_nodes = [
-                node.node_reference.name
-                for node in control_flow_context.resolution_machine.context.task_to_node.values()
-            ]
-            return current_control_nodes, current_resolving_nodes, involved_nodes
-        if isinstance(control_flow_context.resolution_machine, SequentialResolutionMachine):
-            focus_stack_for_node = control_flow_context.resolution_machine.context.focus_stack
-            current_resolving_node = focus_stack_for_node[-1].node.name if len(focus_stack_for_node) else None
-            return current_control_nodes, [current_resolving_node] if current_resolving_node else [], involved_nodes
-        return current_control_nodes, [], involved_nodes
+
+        # Get currently resolving nodes from the resolution machine (always ParallelResolutionMachine)
+        current_resolving_nodes = [
+            node.node_reference.name for node in control_flow_context.resolution_machine.context.task_to_node.values()
+        ]
+        return current_control_nodes, current_resolving_nodes, involved_nodes
 
     def get_start_node_from_node(self, flow: ControlFlow, node: BaseNode) -> BaseNode | None:
         # backwards chain in control outputs.
