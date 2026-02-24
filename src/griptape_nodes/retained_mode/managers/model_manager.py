@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+import portalocker
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
@@ -205,7 +206,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                         "progress_percent": 0.0,
                     }
 
-                    with status_file.open("w") as f:
+                    with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
                         json.dump(data, f, indent=2)
 
             except Exception:
@@ -250,7 +251,7 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
 
                     data.update(update_data)
 
-                    with status_file.open("w") as f:
+                    with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
                         json.dump(data, f, indent=2)
 
             except Exception:
@@ -756,7 +757,7 @@ class ModelManager:
             return None
 
         try:
-            with status_file.open() as f:
+            with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
                 data = json.load(f)
 
             # Get byte counts from status file
@@ -782,7 +783,7 @@ class ModelManager:
                 error_message=data.get("error_message"),
             )
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
             logger.warning("Failed to read status file for model '%s': %s", model_id, e)
             return None
 
@@ -800,7 +801,7 @@ class ModelManager:
         statuses = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
                     data = json.load(f)
 
                 model_id = data.get("model_id", "")
@@ -809,7 +810,7 @@ class ModelManager:
                     if status:
                         statuses.append(status)
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
@@ -829,7 +830,7 @@ class ModelManager:
         unfinished_models = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with status_file.open() as f:
+                with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
                     data = json.load(f)
 
                 status = data.get("status", "")
@@ -838,7 +839,7 @@ class ModelManager:
                 if model_id and status in ("downloading", "failed"):
                     unfinished_models.append(model_id)
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
@@ -1151,7 +1152,7 @@ class ModelManager:
                 }
             )
 
-            with status_file.open("w") as f:
+            with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
                 json.dump(data, f, indent=2)
 
             logger.debug("Updated status file to 'failed' for model '%s'", model_id)
@@ -1187,7 +1188,7 @@ class ModelManager:
                 }
             )
 
-            with status_file.open("w") as f:
+            with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
                 json.dump(data, f, indent=2)
 
             logger.debug("Updated status file to 'completed' for model '%s'", model_id)
