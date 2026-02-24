@@ -187,7 +187,9 @@ from griptape_nodes.utils.git_utils import (
     get_git_remote,
     get_local_commit_sha,
     is_git_url,
+    normalize_github_url,
     parse_git_url_with_ref,
+    sparse_checkout_library_json,
     switch_branch_or_tag,
     update_library_git,
 )
@@ -3809,7 +3811,7 @@ class LibraryManager:
 
     async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Download a library from a git repository."""
-        git_url = request.git_url
+        git_url = normalize_github_url(request.git_url)
         branch_tag_commit = request.branch_tag_commit
         target_directory_name = request.target_directory_name
         download_directory = request.download_directory
@@ -4189,8 +4191,6 @@ class LibraryManager:
         ref = request.ref
 
         # Normalize GitHub shorthand to full URL
-        from griptape_nodes.utils.git_utils import normalize_github_url, sparse_checkout_library_json
-
         normalized_url = normalize_github_url(git_url)
         logger.info("Inspecting library metadata from '%s' (ref: %s)", normalized_url, ref)
 
