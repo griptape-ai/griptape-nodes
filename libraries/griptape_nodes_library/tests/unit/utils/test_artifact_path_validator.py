@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-
 from griptape_nodes_library.utils.artifact_path_tethering import ArtifactPathValidator
 
 

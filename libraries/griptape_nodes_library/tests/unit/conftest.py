@@ -11,7 +11,7 @@ import pytest
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
-def pytest_configure(config: pytest.Config) -> None:
+def pytest_configure(_config: pytest.Config) -> None:
     """Register library before test collection to install pip dependencies and extend sys.path.
 
     Mirrors what the engine does at runtime: installs the library's pip dependencies

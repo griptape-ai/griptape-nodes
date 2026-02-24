@@ -2,9 +2,9 @@
 
 import pytest
 from griptape.artifacts import ImageUrlArtifact
+from griptape_nodes_library.image.load_image import LoadImage
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.image.load_image import LoadImage
 
 
 class TestLoadImageFromPath:
@@ -15,7 +15,7 @@ class TestLoadImageFromPath:
     """
 
     @pytest.fixture
-    def node(self, griptape_nodes: GriptapeNodes) -> LoadImage:
+    def node(self, griptape_nodes: GriptapeNodes) -> LoadImage:  # noqa: ARG002
         return LoadImage(name="test_load_image")
 
     def test_empty_string_returns_none(self, node: LoadImage) -> None:

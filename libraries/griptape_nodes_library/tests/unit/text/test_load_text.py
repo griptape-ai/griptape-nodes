@@ -3,10 +3,10 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from griptape_nodes_library.text.load_text import LoadText
 
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.text.load_text import LoadText
 
 
 class TestLoadTextProcess:
@@ -17,7 +17,7 @@ class TestLoadTextProcess:
     """
 
     @pytest.fixture
-    def node(self, griptape_nodes: GriptapeNodes) -> LoadText:
+    def node(self, griptape_nodes: GriptapeNodes) -> LoadText:  # noqa: ARG002
         return LoadText(name="test_load_text")
 
     def test_non_pdf_uses_file_read_text(self, node: LoadText) -> None:

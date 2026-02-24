@@ -4,10 +4,10 @@ from unittest.mock import patch
 
 import pytest
 from griptape.artifacts import ImageUrlArtifact
+from griptape_nodes_library.image.load_image import LoadImage
 
 from griptape_nodes.exe_types.node_types import TransformedParameterValue
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.image.load_image import LoadImage
 
 
 class TestArtifactPathTetheringSurroundingQuotes:
@@ -19,7 +19,7 @@ class TestArtifactPathTetheringSurroundingQuotes:
     """
 
     @pytest.fixture
-    def node(self, griptape_nodes: GriptapeNodes) -> LoadImage:
+    def node(self, griptape_nodes: GriptapeNodes) -> LoadImage:  # noqa: ARG002
         return LoadImage(name="test_node")
 
     def test_on_before_value_set_strips_single_quotes(self, node: LoadImage) -> None:
@@ -49,7 +49,7 @@ class TestArtifactPathTetheringSurroundingQuotes:
         """Quoted path pasted into the path field should have quotes removed before artifact sync."""
         captured = {}
 
-        def capture_artifact(artifact, source_param_name):  # noqa: ANN001
+        def capture_artifact(artifact, _source_param_name) -> None:  # noqa: ANN001
             captured["artifact"] = artifact
 
         with patch.object(node._tethering, "_sync_both_parameters", side_effect=capture_artifact):
@@ -61,7 +61,7 @@ class TestArtifactPathTetheringSurroundingQuotes:
     def test_handle_path_change_strips_double_quotes(self, node: LoadImage) -> None:
         captured = {}
 
-        def capture_artifact(artifact, source_param_name):  # noqa: ANN001
+        def capture_artifact(artifact, _source_param_name) -> None:  # noqa: ANN001
             captured["artifact"] = artifact
 
         with patch.object(node._tethering, "_sync_both_parameters", side_effect=capture_artifact):
@@ -73,7 +73,7 @@ class TestArtifactPathTetheringSurroundingQuotes:
     def test_handle_path_change_unquoted_path_unchanged(self, node: LoadImage) -> None:
         captured = {}
 
-        def capture_artifact(artifact, source_param_name):  # noqa: ANN001
+        def capture_artifact(artifact, _source_param_name) -> None:  # noqa: ANN001
             captured["artifact"] = artifact
 
         with patch.object(node._tethering, "_sync_both_parameters", side_effect=capture_artifact):
@@ -96,7 +96,7 @@ class TestArtifactPathTetheringSurroundingQuotes:
         """Shell-escaped path from macOS Finder 'Copy as Pathname' should have escapes removed."""
         captured = {}
 
-        def capture_artifact(artifact, source_param_name):  # noqa: ANN001
+        def capture_artifact(artifact, _source_param_name) -> None:  # noqa: ANN001
             captured["artifact"] = artifact
 
         with patch.object(node._tethering, "_sync_both_parameters", side_effect=capture_artifact):

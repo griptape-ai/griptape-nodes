@@ -3,10 +3,10 @@
 from unittest.mock import patch
 
 import pytest
+from griptape_nodes_library.dict.load_dict import LoadDictionary
 
 from griptape_nodes.files.file import File
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes_library.dict.load_dict import LoadDictionary
 
 
 class TestLoadDictionaryProcess:
@@ -17,7 +17,7 @@ class TestLoadDictionaryProcess:
     """
 
     @pytest.fixture
-    def node(self, griptape_nodes: GriptapeNodes) -> LoadDictionary:
+    def node(self, griptape_nodes: GriptapeNodes) -> LoadDictionary:  # noqa: ARG002
         return LoadDictionary(name="test_load_dict")
 
     def test_uses_file_read_text(self, node: LoadDictionary) -> None:

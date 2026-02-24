@@ -205,7 +205,7 @@ class LoadImage(SuccessFailureNode):
             logger.error(f"LoadImage '{self.name}': {error_details}")
             self._handle_failure_exception(e)
 
-    def _load_image_from_path(self, path_value: str) -> ImageUrlArtifact | None:
+    def _load_image_from_path(self, path_value: str | None) -> ImageUrlArtifact | None:
         """Load image artifact from a path value."""
         if not path_value:
             return None
