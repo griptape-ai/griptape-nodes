@@ -5,14 +5,12 @@ import json
 import logging
 import re
 import sys
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import portalocker
 from huggingface_hub import list_models, scan_cache_dir, snapshot_download
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
@@ -41,6 +39,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
+from griptape_nodes.retained_mode.events.os_events import WriteFileRequest, WriteFileResultFailure
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.settings import MODELS_TO_DOWNLOAD_KEY
 from griptape_nodes.utils.async_utils import cancel_subprocess
@@ -78,7 +77,10 @@ class DownloadParams:
     ignore_patterns: list[str] | None = None
 
 
-def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
+_DOWNLOAD_PROGRESS_EMIT_INTERVAL = 1.0  # seconds between stdout progress events
+
+
+def _create_progress_tracker(model_id: str) -> type[tqdm]:
     """Create a tqdm class with model_id pre-configured.
 
     Args:
@@ -90,16 +92,13 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
     logger.info("Creating progress tracker for model: %s", model_id)
 
     class BoundModelDownloadTracker(tqdm):
-        """Tqdm subclass bound to a specific model_id."""
-
-        _file_lock = threading.Lock()
-        _first_update = True
+        """Tqdm subclass that emits JSON progress events to stdout for the parent process to handle."""
 
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
             self.model_id = model_id
-            self.start_time = datetime.now(UTC).isoformat()
             self._cumulative_bytes = 0
+            self._last_emit_time = 0.0
 
             # Check if this is a byte-level progress bar or file enumeration bar
             unit = getattr(self, "unit", "")
@@ -125,21 +124,13 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 desc,
             )
 
-            if self.model_id:
-                self._init_status_file()
-
         def update(self, n: int = 1) -> None:
-            """Override update to track progress in status file."""
+            """Override update to emit rate-limited JSON progress to stdout."""
             super().update(n)
             self._cumulative_bytes += n
 
-            # Skip if not tracking this progress bar
             if not getattr(self, "_should_track", True):
                 return
-
-            if self._first_update:
-                logger.debug("ModelDownloadTracker received first update for model: %s", self.model_id)
-                self._first_update = False
 
             logger.debug(
                 "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
@@ -149,18 +140,34 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                 self.total,
                 (self._cumulative_bytes / self.total * 100) if self.total else 0,
             )
-            self._update_status_file(mark_completed=False)
+
+            # Rate-limit stdout emissions to once per second to avoid overwhelming WriteFileRequest
+            now = datetime.now(UTC).timestamp()
+            if now - self._last_emit_time >= _DOWNLOAD_PROGRESS_EMIT_INTERVAL:
+                self._last_emit_time = now
+                progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
+                # Emit a JSON progress event to stdout so the parent process can read it
+                # from the subprocess stdout pipe and write the status file via WriteFileRequest.
+                print(  # noqa: T201
+                    json.dumps(
+                        {
+                            "downloaded_bytes": self._cumulative_bytes,
+                            "total_bytes": self.total or 0,
+                            "progress_percent": progress_percent,
+                        }
+                    ),
+                    flush=True,
+                )
 
         def close(self) -> None:
-            """Override close to mark download as completed only if fully downloaded."""
+            """Override close to emit a final progress event to stdout."""
             super().close()
 
-            # Skip if not tracking this progress bar
             if not getattr(self, "_should_track", True):
                 return
 
-            # Only mark as completed if we actually downloaded everything
             is_complete = self.total > 0 and self._cumulative_bytes >= self.total
+            progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
 
             if is_complete:
                 logger.info(
@@ -169,93 +176,28 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
                     self._cumulative_bytes,
                     self.total,
                 )
-                self._update_status_file(mark_completed=True)
             else:
                 logger.warning(
                     "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
                     self.model_id,
                     self._cumulative_bytes,
                     self.total,
-                    (self._cumulative_bytes / self.total * 100) if self.total else 0,
+                    progress_percent,
                 )
-                # Don't mark as completed - leave status as "downloading" or "failed"
-                self._update_status_file(mark_completed=False)
 
-        def _get_status_file_path(self) -> Path:
-            """Get the path to the status file for this model."""
-            status_dir = xdg_data_home() / "griptape_nodes" / "model_downloads"
-            status_dir.mkdir(parents=True, exist_ok=True)
-
-            sanitized_model_id = re.sub(r"[^\w\-_]", "--", self.model_id)
-            return status_dir / f"{sanitized_model_id}.json"
-
-        def _init_status_file(self) -> None:
-            """Initialize the status file for this model."""
-            try:
-                with self._file_lock:
-                    status_file = self._get_status_file_path()
-                    current_time = datetime.now(UTC).isoformat()
-
-                    data = {
-                        "model_id": self.model_id,
-                        "status": "downloading",
-                        "started_at": current_time,
-                        "updated_at": current_time,
-                        "total_bytes": self.total or 0,
-                        "downloaded_bytes": 0,
-                        "progress_percent": 0.0,
-                    }
-
-                    with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
-                        json.dump(data, f, indent=2)
-
-            except Exception:
-                logger.exception("ModelDownloadTracker._init_status_file failed")
-
-        def _update_status_file(self, *, mark_completed: bool = False) -> None:
-            """Update the status file with current progress.
-
-            Args:
-                mark_completed: If True, mark the download as completed
-            """
-            if not self.model_id:
-                logger.warning("ModelDownloadTracker._update_status_file called with empty model_id")
-                return
-
-            try:
-                with self._file_lock:
-                    status_file = self._get_status_file_path()
-
-                    if not status_file.exists():
-                        logger.warning("Status file does not exist: %s", status_file)
-                        return
-
-                    with status_file.open() as f:
-                        data = json.load(f)
-
-                    current_time = datetime.now(UTC).isoformat()
-                    progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
-
-                    # Always update total_bytes since it grows during aggregated downloads
-                    update_data = {
-                        "total_bytes": self.total or 0,
+            # Emit a final JSON progress event to stdout so the parent process can read it
+            # from the subprocess stdout pipe and write the terminal status via WriteFileRequest.
+            print(  # noqa: T201
+                json.dumps(
+                    {
                         "downloaded_bytes": self._cumulative_bytes,
+                        "total_bytes": self.total or 0,
                         "progress_percent": progress_percent,
-                        "updated_at": current_time,
+                        "completed": is_complete,
                     }
-
-                    # Only mark as completed when explicitly requested (from close())
-                    if mark_completed:
-                        update_data["status"] = "completed"
-                        update_data["completed_at"] = current_time
-
-                    data.update(update_data)
-
-                    with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
-                        json.dump(data, f, indent=2)
-
-            except Exception:
-                logger.exception("ModelDownloadTracker._update_status_file failed")
+                ),
+                flush=True,
+            )
 
     return BoundModelDownloadTracker
 
@@ -341,6 +283,24 @@ class ModelManager:
 
         return str(local_path)
 
+    def _write_download_status(self, status_file: Path, data: dict) -> None:
+        """Write download status data to a file using WriteFileRequest.
+
+        Routing all status file writes through WriteFileRequest ensures they go through
+        os_manager's centralized file I/O with exclusive locking.
+
+        Args:
+            status_file: Path to the status file to write
+            data: Status data dict to serialize as JSON
+        """
+        request = WriteFileRequest(
+            file_path=str(status_file),
+            content=json.dumps(data, indent=2),
+        )
+        result = GriptapeNodes.handle_request(request)
+        if isinstance(result, WriteFileResultFailure):
+            logger.warning("Failed to write download status file '%s': %s", status_file, result.result_details)
+
     def _get_status_directory(self) -> Path:
         """Get the status directory path for model downloads.
 
@@ -381,7 +341,6 @@ class ModelManager:
             self._download_tasks[parsed_model_id] = task
 
             await task
-            self._update_download_status_success(parsed_model_id)
         except asyncio.CancelledError:
             # Handle task cancellation gracefully
             logger.info("Download request cancelled for model '%s'", parsed_model_id)
@@ -393,9 +352,6 @@ class ModelManager:
 
         except Exception as e:
             error_msg = f"Failed to download model '{request.model_id}': {e}"
-            # Update status file to mark download as failed due to cancellation
-            self._update_download_status_failure(parsed_model_id, error_msg)
-
             return DownloadModelResultFailure(
                 result_details=error_msg,
                 exception=e,
@@ -440,17 +396,80 @@ class ModelManager:
             cache_path = Path(HF_HUB_CACHE)
             return str(cache_path / f"models--{params.model_id.replace('/', '--')}")
 
+    async def _stream_download_stdout(
+        self,
+        process: asyncio.subprocess.Process,
+        status_file: Path,
+        initial_data: dict,
+    ) -> dict | None:
+        """Read JSON progress events from subprocess stdout and write to status file.
+
+        Returns the last progress event received, or None if no events were emitted.
+        """
+        if process.stdout is None:
+            return None
+        last_progress: dict | None = None
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            decoded = line.decode().strip()
+            if decoded.startswith("{"):
+                try:
+                    progress = json.loads(decoded)
+                    last_progress = progress
+                    updated = {
+                        **initial_data,
+                        **progress,
+                        "status": "downloading",
+                        "updated_at": datetime.now(UTC).isoformat(),
+                    }
+                    await asyncio.to_thread(self._write_download_status, status_file, updated)
+                except json.JSONDecodeError:
+                    pass
+        return last_progress
+
+    async def _collect_download_stderr(self, process: asyncio.subprocess.Process) -> list[str]:
+        """Collect stderr lines for error reporting."""
+        if process.stderr is None:
+            return []
+        lines: list[str] = []
+        while True:
+            line = await process.stderr.readline()
+            if not line:
+                break
+            lines.append(line.decode())
+        return lines
+
     async def _download_model_task(self, download_params: DownloadParams) -> None:
         """Background task for downloading a model using CLI command.
+
+        Owns the full status file lifecycle: writes initial status before launching the
+        subprocess, streams JSON progress events from subprocess stdout and writes them
+        via WriteFileRequest, then writes the final success/failure status after exit.
 
         Args:
             download_params: Download parameters
 
         Raises:
-            Exception: If download fails
+            ValueError: If the download subprocess exits with a non-zero return code
         """
         model_id = download_params.model_id
         logger.info("Starting download for model: %s", model_id)
+
+        # Write initial status file before launching subprocess
+        status_file = self._get_status_file_path(model_id)
+        current_time = datetime.now(UTC).isoformat()
+        initial_data: dict = {
+            "model_id": model_id,
+            "status": "downloading",
+            "started_at": current_time,
+            "updated_at": current_time,
+            "total_bytes": 0,
+            "downloaded_bytes": 0,
+            "progress_percent": 0.0,
+        }
+        await asyncio.to_thread(self._write_download_status, status_file, initial_data)
 
         # Build CLI command
         cmd = [sys.executable, "-m", "griptape_nodes", "--no-update", "models", "download", download_params.model_id]
@@ -471,14 +490,39 @@ class ModelManager:
             # Store process for cancellation
             self._download_processes[model_id] = process
 
-            stdout, stderr = await process.communicate()
+            # Stream stdout and stderr concurrently to avoid pipe buffer deadlock
+            last_progress, stderr_lines = await asyncio.gather(
+                self._stream_download_stdout(process, status_file, initial_data),
+                self._collect_download_stderr(process),
+            )
+            await process.wait()
 
+            # Merge the last seen progress so final status preserves downloaded/total bytes
+            last_known = {**initial_data, **(last_progress or {})}
+            current_time = datetime.now(UTC).isoformat()
             if process.returncode == 0:
-                logger.debug(stdout.decode().strip())
-                logger.debug(stderr.decode().strip())
                 logger.info("Successfully downloaded model '%s'", model_id)
+                final_data = {
+                    **last_known,
+                    "status": "completed",
+                    "updated_at": current_time,
+                    "completed_at": current_time,
+                    "progress_percent": 100.0,
+                }
+                await asyncio.to_thread(self._write_download_status, status_file, final_data)
             else:
-                raise ValueError(stdout.decode().strip())
+                error_msg = "".join(stderr_lines).strip()
+                logger.error("Failed to download model '%s': %s", model_id, error_msg)
+                final_data = {
+                    **last_known,
+                    "status": "failed",
+                    "updated_at": current_time,
+                    "failed_at": current_time,
+                    "error_message": error_msg,
+                }
+                await asyncio.to_thread(self._write_download_status, status_file, final_data)
+                raise ValueError(error_msg)
+
         finally:
             if model_id in self._download_processes:
                 del self._download_processes[model_id]
@@ -757,7 +801,7 @@ class ModelManager:
             return None
 
         try:
-            with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
+            with status_file.open() as f:
                 data = json.load(f)
 
             # Get byte counts from status file
@@ -783,7 +827,7 @@ class ModelManager:
                 error_message=data.get("error_message"),
             )
 
-        except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
+        except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Failed to read status file for model '%s': %s", model_id, e)
             return None
 
@@ -801,7 +845,7 @@ class ModelManager:
         statuses = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
+                with status_file.open() as f:
                     data = json.load(f)
 
                 model_id = data.get("model_id", "")
@@ -810,7 +854,7 @@ class ModelManager:
                     if status:
                         statuses.append(status)
 
-            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
+            except (json.JSONDecodeError, KeyError) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
@@ -830,7 +874,7 @@ class ModelManager:
         unfinished_models = []
         for status_file in status_dir.glob("*.json"):
             try:
-                with portalocker.Lock(str(status_file), mode="r", flags=portalocker.LockFlags.SHARED, timeout=5) as f:
+                with status_file.open() as f:
                     data = json.load(f)
 
                 status = data.get("status", "")
@@ -839,7 +883,7 @@ class ModelManager:
                 if model_id and status in ("downloading", "failed"):
                     unfinished_models.append(model_id)
 
-            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
+            except (json.JSONDecodeError, KeyError) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
@@ -1123,75 +1167,3 @@ class ModelManager:
         # TODO: Replace with DeleteFileRequest https://github.com/griptape-ai/griptape-nodes/issues/3765
         status_file.unlink()
         return str(status_file)
-
-    def _update_download_status_failure(self, model_id: str, error_message: str) -> None:
-        """Update the status file to mark download as failed.
-
-        Args:
-            model_id: The model ID that failed to download
-            error_message: The error message describing the failure
-        """
-        try:
-            status_file = self._get_status_file_path(model_id)
-
-            if not status_file.exists():
-                logger.warning("Status file does not exist for failed model '%s'", model_id)
-                return
-
-            with status_file.open() as f:
-                data = json.load(f)
-
-            current_time = datetime.now(UTC).isoformat()
-
-            data.update(
-                {
-                    "status": "failed",
-                    "updated_at": current_time,
-                    "failed_at": current_time,
-                    "error_message": error_message,
-                }
-            )
-
-            with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
-                json.dump(data, f, indent=2)
-
-            logger.debug("Updated status file to 'failed' for model '%s'", model_id)
-
-        except Exception:
-            logger.exception("Failed to update status file for failed model '%s'", model_id)
-
-    def _update_download_status_success(self, model_id: str) -> None:
-        """Update the status file to mark download as completed.
-
-        Args:
-            model_id: The model ID that was successfully downloaded
-            local_path: The local path where the model was downloaded
-        """
-        try:
-            status_file = self._get_status_file_path(model_id)
-
-            if not status_file.exists():
-                logger.warning("Status file does not exist for completed model '%s'", model_id)
-                return
-
-            with status_file.open() as f:
-                data = json.load(f)
-
-            current_time = datetime.now(UTC).isoformat()
-
-            data.update(
-                {
-                    "status": "completed",
-                    "updated_at": current_time,
-                    "completed_at": current_time,
-                    "progress_percent": 100.0,
-                }
-            )
-
-            with portalocker.Lock(str(status_file), mode="w", timeout=5) as f:
-                json.dump(data, f, indent=2)
-
-            logger.debug("Updated status file to 'completed' for model '%s'", model_id)
-
-        except Exception:
-            logger.exception("Failed to update status file for completed model '%s'", model_id)
