@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Any
 
-from griptape_nodes.exe_types.core_types import Parameter
+from griptape.artifacts import UrlArtifact
+
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import DataNode
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.events.project_events import (
@@ -58,6 +60,16 @@ class FileSelector(DataNode):
             )
         )
 
+        self.add_parameter(
+            Parameter(
+                name="url",
+                type="UrlArtifact",
+                default_value=None,
+                tooltip="The resolved file path as a URL artifact.",
+                allowed_modes={ParameterMode.OUTPUT},
+            )
+        )
+
     def _resolve_macro_path(self, file_path_str: str) -> str:
         """Attempt to map the file path to a directory-level macro path.
 
@@ -85,6 +97,9 @@ class FileSelector(DataNode):
         self.publish_update_to_parameter("file_path", macro_path)
         self.parameter_output_values["macro_path"] = macro_path
         self.publish_update_to_parameter("macro_path", macro_path)
+        url_value = UrlArtifact(macro_path) if macro_path else None
+        self.parameter_output_values["url"] = url_value
+        self.publish_update_to_parameter("url", url_value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         if parameter.name == "selected_file":
