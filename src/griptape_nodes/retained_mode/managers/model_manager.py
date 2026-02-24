@@ -783,7 +783,7 @@ class ModelManager:
                 error_message=data.get("error_message"),
             )
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
             logger.warning("Failed to read status file for model '%s': %s", model_id, e)
             return None
 
@@ -810,7 +810,7 @@ class ModelManager:
                     if status:
                         statuses.append(status)
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
@@ -839,7 +839,7 @@ class ModelManager:
                 if model_id and status in ("downloading", "failed"):
                     unfinished_models.append(model_id)
 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, portalocker.LockException) as e:
                 logger.warning("Failed to read status file '%s': %s", status_file, e)
                 continue
 
