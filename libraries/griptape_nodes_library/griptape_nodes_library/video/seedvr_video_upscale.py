@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -326,11 +325,11 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
                 was_successful=False, result_details=f"Video generation completed but failed to save: {e}"
             )
             return
-        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
         logger.info("Saved video as %s", actual_path)
         self._set_status_results(
             was_successful=True,
-            result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+            result_details=f"Video generated successfully and saved as {actual_path.name}.",
         )
 
     async def _handle_completion(self, last_json: dict[str, Any] | None, generation_id: str | None = None) -> None:  # noqa: ARG002
@@ -363,11 +362,11 @@ class SeedVRVideoUpscale(GriptapeProxyNode):
                     result_details=f"Video generated successfully. Using provider URL (could not save video: {e}).",
                 )
                 return
-            self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
             logger.info("Saved video as %s", actual_path)
             self._set_status_results(
                 was_successful=True,
-                result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+                result_details=f"Video generated successfully and saved as {actual_path.name}.",
             )
         else:
             self.parameter_output_values["video"] = VideoUrlArtifact(value=extracted_url)

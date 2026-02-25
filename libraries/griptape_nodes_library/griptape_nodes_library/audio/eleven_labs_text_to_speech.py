@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
@@ -400,7 +399,7 @@ class ElevenLabsTextToSpeechGeneration(GriptapeProxyNode):
                 result_details=f"Failed to save audio file: {e}",
             )
             return
-        self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=actual_path, name=actual_path.name)
         self._log(f"Saved audio to {actual_path}")
 
         # Extract alignment data

@@ -5,7 +5,6 @@ import json
 import logging
 from contextlib import suppress
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -610,11 +609,11 @@ class Rodin23DGeneration(GriptapeProxyNode):
             # Track primary model file
             if file_name.lower().endswith(f".{requested_format}") and primary_url is None:
                 primary_url = actual_path
-                primary_filename = Path(actual_path).name
+                primary_filename = actual_path.name
             elif primary_url is None:
                 # Use first file as fallback
                 primary_url = actual_path
-                primary_filename = Path(actual_path).name
+                primary_filename = actual_path.name
 
         # Set outputs
         self.parameter_output_values["all_files"] = all_file_urls

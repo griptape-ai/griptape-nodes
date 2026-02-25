@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -273,7 +272,7 @@ class DisplayImageGrid(ControlNode):
         )
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(image_to_bytes(placeholder_image, output_format))
-        return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        return ImageUrlArtifact(value=actual_path, name=actual_path.name)
 
     def _scale_grid_to_fit(self, grid_image: Any, target_width: int, target_height: int) -> tuple[Any, int, int]:
         """Scale grid image to fit within target dimensions.
@@ -416,7 +415,7 @@ class DisplayImageGrid(ControlNode):
             # Save the grid image and create URL
             output_file = self._output_file_param.build_file()
             actual_path = output_file.write_bytes(image_to_bytes(grid_image, output_format))
-            url_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            url_artifact = ImageUrlArtifact(value=actual_path, name=actual_path.name)
             self.publish_update_to_parameter("output", url_artifact)
 
         except (RuntimeError, OSError, UnidentifiedImageError) as e:

@@ -4,7 +4,6 @@ import base64
 import io
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -420,11 +419,11 @@ class SoraVideoGeneration(GriptapeProxyNode):
             self._log(f"Failed to write video: {e}")
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=original_url)
             return
-        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
         self._log(f"Saved video to {actual_path}")
         self._set_status_results(
             was_successful=True,
-            result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+            result_details=f"Video generated successfully and saved as {actual_path.name}.",
         )
 
     async def _handle_video_url_completion(self, video_url: str) -> None:

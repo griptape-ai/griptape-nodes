@@ -3,7 +3,6 @@ from __future__ import annotations
 import json as _json
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any, ClassVar
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -547,11 +546,11 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
                     result_details=f"Video generated successfully. Using provider URL (could not save video: {e}).",
                 )
                 return
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
             self._log(f"Saved video as {actual_path}")
             self._set_status_results(
                 was_successful=True,
-                result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+                result_details=f"Video generated successfully and saved as {actual_path.name}.",
             )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=extracted_url)

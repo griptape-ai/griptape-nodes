@@ -1,6 +1,5 @@
 import io
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -327,7 +326,7 @@ class CropImage(ControlNode):
 
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(img_data)
-        self.parameter_output_values["output"] = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["output"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
 
     def _apply_zoom_to_crop_area(self, crop_area: CropArea, zoom: float, img_width: int, img_height: int) -> CropArea:
         """Apply zoom by scaling the crop area size."""

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 from copy import deepcopy
-from pathlib import Path
 from typing import Any, ClassVar
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -449,13 +448,11 @@ class MinimaxHailuoVideoGeneration(GriptapeProxyNode):
                     result_details=f"Video generated successfully. Using provider URL (could not save video: {e}).",
                 )
             else:
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(
-                    value=actual_path, name=Path(actual_path).name
-                )
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
                 logger.info("%s saved video to %s", self.name, actual_path)
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video generated successfully and saved as {Path(actual_path).name}.",
+                    result_details=f"Video generated successfully and saved as {actual_path.name}.",
                 )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)

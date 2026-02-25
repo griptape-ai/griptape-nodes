@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -742,7 +741,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
 
             logger.info("%s: Saved video %s as %s (%s bytes)", self.name, idx, actual_path, len(video_bytes))
 
-            return VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            return VideoUrlArtifact(value=actual_path, name=actual_path.name)
 
         except Exception as e:
             logger.error("%s: Failed to process video %s: %s", self.name, idx, e)

@@ -5,7 +5,6 @@ import contextlib
 import io
 import json as _json
 import logging
-from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
@@ -24,7 +23,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.file import File, FileLoadError, FileWriteError, WrittenPath
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -470,10 +469,10 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             self._log(f"Failed to write video: {e}")
             self.parameter_output_values["video_url"] = None
             return
-        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
         self._set_status_results(
             was_successful=True,
-            result_details=f"Video generation completed successfully. Saved as: {Path(actual_path).name}",
+            result_details=f"Video generation completed successfully. Saved as: {actual_path.name}",
         )
 
     async def _prepare_audio_data_url_async(self, audio_input: Any) -> str | None:
@@ -588,12 +587,12 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
             actual_path = None
 
         if actual_path:
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
 
         self._set_status_results(
             was_successful=True,
             result_details=f"Video generation completed successfully. Video URL: {video_url}"
-            + (f", saved as: {Path(actual_path).name}" if actual_path else ""),
+            + (f", saved as: {actual_path.name}" if actual_path else ""),
         )
 
     @staticmethod
@@ -606,7 +605,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
 
         return None
 
-    async def _save_video_bytes(self, url: str) -> str | None:
+    async def _save_video_bytes(self, url: str) -> WrittenPath | None:
         """Download video bytes from URL and save to project file storage."""
         try:
             async with httpx.AsyncClient() as client:
@@ -618,7 +617,7 @@ class OmnihumanVideoGeneration(GriptapeProxyNode):
         except Exception:
             return None
 
-        return str(actual_path)
+        return actual_path
 
     def _set_safe_defaults(self) -> None:
         """Set safe default values for outputs on error."""

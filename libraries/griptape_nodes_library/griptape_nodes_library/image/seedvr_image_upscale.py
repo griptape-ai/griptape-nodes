@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact
@@ -325,12 +324,12 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             )
             return
 
-        self.parameter_output_values["image"] = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
-        msg = f"Saved image as {Path(actual_path).name}"
+        self.parameter_output_values["image"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
+        msg = f"Saved image as {actual_path.name}"
         logger.info(msg)
         self._set_status_results(
             was_successful=True,
-            result_details=f"Image generated successfully and saved as {Path(actual_path).name}.",
+            result_details=f"Image generated successfully and saved as {actual_path.name}.",
         )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:

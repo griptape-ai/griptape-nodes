@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -616,10 +615,10 @@ class WanImageToVideoGeneration(GriptapeProxyNode):
             logger.error("Failed to write video: %s", e)
             self.parameter_output_values["video"] = VideoUrlArtifact(value=video_url)
             return
-        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["video"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
         logger.info("Saved video as %s", actual_path)
         self._set_status_results(
-            was_successful=True, result_details=f"Video generated successfully and saved as {Path(actual_path).name}."
+            was_successful=True, result_details=f"Video generated successfully and saved as {actual_path.name}."
         )
 
     async def _prepare_audio_data_url_async(self, audio_input: Any) -> str | None:

@@ -383,7 +383,7 @@ class CombineAudio(SuccessFailureNode):
             raise RuntimeError(error_msg) from e
 
         # SUCCESS PATH AT END
-        return AudioUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        return AudioUrlArtifact(value=actual_path, name=actual_path.name)
 
     def _get_success_message(self) -> str:
         """Generate success message with mixing details."""
