@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -78,9 +79,10 @@ class DownloadParams:
 
 
 _DOWNLOAD_PROGRESS_EMIT_INTERVAL = 1.0  # seconds between stdout progress events
+_PROGRESS_PIPE_ENV_VAR = "GRIPTAPE_NODES_PROGRESS_PIPE"  # set by parent to enable JSON stdout emission
 
 
-def _create_progress_tracker(model_id: str) -> type[tqdm]:
+def _create_progress_tracker(model_id: str) -> type[tqdm]:  # noqa: C901
     """Create a tqdm class with model_id pre-configured.
 
     Args:
@@ -99,6 +101,8 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:
             self.model_id = model_id
             self._cumulative_bytes = 0
             self._last_emit_time = 0.0
+            # Only emit JSON progress events when spawned by the main process, not on direct CLI invocation
+            self._emit_progress = os.environ.get(_PROGRESS_PIPE_ENV_VAR) == "1"
 
             # Check if this is a byte-level progress bar or file enumeration bar
             unit = getattr(self, "unit", "")
@@ -132,32 +136,35 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:
             if not getattr(self, "_should_track", True):
                 return
 
-            logger.debug(
-                "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
-                self.model_id,
-                n,
-                self._cumulative_bytes,
-                self.total,
-                (self._cumulative_bytes / self.total * 100) if self.total else 0,
-            )
+            if not self._emit_progress:
+                logger.debug(
+                    "ModelDownloadTracker update - model_id: %s, added: %s, now: %s/%s (%.1f%%)",
+                    self.model_id,
+                    n,
+                    self._cumulative_bytes,
+                    self.total,
+                    (self._cumulative_bytes / self.total * 100) if self.total else 0,
+                )
+                return
 
             # Rate-limit stdout emissions to once per second to avoid overwhelming WriteFileRequest
             now = datetime.now(UTC).timestamp()
             if now - self._last_emit_time >= _DOWNLOAD_PROGRESS_EMIT_INTERVAL:
                 self._last_emit_time = now
                 progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
-                # Emit a JSON progress event to stdout so the parent process can read it
-                # from the subprocess stdout pipe and write the status file via WriteFileRequest.
-                print(  # noqa: T201
+                # Write a JSON progress event directly to stdout so the parent process can read it
+                # from the subprocess stdout pipe and write the status file via File.write_text.
+                sys.stdout.write(
                     json.dumps(
                         {
                             "downloaded_bytes": self._cumulative_bytes,
                             "total_bytes": self.total or 0,
                             "progress_percent": progress_percent,
                         }
-                    ),
-                    flush=True,
+                    )
+                    + "\n"
                 )
+                sys.stdout.flush()
 
         def close(self) -> None:
             """Override close to emit a final progress event to stdout."""
@@ -169,25 +176,27 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:
             is_complete = self.total > 0 and self._cumulative_bytes >= self.total
             progress_percent = (self._cumulative_bytes / self.total * 100) if self.total else 0
 
-            if is_complete:
-                logger.info(
-                    "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes (COMPLETE)",
-                    self.model_id,
-                    self._cumulative_bytes,
-                    self.total,
-                )
-            else:
-                logger.warning(
-                    "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
-                    self.model_id,
-                    self._cumulative_bytes,
-                    self.total,
-                    progress_percent,
-                )
+            if not self._emit_progress:
+                if is_complete:
+                    logger.info(
+                        "ModelDownloadTracker closed - model_id: %s, downloaded: %s/%s bytes (COMPLETE)",
+                        self.model_id,
+                        self._cumulative_bytes,
+                        self.total,
+                    )
+                else:
+                    logger.warning(
+                        "ModelDownloadTracker closed prematurely - model_id: %s, downloaded: %s/%s bytes (%.1f%%)",
+                        self.model_id,
+                        self._cumulative_bytes,
+                        self.total,
+                        progress_percent,
+                    )
+                return
 
-            # Emit a final JSON progress event to stdout so the parent process can read it
-            # from the subprocess stdout pipe and write the terminal status via WriteFileRequest.
-            print(  # noqa: T201
+            # Write a final JSON progress event directly to stdout so the parent process can read it
+            # from the subprocess stdout pipe and write the terminal status via File.write_text.
+            sys.stdout.write(
                 json.dumps(
                     {
                         "downloaded_bytes": self._cumulative_bytes,
@@ -195,9 +204,10 @@ def _create_progress_tracker(model_id: str) -> type[tqdm]:
                         "progress_percent": progress_percent,
                         "completed": is_complete,
                     }
-                ),
-                flush=True,
+                )
+                + "\n"
             )
+            sys.stdout.flush()
 
     return BoundModelDownloadTracker
 
@@ -410,20 +420,18 @@ class ModelManager:
             line = await process.stdout.readline()
             if not line:
                 break
-            decoded = line.decode().strip()
-            if decoded.startswith("{"):
-                try:
-                    progress = json.loads(decoded)
-                    last_progress = progress
-                    updated = {
-                        **initial_data,
-                        **progress,
-                        "status": "downloading",
-                        "updated_at": datetime.now(UTC).isoformat(),
-                    }
-                    await asyncio.to_thread(self._write_download_status, status_file, updated)
-                except json.JSONDecodeError:
-                    pass
+            try:
+                progress = json.loads(line.decode().strip())
+                last_progress = progress
+                updated = {
+                    **initial_data,
+                    **progress,
+                    "status": "downloading",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+                await asyncio.to_thread(self._write_download_status, status_file, updated)
+            except json.JSONDecodeError:
+                pass
         return last_progress
 
     async def _collect_download_stderr(self, process: asyncio.subprocess.Process) -> list[str]:
@@ -476,11 +484,12 @@ class ModelManager:
         if download_params.revision and download_params.revision != "main":
             cmd.extend(["--revision", download_params.revision])
 
-        # Start subprocess
+        # Start subprocess with progress pipe flag so the tracker emits JSON to stdout
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, _PROGRESS_PIPE_ENV_VAR: "1"},
         )
 
         try:
