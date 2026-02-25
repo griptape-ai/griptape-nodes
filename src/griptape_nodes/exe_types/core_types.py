@@ -1416,6 +1416,7 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     )
     _converters: list[Callable[[Any], Any]]
     _validators: list[Callable[[Parameter, Any], None]]
+    _on_connection_removed: list[Callable[[Parameter], None]]
     _ui_options: dict
     next: Parameter | None = None
     prev: Parameter | None = None
@@ -1516,6 +1517,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._validators = []
         else:
             self._validators = validators
+
+        self._on_connection_removed = []
 
         # Process common UI options from constructor parameters
         if ui_options is None:
@@ -1717,6 +1720,10 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             validators += trait.validators_for_trait()
         validators += self._validators
         return validators
+
+    @property
+    def on_connection_removed(self) -> list[Callable[[Parameter], None]]:
+        return self._on_connection_removed
 
     @property
     def allowed_modes(self) -> set[ParameterMode]:

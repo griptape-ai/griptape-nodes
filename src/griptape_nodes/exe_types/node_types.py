@@ -398,10 +398,11 @@ class BaseNode(ABC):
         self,
         source_node: BaseNode,  # noqa: ARG002
         source_parameter: Parameter,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
-        return
+        for callback in target_parameter.on_connection_removed:
+            callback(target_parameter)
 
     def before_outgoing_connection_removed(
         self,
