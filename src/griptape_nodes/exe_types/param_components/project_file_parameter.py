@@ -104,6 +104,7 @@ class ProjectFileParameter:
             output_type="str",
             traits=traits,
         )
+        parameter.on_incoming_connection_removed.append(self._reset_to_default)
 
         self._node.add_parameter(parameter)
 
@@ -150,6 +151,10 @@ class ProjectFileParameter:
             default_extension=default_extension,
             extra_variables=extra_vars if extra_vars else None,
         )
+
+    def _reset_to_default(self, parameter: Parameter, source_node_name: str, source_parameter_name: str) -> None:  # noqa: ARG002
+        self._node.set_parameter_value(self._name, self._default_filename)
+        self._node.publish_update_to_parameter(self._name, self._default_filename)
 
     def _on_configure_button_clicked(
         self,
