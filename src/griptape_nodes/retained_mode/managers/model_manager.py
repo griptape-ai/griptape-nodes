@@ -340,7 +340,6 @@ class ModelManager:
                 "No Hugging Face token found. Set your HF_TOKEN environment variable "
                 "or log in with `huggingface-cli login` before downloading models."
             )
-            self._update_download_status_failure(parsed_model_id, error_msg)
             return DownloadModelResultFailure(result_details=error_msg)
 
         try:
