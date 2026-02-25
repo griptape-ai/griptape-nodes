@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any, ClassVar
 
 from griptape.artifacts import ImageUrlArtifact
@@ -323,7 +322,7 @@ class GrokImageGeneration(GriptapeProxyNode):
                     logger.warning("%s failed to save image %s: %s", self.name, index, e)
                 return ImageUrlArtifact(value=image_url)
 
-            return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            return ImageUrlArtifact(value=actual_path, name=actual_path.name)
         except Exception as e:
             with suppress(Exception):
                 logger.warning("%s failed to save image %s: %s", self.name, index, e)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urljoin
 
@@ -486,7 +485,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
             logger.info(msg)
             return
 
-        image_artifacts.append(ImageUrlArtifact(value=actual_path, name=Path(actual_path).name))
+        image_artifacts.append(ImageUrlArtifact(value=actual_path, name=actual_path.name))
         msg = f"{self.name} saved image from candidate {candidate_idx + 1}, part {part_idx + 1}"
         logger.info(msg)
 

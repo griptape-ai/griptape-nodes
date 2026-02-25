@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import suppress
-from pathlib import Path
 from typing import Any, ClassVar
 
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
@@ -229,12 +228,10 @@ class GrokVideoEdit(GriptapeProxyNode):
                 with suppress(Exception):
                     logger.warning("%s failed to write video: %s", self.name, e)
             else:
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(
-                    value=actual_path, name=Path(actual_path).name
-                )
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video edited successfully and saved as {Path(actual_path).name}.",
+                    result_details=f"Video edited successfully and saved as {actual_path.name}.",
                 )
                 return
 

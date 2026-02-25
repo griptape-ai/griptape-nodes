@@ -317,7 +317,7 @@ class BaseVideoProcessor(SuccessFailureNode, ABC):
         """Save video bytes to static file and return VideoUrlArtifact."""
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(video_bytes)
-        return VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        return VideoUrlArtifact(value=actual_path, name=actual_path.name)
 
     def _run_ffmpeg_command(self, cmd: list[str], timeout: int = 300) -> None:
         """Run FFmpeg command with common error handling."""

@@ -6,7 +6,6 @@ import logging
 from contextlib import suppress
 from copy import deepcopy
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -754,7 +753,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 return ImageUrlArtifact(value=image_url)
             self._log(f"Saved image {index} to {actual_path}")
 
-            return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            return ImageUrlArtifact(value=actual_path, name=actual_path.name)
 
         except Exception as e:
             self._log(f"Failed to save image {index} from URL: {e}")

@@ -1,6 +1,5 @@
 import base64
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -731,7 +730,7 @@ class ImageBash(DataNode):
         # Save composed image and publish
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(self._pil_to_bytes(canvas, "PNG"))
-        output_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        output_artifact = ImageUrlArtifact(value=actual_path, name=actual_path.name)
         self.set_parameter_value("output_image", output_artifact)
         self.parameter_output_values["output_image"] = output_artifact
         self.publish_update_to_parameter("output_image", output_artifact)

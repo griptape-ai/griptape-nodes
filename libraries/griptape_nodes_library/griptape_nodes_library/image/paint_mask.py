@@ -1,5 +1,4 @@
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -298,5 +297,5 @@ class PaintMask(DataNode):
         input_pil.save(output_buffer, format="PNG")
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(output_buffer.getvalue())
-        output_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        output_artifact = ImageUrlArtifact(value=actual_path, name=actual_path.name)
         self.set_parameter_value("output_image", output_artifact)

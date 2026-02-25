@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageUrlArtifact
@@ -217,7 +216,7 @@ class WriteImageMetadataNode(SuccessFailureNode):
         try:
             output_file = self._output_file_param.build_file()
             actual_path = output_file.write_bytes(image_bytes)
-            return ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            return ImageUrlArtifact(value=actual_path, name=actual_path.name)
         except Exception as e:
             error_msg = f"{self.name}: Failed to save image: {e}"
             logger.warning(error_msg)

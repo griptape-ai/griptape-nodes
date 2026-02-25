@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any
 
 import requests
@@ -366,6 +365,6 @@ IMPORTANT: Output must be a single, raw prompt string for an image generation mo
         agent.run(prompt)
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(agent.output.to_bytes())
-        url_artifact = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        url_artifact = ImageUrlArtifact(value=actual_path, name=actual_path.name)
         self.publish_update_to_parameter("output", url_artifact)
         try_throw_error(agent.output)

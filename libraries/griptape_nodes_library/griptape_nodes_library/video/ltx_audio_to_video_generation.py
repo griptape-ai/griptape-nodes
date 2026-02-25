@@ -523,10 +523,10 @@ class LTXAudioToVideoGeneration(GriptapeProxyNode):
                 result_details=f"Video generated but failed to save: {e}",
             )
             return
-        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
         logger.info("%s saved video as %s", self.name, actual_path)
         self._set_status_results(
-            was_successful=True, result_details=f"Video generated successfully and saved as {Path(actual_path).name}."
+            was_successful=True, result_details=f"Video generated successfully and saved as {actual_path.name}."
         )
 
     def _extract_error_message(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0912

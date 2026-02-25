@@ -597,10 +597,10 @@ If no title is provided, just use "Segment X:" format.
                 actual_path = output_file.write_bytes(video_bytes)
 
                 # Create output artifact
-                video_artifact = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+                video_artifact = VideoUrlArtifact(value=actual_path, name=actual_path.name)
                 split_video_artifacts.append(video_artifact)
 
-                self.append_value_to_parameter("logs", f"Saved segment {i + 1}: {Path(actual_path).name}\n")
+                self.append_value_to_parameter("logs", f"Saved segment {i + 1}: {actual_path.name}\n")
 
             # Save all artifacts to parameter list
             logger.info(f"Saving {len(split_video_artifacts)} split video artifacts")

@@ -4,7 +4,6 @@ import json
 import logging
 from contextlib import suppress
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -414,11 +413,11 @@ class FluxImageGeneration(GriptapeProxyNode):
             )
             return
 
-        self.parameter_output_values["image_url"] = ImageUrlArtifact(value=actual_path, name=Path(actual_path).name)
-        self._log(f"Saved image as {Path(actual_path).name}")
+        self.parameter_output_values["image_url"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
+        self._log(f"Saved image as {actual_path.name}")
         self._set_status_results(
             was_successful=True,
-            result_details=f"Image generated successfully and saved as {Path(actual_path).name}.",
+            result_details=f"Image generated successfully and saved as {actual_path.name}.",
         )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:

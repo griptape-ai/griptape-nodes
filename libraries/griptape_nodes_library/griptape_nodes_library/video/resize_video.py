@@ -440,10 +440,10 @@ class ResizeVideo(ControlNode):
             output_file = self._output_file_param.build_file()
             actual_path = output_file.write_bytes(resized_video_bytes)
 
-            self.append_value_to_parameter("logs", f"Successfully resized video: {Path(actual_path).name}\n")
+            self.append_value_to_parameter("logs", f"Successfully resized video: {actual_path.name}\n")
 
             # Create output artifact and save to parameter
-            resized_video_artifact = VideoUrlArtifact(value=actual_path, name=Path(actual_path).name)
+            resized_video_artifact = VideoUrlArtifact(value=actual_path, name=actual_path.name)
             self.parameter_output_values["resized_video"] = resized_video_artifact
         except Exception as e:
             error_message = str(e)

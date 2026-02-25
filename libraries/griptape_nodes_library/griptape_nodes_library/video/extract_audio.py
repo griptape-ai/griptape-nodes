@@ -161,7 +161,7 @@ class ExtractAudio(BaseVideoProcessor):
         """Save audio bytes using ProjectFileParameter and return AudioUrlArtifact."""
         output_file = self._output_file_param.build_file()
         actual_path = output_file.write_bytes(audio_bytes)
-        return AudioUrlArtifact(value=actual_path, name=Path(actual_path).name)
+        return AudioUrlArtifact(value=actual_path, name=actual_path.name)
 
     def process(self) -> AsyncResult[None]:
         """Extract audio from the input video and save as AudioUrlArtifact."""
