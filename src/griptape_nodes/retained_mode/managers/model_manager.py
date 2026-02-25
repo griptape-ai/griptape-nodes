@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from huggingface_hub import list_models, scan_cache_dir, snapshot_download
+from huggingface_hub import get_token, list_models, scan_cache_dir, snapshot_download
 from huggingface_hub.utils.tqdm import tqdm
 from xdg_base_dirs import xdg_data_home
 
@@ -335,6 +335,14 @@ class ModelManager:
         if parsed_model_id != request.model_id:
             logger.debug("Parsed model ID '%s' from URL '%s'", parsed_model_id, request.model_id)
 
+        if get_token() is None:
+            error_msg = (
+                "No Hugging Face token found. Set your HF_TOKEN environment variable "
+                "or log in with `huggingface-cli login` before downloading models."
+            )
+            self._update_download_status_failure(parsed_model_id, error_msg)
+            return DownloadModelResultFailure(result_details=error_msg)
+
         try:
             download_params = DownloadParams(
                 model_id=parsed_model_id,
@@ -358,9 +366,8 @@ class ModelManager:
             )
 
         except Exception as e:
-            error_msg = f"Failed to download model '{request.model_id}': {e}"
             return DownloadModelResultFailure(
-                result_details=error_msg,
+                result_details=str(e),
                 exception=e,
             )
         else:
@@ -446,7 +453,7 @@ class ModelManager:
             lines.append(line.decode())
         return lines
 
-    async def _download_model_task(self, download_params: DownloadParams) -> None:
+    async def _download_model_task(self, download_params: DownloadParams) -> None:  # noqa: C901
         """Background task for downloading a model using CLI command.
 
         Owns the full status file lifecycle: writes initial status before launching the
@@ -517,7 +524,25 @@ class ModelManager:
                 }
                 await asyncio.to_thread(self._write_download_status, status_file, final_data)
             else:
-                error_msg = "".join(stderr_lines).strip()
+                # Scan stderr for a structured error event emitted by the subprocess CLI
+                error_type = None
+                error_msg = None
+                for line in stderr_lines:
+                    try:
+                        event = json.loads(line.strip())
+                        if isinstance(event, dict) and "error_type" in event:
+                            error_type = event.get("error_type")
+                            error_msg = event.get("error_message")
+                            break
+                    except json.JSONDecodeError:
+                        pass
+                model_url = f"https://huggingface.co/{model_id}"
+                if error_type == "gated_repo":
+                    error_msg = f"Model '{model_id}' is gated and requires access approval. Visit {model_url} to request access."
+                elif error_type == "repo_not_found":
+                    error_msg = f"Model '{model_id}' was not found. Check that the model ID is correct at {model_url}."
+                elif not error_msg:
+                    error_msg = "".join(stderr_lines).strip()
                 logger.error("Failed to download model '%s': %s", model_id, error_msg)
                 final_data = {
                     **last_known,
