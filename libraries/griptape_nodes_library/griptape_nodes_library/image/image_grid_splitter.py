@@ -985,8 +985,8 @@ class ImageGridSplitter(DataNode):
                     clickable_file_browser=False,
                     user_defined=True,
                     settable=False,
-                    parent_container_name=self._grid_cells_group.name,
                 )
+                param.parent_element_name = self._grid_cells_group.name
                 self.add_parameter(param)
 
     def _remove_existing_cell_outputs(self) -> None:
