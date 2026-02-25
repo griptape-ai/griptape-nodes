@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.64.0",
+    "library_version": "0.65.0",
     "engine_version": "0.75.2",
     "tags": [
       "Griptape",
@@ -1587,7 +1587,7 @@
       "file_path": "griptape_nodes_library/image/seedream_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
+        "description": "Generate images using Seedream models via Griptape model proxy",
         "display_name": "Seedream Image Generation",
         "group": "create",
         "icon": "Sparkles"

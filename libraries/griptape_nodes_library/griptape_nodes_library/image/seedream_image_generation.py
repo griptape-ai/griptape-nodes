@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json as _json
 import logging
 import time
@@ -32,6 +33,7 @@ PROMPT_TRUNCATE_LENGTH = 100
 
 # Model mapping from user-facing names to API model IDs
 MODEL_NAME_MAP = {
+    "Seedream 5.0 Lite": "seedream-5-0-260128",
     "Seedream 4.5": "seedream-4-5-251128",
     "Seedream 4.0": "seedream-4-0-250828",
     "Seedream 3.0 T2I": "seedream-3-0-t2i-250415",
@@ -40,6 +42,10 @@ MODEL_NAME_MAP = {
 
 # Size options for different models (using friendly names)
 SIZE_OPTIONS = {
+    "Seedream 5.0 Lite": [
+        "2K",
+        "3K",
+    ],
     "Seedream 4.5": [
         "2K",
         "4K",
@@ -81,15 +87,20 @@ SIZE_OPTIONS = {
 
 # Maximum number of input images for models that support multiple images (using friendly names)
 MAX_IMAGES_PER_MODEL = {
+    "Seedream 5.0 Lite": 14,
     "Seedream 4.5": 14,
     "Seedream 4.0": 10,
 }
+
+MULTI_IMAGE_MODELS = {"Seedream 5.0 Lite", "Seedream 4.5", "Seedream 4.0"}
+SEQUENTIAL_GENERATION_MODELS = {"Seedream 5.0 Lite", "Seedream 4.5", "Seedream 4.0"}
 
 
 class SeedreamImageGeneration(GriptapeProxyNode):
     """Generate images using Seedream models via Griptape model proxy.
 
-    Supports four models:
+    Supports five models:
+    - Seedream 5.0 Lite: Text-to-image model with optional multiple image inputs (up to 14) and 2K/3K size options
     - Seedream 4.5: Latest model with optional multiple image inputs (up to 14) and shorthand size options (2K, 4K)
       Minimum resolution: 2560x1440, Maximum resolution: 4096x4096
     - Seedream 4.0: Advanced model with optional multiple image inputs (up to 10) and shorthand size options (1K, 2K, 4K)
@@ -97,13 +108,13 @@ class SeedreamImageGeneration(GriptapeProxyNode):
     - Seedream 3.0 I2I: Image-to-image editing model requiring single input image (WIDTHxHEIGHT format)
 
     Inputs:
-        - model (str): Model selection (Seedream 4.5, Seedream 4.0, Seedream 3.0 T2I, Seedream 3.0 I2I)
+        - model (str): Model selection (Seedream 5.0 Lite, Seedream 4.5, Seedream 4.0, Seedream 3.0 T2I, Seedream 3.0 I2I)
         - prompt (str): Text prompt for image generation
         - image (ImageArtifact): Single input image (required for Seedream 3.0 I2I, hidden for other models)
-        - images (list): Multiple input images (Seedream 4.5 supports up to 14, Seedream 4.0 up to 10)
+        - images (list): Multiple input images (Seedream 5.0 Lite/4.5 support up to 14, Seedream 4.0 up to 10)
         - size (str): Image size specification (dynamic options based on selected model)
         - seed (int): Random seed for reproducible results
-        - max_images (int): Maximum number of images to generate (1-15, Seedream 4.0 and Seedream 4.5 only)
+        - max_images (int): Maximum number of images to generate (1-15, Seedream 5.0 Lite, 4.5, and 4.0 only)
         - guidance_scale (float): Guidance scale (hidden for v4, visible for v3 models)
 
     Outputs:
@@ -127,7 +138,17 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 default_value="Seedream 4.5",
                 tooltip="Select the Seedream model to use",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["Seedream 4.5", "Seedream 4.0", "Seedream 3.0 T2I", "Seedream 3.0 I2I"])},
+                traits={
+                    Options(
+                        choices=[
+                            "Seedream 5.0 Lite",
+                            "Seedream 4.5",
+                            "Seedream 4.0",
+                            "Seedream 3.0 T2I",
+                            "Seedream 3.0 I2I",
+                        ]
+                    )
+                },
             )
         )
 
@@ -156,7 +177,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Multiple image inputs for Seedream 4.5/4.0 (up to 14/10 images)
+        # Multiple image inputs for multi-image Seedream models (up to 14/10 images, model-dependent)
         self.add_parameter(
             ParameterList(
                 name="images",
@@ -169,7 +190,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                     "list[ImageUrlArtifact]",
                 ],
                 default_value=[],
-                tooltip="Input images for Seedream (up to 14 for Seedream 4.5, 10 for Seedream 4.0)",
+                tooltip="Input images for Seedream (up to 14 for Seedream 5.0 Lite/4.5, 10 for Seedream 4.0)",
                 allowed_modes={ParameterMode.INPUT},
                 ui_options={"expander": True, "display_name": "Input Images"},
             )
@@ -196,11 +217,11 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Max images parameter for Seedream 4.5 and Seedream 4.0
+        # Max images parameter for models that support sequential generation (Seedream 5.0 Lite, 4.5, and 4.0)
         self.add_parameter(
             ParameterInt(
                 name="max_images",
-                tooltip="Maximum number of images to generate (1-15, Seedream 4.0 and Seedream 4.5 only)",
+                tooltip="Maximum number of images to generate (1-15, Seedream 5.0 Lite, 4.5, and 4.0 only)",
                 default_value=10,
                 slider=True,
                 min_val=1,
@@ -286,11 +307,17 @@ class SeedreamImageGeneration(GriptapeProxyNode):
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
         default_model = self.get_parameter_value("model") or "Seedream 4.5"
-        if default_model in ("Seedream 4.5", "Seedream 4.0"):
+        if default_model in SEQUENTIAL_GENERATION_MODELS:
             # Hide single image input, show images list, show max_images, hide guidance scale
             self.hide_parameter_by_name("image")
             self.show_parameter_by_name("images")
             self.show_parameter_by_name("max_images")
+            self.hide_parameter_by_name("guidance_scale")
+        elif default_model in MULTI_IMAGE_MODELS:
+            # Hide single image input, show images list, hide max_images, hide guidance scale
+            self.hide_parameter_by_name("image")
+            self.show_parameter_by_name("images")
+            self.hide_parameter_by_name("max_images")
             self.hide_parameter_by_name("guidance_scale")
         elif default_model == "Seedream 3.0 T2I":
             # Hide image inputs (not supported), hide max_images, show guidance scale
@@ -335,8 +362,10 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         new_choices = SIZE_OPTIONS[model]
         current_size = self.get_parameter_value("size")
 
-        if model in ("Seedream 4.5", "Seedream 4.0"):
+        if model in SEQUENTIAL_GENERATION_MODELS:
             self._configure_v4_models(model, new_choices, current_size)
+        elif model in MULTI_IMAGE_MODELS:
+            self._configure_multi_image_model(new_choices, current_size)
         elif model == "Seedream 3.0 T2I":
             self._configure_v3_t2i_model(new_choices, current_size)
         elif model == "Seedream 3.0 I2I":
@@ -355,6 +384,18 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             default_size = "2K" if model == "Seedream 4.5" else "1K"
             default_size = default_size if default_size in new_choices else new_choices[0]
             self._update_option_choices("size", new_choices, default_size)
+
+    def _configure_multi_image_model(self, new_choices: list[str], current_size: str) -> None:
+        """Configure UI for models that support multi-image input but not sequential generation options."""
+        self.hide_parameter_by_name("image")
+        self.show_parameter_by_name("images")
+        self.hide_parameter_by_name("max_images")
+        self.hide_parameter_by_name("guidance_scale")
+
+        if current_size in new_choices:
+            self._update_option_choices("size", new_choices, current_size)
+        else:
+            self._update_option_choices("size", new_choices, new_choices[0])
 
     def _configure_v3_t2i_model(self, new_choices: list[str], current_size: str) -> None:
         """Configure UI for Seedream 3.0 T2I model."""
@@ -483,9 +524,12 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             "watermark": False,
         }
 
-        # Get image list for Seedream 4.5 and Seedream 4.0
-        if params["model"] in ("Seedream 4.5", "Seedream 4.0"):
+        # Get image list for models with multi-image input support
+        if params["model"] in MULTI_IMAGE_MODELS:
             params["images"] = images
+
+        # Add sequential generation options for models that support it
+        if params["model"] in SEQUENTIAL_GENERATION_MODELS:
             params["sequential_image_generation"] = "auto"
             params["sequential_image_generation_options"] = {
                 "max_images": self.get_parameter_value("max_images"),
@@ -510,35 +554,50 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         if params["seed"] != -1:
             payload["seed"] = params["seed"]
 
-        # Model-specific parameters
-        if model in ("Seedream 4.5", "Seedream 4.0"):
-            # Add sequential image generation configuration
+        await self._add_model_specific_payload_fields(payload, model, params)
+
+        return payload
+
+    async def _build_image_array(self, images: list[Any]) -> list[str]:
+        """Build and return a processed image data-URI array."""
+        image_array = []
+        for img in images:
+            image_data = await self._process_input_image(img)
+            if image_data:
+                image_array.append(image_data)
+        return image_array
+
+    async def _add_model_specific_payload_fields(
+        self, payload: dict[str, Any], model: str, params: dict[str, Any]
+    ) -> None:
+        """Add model-dependent fields to Seedream payload."""
+        if model in MULTI_IMAGE_MODELS:
+            await self._add_multi_image_payload_fields(payload, params)
+
+        if model in SEQUENTIAL_GENERATION_MODELS:
             payload["sequential_image_generation"] = params["sequential_image_generation"]
             payload["sequential_image_generation_options"] = params["sequential_image_generation_options"]
+            return
 
-            # Add multiple images if provided for v4.5/v4.0
-            images = params.get("images", [])
-            if images:
-                image_array = []
-                for _idx, img in enumerate(images):
-                    image_data = await self._process_input_image(img)
-                    if image_data:
-                        image_array.append(image_data)
-                if image_array:
-                    payload["image"] = image_array
-
-        elif model == "Seedream 3.0 T2I":
-            # Add guidance scale for v3 t2i
+        if model == "Seedream 3.0 T2I":
             payload["guidance_scale"] = params["guidance_scale"]
+            return
 
-        elif model == "Seedream 3.0 I2I":
-            # Add guidance scale and required image for seededit
+        if model == "Seedream 3.0 I2I":
             payload["guidance_scale"] = params["guidance_scale"]
             image_data = await self._process_input_image(params["image"])
             if image_data:
                 payload["image"] = image_data
 
-        return payload
+    async def _add_multi_image_payload_fields(self, payload: dict[str, Any], params: dict[str, Any]) -> None:
+        """Add multi-image input field to payload when images are supplied."""
+        images = params.get("images", [])
+        if not images:
+            return
+
+        image_array = await self._build_image_array(images)
+        if image_array:
+            payload["image"] = image_array
 
     async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""
@@ -556,7 +615,43 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             logger.debug("%s failed to load image value: %s", self.name, image_value)
             return None
         else:
+            return self._coerce_data_uri_to_image_mime(data_uri)
+
+    def _coerce_data_uri_to_image_mime(self, data_uri: str) -> str:
+        """Ensure data URIs for input images use an image/* MIME type when detectable.
+
+        Some file sources are read with generic MIME types like text/plain even when
+        content is image bytes. This rewrites the data URI header to the detected
+        image MIME type while preserving the original base64 payload.
+        """
+        if not data_uri.startswith("data:") or ";base64," not in data_uri:
             return data_uri
+
+        header, b64_data = data_uri.split(",", 1)
+        mime = header[5:].split(";", 1)[0].strip().lower()
+        if mime.startswith("image/"):
+            return data_uri
+
+        detected_mime = self._detect_image_mime_from_base64(b64_data)
+        if not detected_mime:
+            return data_uri
+
+        return f"data:{detected_mime};base64,{b64_data}"
+
+    def _detect_image_mime_from_base64(self, b64_data: str) -> str | None:
+        """Detect image MIME type from base64-encoded bytes."""
+        try:
+            decoded = base64.b64decode(b64_data, validate=False)
+            image = Image.open(BytesIO(decoded))
+            image_format = (image.format or "").lower()
+        except Exception:
+            return None
+
+        if image_format in ("jpeg", "jpg"):
+            return "image/jpeg"
+        if image_format:
+            return f"image/{image_format}"
+        return "image/png"
 
     def _extract_image_value(self, image_input: Any) -> str | None:
         """Extract string value from various image input types."""
