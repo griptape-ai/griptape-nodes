@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.retained_mode.events.artifact_events import RegisterArtifactProviderRequest
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.os_events import (
     ExistingFilePolicy,
@@ -26,6 +27,9 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider import (
+    ImageArtifactProvider,
+)
 
 
 class TestCreateNewWarningLevelResultDetails:
@@ -377,3 +381,127 @@ class TestOnDemandCandidateGeneration:
         assert len(write_attempts) == expected_attempts, (
             f"Expected {expected_attempts} write attempts, got {len(write_attempts)}"
         )
+
+
+class TestMetadataInjection:
+    """Test workflow metadata injection in WriteFileRequest handler."""
+
+    INJECT_PATH = "griptape_nodes.retained_mode.managers.artifact_providers.image.image_artifact_provider.collect_workflow_metadata"
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture(autouse=True)
+    def setup_workspace(self, temp_dir: Path, griptape_nodes: GriptapeNodes) -> Generator[None, None, None]:
+        """Automatically set workspace to temp_dir for all tests."""
+        original_workspace = griptape_nodes.ConfigManager().workspace_path
+        griptape_nodes.ConfigManager().workspace_path = temp_dir
+        yield
+        griptape_nodes.ConfigManager().workspace_path = original_workspace
+
+    def test_metadata_injected_for_bytes_content(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that prepare_content_for_write is called for bytes content."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+        original_bytes = b"fake png bytes"
+        injected_bytes = b"fake png bytes with metadata"
+
+        request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
+
+        with patch.object(
+            griptape_nodes.ArtifactManager(), "prepare_content_for_write", return_value=injected_bytes
+        ) as mock_prepare:
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        mock_prepare.assert_called_once_with(original_bytes, "image.png")
+
+    def test_metadata_not_injected_when_skip_flag_set(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that injection is skipped when skip_metadata_injection=True."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+
+        request = WriteFileRequest(
+            file_path=str(file_path),
+            content=b"fake png bytes",
+            skip_metadata_injection=True,
+        )
+
+        with patch.object(griptape_nodes.ArtifactManager(), "prepare_content_for_write") as mock_prepare:
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        mock_prepare.assert_not_called()
+
+    def test_metadata_not_injected_when_config_disabled(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that injection is skipped when auto_inject_workflow_metadata config is False."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+
+        request = WriteFileRequest(file_path=str(file_path), content=b"fake png bytes")
+
+        with (
+            patch.object(
+                griptape_nodes.ConfigManager(),
+                "get_config_value",
+                side_effect=lambda key, **kwargs: False
+                if key == "auto_inject_workflow_metadata"
+                else kwargs.get("default"),
+            ),
+            patch.object(griptape_nodes.ArtifactManager(), "prepare_content_for_write") as mock_prepare,
+        ):
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        mock_prepare.assert_not_called()
+
+    def test_metadata_not_injected_for_str_content(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that injection is skipped for str content (only bytes are images)."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "text.txt"
+
+        request = WriteFileRequest(file_path=str(file_path), content="text content")
+
+        with patch.object(griptape_nodes.ArtifactManager(), "prepare_content_for_write") as mock_prepare:
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        mock_prepare.assert_not_called()
+
+    def test_injection_failure_logs_warning_and_write_succeeds(
+        self, griptape_nodes: GriptapeNodes, temp_dir: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that injection failure logs a warning and the write succeeds with original content."""
+        griptape_nodes.ArtifactManager().on_handle_register_artifact_provider_request(
+            RegisterArtifactProviderRequest(provider_class=ImageArtifactProvider)
+        )
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+        original_bytes = b"fake png bytes"
+
+        request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
+
+        with patch(self.INJECT_PATH, side_effect=RuntimeError("injection failed")), caplog.at_level(logging.WARNING):
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        assert file_path.read_bytes() == original_bytes
+        assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
+
+    def test_injected_content_is_written_to_disk(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
+        """Test that the injected (modified) content is what gets written to disk."""
+        os_manager = griptape_nodes.OSManager()
+        file_path = temp_dir / "image.png"
+        original_bytes = b"fake png bytes"
+        injected_bytes = b"fake png bytes with metadata injected"
+
+        request = WriteFileRequest(file_path=str(file_path), content=original_bytes)
+
+        with patch.object(griptape_nodes.ArtifactManager(), "prepare_content_for_write", return_value=injected_bytes):
+            result = os_manager.on_write_file_request(request)
+
+        assert isinstance(result, WriteFileResultSuccess)
+        assert file_path.read_bytes() == injected_bytes

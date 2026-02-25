@@ -158,7 +158,7 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowAsReferencedSubFlowResultSuccess,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-from griptape_nodes.retained_mode.managers.image_metadata_injector import FLOW_COMMANDS_KEY
+from griptape_nodes.retained_mode.managers.artifact_providers.image.metadata import FLOW_COMMANDS_KEY
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.events.base_events import ResultPayload
