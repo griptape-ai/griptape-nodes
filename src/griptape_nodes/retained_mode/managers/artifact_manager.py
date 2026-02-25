@@ -220,6 +220,9 @@ class ArtifactManager:
         provider_classes = self._registry.get_provider_classes_by_format(extension)
         if not provider_classes:
             return data
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4027
+        # Handle ambiguity when multiple providers support the same extension
+        # (e.g., .mp4 could be handled by both video and audio providers).
         provider = self._registry.get_or_create_provider_instance(provider_classes[0])
         return provider.prepare_content_for_write(data, file_name)
 

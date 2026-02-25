@@ -216,7 +216,7 @@ class BaseArtifactProvider(ABC):
 
         Args:
             data: Raw file bytes
-            file_name: Filename including extension
+            file_name: Resolved filename including extension (post-macro resolution and post-policy)
 
         Returns:
             Processed bytes (or original bytes if no processing needed)

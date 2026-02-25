@@ -64,7 +64,7 @@ class TestImageArtifactProviderPrepareContentForWrite:
             result = image_provider.prepare_content_for_write(original_bytes, "image.png")
 
         assert result == original_bytes
-        assert any("Failed to inject workflow metadata" in record.message for record in caplog.records)
+        assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
 
 
 class TestArtifactManagerPrepareContentForWrite:

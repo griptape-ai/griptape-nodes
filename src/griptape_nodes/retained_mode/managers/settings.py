@@ -247,7 +247,7 @@ class Settings(BaseModel):
     auto_inject_workflow_metadata: bool = Field(
         category=STORAGE,
         default=True,
-        description="Automatically inject workflow metadata into saved images (JPEG, PNG, TIFF, MPO)",
+        description="Automatically inject workflow metadata into saved files with supported formats",
     )
     minimum_disk_space_gb_libraries: float = Field(
         category=SYSTEM_REQUIREMENTS,

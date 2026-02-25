@@ -319,7 +319,7 @@ class StaticFilesManager:
         # Inject workflow metadata if enabled (only when not using direct save)
         if (
             not use_direct_save
-            and self.config_manager.get_config_value("auto_inject_workflow_metadata", default=True)
+            and self.config_manager.get_config_value("auto_inject_workflow_metadata")
             and not skip_metadata_injection
         ):
             data = GriptapeNodes.ArtifactManager().prepare_content_for_write(data, file_name)

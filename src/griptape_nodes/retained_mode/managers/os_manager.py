@@ -1793,12 +1793,12 @@ class OSManager:
         # Normalize path
         normalized_path = self.normalize_path_for_platform(file_path)
 
-        # Inject workflow metadata into image content if applicable
+        # Inject workflow metadata into file content if applicable
         content = request.content
         if (
             isinstance(content, bytes)
             and not request.skip_metadata_injection
-            and GriptapeNodes.ConfigManager().get_config_value("auto_inject_workflow_metadata", default=True)
+            and GriptapeNodes.ConfigManager().get_config_value("auto_inject_workflow_metadata")
         ):
             content = GriptapeNodes.ArtifactManager().prepare_content_for_write(content, file_path.name)
 

@@ -84,27 +84,37 @@ class ImageArtifactProvider(BaseArtifactProvider):
         ext = Path(file_name).suffix.lstrip(".").lower()
         if ext not in self.get_metadata_formats():
             return data
+
+        if not data:
+            logger.warning("Cannot inject metadata: empty data")
+            return data
+
         try:
-            if not data:
-                logger.warning("Cannot inject metadata: empty data")
-                return data
-
             metadata = collect_workflow_metadata()
-            if not metadata:
-                return data
+        except Exception as e:
+            logger.warning("Attempted to collect workflow metadata for %s. Failed because: %s", file_name, e)
+            return data
 
+        if not metadata:
+            return data
+
+        try:
             pil_image = Image.open(BytesIO(data))
+        except Exception as e:
+            logger.warning("Attempted to open image data for %s. Failed because: %s", file_name, e)
+            return data
 
-            if pil_image.format is None:
-                logger.warning("Could not detect image format from data")
-                return data
+        if pil_image.format is None:
+            logger.warning("Could not detect image format from data")
+            return data
 
-            driver = ImageMetadataDriverRegistry.get_driver_for_format(pil_image.format)
-            if driver is None:
-                logger.warning("No metadata driver found for format: %s", pil_image.format)
-                return data
+        driver = ImageMetadataDriverRegistry.get_driver_for_format(pil_image.format)
+        if driver is None:
+            logger.warning("No metadata driver found for format: %s", pil_image.format)
+            return data
 
+        try:
             return driver.inject_metadata(pil_image, metadata)
         except Exception as e:
-            logger.warning("Failed to inject workflow metadata into %s: %s", file_name, e)
+            logger.warning("Attempted to inject metadata into %s. Failed because: %s", file_name, e)
             return data

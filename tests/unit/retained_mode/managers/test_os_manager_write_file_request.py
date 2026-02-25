@@ -489,7 +489,7 @@ class TestMetadataInjection:
 
         assert isinstance(result, WriteFileResultSuccess)
         assert file_path.read_bytes() == original_bytes
-        assert any("Failed to inject workflow metadata" in record.message for record in caplog.records)
+        assert any("Attempted to collect workflow metadata" in record.message for record in caplog.records)
 
     def test_injected_content_is_written_to_disk(self, griptape_nodes: GriptapeNodes, temp_dir: Path) -> None:
         """Test that the injected (modified) content is what gets written to disk."""
