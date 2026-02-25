@@ -103,15 +103,15 @@ test: test/unit test/integration test/workflows
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
-	@uv run pytest -n auto tests/unit
+	@uv run pytest -n auto tests/unit libraries/griptape_nodes_library/tests/unit
 
 .PHONY: test/unit/coverage
 test/unit/coverage: ## Run unit tests with coverage.
-	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit libraries/griptape_nodes_library/tests/unit
 
 .PHONY: test/coverage
 test/coverage: ## Run all tests with coverage.
-	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit tests/integration
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit libraries/griptape_nodes_library/tests/unit tests/integration
 
 .PHONY: test/integration
 test/integration: ## Run integration tests.
