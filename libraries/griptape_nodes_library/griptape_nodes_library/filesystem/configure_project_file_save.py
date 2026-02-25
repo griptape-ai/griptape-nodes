@@ -71,18 +71,26 @@ class ClassifiedPath:
 class ConfigureProjectFileSave(BaseNode):
     """Configure file save paths using situation templates and macro expansion.
 
-    Outputs a FileDestination with an unresolved MacroPath so that path resolution
-    and write policy are resolved at I/O time.
+    Stores a FileDestination internally (accessible via the file_destination property)
+    and outputs a resolved path string on the file_destination parameter for display.
+    Downstream nodes retrieve the FileDestination directly via the FileDestinationProvider
+    protocol rather than deserializing it from the wire.
     """
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
 
         self._updating_lock = False
+        self._file_destination: FileDestination | None = None
 
         self._available_situations = self._fetch_available_situations()
         self._create_parameters()
         self._load_project_situation()
+
+    @property
+    def file_destination(self) -> FileDestination | None:
+        """The FileDestination built from the current path configuration."""
+        return self._file_destination
 
     def _fetch_available_situations(self) -> list[str]:
         """Fetch available situations from the project manager."""
@@ -167,12 +175,12 @@ class ConfigureProjectFileSave(BaseNode):
         self.add_parameter(self.resolved_path)
 
         self.file_location = Parameter(
-            name="file_location",
-            type="FileDestination",
+            name="file_destination",
+            type="str",
             default_value=None,
             allowed_modes={ParameterMode.OUTPUT},
-            tooltip="FileDestination with unresolved macro path and write policy for downstream save nodes",
-            output_type="FileDestination",
+            tooltip="Resolved file path for downstream save nodes",
+            output_type="str",
         )
         self.add_parameter(self.file_location)
 
@@ -186,7 +194,7 @@ class ConfigureProjectFileSave(BaseNode):
         self._resolve_and_update_path()
 
     def _resolve_and_update_path(self) -> None:
-        """Resolve the macro and update resolved_path and file_location outputs."""
+        """Resolve the macro and update resolved_path and file_destination outputs."""
         file_name_value = self.get_parameter_value(self.filename.name)
         if not file_name_value:
             return
@@ -283,8 +291,10 @@ class ConfigureProjectFileSave(BaseNode):
             logger.error("%s: Failed to resolve macro: %s", self.name, macro_template)
             return
 
-        self.set_parameter_value(self.resolved_path.name, str(resolve_result.absolute_path))
-        self.set_parameter_value(self.file_location.name, self._build_file_from_template(macro_template, variables))
+        resolved_path_str = str(resolve_result.absolute_path)
+        self.set_parameter_value(self.resolved_path.name, resolved_path_str)
+        self._file_destination = self._build_file_from_template(macro_template, variables)
+        self.set_parameter_value(self.file_location.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_inside_project(self, classified: ClassifiedPath) -> None:
@@ -298,23 +308,24 @@ class ConfigureProjectFileSave(BaseNode):
             logger.error("%s: Failed to resolve macro: %s", self.name, macro_template)
             return
 
-        self.set_parameter_value(self.resolved_path.name, str(resolve_result.absolute_path))
-        self.set_parameter_value(self.file_location.name, self._build_file_from_template(macro_template, {}))
+        resolved_path_str = str(resolve_result.absolute_path)
+        self.set_parameter_value(self.resolved_path.name, resolved_path_str)
+        self._file_destination = self._build_file_from_template(macro_template, {})
+        self.set_parameter_value(self.file_location.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_outside_project(self, classified: ClassifiedPath) -> None:
         """Handle absolute path outside project: use directly as a literal path."""
         absolute_path = classified.normalized_path
         self.set_parameter_value(self.resolved_path.name, absolute_path)
-        self.set_parameter_value(
-            self.file_location.name, FileDestination(absolute_path, existing_file_policy=self._get_file_policy())
-        )
+        self._file_destination = FileDestination(absolute_path, existing_file_policy=self._get_file_policy())
+        self.set_parameter_value(self.file_location.name, absolute_path)
         self.absolute_path_warning.ui_options = {"hide": False}
 
     def _get_target_node_name(self) -> str:
-        """Return the name of the downstream node connected to file_location.
+        """Return the name of the downstream node connected to file_destination.
 
-        When file_location is connected to a save node, the save node's name is
+        When file_destination is connected to a save node, the save node's name is
         used as the node_name macro variable so the output path reflects the
         actual saving node rather than this configuration node.
 

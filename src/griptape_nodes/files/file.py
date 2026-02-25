@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from typing import NamedTuple, cast
+from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
@@ -756,6 +756,14 @@ class FileDestination:
             append=self._append,
             create_parents=self._create_parents,
         )
+
+
+@runtime_checkable
+class FileDestinationProvider(Protocol):
+    """Protocol for nodes that provide a FileDestination without serializing it over the wire."""
+
+    @property
+    def file_destination(self) -> FileDestination | None: ...
 
 
 def _to_bytes(fc: FileContent) -> bytes:
