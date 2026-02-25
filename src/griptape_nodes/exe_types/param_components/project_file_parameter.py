@@ -4,14 +4,18 @@ import logging
 
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.files.file import FileDestination
+from griptape_nodes.files.file import FileDestination, FileDestinationProvider
 from griptape_nodes.files.path_utils import parse_filename_components
 from griptape_nodes.files.situation_file_builder import (
     SituationConfig,
     build_file_from_situation,
     fetch_situation_config,
 )
-from griptape_nodes.retained_mode.events.parameter_events import GetConnectionsForParameterResultSuccess
+from griptape_nodes.retained_mode.events.parameter_events import (
+    GetConnectionsForParameterRequest,
+    GetConnectionsForParameterResultSuccess,
+)
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
@@ -96,8 +100,8 @@ class ProjectFileParameter:
             default_value=self._default_filename,
             allowed_modes=self._allowed_modes,
             tooltip=tooltip,
-            input_types=["FileDestination", "str"],
-            output_type="FileDestination",
+            input_types=["str"],
+            output_type="str",
             traits=traits,
         )
 
@@ -106,8 +110,8 @@ class ProjectFileParameter:
     def build_file(self, **extra_vars: str | int) -> FileDestination:
         """Build a FileDestination with a MacroPath from the parameter's current value.
 
-        If the parameter already holds a FileDestination (e.g., passed from a
-        ConfigureProjectFileSave node), returns it as-is.
+        If an upstream node implements FileDestinationProvider (e.g., ConfigureProjectFileSave),
+        its FileDestination is retrieved directly without deserializing from the wire.
 
         If the parameter holds a string filename, parses it into
         file_name_base/file_extension, builds a MacroPath using the
@@ -119,10 +123,18 @@ class ProjectFileParameter:
         Returns:
             FileDestination with a MacroPath and baked-in write policy for deferred path resolution
         """
-        value = self._node.get_parameter_value(self._name)
+        connections_result = GriptapeNodes.handle_request(
+            GetConnectionsForParameterRequest(parameter_name=self._name, node_name=self._node.name)
+        )
+        if isinstance(connections_result, GetConnectionsForParameterResultSuccess):
+            for connection in connections_result.incoming_connections:
+                upstream_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(connection.source_node_name)
+                if isinstance(upstream_node, FileDestinationProvider):
+                    file_dest = upstream_node.file_destination
+                    if file_dest is not None:
+                        return file_dest
 
-        if isinstance(value, FileDestination):
-            return value
+        value = self._node.get_parameter_value(self._name)
 
         if isinstance(value, str) and value:
             filename = value
@@ -180,14 +192,14 @@ class ProjectFileParameter:
         configure_node_name = create_result
 
         connection_result = RetainedMode.connect(
-            source=f"{configure_node_name}.file_location",
+            source=f"{configure_node_name}.file_destination",
             destination=f"{node_name}.{self._name}",
         )
 
         if not connection_result.succeeded():
             return NodeMessageResult(
                 success=False,
-                details=f"{node_name}: Failed to connect {configure_node_name}.file_location to {self._name}",
+                details=f"{node_name}: Failed to connect {configure_node_name}.file_destination to {self._name}",
                 response=button_details,
                 altered_workflow_state=True,
             )
