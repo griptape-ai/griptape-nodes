@@ -438,6 +438,8 @@ class WriteFileRequest(RequestPayload):
             - "fail": Return failure if file exists
             - "create_new": Create new file with auto-incrementing index (e.g., file_1.txt, file_2.txt)
         create_parents: If True, create parent directories if missing (default: True)
+        skip_metadata_injection: If True, skip automatic workflow metadata injection for image files
+            (default: False). Use when the content already contains metadata to avoid double-injection.
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
 
@@ -451,6 +453,7 @@ class WriteFileRequest(RequestPayload):
     append: bool = False
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     create_parents: bool = True
+    skip_metadata_injection: bool = False
 
 
 @dataclass

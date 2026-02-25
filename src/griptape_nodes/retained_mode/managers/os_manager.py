@@ -1793,6 +1793,15 @@ class OSManager:
         # Normalize path
         normalized_path = self.normalize_path_for_platform(file_path)
 
+        # Inject workflow metadata into image content if applicable
+        content = request.content
+        if (
+            isinstance(content, bytes)
+            and not request.skip_metadata_injection
+            and GriptapeNodes.ConfigManager().get_config_value("auto_inject_workflow_metadata", default=True)
+        ):
+            content = GriptapeNodes.ArtifactManager().prepare_content_for_write(content, file_path.name)
+
         # Now attempt the write, based on our collision (existing file) policy.
         match request.existing_file_policy:
             case ExistingFilePolicy.FAIL | ExistingFilePolicy.OVERWRITE:
@@ -1807,7 +1816,7 @@ class OSManager:
                 # Perform the write operation using helper
                 result = self._attempt_file_write(
                     normalized_path=Path(normalized_path),
-                    content=request.content,
+                    content=content,
                     encoding=request.encoding,
                     mode=mode,
                     file_path_display=file_path,
@@ -1831,7 +1840,7 @@ class OSManager:
                 # TRY-FIRST: Attempt to write to the requested path
                 result = self._attempt_file_write(
                     normalized_path=Path(normalized_path),
-                    content=request.content,
+                    content=content,
                     encoding=request.encoding,
                     mode="x",
                     file_path_display=file_path,
@@ -1947,7 +1956,7 @@ class OSManager:
                         # Try to write this indexed candidate using helper
                         result = self._attempt_file_write(
                             normalized_path=Path(normalized_candidate_path),
-                            content=request.content,
+                            content=content,
                             encoding=request.encoding,
                             mode="x",
                             file_path_display=candidate_path,

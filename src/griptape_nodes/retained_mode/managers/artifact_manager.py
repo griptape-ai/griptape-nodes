@@ -201,6 +201,28 @@ class ArtifactManager:
                 self.on_app_initialization_complete,
             )
 
+    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:
+        """Process content before writing to disk by dispatching to the appropriate provider.
+
+        Looks up the artifact provider for the file's extension and delegates
+        to that provider's prepare_content_for_write for format-specific processing.
+
+        Args:
+            data: Raw file bytes
+            file_name: Filename including extension
+
+        Returns:
+            Processed bytes, or original bytes if no provider handles this extension
+        """
+        extension = Path(file_name).suffix.lstrip(".").lower()
+        if not extension:
+            return data
+        provider_classes = self._registry.get_provider_classes_by_format(extension)
+        if not provider_classes:
+            return data
+        provider = self._registry.get_or_create_provider_instance(provider_classes[0])
+        return provider.prepare_content_for_write(data, file_name)
+
     async def on_app_initialization_complete(self, _payload: AppInitializationComplete) -> None:
         """Handle app initialization complete event.
 

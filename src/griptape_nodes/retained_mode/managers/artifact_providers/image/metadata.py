@@ -1,24 +1,16 @@
 """Automatic workflow metadata injection for images saved through StaticFilesManager.
 
 This module provides functionality to automatically inject workflow metadata into
-images when they are saved. Metadata format depends on image type:
-- PNG: Stored in PNG text chunks
-- JPEG/TIFF/MPO: Stored as JSON in EXIF UserComment field
+images when they are saved. Format eligibility is checked by the caller
+(ImageArtifactProvider).
 """
 
 import base64
 import logging
 import pickle
 from datetime import UTC, datetime
-from io import BytesIO
-from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
-from griptape_nodes.drivers.image_metadata.image_metadata_driver_registry import (
-    ImageMetadataDriverRegistry,
-)
 from griptape_nodes.exe_types.core_types import ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -40,43 +32,6 @@ METADATA_NAMESPACE = "gtn_"
 
 # Metadata key for storing flow commands
 FLOW_COMMANDS_KEY = f"{METADATA_NAMESPACE}flow_commands"
-
-# Recognized image formats for file extension mapping (not all support metadata injection)
-SUPPORTED_FORMATS = {
-    ".jpg": "JPEG",
-    ".jpeg": "JPEG",
-    ".png": "PNG",
-    ".tiff": "TIFF",
-    ".tif": "TIFF",
-    ".mpo": "MPO",
-}
-
-
-def get_image_format_from_filename(filename: str) -> str | None:
-    """Extract image format from filename extension.
-
-    Args:
-        filename: Name of the file including extension
-
-    Returns:
-        Image format string (e.g., "JPEG", "PNG") or None if not a supported image format
-    """
-    ext = Path(filename).suffix.lower()
-    return SUPPORTED_FORMATS.get(ext)
-
-
-def supports_metadata(format_str: str | None) -> bool:
-    """Check if image format supports automatic metadata injection.
-
-    Currently limited to PNG to avoid EXIF size limits on workflow metadata.
-
-    Args:
-        format_str: Image format string (e.g., "PNG", "JPEG")
-
-    Returns:
-        True only for PNG format
-    """
-    return format_str == "PNG"
 
 
 def _serialize_node(node_name: str) -> str | None:
@@ -279,61 +234,3 @@ def collect_workflow_metadata() -> dict[str, str]:
             logger.exception("Failed to collect flow/node metadata")
 
     return metadata
-
-
-def inject_workflow_metadata_if_image(data: bytes, file_name: str) -> bytes:  # noqa: PLR0911
-    """Inject workflow metadata into image if format supports it.
-
-    Main entry point for automatic metadata injection. Detects image format,
-    collects workflow metadata, and delegates to appropriate driver.
-
-    Args:
-        data: Raw image bytes
-        file_name: Filename including extension
-
-    Returns:
-        Image bytes with metadata injected, or original bytes if:
-        - Format doesn't support metadata
-        - No workflow context available
-        - Image loading/processing fails
-    """
-    # Validation: Check format
-    format_str = get_image_format_from_filename(file_name)
-    if not supports_metadata(format_str):
-        return data
-
-    # Validation: Check if we have data
-    if not data:
-        logger.warning("Cannot inject metadata: empty data")
-        return data
-
-    # Collect metadata
-    metadata = collect_workflow_metadata()
-    if not metadata:
-        # No context available, nothing to inject
-        return data
-
-    # Load PIL image
-    try:
-        pil_image = Image.open(BytesIO(data))
-    except Exception as e:
-        logger.warning("Failed to load image for metadata injection: %s", e)
-        return data
-
-    # Verify format matches
-    if pil_image.format is None:
-        logger.warning("Could not detect image format from data")
-        return data
-
-    # Get driver for this format
-    driver = ImageMetadataDriverRegistry.get_driver_for_format(pil_image.format)
-    if driver is None:
-        logger.warning("No metadata driver found for format: %s", pil_image.format)
-        return data
-
-    # Inject metadata using driver
-    try:
-        return driver.inject_metadata(pil_image, metadata)
-    except Exception as e:
-        logger.warning("Failed to inject metadata into %s: %s", file_name, e)
-        return data

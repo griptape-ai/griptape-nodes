@@ -207,3 +207,18 @@ class BaseArtifactProvider(ABC):
             raise ValueError(msg)
 
         return result
+
+    def prepare_content_for_write(self, data: bytes, file_name: str) -> bytes:  # noqa: ARG002
+        """Process content before writing to disk.
+
+        Override in subclasses for format-specific content processing
+        (e.g., metadata injection). Default implementation returns data unchanged.
+
+        Args:
+            data: Raw file bytes
+            file_name: Filename including extension
+
+        Returns:
+            Processed bytes (or original bytes if no processing needed)
+        """
+        return data

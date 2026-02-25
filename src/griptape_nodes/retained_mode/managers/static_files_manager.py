@@ -33,7 +33,6 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.image_metadata_injector import inject_workflow_metadata_if_image
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import STATIC_SERVER_URL, start_static_server
 from griptape_nodes.utils.url_utils import uri_to_path
@@ -323,10 +322,7 @@ class StaticFilesManager:
             and self.config_manager.get_config_value("auto_inject_workflow_metadata", default=True)
             and not skip_metadata_injection
         ):
-            try:
-                data = inject_workflow_metadata_if_image(data, file_name)
-            except Exception as e:
-                logger.warning("Failed to inject workflow metadata into %s: %s", file_name, e)
+            data = GriptapeNodes.ArtifactManager().prepare_content_for_write(data, file_name)
 
         # NEW BEHAVIOR: Direct save via storage driver
         if use_direct_save:
