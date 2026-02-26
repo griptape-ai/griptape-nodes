@@ -432,6 +432,26 @@ class TestParameter:
     def test_init(self) -> None:
         assert Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
 
+    def test_on_incoming_connection_removed_initialized_empty(self) -> None:
+        param = Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+        assert param.on_incoming_connection_removed == []
+
+    def test_on_outgoing_connection_removed_initialized_empty(self) -> None:
+        param = Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+        assert param.on_outgoing_connection_removed == []
+
+    def test_on_incoming_connection_removed_stores_callbacks(self) -> None:
+        param = Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+        callback = lambda _p, _node_name, _param_name: None  # noqa: E731
+        param.on_incoming_connection_removed.append(callback)
+        assert callback in param.on_incoming_connection_removed
+
+    def test_on_outgoing_connection_removed_stores_callbacks(self) -> None:
+        param = Parameter(name="test", input_types=["str"], type="str", output_type="str", tooltip="test")
+        callback = lambda _p, _node_name, _param_name: None  # noqa: E731
+        param.on_outgoing_connection_removed.append(callback)
+        assert callback in param.on_outgoing_connection_removed
+
     def test_settable_property(self) -> None:
         """Test that settable property works correctly and is included in serialization."""
         # Test default value
