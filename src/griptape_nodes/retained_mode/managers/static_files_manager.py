@@ -13,7 +13,7 @@ from griptape_nodes.common.project_templates.situation import SituationFilePolic
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
-from griptape_nodes.files.path_utils import FilenameParts
+from griptape_nodes.files.path_utils import parse_filename_components
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
@@ -405,7 +405,7 @@ class StaticFilesManager:
 
         situation = situation_result.situation
 
-        parts = FilenameParts.from_filename(file_name)
+        parts = parse_filename_components(file_name)
 
         try:
             parsed_macro = ParsedMacro(situation.macro)
@@ -416,7 +416,7 @@ class StaticFilesManager:
         macro_result = GriptapeNodes.handle_request(
             GetPathForMacroRequest(
                 parsed_macro=parsed_macro,
-                variables={"file_name_base": parts.stem, "file_extension": parts.extension},
+                variables={"file_name_base": parts.basename, "file_extension": parts.extension},
             )
         )
         if not isinstance(macro_result, GetPathForMacroResultSuccess):
