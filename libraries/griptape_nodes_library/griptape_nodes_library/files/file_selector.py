@@ -64,16 +64,14 @@ class FileSelector(DataNode):
         return None
 
     def _update_macro_path(self, file_path_str: str) -> None:
-        """Resolve the file path to a macro path and store it back into selected_file.
+        """Resolve the file path to a macro path and assign the result to both selected_file and url.
 
-        Only updates selected_file if the path was successfully mapped to a macro form.
-        Always updates url with the best available value (macro path or raw path).
+        Uses the macro path if one is found, otherwise falls back to the raw path.
         """
         macro_path = self._resolve_macro_path(file_path_str)
-        if macro_path is not None:
-            self.set_parameter_value("selected_file", macro_path)
         output_path = macro_path if macro_path is not None else file_path_str
         url_value = UrlArtifact(output_path) if output_path else None
+        self.set_parameter_value("selected_file", output_path)
         self.parameter_output_values["url"] = url_value
         self.publish_update_to_parameter("url", url_value)
 
