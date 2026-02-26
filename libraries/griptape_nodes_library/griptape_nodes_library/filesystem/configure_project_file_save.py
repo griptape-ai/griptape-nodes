@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
+from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.exe_types.core_types import (
     NodeMessageResult,
@@ -16,16 +17,13 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import BaseNode
+from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import FileDestination
 from griptape_nodes.files.path_utils import parse_filename_components
 from griptape_nodes.files.situation_file_builder import SITUATION_TO_FILE_POLICY, fetch_situation_config
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.events.parameter_events import (
-    GetConnectionsForParameterRequest,
-    GetConnectionsForParameterResultSuccess,
-)
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
     AttemptMapAbsolutePathToProjectResultSuccess,
@@ -42,7 +40,7 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
-_FALLBACK_SITUATIONS = ["save_node_output", "save_file", "copy_external_file", "download_url", "save_preview"]
+_FALLBACK_SITUATIONS = sorted(DEFAULT_PROJECT_TEMPLATE.situations.keys())
 
 
 class PathResolutionScenario(StrEnum):
@@ -132,9 +130,17 @@ class ConfigureProjectFileSave(BaseNode):
                 settable=True,
             )
 
+            self.create_directories = ParameterBool(
+                name="create_directories",
+                default_value=True,
+                tooltip="Whether to create parent directories automatically when saving",
+                allowed_modes={ParameterMode.PROPERTY},
+                settable=True,
+            )
+
             ParameterButton(
                 name="reset_situation",
-                label="Reset",
+                label="Reset to Default",
                 variant="default",
                 icon="refresh-cw",
                 on_click=self._on_reset_situation_clicked,
@@ -166,14 +172,6 @@ class ConfigureProjectFileSave(BaseNode):
         )
         self.add_parameter(self.filename)
 
-        self.resolved_path = ParameterString(
-            name="resolved_path",
-            default_value="",
-            allowed_modes={ParameterMode.OUTPUT},
-            tooltip="Preview of the resolved absolute file path",
-        )
-        self.add_parameter(self.resolved_path)
-
         self.file_location = Parameter(
             name="file_destination",
             type="str",
@@ -191,7 +189,9 @@ class ConfigureProjectFileSave(BaseNode):
 
         self.set_parameter_value(self.macro.name, situation_config.macro_template, initial_setup=True)
         self.set_parameter_value(self.on_collision.name, situation_config.on_collision_value, initial_setup=True)
+        self.set_parameter_value(self.create_directories.name, situation_config.create_dirs, initial_setup=True)
         self._resolve_and_update_path()
+        self._update_collision_badge()
 
     def _resolve_and_update_path(self) -> None:
         """Resolve the macro and update resolved_path and file_destination outputs."""
@@ -252,6 +252,17 @@ class ConfigureProjectFileSave(BaseNode):
         on_collision = self.get_parameter_value(self.on_collision.name) or SituationFilePolicy.CREATE_NEW
         return SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
 
+    def _update_collision_badge(self) -> None:
+        """Set or clear the info badge on on_collision based on the current policy."""
+        on_collision = self.get_parameter_value(self.on_collision.name)
+        if on_collision == SituationFilePolicy.CREATE_NEW:
+            self.on_collision.set_badge(
+                variant="info",
+                message="Filename is not guaranteed. The next available name will be used if a file already exists.",
+            )
+        else:
+            self.on_collision.clear_badge()
+
     def _build_file_from_template(self, macro_template: str, variables: dict[str, str | int]) -> FileDestination:
         """Build a FileDestination with a MacroPath from a template and variables.
 
@@ -263,7 +274,8 @@ class ConfigureProjectFileSave(BaseNode):
             FileDestination with an unresolved MacroPath and baked-in write policy
         """
         macro_path = MacroPath(ParsedMacro(macro_template), variables)
-        return FileDestination(macro_path, existing_file_policy=self._get_file_policy())
+        create_dirs = bool(self.get_parameter_value(self.create_directories.name))
+        return FileDestination(macro_path, existing_file_policy=self._get_file_policy(), create_parents=create_dirs)
 
     def _handle_relative_path(self, classified: ClassifiedPath) -> None:
         """Handle relative path: apply situation template macro."""
@@ -292,7 +304,6 @@ class ConfigureProjectFileSave(BaseNode):
             return
 
         resolved_path_str = str(resolve_result.absolute_path)
-        self.set_parameter_value(self.resolved_path.name, resolved_path_str)
         self._file_destination = self._build_file_from_template(macro_template, variables)
         self.set_parameter_value(self.file_location.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
@@ -309,7 +320,6 @@ class ConfigureProjectFileSave(BaseNode):
             return
 
         resolved_path_str = str(resolve_result.absolute_path)
-        self.set_parameter_value(self.resolved_path.name, resolved_path_str)
         self._file_destination = self._build_file_from_template(macro_template, {})
         self.set_parameter_value(self.file_location.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
@@ -317,8 +327,12 @@ class ConfigureProjectFileSave(BaseNode):
     def _handle_absolute_path_outside_project(self, classified: ClassifiedPath) -> None:
         """Handle absolute path outside project: use directly as a literal path."""
         absolute_path = classified.normalized_path
-        self.set_parameter_value(self.resolved_path.name, absolute_path)
-        self._file_destination = FileDestination(absolute_path, existing_file_policy=self._get_file_policy())
+        create_dirs = bool(self.get_parameter_value(self.create_directories.name))
+        self._file_destination = FileDestination(
+            absolute_path,
+            existing_file_policy=self._get_file_policy(),
+            create_parents=create_dirs,
+        )
         self.set_parameter_value(self.file_location.name, absolute_path)
         self.absolute_path_warning.ui_options = {"hide": False}
 
@@ -331,12 +345,10 @@ class ConfigureProjectFileSave(BaseNode):
 
         Falls back to this node's own name when no connection exists.
         """
-        request = GetConnectionsForParameterRequest(parameter_name=self.file_location.name, node_name=self.name)
-        result = GriptapeNodes.handle_request(request)
-
-        if isinstance(result, GetConnectionsForParameterResultSuccess) and result.outgoing_connections:
-            return result.outgoing_connections[0].target_node_name
-
+        connections = GriptapeNodes.FlowManager().get_connections()
+        outgoing = connections.get_outgoing_connections_from_parameter(self, self.file_location)
+        if outgoing:
+            return outgoing[0].target_node.name
         return self.name
 
     def after_outgoing_connection(
@@ -364,7 +376,13 @@ class ConfigureProjectFileSave(BaseNode):
         if initial_setup or self._updating_lock:
             return
 
-        if parameter.name in (self.situation.name, self.filename.name, self.macro.name, self.on_collision.name):
+        if parameter.name in (
+            self.situation.name,
+            self.filename.name,
+            self.macro.name,
+            self.on_collision.name,
+            self.create_directories.name,
+        ):
             self._updating_lock = True
             try:
                 if parameter.name == self.situation.name:
@@ -375,6 +393,8 @@ class ConfigureProjectFileSave(BaseNode):
                     )
                 else:
                     self._resolve_and_update_path()
+                    if parameter.name == self.on_collision.name:
+                        self._update_collision_badge()
             finally:
                 self._updating_lock = False
 
@@ -392,6 +412,9 @@ class ConfigureProjectFileSave(BaseNode):
 
         self.publish_update_to_parameter(self.macro.name, self.get_parameter_value(self.macro.name))
         self.publish_update_to_parameter(self.on_collision.name, self.get_parameter_value(self.on_collision.name))
+        self.publish_update_to_parameter(
+            self.create_directories.name, self.get_parameter_value(self.create_directories.name)
+        )
 
         return NodeMessageResult(
             success=True,

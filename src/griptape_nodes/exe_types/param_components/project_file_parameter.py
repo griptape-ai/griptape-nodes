@@ -11,10 +11,6 @@ from griptape_nodes.files.situation_file_builder import (
     build_file_from_situation,
     fetch_situation_config,
 )
-from griptape_nodes.retained_mode.events.parameter_events import (
-    GetConnectionsForParameterRequest,
-    GetConnectionsForParameterResultSuccess,
-)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
@@ -50,7 +46,7 @@ class ProjectFileParameter:
         name: str,
         situation: str,
         *,
-        default_filename: str = "output.png",
+        default_filename: str,
         allowed_modes: set[ParameterMode] | None = None,
     ) -> None:
         """Initialize with situation context.
@@ -124,14 +120,12 @@ class ProjectFileParameter:
         Returns:
             FileDestination with a MacroPath and baked-in write policy for deferred path resolution
         """
-        connections_result = GriptapeNodes.handle_request(
-            GetConnectionsForParameterRequest(parameter_name=self._name, node_name=self._node.name)
-        )
-        if isinstance(connections_result, GetConnectionsForParameterResultSuccess):
-            for connection in connections_result.incoming_connections:
-                upstream_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(connection.source_node_name)
-                if isinstance(upstream_node, FileDestinationProvider):
-                    file_dest = upstream_node.file_destination
+        connections = GriptapeNodes.FlowManager().get_connections()
+        parameter = self._node.get_parameter_by_name(self._name)
+        if parameter is not None:
+            for connection in connections.get_incoming_connections_to_parameter(self._node, parameter):
+                if isinstance(connection.source_node, FileDestinationProvider):
+                    file_dest = connection.source_node.file_destination
                     if file_dest is not None:
                         return file_dest
 
@@ -164,12 +158,13 @@ class ProjectFileParameter:
         """Create and connect a ConfigureProjectFileSave node to this parameter."""
         node_name = self._node.name
 
-        connections_result = RetainedMode.get_connections_for_parameter(parameter_name=self._name, node_name=node_name)
+        connections = GriptapeNodes.FlowManager().get_connections()
+        parameter = self._node.get_parameter_by_name(self._name)
+        has_incoming = parameter is not None and bool(
+            connections.get_incoming_connections_to_parameter(self._node, parameter)
+        )
 
-        if (
-            isinstance(connections_result, GetConnectionsForParameterResultSuccess)
-            and connections_result.has_incoming_connections()
-        ):
+        if has_incoming:
             return NodeMessageResult(
                 success=False,
                 details=f"{node_name}: {self._name} parameter already has an incoming connection",
