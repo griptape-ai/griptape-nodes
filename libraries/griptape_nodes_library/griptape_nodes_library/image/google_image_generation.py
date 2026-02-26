@@ -57,7 +57,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
     }
     IMAGE_SIZE_OPTIONS: ClassVar[dict[str, list[str]]] = {
         "Nano Banana Pro": ["1K", "2K", "4K"],
-        "Nano Banana 2": ["512px", "1K", "2K", "4K"],
+        "Nano Banana 2": ["512", "1K", "2K", "4K"],
     }
     ASPECT_RATIO_OPTIONS: ClassVar[dict[str, list[str]]] = {
         "Nano Banana Pro": ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
