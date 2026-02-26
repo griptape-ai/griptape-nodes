@@ -27,9 +27,17 @@ The Engine and Editor can run on completely separate machines. Remember that any
 
 Looking for the exact installation location of your Griptape Nodes? This command will show you precisely where it's installed:
 
-```bash
-dirname $(dirname $(readlink -f $(which griptape-nodes)))
-```
+=== "macOS / Linux"
+
+    ```bash
+    dirname $(dirname $(readlink -f $(which griptape-nodes)))
+    ```
+
+=== "Windows (PowerShell)"
+
+    ```powershell
+    Split-Path (Split-Path (Get-Command griptape-nodes).Source)
+    ```
 
 ## Can I see or edit my config file?
 
