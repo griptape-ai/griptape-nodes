@@ -33,39 +33,23 @@ Once you've logged in, you'll be presented with a setup screen which walks you t
 
 ## 2. Install the Griptape Nodes Engine
 
-!!! info
+### Griptape Nodes Desktop (Recommended)
 
-    You can install the Griptape Nodes Engine on your local machine *or* on a separate machine. That could be a cloud based machine equipped with a powerful GPU, or a similar high performance machine on the network in your studio.
+Download [Griptape Nodes Desktop](https://www.griptapenodes.com/griptape-nodes-desktop) — a bundled app that includes both the engine and the editor. No further steps are needed; Desktop handles everything for you.
 
-1. If it's not already the active tab, select the **New Installation** tab.
+### Advanced: Manual Engine Install
 
-1. On the **New Installation** tab, copy the installation command from the first step: **Install Griptape nodes Engine**.
+If you prefer to install the engine yourself:
 
-1. Open a Terminal on the machine where you wish to install the engine
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if you don't already have it.
 
-1. Paste and run the appropriate installation command for your operating system
+1. Run the following command to install the Griptape Nodes Engine:
 
-![Installation Page](assets/img/getting_started/getting_started-installation_page.webp)
+    ```bash
+    uv tool install griptape-nodes
+    ```
 
-!!! info
-
-    In most cases, the browser will automatically detect the platform that you are using and show the correct installation command for your system. If this is not the case - for example if you want to install the engine on a system using a different operating system from your local machine - select the target operating system from the dropdown on the right. The available operations are macOS, Windows & Linux.
-
-Once installation is complete, you'll see this message appear in the terminal where you entered the installation command:
-
-```
-**************************************
-*      Installation complete!        *
-*  Run 'griptape-nodes' (or 'gtn')   *
-*      to start the engine.          *
-**************************************
-```
-
-!!! info
-
-    You'll notice this message gives you two options for commands to run. As previously mentioned, there is no difference between running `griptape-nodes` or `gtn`. They both do the exact same thing.
-
-After typing and running `griptape-nodes` or `gtn` in the terminal *for the first time*, you will be asked a series of configuration questions.
+After installation, run `griptape-nodes` or `gtn` in the terminal *for the first time* and you will be asked a series of configuration questions.
 
 ## 3. Configuration
 
