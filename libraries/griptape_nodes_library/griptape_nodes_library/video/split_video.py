@@ -13,7 +13,6 @@ from griptape.tasks import PromptTask
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, ControlNode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
@@ -140,14 +139,6 @@ class SplitVideo(ControlNode):
             ui_options={"multiline": True, "placeholder_text": "Enter timecodes or JSON..."},
         )
         self.add_parameter(timecodes_parameter)
-
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="split_video.mp4",
-        )
-        self._output_file_param.add_parameter()
 
         # Add output videos parameter list
         self.split_videos_list = ParameterList(
@@ -577,7 +568,7 @@ If no title is provided, just use "Segment X:" format.
         *,
         stream_copy: bool,
         accurate_seek: bool,
-        detected_format: str,  # noqa: ARG002
+        detected_format: str,
     ) -> None:
         """Performs the synchronous video splitting operation."""
         try:
@@ -590,17 +581,23 @@ If no title is provided, just use "Segment X:" format.
 
             # Convert output files to artifacts
             split_video_artifacts = []
+            original_filename = Path(input_url).stem  # Get filename without extension
 
             for i, video_bytes in enumerate(output_files):
-                # Save using ProjectFileParameter, using _index for uniqueness on segments after the first
-                output_file = self._output_file_param.build_file(**({"_index": i} if i > 0 else {}))
-                actual_path = output_file.write_bytes(video_bytes)
+                # Create filename for the split segment
+                segment = segments[i]
+                filename = (
+                    f"{original_filename}_segment_{i + 1:03d}_{sanitize_filename(segment.title)}.{detected_format}"
+                )
+
+                # Save to static files
+                url = GriptapeNodes.StaticFilesManager().save_static_file(video_bytes, filename)
 
                 # Create output artifact
-                video_artifact = VideoUrlArtifact(value=actual_path, name=actual_path.name)
+                video_artifact = VideoUrlArtifact(url)
                 split_video_artifacts.append(video_artifact)
 
-                self.append_value_to_parameter("logs", f"Saved segment {i + 1}: {actual_path.name}\n")
+                self.append_value_to_parameter("logs", f"Saved segment {i + 1}: {filename}\n")
 
             # Save all artifacts to parameter list
             logger.info(f"Saving {len(split_video_artifacts)} split video artifacts")

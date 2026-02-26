@@ -10,14 +10,14 @@ from griptape_nodes.exe_types.core_types import (
     ParameterGroup,
 )
 from griptape_nodes.exe_types.node_types import SuccessFailureNode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import File, FileLoadError
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.utils.ffmpeg_utils import get_ffmpeg_path
+from griptape_nodes_library.utils.file_utils import generate_filename
 
 
 class CombineAudio(SuccessFailureNode):
@@ -84,14 +84,6 @@ class CombineAudio(SuccessFailureNode):
                 traits={Options(choices=["low", "medium", "high", "lossless"])},
             )
         self.add_node_element(output_settings_group)
-
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="combined_audio.mp3",
-        )
-        self._output_file_param.add_parameter()
 
         # Output parameter for the mixed audio
         self.mixed_audio = ParameterAudio(
@@ -365,7 +357,7 @@ class CombineAudio(SuccessFailureNode):
             raise RuntimeError(error_msg)
 
     def _upload_mixed_audio(self, mixed_file: Path) -> AudioUrlArtifact:
-        """Save the mixed audio file using ProjectFileParameter."""
+        """Upload the mixed audio file to static storage."""
         # FAILURE CASES FIRST
         try:
             # Read the mixed audio file
@@ -375,15 +367,23 @@ class CombineAudio(SuccessFailureNode):
             error_msg = f"{self.name}: Failed to read mixed audio file: {e}"
             raise RuntimeError(error_msg) from e
 
+        # Generate filename
+        filename = generate_filename(
+            node_name=self.name,
+            suffix="_4track_mix",
+            extension="mp3",
+        )
+
         try:
-            output_file = self._output_file_param.build_file()
-            actual_path = output_file.write_bytes(audio_data)
+            # Use the simple static file manager pattern like other audio nodes
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(audio_data, filename)
         except Exception as e:
-            error_msg = f"{self.name}: Failed to save mixed audio: {e}"
+            error_msg = f"{self.name}: Failed to save mixed audio to static storage: {e}"
             raise RuntimeError(error_msg) from e
 
         # SUCCESS PATH AT END
-        return AudioUrlArtifact(value=actual_path, name=actual_path.name)
+        return AudioUrlArtifact(value=saved_url)
 
     def _get_success_message(self) -> str:
         """Generate success message with mixing details."""

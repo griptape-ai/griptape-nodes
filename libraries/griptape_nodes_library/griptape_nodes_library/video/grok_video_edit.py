@@ -7,11 +7,11 @@ from typing import Any, ClassVar
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -77,14 +77,6 @@ class GrokVideoEdit(GriptapeProxyNode):
         )
 
         # OUTPUTS
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="grok_video_edit.mp4",
-        )
-        self._output_file_param.add_parameter()
-
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -200,7 +192,7 @@ class GrokVideoEdit(GriptapeProxyNode):
 
         return payload
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         video_info = result_json.get("video") or {}
         video_url = video_info.get("url")
         video_info.get("duration")
@@ -221,17 +213,18 @@ class GrokVideoEdit(GriptapeProxyNode):
             video_bytes = None
 
         if video_bytes:
-            output_file = self._output_file_param.build_file()
             try:
-                actual_path = await output_file.awrite_bytes(video_bytes)
-            except FileWriteError as e:
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                filename = f"grok_video_edit_{generation_id}.mp4"
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            except (OSError, PermissionError) as e:
                 with suppress(Exception):
-                    logger.warning("%s failed to write video: %s", self.name, e)
+                    logger.warning("%s failed to save video: %s", self.name, e)
             else:
-                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video edited successfully and saved as {actual_path.name}.",
+                    result_details=f"Video edited successfully and saved as {filename}.",
                 )
                 return
 

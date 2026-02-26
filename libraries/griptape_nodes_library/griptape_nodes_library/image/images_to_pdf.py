@@ -6,9 +6,8 @@ from PIL import Image
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.utils.image_utils import load_pil_from_url
 
@@ -50,14 +49,6 @@ class ImagesToPdf(ControlNode):
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
         )
         self.add_parameter(self.filename_param)
-
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="images.pdf",
-        )
-        self._output_file_param.add_parameter()
 
         # Output parameter showing final path
         self.output = Parameter(
@@ -107,6 +98,8 @@ class ImagesToPdf(ControlNode):
         # (handles cases where values come from connections and bypass after_value_set)
         images = normalize_artifact_list(images, ImageUrlArtifact, accepted_types=(ImageArtifact,))
 
+        filename = self.get_parameter_value("filename")
+
         logger.info(f"{self.name}: Converting {len(images)} images to PDF")
 
         # Load all images and convert to RGB
@@ -152,10 +145,12 @@ class ImagesToPdf(ControlNode):
         pdf_bytes = pdf_buffer.getvalue()
         pdf_buffer.close()
 
-        # Save to project file
-        output_file = self._output_file_param.build_file()
-        actual_path = output_file.write_bytes(pdf_bytes)
-        logger.debug(f"{self.name}: PDF saved as {actual_path}")
+        # Save to static files
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(
+            pdf_bytes,
+            filename,
+        )
+        logger.debug(f"{self.name}: PDF saved to static files as {static_url}")
 
         # Set output
-        self.parameter_output_values["output"] = UrlArtifact(actual_path)
+        self.parameter_output_values["output"] = UrlArtifact(static_url)

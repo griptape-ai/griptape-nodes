@@ -7,13 +7,12 @@ from typing import Any, ClassVar
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import FileWriteError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -160,14 +159,6 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
         self.add_node_element(gen_settings_group)
 
         # OUTPUTS
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="ltx_t2v.mp4",
-        )
-        self._output_file_param.add_parameter()
-
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -347,8 +338,8 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
 
         await self._handle_completion_async(bytes(video_bytes), generation_id)
 
-    async def _handle_completion_async(self, video_bytes: bytes, generation_id: str) -> None:  # noqa: ARG002
-        """Handle successful completion by saving the video.
+    async def _handle_completion_async(self, video_bytes: bytes, generation_id: str) -> None:
+        """Handle successful completion by saving the video to static storage.
 
         Args:
             video_bytes: Raw binary MP4 data received from /result endpoint
@@ -362,22 +353,22 @@ class LTXTextToVideoGeneration(GriptapeProxyNode):
             )
             return
 
-        output_file = self._output_file_param.build_file()
         try:
-            actual_path = await output_file.awrite_bytes(video_bytes)
-        except FileWriteError as e:
-            logger.error("%s failed to write video: %s", self.name, e)
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            filename = f"ltx_text_to_video_{generation_id}.mp4"
+            saved_url = static_files_manager.save_static_file(video_bytes, filename)
+            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
+            logger.info("%s saved video to static storage as %s", self.name, filename)
+            self._set_status_results(
+                was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+            )
+        except (OSError, PermissionError) as e:
+            logger.error("%s failed to save to static storage: %s", self.name, e)
             self.parameter_output_values["video_url"] = None
             self._set_status_results(
                 was_successful=False,
-                result_details=f"Video generated but failed to save: {e}",
+                result_details=f"Video generated but failed to save to storage: {e}",
             )
-            return
-        self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
-        logger.info("%s saved video as %s", self.name, actual_path)
-        self._set_status_results(
-            was_successful=True, result_details=f"Video generated successfully and saved as {actual_path.name}."
-        )
 
     def _extract_error_message(self, response_json: dict[str, Any]) -> str:  # noqa: C901, PLR0912
         if not response_json:

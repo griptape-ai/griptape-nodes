@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from contextlib import suppress
 from copy import deepcopy
 from typing import Any
@@ -9,14 +10,13 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_input
@@ -752,15 +752,6 @@ class TopazImageEnhance(GriptapeProxyNode):
             )
         )
 
-        # Output file parameter
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="topaz_image.png",
-        )
-        self._output_file_param.add_parameter()
-
         # OUTPUTS
         self.add_parameter(
             ParameterString(
@@ -976,55 +967,50 @@ class TopazImageEnhance(GriptapeProxyNode):
 
     async def _handle_binary_image_response(self, image_bytes: bytes) -> None:
         """Handle binary image data returned directly from the API."""
-        output_file = self._output_file_param.build_file()
         try:
-            actual_path = await output_file.awrite_bytes(image_bytes)
-        except FileWriteError as e:
+            filename = f"topaz_enhanced_{int(time.time())}.jpg"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(image_bytes, filename)
+            self.parameter_output_values["image_output"] = ImageUrlArtifact(value=saved_url, name=filename)
+            self._log(f"Saved binary image to static storage as {filename}")
+            self._set_status_results(
+                was_successful=True, result_details=f"Image processed successfully and saved as {filename}."
+            )
+        except Exception as e:
             self._log(f"Failed to save binary image: {e}")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
                 result_details=f"Image processing succeeded but failed to save: {e}",
             )
-            return
-
-        self.parameter_output_values["image_output"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
-        self._log(f"Saved binary image as {actual_path.name}")
-        self._set_status_results(
-            was_successful=True,
-            result_details=f"Image processed successfully and saved as {actual_path.name}.",
-        )
 
     async def _save_image_from_url(self, image_url: str) -> None:
         """Download and save the image from the provided URL."""
-        self._log("Downloading image from URL")
-        image_bytes = await self._download_bytes_from_url(image_url)
-        if not image_bytes:
-            self.parameter_output_values["image_output"] = ImageUrlArtifact(value=image_url)
-            self._set_status_results(
-                was_successful=True,
-                result_details="Image processed successfully. Using provider URL (could not download image bytes).",
-            )
-            return
-
-        output_file = self._output_file_param.build_file()
         try:
-            actual_path = await output_file.awrite_bytes(image_bytes)
-        except FileWriteError as e:
-            self._log(f"Failed to write image: {e}")
+            self._log("Downloading image from URL")
+            image_bytes = await self._download_bytes_from_url(image_url)
+            if image_bytes:
+                filename = f"topaz_enhanced_{int(time.time())}.jpg"
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                self.parameter_output_values["image_output"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved image to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Image processed successfully and saved as {filename}."
+                )
+            else:
+                self.parameter_output_values["image_output"] = ImageUrlArtifact(value=image_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Image processed successfully. Using provider URL (could not download image bytes).",
+                )
+        except Exception as e:
+            self._log(f"Failed to save image from URL: {e}")
             self.parameter_output_values["image_output"] = ImageUrlArtifact(value=image_url)
             self._set_status_results(
                 was_successful=True,
-                result_details=f"Image processed successfully. Using provider URL (could not save file: {e}).",
+                result_details=f"Image processed successfully. Using provider URL (could not save to static storage: {e}).",
             )
-            return
-
-        self.parameter_output_values["image_output"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
-        self._log(f"Saved image as {actual_path.name}")
-        self._set_status_results(
-            was_successful=True,
-            result_details=f"Image processed successfully and saved as {actual_path.name}.",
-        )
 
     def _extract_error_message(self, response_json: dict[str, Any] | None) -> str:
         """Extract error details from API response."""
