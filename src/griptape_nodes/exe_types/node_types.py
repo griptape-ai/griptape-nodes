@@ -396,13 +396,13 @@ class BaseNode(ABC):
 
     def after_incoming_connection_removed(
         self,
-        source_node: BaseNode,  # noqa: ARG002
-        source_parameter: Parameter,  # noqa: ARG002
+        source_node: BaseNode,
+        source_parameter: Parameter,
         target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection TO this Node was REMOVED."""
-        for callback in target_parameter.on_connection_removed:
-            callback(target_parameter)
+        for callback in target_parameter.on_incoming_connection_removed:
+            callback(target_parameter, source_node.name, source_parameter.name)
 
     def before_outgoing_connection_removed(
         self,
@@ -415,12 +415,13 @@ class BaseNode(ABC):
 
     def after_outgoing_connection_removed(
         self,
-        source_parameter: Parameter,  # noqa: ARG002
-        target_node: BaseNode,  # noqa: ARG002
-        target_parameter: Parameter,  # noqa: ARG002
+        source_parameter: Parameter,
+        target_node: BaseNode,
+        target_parameter: Parameter,
     ) -> None:
         """Callback after a Connection OUT of this Node was REMOVED."""
-        return
+        for callback in source_parameter.on_outgoing_connection_removed:
+            callback(source_parameter, target_node.name, target_parameter.name)
 
     def before_value_set(
         self,
