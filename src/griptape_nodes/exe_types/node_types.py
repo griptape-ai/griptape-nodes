@@ -22,7 +22,6 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
-    Waypoint,
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -32,6 +31,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
+from griptape_nodes.retained_mode.events.connection_events import Waypoint
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -2015,7 +2015,9 @@ class Connection:
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
         self.is_node_group_internal = is_node_group_internal
-        self.waypoints = [Waypoint.model_validate(w) for w in waypoints] if waypoints else []
+        self.waypoints = (
+            [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in waypoints] if waypoints else []
+        )
 
     def get_target_node(self) -> BaseNode:
         return self.target_node

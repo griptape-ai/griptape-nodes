@@ -14,13 +14,13 @@ if TYPE_CHECKING:
         IncomingConnection,
         ListConnectionsForNodeResultSuccess,
         OutgoingConnection,
+        Waypoint,
     )
     from griptape_nodes.retained_mode.events.parameter_events import (
         GetParameterDetailsResultSuccess,
         GetParameterValueResultSuccess,
         SetParameterValueRequest,
     )
-    from griptape_nodes.retained_mode.events.waypoint_types import WaypointDefinition
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -615,7 +615,7 @@ class SerializedSelectedNodesCommands:
         source_parameter_name: str
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
-        waypoints: list[WaypointDefinition] = field(default_factory=list)
+        waypoints: list[Waypoint] = field(default_factory=list)
 
     serialized_node_commands: list[SerializedNodeCommands]
     set_parameter_value_commands: dict[

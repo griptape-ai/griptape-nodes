@@ -1216,7 +1216,7 @@ class NodeManager:
                                 source_parameter_name=connection.source_parameter.name,
                                 target_node_name=connection.target_node.name,
                                 target_parameter_name=connection.target_parameter.name,
-                                waypoints=[w.model_dump() for w in (getattr(connection, "waypoints", []) or [])],
+                                waypoints=list(getattr(connection, "waypoints", []) or []),
                             )
                         )
 
@@ -1232,7 +1232,7 @@ class NodeManager:
                                 source_node_name=connection.source_node.name,
                                 source_parameter_name=connection.source_parameter.name,
                                 target_parameter_name=connection.target_parameter.name,
-                                waypoints=[w.model_dump() for w in (getattr(connection, "waypoints", []) or [])],
+                                waypoints=list(getattr(connection, "waypoints", []) or []),
                             )
                         )
 
@@ -1294,7 +1294,7 @@ class NodeManager:
                     source_parameter_name=connection.source_parameter.name,
                     target_node_name=connection.target_node.name,
                     target_parameter_name=connection.target_parameter.name,
-                    waypoints=[w.model_dump() for w in (getattr(connection, "waypoints", []) or [])],
+                    waypoints=list(getattr(connection, "waypoints", []) or []),
                 )
                 for connection_id in connection_mgr.outgoing_index[node_name][parameter_name]
                 for connection in [connection_mgr.connections[connection_id]]
@@ -1308,7 +1308,7 @@ class NodeManager:
                     source_node_name=connection.source_node.name,
                     source_parameter_name=connection.source_parameter.name,
                     target_parameter_name=connection.target_parameter.name,
-                    waypoints=[w.model_dump() for w in (getattr(connection, "waypoints", []) or [])],
+                    waypoints=list(getattr(connection, "waypoints", []) or []),
                 )
                 for connection_id in connection_mgr.incoming_index[node_name][parameter_name]
                 for connection in [connection_mgr.connections[connection_id]]
@@ -3278,7 +3278,7 @@ class NodeManager:
                     source_parameter_name=connection.source_parameter.name,
                     target_node_uuid=target_node_uuid,
                     target_parameter_name=connection.target_parameter.name,
-                    waypoints=[w.model_dump() for w in (getattr(connection, "waypoints", []) or [])],
+                    waypoints=list(getattr(connection, "waypoints", []) or []),
                 )
             )
         # Final result for serialized node commands

@@ -4,8 +4,9 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin, Waypoint
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
+from griptape_nodes.retained_mode.events.connection_events import Waypoint
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -54,7 +55,11 @@ class Connections:
         if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
             target_node, target_parameter, is_source=False
         ):
-            normalized_waypoints = [Waypoint.model_validate(w) for w in waypoints] if waypoints else None
+            normalized_waypoints = (
+                [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in waypoints]
+                if waypoints
+                else None
+            )
             connection = Connection(
                 source_node,
                 source_parameter,

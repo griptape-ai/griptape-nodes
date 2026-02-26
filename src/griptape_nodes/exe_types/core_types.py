@@ -42,13 +42,6 @@ class NodeMessageResult(BaseModel):
     altered_workflow_state: bool = True
 
 
-class Waypoint(BaseModel):
-    """Position for a connection edge bend point (e.g. in the flow canvas)."""
-
-    x: float
-    y: float
-
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
