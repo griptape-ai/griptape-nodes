@@ -22,6 +22,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMessage,
     ParameterMode,
     ParameterTypeBuiltin,
+    Waypoint,
 )
 from griptape_nodes.exe_types.param_components.execution_status_component import ExecutionStatusComponent
 from griptape_nodes.exe_types.type_validator import TypeValidator
@@ -1997,7 +1998,7 @@ class Connection:
     source_parameter: Parameter
     target_parameter: Parameter
     is_node_group_internal: bool
-    waypoints: list[dict[str, float]]
+    waypoints: list[Waypoint]
 
     def __init__(  # noqa: PLR0913 (waypoints is a required connection attribute)
         self,
@@ -2007,14 +2008,14 @@ class Connection:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
-        waypoints: list[dict[str, float]] | None = None,
+        waypoints: list[Waypoint] | None = None,
     ) -> None:
         self.source_node = source_node
         self.target_node = target_node
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
         self.is_node_group_internal = is_node_group_internal
-        self.waypoints = list(waypoints) if waypoints is not None else []
+        self.waypoints = [Waypoint.model_validate(w) for w in waypoints] if waypoints else []
 
     def get_target_node(self) -> BaseNode:
         return self.target_node

@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from griptape_nodes.exe_types.node_types import NodeDependencies
     from griptape_nodes.node_library.workflow_registry import LibraryNameAndNodeType, WorkflowShape
     from griptape_nodes.retained_mode.events.node_events import SerializedNodeCommands, SetLockNodeStateRequest
+    from griptape_nodes.retained_mode.events.waypoint_types import WaypointDefinition
     from griptape_nodes.retained_mode.events.workflow_events import ImportWorkflowAsReferencedSubFlowRequest
 
 from griptape_nodes.retained_mode.events.base_events import (
@@ -240,7 +241,7 @@ class SerializedFlowCommands:
         source_parameter_name: str
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
-        waypoints: list[dict[str, float]] = field(default_factory=list)
+        waypoints: list[WaypointDefinition] = field(default_factory=list)
 
     flow_initialization_command: CreateFlowRequest | ImportWorkflowAsReferencedSubFlowRequest | None
     serialized_node_commands: list[SerializedNodeCommands]

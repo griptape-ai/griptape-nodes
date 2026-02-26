@@ -8,6 +8,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+from griptape_nodes.retained_mode.events.waypoint_types import WaypointDefinition
 
 
 @dataclass
@@ -38,8 +39,8 @@ class CreateConnectionRequest(RequestPayload):
     initial_setup: bool = False
     # Mark this connection as internal to a node group proxy parameter
     is_node_group_internal: bool = False
-    # Optional waypoints for the connection (e.g. when loading from file). List of {"x": float, "y": float}.
-    waypoints: list[dict[str, float]] | None = None
+    # Optional waypoints for the connection (e.g. when loading from file). Ordered list of {"x": float, "y": float}.
+    waypoints: list[WaypointDefinition] | None = None
 
 
 @dataclass
@@ -120,7 +121,7 @@ class IncomingConnection:
     source_node_name: str
     source_parameter_name: str
     target_parameter_name: str
-    waypoints: list[dict[str, float]] = field(default_factory=list)  # Ordered list of {"x": float, "y": float}.
+    waypoints: list[WaypointDefinition] = field(default_factory=list)  # Ordered list of {"x": float, "y": float}.
 
 
 @dataclass
@@ -128,7 +129,7 @@ class OutgoingConnection:
     source_parameter_name: str
     target_node_name: str
     target_parameter_name: str
-    waypoints: list[dict[str, float]] = field(default_factory=list)  # Ordered list of {"x": float, "y": float}.
+    waypoints: list[WaypointDefinition] = field(default_factory=list)  # Ordered list of {"x": float, "y": float}.
 
 
 @dataclass
@@ -176,7 +177,7 @@ class CreateWaypointRequest(RequestPayload):
     source_parameter_name: str
     target_node_name: str
     target_parameter_name: str
-    waypoint: dict[str, float]
+    waypoint: WaypointDefinition
     insert_index: int | None = None
 
 
@@ -185,7 +186,7 @@ class CreateWaypointRequest(RequestPayload):
 class CreateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Waypoint added successfully. waypoints is the full updated ordered list for the connection."""
 
-    waypoints: list[dict[str, float]]
+    waypoints: list[WaypointDefinition]
 
 
 @dataclass
@@ -223,7 +224,7 @@ class RemoveWaypointRequest(RequestPayload):
 class RemoveWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Waypoint removed successfully. waypoints is the full updated ordered list for the connection."""
 
-    waypoints: list[dict[str, float]]
+    waypoints: list[WaypointDefinition]
 
 
 @dataclass
@@ -255,7 +256,7 @@ class UpdateWaypointRequest(RequestPayload):
     target_node_name: str
     target_parameter_name: str
     waypoint_index: int
-    waypoint: dict[str, float]
+    waypoint: WaypointDefinition
 
 
 @dataclass
@@ -263,7 +264,7 @@ class UpdateWaypointRequest(RequestPayload):
 class UpdateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
     """Waypoint updated successfully. waypoints is the full updated ordered list for the connection."""
 
-    waypoints: list[dict[str, float]]
+    waypoints: list[WaypointDefinition]
 
 
 @dataclass

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import httpx
 from PIL import Image
+from pydantic import ValidationError
 
 from griptape_nodes.common.node_executor import NodeExecutor
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeStartNode
@@ -22,6 +23,7 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
     ParameterType,
     ParameterTypeBuiltin,
+    Waypoint,
 )
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_groups import BaseNodeGroup, SubflowNodeGroup
@@ -1294,11 +1296,11 @@ class FlowManager:
                 f"'{request.target_node_name}.{request.target_parameter_name}'."
             )
             return CreateWaypointResultFailure(result_details=details)
-        wp = request.waypoint
-        if not isinstance(wp.get("x"), (int, float)) or not isinstance(wp.get("y"), (int, float)):
+        try:
+            waypoint = Waypoint.model_validate(request.waypoint)
+        except ValidationError:
             details = "Attempted to add waypoint. Failed because waypoint must have numeric 'x' and 'y'."
             return CreateWaypointResultFailure(result_details=details)
-        waypoint = {"x": float(wp["x"]), "y": float(wp["y"])}
         insert_index = request.insert_index
         if insert_index is not None:
             if insert_index < 0 or insert_index > len(conn.waypoints):
@@ -1312,7 +1314,7 @@ class FlowManager:
             conn.waypoints.append(waypoint)
         return CreateWaypointResultSuccess(
             result_details="Waypoint added.",
-            waypoints=list(conn.waypoints),
+            waypoints=[{"x": w.x, "y": w.y} for w in conn.waypoints],
         )
 
     def on_remove_waypoint_request(self, request: RemoveWaypointRequest) -> ResultPayload:
@@ -1339,7 +1341,7 @@ class FlowManager:
         conn.waypoints.pop(idx)
         return RemoveWaypointResultSuccess(
             result_details="Waypoint removed.",
-            waypoints=list(conn.waypoints),
+            waypoints=[{"x": w.x, "y": w.y} for w in conn.waypoints],
         )
 
     def on_update_waypoint_request(self, request: UpdateWaypointRequest) -> ResultPayload:
@@ -1363,14 +1365,15 @@ class FlowManager:
                 f"(0 to {len(conn.waypoints) - 1} inclusive)."
             )
             return UpdateWaypointResultFailure(result_details=details)
-        wp = request.waypoint
-        if not isinstance(wp.get("x"), (int, float)) or not isinstance(wp.get("y"), (int, float)):
+        try:
+            waypoint = Waypoint.model_validate(request.waypoint)
+        except ValidationError:
             details = "Attempted to update waypoint. Failed because waypoint must have numeric 'x' and 'y'."
             return UpdateWaypointResultFailure(result_details=details)
-        conn.waypoints[idx] = {"x": float(wp["x"]), "y": float(wp["y"])}
+        conn.waypoints[idx] = waypoint
         return UpdateWaypointResultSuccess(
             result_details="Waypoint updated.",
-            waypoints=list(conn.waypoints),
+            waypoints=[{"x": w.x, "y": w.y} for w in conn.waypoints],
         )
 
     def on_package_nodes_as_serialized_flow_request(  # noqa: C901, PLR0911, PLR0912, PLR0915
@@ -3555,7 +3558,7 @@ class FlowManager:
                 source_parameter_name=connection.source_parameter.name,
                 target_node_uuid=target_node_uuid,
                 target_parameter_name=connection.target_parameter.name,
-                waypoints=getattr(connection, "waypoints", []) or [],
+                waypoints=[{"x": w.x, "y": w.y} for w in (getattr(connection, "waypoints", []) or [])],
             )
             create_connection_commands.append(create_connection_command)
 

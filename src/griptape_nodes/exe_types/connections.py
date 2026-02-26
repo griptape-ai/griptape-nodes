@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from griptape_nodes.exe_types.base_iterative_nodes import BaseIterativeEndNode, BaseIterativeStartNode
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin
+from griptape_nodes.exe_types.core_types import Parameter, ParameterMode, ParameterTypeBuiltin, Waypoint
 from griptape_nodes.exe_types.node_types import BaseNode, Connection, NodeResolutionState
 
 logger = logging.getLogger("griptape_nodes")
@@ -42,7 +42,7 @@ class Connections:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
-        waypoints: list[dict[str, float]] | None = None,
+        waypoints: list[Waypoint] | list[dict[str, float]] | None = None,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
@@ -54,13 +54,14 @@ class Connections:
         if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
             target_node, target_parameter, is_source=False
         ):
+            normalized_waypoints = [Waypoint.model_validate(w) for w in waypoints] if waypoints else None
             connection = Connection(
                 source_node,
                 source_parameter,
                 target_node,
                 target_parameter,
                 is_node_group_internal=is_node_group_internal,
-                waypoints=waypoints,
+                waypoints=normalized_waypoints,
             )
             # New index management.
             connection_id = id(connection)
