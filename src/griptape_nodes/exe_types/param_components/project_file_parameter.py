@@ -196,6 +196,13 @@ class ProjectFileParameter:
 
         configure_node_name = create_result
 
+        current_filename = self._node.get_parameter_value(self._name)
+        if isinstance(current_filename, str) and current_filename:
+            configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
+            if configure_node is not None:
+                configure_node.set_parameter_value("filename", current_filename)
+                configure_node.publish_update_to_parameter("filename", current_filename)
+
         connection_result = RetainedMode.connect(
             source=f"{configure_node_name}.file_destination",
             destination=f"{node_name}.{self._name}",
