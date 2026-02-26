@@ -43,6 +43,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
 
     SERVICE_NAME = "Griptape"
     API_KEY_NAME = "GT_CLOUD_API_KEY"
+    DEFAULT_MODEL: ClassVar[str] = "Nano Banana Pro"
     SUPPORTED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "Nano Banana Pro": "gemini-3-pro-image-preview",
         "Nano Banana 2": "gemini-3.1-flash-image-preview",
@@ -87,7 +88,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
         self.add_parameter(
             ParameterString(
                 name="model",
-                default_value=next(iter(self.SUPPORTED_MODELS_TO_API_MODELS.keys())),
+                default_value=self.DEFAULT_MODEL,
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
@@ -171,7 +172,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 default_value="16:9",
                 tooltip="Aspect ratio for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=self.ASPECT_RATIO_OPTIONS[next(iter(self.SUPPORTED_MODELS_TO_API_MODELS))])},
+                traits={Options(choices=self.ASPECT_RATIO_OPTIONS[self.DEFAULT_MODEL])},
             )
         )
 
@@ -182,7 +183,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 default_value="1K",
                 tooltip="Image size/resolution for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=self.IMAGE_SIZE_OPTIONS[next(iter(self.SUPPORTED_MODELS_TO_API_MODELS))])},
+                traits={Options(choices=self.IMAGE_SIZE_OPTIONS[self.DEFAULT_MODEL])},
             )
         )
 
