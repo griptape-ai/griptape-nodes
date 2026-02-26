@@ -147,11 +147,13 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     @classmethod
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
-        if metadata.name in instance._workflows:
-            msg = f"Workflow with name '{metadata.name}' already registered."
+        # Use the file stem as the registry key, independent of the display name in metadata.
+        registry_key = Path(file_path).stem
+        if registry_key in instance._workflows:
+            msg = f"Workflow with file name '{registry_key}' already registered."
             raise KeyError(msg)
         workflow = Workflow(registry_key=instance._registry_key, file_path=file_path, metadata=metadata)
-        instance._workflows[metadata.name] = workflow
+        instance._workflows[registry_key] = workflow
         return workflow
 
     @classmethod
