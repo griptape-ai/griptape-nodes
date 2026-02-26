@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from griptape_nodes.common.macro_parser import ParsedMacro
-from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.exe_types.core_types import (
     NodeMessageResult,
@@ -43,8 +42,6 @@ from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
-
-_FALLBACK_SITUATIONS = sorted(DEFAULT_PROJECT_TEMPLATE.situations.keys())
 
 
 class PathResolutionScenario(StrEnum):
@@ -100,8 +97,8 @@ class ConfigureProjectFileSave(BaseNode):
         result = GriptapeNodes.handle_request(request)
 
         if not isinstance(result, GetAllSituationsForProjectResultSuccess):
-            logger.warning("%s: Failed to fetch situations from project", self.name)
-            return _FALLBACK_SITUATIONS
+            logger.error("%s: Failed to fetch situations from project", self.name)
+            return []
 
         return sorted(result.situations.keys())
 
