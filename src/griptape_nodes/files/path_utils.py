@@ -364,3 +364,28 @@ def get_workspace_relative_path(path: Path, base_directory: Path) -> Path:
     """
     absolute_path = resolve_workspace_path(path, base_directory)
     return absolute_path.relative_to(base_directory.resolve())
+
+
+def sanitize_workflow_name(name: str) -> str:
+    """Sanitize a workflow name to a Python module-friendly file stem.
+
+    Lowercases, trims whitespace, replaces non-alphanumeric/hyphen characters
+    with a space, then collapses spaces into underscores.
+
+    Args:
+        name: Human-readable workflow name, e.g. "My Cool Workflow!"
+
+    Returns:
+        A lowercase, underscore-separated stem suitable for use as a Python
+        module file name, e.g. "my_cool_workflow"
+
+    Examples:
+        >>> sanitize_workflow_name("My Cool Workflow!")
+        "my_cool_workflow"
+        >>> sanitize_workflow_name("  Hello World  ")
+        "hello_world"
+    """
+    sanitized = name.strip().lower()
+    sanitized = re.sub(r"[^a-z0-9-]", " ", sanitized)
+    sanitized = re.sub(r"\s+", "_", sanitized)
+    return sanitized
