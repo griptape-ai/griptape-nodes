@@ -187,20 +187,6 @@ class WindowsSpecialFolderResult(NamedTuple):
     remaining_parts: list[str] | None
 
 
-class FilenameParts(NamedTuple):
-    """Components of a filename for suffix injection strategy.
-
-    Attributes:
-        directory: Parent directory path
-        basename: Filename without extension or suffix
-        extension: File extension including dot
-    """
-
-    directory: Path
-    basename: str
-    extension: str
-
-
 class DecomposedPath(NamedTuple):
     """Components of a decomposed source path for preview generation.
 

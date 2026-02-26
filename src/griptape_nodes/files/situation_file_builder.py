@@ -101,11 +101,11 @@ def build_file_from_situation(
     Returns:
         FileDestination with an unresolved MacroPath and baked-in write policy.
     """
-    file_name_base, file_extension = parse_filename_components(filename, default_extension=default_extension)
+    parts = parse_filename_components(filename, default_extension=default_extension)
 
     variables: dict[str, str | int] = {
-        "file_name_base": file_name_base,
-        "file_extension": file_extension,
+        "file_name_base": parts.basename,
+        "file_extension": parts.extension,
         "node_name": node_name,
         **(extra_variables or {}),
     }

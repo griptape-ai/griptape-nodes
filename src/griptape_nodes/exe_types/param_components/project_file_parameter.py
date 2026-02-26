@@ -11,6 +11,10 @@ from griptape_nodes.files.situation_file_builder import (
     build_file_from_situation,
     fetch_situation_config,
 )
+from griptape_nodes.retained_mode.events.connection_events import (
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
+)
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.retained_mode import RetainedMode
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
@@ -120,14 +124,15 @@ class ProjectFileParameter:
         Returns:
             FileDestination with a MacroPath and baked-in write policy for deferred path resolution
         """
-        connections = GriptapeNodes.FlowManager().get_connections()
-        parameter = self._node.get_parameter_by_name(self._name)
-        if parameter is not None:
-            for connection in connections.get_incoming_connections_to_parameter(self._node, parameter):
-                if isinstance(connection.source_node, FileDestinationProvider):
-                    file_dest = connection.source_node.file_destination
-                    if file_dest is not None:
-                        return file_dest
+        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self._node.name))
+        if isinstance(result, ListConnectionsForNodeResultSuccess):
+            for conn in result.incoming_connections:
+                if conn.target_parameter_name == self._name:
+                    source_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(conn.source_node_name)
+                    if isinstance(source_node, FileDestinationProvider):
+                        file_dest = source_node.file_destination
+                        if file_dest is not None:
+                            return file_dest
 
         value = self._node.get_parameter_value(self._name)
 
@@ -136,7 +141,7 @@ class ProjectFileParameter:
         else:
             filename = self._default_filename
 
-        default_extension = parse_filename_components(self._default_filename)[1]
+        default_extension = parse_filename_components(self._default_filename).extension
 
         return build_file_from_situation(
             filename=filename,
@@ -158,11 +163,10 @@ class ProjectFileParameter:
         """Create and connect a ConfigureProjectFileSave node to this parameter."""
         node_name = self._node.name
 
-        connections = GriptapeNodes.FlowManager().get_connections()
-        parameter = self._node.get_parameter_by_name(self._name)
-        has_incoming = parameter is not None and bool(
-            connections.get_incoming_connections_to_parameter(self._node, parameter)
-        )
+        has_incoming = False
+        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=node_name))
+        if isinstance(result, ListConnectionsForNodeResultSuccess):
+            has_incoming = any(conn.target_parameter_name == self._name for conn in result.incoming_connections)
 
         if has_incoming:
             return NodeMessageResult(

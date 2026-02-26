@@ -23,6 +23,10 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.files.file import FileDestination
 from griptape_nodes.files.path_utils import parse_filename_components
 from griptape_nodes.files.situation_file_builder import SITUATION_TO_FILE_POLICY, fetch_situation_config
+from griptape_nodes.retained_mode.events.connection_events import (
+    ListConnectionsForNodeRequest,
+    ListConnectionsForNodeResultSuccess,
+)
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     AttemptMapAbsolutePathToProjectRequest,
@@ -105,7 +109,7 @@ class ConfigureProjectFileSave(BaseNode):
         """Create all parameters for the node."""
         self.situation = ParameterString(
             name="situation",
-            default_value="save_node_output",
+            default_value=self._available_situations[0],
             allowed_modes={ParameterMode.PROPERTY},
             tooltip="Select the file save situation template to use for path resolution",
             traits={Options(choices=self._available_situations)},
@@ -285,12 +289,12 @@ class ConfigureProjectFileSave(BaseNode):
             return
 
         filename_path = Path(classified.normalized_path)
-        default_ext = parse_filename_components("output.png")[1]
-        file_name_base, file_extension = parse_filename_components(filename_path.name, default_extension=default_ext)
+        default_ext = parse_filename_components("output.png").extension
+        parts = parse_filename_components(filename_path.name, default_extension=default_ext)
 
         variables: dict[str, str | int] = {
-            "file_name_base": file_name_base,
-            "file_extension": file_extension,
+            "file_name_base": parts.basename,
+            "file_extension": parts.extension,
             "node_name": self._get_target_node_name(),
         }
 
@@ -345,10 +349,11 @@ class ConfigureProjectFileSave(BaseNode):
 
         Falls back to this node's own name when no connection exists.
         """
-        connections = GriptapeNodes.FlowManager().get_connections()
-        outgoing = connections.get_outgoing_connections_from_parameter(self, self.file_location)
-        if outgoing:
-            return outgoing[0].target_node.name
+        result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self.name))
+        if isinstance(result, ListConnectionsForNodeResultSuccess):
+            for conn in result.outgoing_connections:
+                if conn.source_parameter_name == self.file_location.name:
+                    return conn.target_node_name
         return self.name
 
     def after_outgoing_connection(
