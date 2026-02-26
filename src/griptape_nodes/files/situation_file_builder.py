@@ -35,11 +35,13 @@ class SituationConfig:
         macro_template: The macro template string for path resolution.
         existing_file_policy: The ExistingFilePolicy to apply during file writes.
         on_collision_value: The raw SituationFilePolicy string (for UI display).
+        create_dirs: Whether to create parent directories automatically.
     """
 
     macro_template: str
     existing_file_policy: ExistingFilePolicy
     on_collision_value: str
+    create_dirs: bool
 
 
 def fetch_situation_config(situation_name: str, caller_name: str) -> SituationConfig:
@@ -60,6 +62,7 @@ def fetch_situation_config(situation_name: str, caller_name: str) -> SituationCo
             macro_template=result.situation.macro,
             existing_file_policy=SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW),
             on_collision_value=on_collision,
+            create_dirs=result.situation.policy.create_dirs,
         )
 
     logger.error(
@@ -71,6 +74,7 @@ def fetch_situation_config(situation_name: str, caller_name: str) -> SituationCo
         macro_template=FALLBACK_MACRO_TEMPLATE,
         existing_file_policy=ExistingFilePolicy.CREATE_NEW,
         on_collision_value=SituationFilePolicy.CREATE_NEW,
+        create_dirs=True,
     )
 
 
@@ -107,4 +111,8 @@ def build_file_from_situation(
     }
 
     macro_path = MacroPath(ParsedMacro(situation_config.macro_template), variables)
-    return FileDestination(macro_path, existing_file_policy=situation_config.existing_file_policy)
+    return FileDestination(
+        macro_path,
+        existing_file_policy=situation_config.existing_file_policy,
+        create_parents=situation_config.create_dirs,
+    )
