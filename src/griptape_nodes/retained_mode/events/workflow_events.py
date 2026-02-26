@@ -259,7 +259,13 @@ class RenameWorkflowRequest(RequestPayload):
 @dataclass
 @PayloadRegistry.register
 class RenameWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
-    """Workflow renamed successfully."""
+    """Workflow renamed successfully.
+
+    Args:
+        new_workflow_name: The sanitized registry key of the renamed workflow (file stem).
+    """
+
+    new_workflow_name: str
 
 
 @dataclass
@@ -280,6 +286,7 @@ class SaveWorkflowRequest(RequestPayload):
         file_name: Name of the file to save the workflow to (None for auto-generated)
         image_path: Path to save workflow image/thumbnail (None for no image)
         pickle_control_flow_result: Whether to use pickle-based serialization for control flow results (None for default behavior)
+        display_name: Optional display name (metadata.name). If provided, overrides the existing display name instead of preserving it.
 
     Results: SaveWorkflowResultSuccess (with file path) | SaveWorkflowResultFailure (save error)
     """
@@ -287,6 +294,7 @@ class SaveWorkflowRequest(RequestPayload):
     file_name: str | None = None
     image_path: str | None = None
     pickle_control_flow_result: bool | None = None
+    display_name: str | None = None
 
 
 @dataclass
@@ -768,8 +776,9 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
 
     Args:
         serialized_flow_commands: The serialized commands representing the workflow structure
-        file_name: Name for the workflow file (without .py extension)
+        file_name: Name for the workflow file (without .py extension); also used as registry key
         creation_date: Optional creation date for the workflow metadata (defaults to current time if not provided)
+        display_name: Optional display name for the workflow (metadata.name). Defaults to file_name if not provided.
         image_path: Optional path to workflow image/thumbnail. If None, callers may preserve existing image.
         description: Optional workflow description text. If None, callers may preserve existing description.
         is_template: Optional template status flag. If None, callers may preserve existing template status.
@@ -786,6 +795,7 @@ class SaveWorkflowFileFromSerializedFlowRequest(RequestPayload):
     file_name: str
     file_path: str | None = None
     creation_date: datetime | None = None
+    display_name: str | None = None
     image_path: str | None = None
     description: str | None = None
     is_template: bool | None = None
