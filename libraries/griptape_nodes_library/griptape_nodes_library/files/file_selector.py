@@ -28,7 +28,6 @@ class FileSelector(DataNode):
             name="selected_file",
             default_value="",
             tooltip="The file to select.",
-            allow_output=False,
         )
         self.selected_file_input.add_trait(
             FileSystemPicker(
@@ -37,28 +36,6 @@ class FileSelector(DataNode):
             )
         )
         self.add_parameter(self.selected_file_input)
-
-        self.add_parameter(
-            ParameterString(
-                name="macro_path",
-                allow_input=False,
-                allow_output=False,
-                allow_property=False,
-                default_value="",
-                tooltip="The matched macro path string, or the raw file path if no situation matched.",
-            )
-        )
-
-        self.add_parameter(
-            ParameterString(
-                name="file_path",
-                allow_input=False,
-                allow_property=False,
-                default_value="",
-                tooltip="The resolved file path or macro path for downstream nodes.",
-                hide_property=True,
-            )
-        )
 
         self.add_parameter(
             Parameter(
@@ -70,34 +47,33 @@ class FileSelector(DataNode):
             )
         )
 
-    def _resolve_macro_path(self, file_path_str: str) -> str:
+    def _resolve_macro_path(self, file_path_str: str) -> str | None:
         """Attempt to map the file path to a directory-level macro path.
 
         Returns the macro form (e.g., {outputs}/file.png) if the path is inside a
-        project directory, or the raw file path string as fallback.
+        project directory, or None if the path is not absolute or no match was found.
         """
         if not file_path_str:
-            return ""
+            return None
 
         result = GriptapeNodes.handle_request(AttemptMapAbsolutePathToProjectRequest(absolute_path=Path(file_path_str)))
 
         if isinstance(result, AttemptMapAbsolutePathToProjectResultSuccess) and result.mapped_path is not None:
             return result.mapped_path
 
-        return file_path_str
+        return None
 
     def _update_macro_path(self, file_path_str: str) -> None:
-        """Compute the macro path and publish it as the file_path output value.
+        """Resolve the file path to a macro path and store it back into selected_file.
 
-        Downstream nodes connected to file_path receive the macro path.
-        The macro_path parameter is updated for display only (readonly, no output).
+        Only updates selected_file if the path was successfully mapped to a macro form.
+        Always updates url with the best available value (macro path or raw path).
         """
         macro_path = self._resolve_macro_path(file_path_str)
-        self.parameter_output_values["file_path"] = macro_path
-        self.publish_update_to_parameter("file_path", macro_path)
-        self.parameter_output_values["macro_path"] = macro_path
-        self.publish_update_to_parameter("macro_path", macro_path)
-        url_value = UrlArtifact(macro_path) if macro_path else None
+        if macro_path is not None:
+            self.set_parameter_value("selected_file", macro_path)
+        output_path = macro_path if macro_path is not None else file_path_str
+        url_value = UrlArtifact(output_path) if output_path else None
         self.parameter_output_values["url"] = url_value
         self.publish_update_to_parameter("url", url_value)
 
