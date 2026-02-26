@@ -87,3 +87,6 @@ class FileSelector(DataNode):
 
         return super().after_value_set(parameter, value)
 
+    def process(self) -> None:
+        pass
+
