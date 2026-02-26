@@ -441,12 +441,11 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         with suppress(Exception):
             logger.info(message)
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
+    async def _parse_result(self, result_json: dict[str, Any], _generation_id: str) -> None:
         """Parse the result and set output parameters.
 
         Args:
             result_json: The JSON response from the /result endpoint
-            generation_id: Unused; path naming is handled by ProjectFileParameter
         """
         # Extract image data
         data = result_json.get("data", [])
