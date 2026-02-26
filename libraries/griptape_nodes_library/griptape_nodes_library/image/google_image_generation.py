@@ -45,6 +45,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
     API_KEY_NAME = "GT_CLOUD_API_KEY"
     SUPPORTED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "Nano Banana Pro": "gemini-3-pro-image-preview",
+        "Nano Banana 2": "gemini-3.1-flash-image-preview",
     }
     DEPRECATED_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         "nano-banana-3-pro": "gemini-3-pro-image-preview",
@@ -52,6 +53,14 @@ class GoogleImageGeneration(GriptapeProxyNode):
     ALL_MODELS_TO_API_MODELS: ClassVar[dict[str, str]] = {
         **SUPPORTED_MODELS_TO_API_MODELS,
         **DEPRECATED_MODELS_TO_API_MODELS,
+    }
+    IMAGE_SIZE_OPTIONS: ClassVar[dict[str, list[str]]] = {
+        "Nano Banana Pro": ["1K", "2K", "4K"],
+        "Nano Banana 2": ["512px", "1K", "2K", "4K"],
+    }
+    ASPECT_RATIO_OPTIONS: ClassVar[dict[str, list[str]]] = {
+        "Nano Banana Pro": ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
+        "Nano Banana 2": ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"],
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -147,7 +156,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 default_value="16:9",
                 tooltip="Aspect ratio for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"])},
+                traits={Options(choices=self.ASPECT_RATIO_OPTIONS[next(iter(self.SUPPORTED_MODELS_TO_API_MODELS))])},
             )
         )
 
@@ -158,7 +167,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 default_value="1K",
                 tooltip="Image size/resolution for generated images",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["1K", "2K", "4K"])},
+                traits={Options(choices=self.IMAGE_SIZE_OPTIONS[next(iter(self.SUPPORTED_MODELS_TO_API_MODELS))])},
             )
         )
 
@@ -183,6 +192,17 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 default_value=False,
                 tooltip="Enable Google Search to ground the model's responses",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+        )
+
+        # Google Image Search (Nano Banana 2 only)
+        self.add_parameter(
+            ParameterBool(
+                name="use_google_image_search",
+                default_value=False,
+                tooltip="Enable grounding with Google Image Search (Nano Banana 2 only)",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                hide=True,
             )
         )
 
@@ -250,6 +270,25 @@ class GoogleImageGeneration(GriptapeProxyNode):
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
         super().after_value_set(parameter, value)
 
+        if parameter.name == "model" and value in self.IMAGE_SIZE_OPTIONS:
+            # Update image_size choices for the selected model
+            new_sizes = self.IMAGE_SIZE_OPTIONS[value]
+            current_size = self.get_parameter_value("image_size")
+            default_size = current_size if current_size in new_sizes else new_sizes[0]
+            self._update_option_choices("image_size", new_sizes, default_size)
+
+            # Update aspect_ratio choices for the selected model
+            new_ratios = self.ASPECT_RATIO_OPTIONS[value]
+            current_ratio = self.get_parameter_value("aspect_ratio")
+            default_ratio = current_ratio if current_ratio in new_ratios else "16:9"
+            self._update_option_choices("aspect_ratio", new_ratios, default_ratio)
+
+            # Show Google Image Search only for Nano Banana 2
+            if value == "Nano Banana 2":
+                self.show_parameter_by_name("use_google_image_search")
+            else:
+                self.hide_parameter_by_name("use_google_image_search")
+
         # Convert string paths to ImageUrlArtifact by uploading to static storage
         if parameter.name == "input_images" and isinstance(value, list):
             updated_list = normalize_artifact_list(value, ImageUrlArtifact, accepted_types=(ImageArtifact,))
@@ -286,6 +325,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
         image_size = self.get_parameter_value("image_size")
         temperature = self.get_parameter_value("temperature")
         use_google_search = self.get_parameter_value("use_google_search")
+        use_google_image_search = self.get_parameter_value("use_google_image_search")
         auto_image_resize = self.get_parameter_value("auto_image_resize")
 
         # Get all image lists and combine them
@@ -330,8 +370,13 @@ class GoogleImageGeneration(GriptapeProxyNode):
             },
         }
 
-        # Add Google Search tool if enabled
-        if use_google_search:
+        # Add Google Search / Google Image Search tools if enabled
+        if use_google_image_search:
+            search_types: dict[str, Any] = {"imageSearch": {}}
+            if use_google_search:
+                search_types["webSearch"] = {}
+            payload["tools"] = [{"google_search": {"searchTypes": search_types}}]
+        elif use_google_search:
             payload["tools"] = [{"google_search": {}}]
 
         return payload
