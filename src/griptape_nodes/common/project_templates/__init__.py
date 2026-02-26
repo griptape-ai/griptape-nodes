@@ -28,6 +28,7 @@ from griptape_nodes.common.project_templates.validation import (
 
 __all__ = [
     "DEFAULT_PROJECT_TEMPLATE",
+    "PROJECT_FILE_NAME",
     "DirectoryDefinition",
     "ProjectOverlayData",
     "ProjectOverride",
@@ -47,3 +48,5 @@ __all__ = [
     "load_project_template_from_yaml",
     "load_yaml_with_line_tracking",
 ]
+
+PROJECT_FILE_NAME = "griptape-nodes-project.yml"
