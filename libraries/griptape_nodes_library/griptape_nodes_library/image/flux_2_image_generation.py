@@ -9,7 +9,6 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -17,7 +16,8 @@ from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -220,15 +220,6 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Output file parameter
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="flux2_image.png",
-        )
-        self._output_file_param.add_parameter()
-
         # OUTPUTS
         self.add_parameter(
             ParameterString(
@@ -415,7 +406,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
 
         return payload
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the Flux result and set output parameters.
 
         Args:
@@ -433,35 +424,32 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             )
             return
 
-        # Download and save the image
-        self._log("Downloading image from URL")
-        image_bytes = await File(sample_url).aread_bytes()
-        if not image_bytes:
-            self.parameter_output_values["image_url"] = ImageUrlArtifact(value=sample_url)
-            self._set_status_results(
-                was_successful=True,
-                result_details="Image generated successfully. Using provider URL (could not download image bytes).",
-            )
-            return
-
-        output_file = self._output_file_param.build_file()
+        # Download and save the image using generation_id in filename
         try:
-            actual_path = await output_file.awrite_bytes(image_bytes)
-        except FileWriteError as e:
-            self._log(f"Failed to write image: {e}")
+            self._log("Downloading image from URL")
+            image_bytes = await File(sample_url).aread_bytes()
+            if image_bytes:
+                filename = f"flux_image_{generation_id}.jpg"
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                saved_url = static_files_manager.save_static_file(image_bytes, filename)
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=saved_url, name=filename)
+                self._log(f"Saved image to static storage as {filename}")
+                self._set_status_results(
+                    was_successful=True, result_details=f"Image generated successfully and saved as {filename}."
+                )
+            else:
+                self.parameter_output_values["image_url"] = ImageUrlArtifact(value=sample_url)
+                self._set_status_results(
+                    was_successful=True,
+                    result_details="Image generated successfully. Using provider URL (could not download image bytes).",
+                )
+        except Exception as e:
+            self._log(f"Failed to save image from URL: {e}")
             self.parameter_output_values["image_url"] = ImageUrlArtifact(value=sample_url)
             self._set_status_results(
                 was_successful=True,
-                result_details=f"Image generated successfully. Using provider URL (could not save file: {e}).",
+                result_details=f"Image generated successfully. Using provider URL (could not save to static storage: {e}).",
             )
-            return
-
-        self.parameter_output_values["image_url"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
-        self._log(f"Saved image as {actual_path.name}")
-        self._set_status_results(
-            was_successful=True,
-            result_details=f"Image generated successfully and saved as {actual_path.name}.",
-        )
 
     async def _process_input_image(self, image_input: Any) -> str | None:
         """Process input image and convert to base64 data URI."""

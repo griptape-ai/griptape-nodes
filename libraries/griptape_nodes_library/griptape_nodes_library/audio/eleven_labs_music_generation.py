@@ -9,12 +9,11 @@ from typing import Any
 from griptape.artifacts.audio_url_artifact import AudioUrlArtifact
 
 from griptape_nodes.exe_types.core_types import ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_audio import ParameterAudio
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.files.file import FileWriteError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -117,14 +116,6 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
         )
 
         # OUTPUTS
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="eleven_music.mp3",
-        )
-        self._output_file_param.add_parameter()
-
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -198,7 +189,7 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
 
             self._log(f"Request payload: {_json.dumps(sanitized_payload, indent=2)}")
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the Eleven Labs music result and set output parameters."""
         # Check if we received raw audio bytes (v2 API returns raw bytes for music generation)
         audio_bytes_raw = result_json.get("raw_bytes")
@@ -230,19 +221,31 @@ class ElevenLabsMusicGeneration(GriptapeProxyNode):
                 return
 
         # Save audio with appropriate file extension
-        output_file = self._output_file_param.build_file()
         try:
-            actual_path = await output_file.awrite_bytes(audio_bytes)
-        except FileWriteError as e:
-            self._log(f"Failed to write audio: {e}")
+            # Determine file extension based on output format
+            output_format = self.get_parameter_value("output_format") or "mp3_44100_128"
+            if output_format.startswith("mp3_"):
+                ext = "mp3"
+            elif output_format.startswith(("pcm_", "ulaw_", "alaw_")):
+                ext = "wav"
+            elif output_format.startswith("opus_"):
+                ext = "opus"
+            else:
+                ext = "mp3"
+
+            filename = f"eleven_music_{generation_id}.{ext}"
+            static_files_manager = GriptapeNodes.StaticFilesManager()
+            saved_url = static_files_manager.save_static_file(audio_bytes, filename)
+            self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=saved_url, name=filename)
+            self._log(f"Saved audio to static storage as {filename}")
+        except Exception as e:
+            self._log(f"Failed to save audio: {e}")
             self._set_safe_defaults()
             self._set_status_results(
                 was_successful=False,
                 result_details=f"Failed to save audio file: {e}",
             )
             return
-        self.parameter_output_values["audio_url"] = AudioUrlArtifact(value=actual_path, name=actual_path.name)
-        self._log(f"Saved audio to {actual_path}")
 
         # Set success status
         self._set_status_results(was_successful=True, result_details="Music generated successfully")

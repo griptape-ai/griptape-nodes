@@ -13,18 +13,18 @@ from griptape_nodes.exe_types.core_types import (
     ParameterMode,
 )
 from griptape_nodes.exe_types.node_types import ControlNode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
-from griptape_nodes.retained_mode.griptape_nodes import logger
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes, logger
 from griptape_nodes.traits.button import Button, ButtonDetailsMessagePayload
 from griptape_nodes.traits.color_picker import ColorPicker
 from griptape_nodes.traits.options import Options
 from griptape_nodes.traits.slider import Slider
 from griptape_nodes_library.utils.color_utils import NAMED_COLORS, parse_color_to_rgba
+from griptape_nodes_library.utils.file_utils import generate_filename
 from griptape_nodes_library.utils.image_utils import (
     dict_to_image_url_artifact,
     load_pil_from_url,
@@ -160,14 +160,6 @@ class CropImage(ControlNode):
             )
 
         self.add_node_element(output_options)
-
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="cropped_image.png",
-        )
-        self._output_file_param.add_parameter()
 
         # Output parameter
         self.add_parameter(
@@ -324,9 +316,30 @@ class CropImage(ControlNode):
             logger.error(msg)
             return
 
-        output_file = self._output_file_param.build_file()
-        actual_path = output_file.write_bytes(img_data)
-        self.parameter_output_values["output"] = ImageUrlArtifact(value=actual_path, name=actual_path.name)
+        # Generate meaningful filename based on workflow and node
+        filename = self._generate_filename(save_format.lower())
+        static_url = GriptapeNodes.StaticFilesManager().save_static_file(img_data, filename)
+        self.parameter_output_values["output"] = ImageUrlArtifact(value=static_url)
+
+    def _get_output_suffix(self, **kwargs) -> str:  # noqa: ARG002
+        """Get output filename suffix."""
+        return "_crop"
+
+    def _generate_filename(self, extension: str) -> str:
+        """Generate a meaningful filename based on workflow and node information."""
+        # Get processing suffix
+        params = self._get_crop_parameters()
+        processing_suffix = self._get_output_suffix(**params)
+
+        # Use the general filename utility but with a custom prefix
+        base_filename = generate_filename(
+            node_name=self.name,
+            suffix=processing_suffix,
+            extension=extension,
+        )
+
+        # Add the "crop" prefix that this node specifically uses
+        return base_filename.replace(f"{self.name}{processing_suffix}", f"crop_{self.name}{processing_suffix}")
 
     def _apply_zoom_to_crop_area(self, crop_area: CropArea, zoom: float, img_width: int, img_height: int) -> CropArea:
         """Apply zoom by scaling the crop area size."""

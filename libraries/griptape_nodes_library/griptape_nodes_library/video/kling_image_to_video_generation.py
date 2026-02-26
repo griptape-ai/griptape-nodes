@@ -9,14 +9,14 @@ from typing import Any, ClassVar
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
-from griptape_nodes.exe_types.param_components.project_file_parameter import ProjectFileParameter
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
-from griptape_nodes.files.file import File, FileLoadError, FileWriteError
+from griptape_nodes.files.file import File, FileLoadError
+from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
@@ -228,14 +228,6 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
         self.add_node_element(masks_group)
 
         # OUTPUTS
-        self._output_file_param = ProjectFileParameter(
-            node=self,
-            name="output_file",
-            situation="save_node_output",
-            default_filename="kling_i2v.mp4",
-        )
-        self._output_file_param.add_parameter()
-
         self.add_parameter(
             ParameterString(
                 name="generation_id",
@@ -418,7 +410,7 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
 
         return base64.b64encode(image_bytes).decode("utf-8")
 
-    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:  # noqa: ARG002
+    async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the result and set output parameters.
 
         Expected structure: {"data": {"task_result": {"videos": [{"url": "...", "id": "..."}]}}}
@@ -461,23 +453,22 @@ class KlingImageToVideoGeneration(GriptapeProxyNode):
             video_bytes = None
 
         if video_bytes:
-            output_file = self._output_file_param.build_file()
             try:
-                actual_path = await output_file.awrite_bytes(video_bytes)
-            except FileWriteError as e:
-                self._log(f"Failed to write video: {e}")
+                static_files_manager = GriptapeNodes.StaticFilesManager()
+                filename = f"kling_image_to_video_{generation_id}.mp4"
+                saved_url = static_files_manager.save_static_file(video_bytes, filename)
+                self.parameter_output_values["video_url"] = VideoUrlArtifact(value=saved_url, name=filename)
+                logger.info("%s saved video to static storage as %s", self.name, filename)
+                self._set_status_results(
+                    was_successful=True, result_details=f"Video generated successfully and saved as {filename}."
+                )
+            except (OSError, PermissionError) as e:
+                logger.warning("%s failed to save to static storage: %s, using provider URL", self.name, e)
                 self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
                 self._set_status_results(
                     was_successful=True,
-                    result_details=f"Video generated successfully. Using provider URL (could not save video: {e}).",
+                    result_details=f"Video generated successfully. Using provider URL (could not save to static storage: {e}).",
                 )
-                return
-            self.parameter_output_values["video_url"] = VideoUrlArtifact(value=actual_path, name=actual_path.name)
-            logger.info("%s saved video as %s", self.name, actual_path)
-            self._set_status_results(
-                was_successful=True,
-                result_details=f"Video generated successfully and saved as {actual_path.name}.",
-            )
         else:
             self.parameter_output_values["video_url"] = VideoUrlArtifact(value=download_url)
             self._set_status_results(
