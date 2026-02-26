@@ -23,6 +23,7 @@ class FileSelector(DataNode):
         metadata: dict[Any, Any] | None = None,
     ) -> None:
         super().__init__(name, metadata)
+        self._resolving_macro_path = False
 
         self.selected_file_input = ParameterString(
             name="selected_file",
@@ -76,19 +77,13 @@ class FileSelector(DataNode):
         self.publish_update_to_parameter("url", url_value)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
-        if parameter.name == "selected_file":
-            if value is not None:
-                file_path_str = str(value)
-            else:
-                file_path_str = ""
-            self._update_macro_path(file_path_str)
+        if parameter.name == "selected_file" and not self._resolving_macro_path:
+            self._resolving_macro_path = True
+            try:
+                file_path_str = str(value) if value is not None else ""
+                self._update_macro_path(file_path_str)
+            finally:
+                self._resolving_macro_path = False
 
         return super().after_value_set(parameter, value)
 
-    def process(self) -> None:
-        file_path_str = self.get_parameter_value("selected_file")
-        if file_path_str is not None:
-            file_path_str = str(file_path_str)
-        else:
-            file_path_str = ""
-        self._update_macro_path(file_path_str)
