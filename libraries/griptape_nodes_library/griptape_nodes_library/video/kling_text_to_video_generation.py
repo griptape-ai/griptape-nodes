@@ -15,6 +15,7 @@ from griptape_nodes.exe_types.param_types.parameter_string import ParameterStrin
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
+from griptape_nodes.traits.widget import Widget
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
 
 logger = logging.getLogger("griptape_nodes")
@@ -25,6 +26,7 @@ __all__ = ["KlingTextToVideoGeneration"]
 MAX_PROMPT_LENGTH = 2500
 MAX_MULTI_PROMPT_COUNT = 6
 V3_MODEL_ID = "kling-v3"
+DEFAULT_MULTI_SHOTS = [{"name": "Shot1", "duration": 5, "description": ""}]
 
 
 class KlingTextToVideoGeneration(GriptapeProxyNode):
@@ -158,6 +160,19 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
                     "placeholder_text": "Describe the video you want...",
                     "display_name": "prompt",
                 },
+            )
+        )
+        self.add_parameter(
+            Parameter(
+                name="shots",
+                input_types=["list"],
+                type="list",
+                output_type="list",
+                default_value=DEFAULT_MULTI_SHOTS,
+                tooltip="Shot sequence for Kling v3 multi-shot customize mode.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Widget(name="KlingMultiShotEditor", library="Griptape Nodes Library")},
+                ui_options={"display_name": "shot sequence", "hide": True},
             )
         )
         with ParameterGroup(name="Multi-Shot Settings") as multi_shot_settings_group:
@@ -339,6 +354,7 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
             self.hide_parameter_by_name("multi_shot")
             self.hide_parameter_by_name("shot_type")
             self.hide_parameter_by_name("shot_count")
+            self.hide_parameter_by_name("shots")
             for shot_index in range(1, MAX_MULTI_PROMPT_COUNT + 1):
                 self.hide_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
             self.show_parameter_by_name("prompt")
@@ -352,16 +368,12 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
 
         is_multi_shot = bool(self.get_parameter_value("multi_shot"))
         shot_type = self.get_parameter_value("shot_type") or "customize"
-        raw_shot_count = self.get_parameter_value("shot_count") or 1
-        try:
-            shot_count = int(raw_shot_count)
-        except (TypeError, ValueError):
-            shot_count = 1
-        shot_count = max(1, min(MAX_MULTI_PROMPT_COUNT, shot_count))
 
         if not is_multi_shot:
             self.hide_parameter_by_name("shot_type")
             self.hide_parameter_by_name("shot_count")
+            self.hide_parameter_by_name("shots")
+            self.show_parameter_by_name("duration")
             self.show_parameter_by_name("prompt")
             for shot_index in range(1, MAX_MULTI_PROMPT_COUNT + 1):
                 self.hide_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
@@ -371,18 +383,38 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
         if shot_type == "intelligence":
             self.show_parameter_by_name("prompt")
             self.hide_parameter_by_name("shot_count")
+            self.hide_parameter_by_name("shots")
+            self.show_parameter_by_name("duration")
             for shot_index in range(1, MAX_MULTI_PROMPT_COUNT + 1):
                 self.hide_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
             return
 
         # customize
         self.hide_parameter_by_name("prompt")
-        self.show_parameter_by_name("shot_count")
+        self.hide_parameter_by_name("shot_count")
+        self.show_parameter_by_name("shots")
+        self.hide_parameter_by_name("duration")
         for shot_index in range(1, MAX_MULTI_PROMPT_COUNT + 1):
-            if shot_index <= shot_count:
-                self.show_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
-            else:
-                self.hide_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
+            self.hide_parameter_by_name([f"shot_{shot_index}_prompt", f"shot_{shot_index}_duration"])
+
+    def _get_multi_shot_items_from_widget(self) -> list[dict[str, Any]]:
+        """Extract and normalize multi-shot items from the widget-backed shots parameter."""
+        raw_shots = self.get_parameter_value("shots")
+        if not isinstance(raw_shots, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for index, raw_shot in enumerate(raw_shots, start=1):
+            if not isinstance(raw_shot, dict):
+                continue
+
+            prompt_value = raw_shot.get("description", raw_shot.get("prompt", ""))
+            prompt = str(prompt_value or "").strip()
+            duration = str(raw_shot.get("duration", "") or "").strip()
+
+            normalized.append({"index": index, "prompt": prompt, "duration": duration})
+
+        return normalized
 
     def _get_api_model_id(self) -> str:
         """Get the API model ID for this generation.
@@ -395,6 +427,10 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
 
     def _build_customize_multi_prompt_payload(self, shot_count: int) -> list[dict[str, Any]]:
         """Build multi_prompt payload from shot input parameters."""
+        widget_items = self._get_multi_shot_items_from_widget()
+        if widget_items:
+            return widget_items
+
         return [
             {
                 "index": shot_index,
@@ -404,8 +440,89 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
             for shot_index in range(1, shot_count + 1)
         ]
 
-    def _validate_customize_multi_shot(self, exceptions: list[Exception], shot_count: Any, duration: Any) -> None:  # noqa: C901
+    @staticmethod
+    def _sum_multi_prompt_duration_seconds(multi_prompt: list[dict[str, Any]]) -> int | None:
+        """Sum duration fields from multi_prompt items as integer seconds."""
+        total_duration = Decimal(0)
+        for shot in multi_prompt:
+            try:
+                shot_duration = Decimal(str(shot.get("duration", "") or ""))
+            except InvalidOperation:
+                return None
+
+            if shot_duration < 1:
+                return None
+            total_duration += shot_duration
+
+        if total_duration != total_duration.to_integral_value():
+            return None
+
+        return int(total_duration)
+
+    def _validate_customize_multi_shot(  # noqa: C901, PLR0912, PLR0915
+        self, exceptions: list[Exception], shot_count: Any, duration: Any
+    ) -> None:
         """Validate customize multi-shot inputs."""
+        widget_items = self._get_multi_shot_items_from_widget()
+        if widget_items:
+            if not (1 <= len(widget_items) <= MAX_MULTI_PROMPT_COUNT):
+                exceptions.append(
+                    ValueError(
+                        f"{self.name} shots must contain between 1 and {MAX_MULTI_PROMPT_COUNT} items "
+                        f"(got {len(widget_items)})."
+                    )
+                )
+
+            total_duration = Decimal(0)
+            for item in widget_items[:MAX_MULTI_PROMPT_COUNT]:
+                shot_index = item["index"]
+                component_prompt = item["prompt"]
+                component_duration = item["duration"]
+
+                if not component_prompt:
+                    exceptions.append(ValueError(f"{self.name} shot {shot_index} prompt must be a non-empty string."))
+                elif len(component_prompt) > MAX_PROMPT_LENGTH:
+                    exceptions.append(
+                        ValueError(
+                            f"{self.name} shot {shot_index} prompt exceeds {MAX_PROMPT_LENGTH} characters "
+                            f"(got: {len(component_prompt)} characters)."
+                        )
+                    )
+
+                try:
+                    component_duration_decimal = Decimal(component_duration)
+                except InvalidOperation:
+                    exceptions.append(
+                        ValueError(
+                            f"{self.name} shot {shot_index} has invalid duration '{component_duration}'. "
+                            "Expected a number-as-string."
+                        )
+                    )
+                    continue
+
+                if component_duration_decimal < 1:
+                    exceptions.append(
+                        ValueError(
+                            f"{self.name} shot {shot_index} duration must be at least 1 (got {component_duration})."
+                        )
+                    )
+                if component_duration_decimal != component_duration_decimal.to_integral_value():
+                    exceptions.append(
+                        ValueError(
+                            f"{self.name} shot {shot_index} duration must be an integer number of seconds "
+                            f"(got {component_duration})."
+                        )
+                    )
+                total_duration += component_duration_decimal
+
+            if total_duration <= 0:
+                exceptions.append(
+                    ValueError(
+                        f"{self.name} multi-shot durations must sum to a value greater than 0 (got {total_duration})."
+                    )
+                )
+            return
+
         try:
             shot_count_int = int(shot_count)
         except (TypeError, ValueError):
@@ -508,14 +625,10 @@ class KlingTextToVideoGeneration(GriptapeProxyNode):
                     except (TypeError, ValueError):
                         shot_count = 1
                     shot_count = max(1, min(MAX_MULTI_PROMPT_COUNT, shot_count))
-                    payload["multi_prompt"] = [
-                        {
-                            "index": shot_index,
-                            "prompt": (self.get_parameter_value(f"shot_{shot_index}_prompt") or "").strip(),
-                            "duration": str(self.get_parameter_value(f"shot_{shot_index}_duration") or "").strip(),
-                        }
-                        for shot_index in range(1, shot_count + 1)
-                    ]
+                    payload["multi_prompt"] = self._build_customize_multi_prompt_payload(shot_count)
+                    summed_duration = self._sum_multi_prompt_duration_seconds(payload["multi_prompt"])
+                    if summed_duration is not None:
+                        payload["duration"] = summed_duration
                 else:
                     payload["prompt"] = prompt.strip()
             else:

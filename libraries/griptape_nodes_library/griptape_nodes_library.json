@@ -50,6 +50,13 @@
       ]
     }
   },
+  "widgets": [
+    {
+      "name": "KlingMultiShotEditor",
+      "path": "griptape_nodes_library/video/widgets/KlingMultiShotEditor.js",
+      "description": "Multi-shot editor for Kling v3 customize mode."
+    }
+  ],
   "categories": [
     {
       "misc": {
