@@ -60,7 +60,22 @@ class GoogleImageGeneration(GriptapeProxyNode):
     }
     ASPECT_RATIO_OPTIONS: ClassVar[dict[str, list[str]]] = {
         "Nano Banana Pro": ["1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
-        "Nano Banana 2": ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"],
+        "Nano Banana 2": [
+            "1:1",
+            "1:4",
+            "1:8",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:1",
+            "4:3",
+            "4:5",
+            "5:4",
+            "8:1",
+            "9:16",
+            "16:9",
+            "21:9",
+        ],
     }
 
     def __init__(self, **kwargs: Any) -> None:
