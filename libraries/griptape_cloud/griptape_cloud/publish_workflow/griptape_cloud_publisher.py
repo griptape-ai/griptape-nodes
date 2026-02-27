@@ -246,6 +246,15 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         with path.open("w", encoding="utf-8", newline="\n") as f:
             f.write(content)
 
+    @staticmethod
+    def _validate_custom_install_script_path(path: str, workflow_name: str) -> None:
+        if not Path(path).is_file():
+            msg = (
+                f"Attempted to package workflow '{workflow_name}'. "
+                f"Failed because custom_install_script_path '{path}' does not exist."
+            )
+            raise FileNotFoundError(msg)
+
     def _get_publish_workflow_response_metadata(self, structure_id: str) -> dict[str, Any]:
         structure_url = urljoin(
             self._get_base_url(api_url=False),
@@ -771,13 +780,8 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 if start_flow_node is not None:
                     custom_install_script_path_val = start_flow_node.get_parameter_value("custom_install_script_path")
                 if custom_install_script_path_val:
-                    custom_script_file = Path(custom_install_script_path_val)
-                    if not custom_script_file.is_file():
-                        raise FileNotFoundError(
-                            f"Attempted to package workflow '{workflow_name}'. "
-                            f"Failed because custom_install_script_path '{custom_install_script_path_val}' does not exist."
-                        )
-                    custom_script_contents = custom_script_file.read_text(encoding="utf-8")
+                    self._validate_custom_install_script_path(custom_install_script_path_val, workflow_name)
+                    custom_script_contents = Path(custom_install_script_path_val).read_text(encoding="utf-8")
                     with temp_pre_build_install_script_path.open("a", encoding="utf-8", newline="\n") as f:
                         f.write("\n")
                         f.write(custom_script_contents)
