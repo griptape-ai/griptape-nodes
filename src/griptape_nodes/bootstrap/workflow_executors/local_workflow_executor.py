@@ -13,12 +13,18 @@ from griptape_nodes.retained_mode.events.base_events import (
 )
 from griptape_nodes.retained_mode.events.execution_events import StartFlowRequest
 from griptape_nodes.retained_mode.events.parameter_events import SetParameterValueRequest
+from griptape_nodes.retained_mode.events.project_events import (
+    LoadProjectTemplateRequest,
+    LoadProjectTemplateResultSuccess,
+    SetCurrentProjectRequest,
+)
 from griptape_nodes.retained_mode.events.workflow_events import (
     RunWorkflowFromScratchRequest,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from types import TracebackType
 
 logger = logging.getLogger(__name__)
@@ -33,11 +39,13 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         self,
         storage_backend: StorageBackend = StorageBackend.LOCAL,
         *,
+        project_file_path: Path | None = None,
         skip_library_loading: bool = False,
         workflows_to_register: list[str] | None = None,
     ):
         super().__init__()
         self._set_storage_backend(storage_backend=storage_backend)
+        self._project_file_path = project_file_path
         self._skip_library_loading = skip_library_loading
         self._workflows_to_register = workflows_to_register or []
 
@@ -92,6 +100,22 @@ class LocalWorkflowExecutor(WorkflowExecutor):
             msg = f"Failed to set storage backend: {e}"
             logger.exception(msg)
             raise LocalExecutorError(msg) from e
+
+    async def _load_project(self, project_file_path: Path) -> None:
+        """Load a project template and set it as the active project."""
+        load_result = await GriptapeNodes.ahandle_request(LoadProjectTemplateRequest(project_path=project_file_path))
+        if not isinstance(load_result, LoadProjectTemplateResultSuccess):
+            msg = f"Attempted to load project template from {project_file_path}. Failed with result: {load_result}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg)
+
+        set_result = await GriptapeNodes.ahandle_request(SetCurrentProjectRequest(project_id=load_result.project_id))
+        if set_result.failed():
+            msg = f"Attempted to set project {load_result.project_id} as current. Failed with result: {set_result}"
+            logger.exception(msg)
+            raise LocalExecutorError(msg)
+
+        logger.info("Loaded and activated project template from %s", project_file_path)
 
     def _submit_output(self, output: dict) -> None:
         self.output = output
@@ -202,6 +226,9 @@ class LocalWorkflowExecutor(WorkflowExecutor):
         flow_name = self._load_flow_for_workflow()
         # Now let's set the input to the flow
         await self._set_input_for_flow(flow_name=flow_name, flow_input=flow_input)
+
+        if self._project_file_path is not None:
+            await self._load_project(self._project_file_path)
 
         return flow_name
 
