@@ -7,7 +7,8 @@
       "description": "Configuration settings for Griptape Cloud",
       "category": "griptape_cloud_library",
       "contents": {
-        "GT_CLOUD_PUBLISH_BUCKET_ID": ""
+        "GT_CLOUD_PUBLISH_BUCKET_ID": "",
+        "GT_CLOUD_PUBLISH_DOWNLOAD_MODELS": true
       }
     }
   ],

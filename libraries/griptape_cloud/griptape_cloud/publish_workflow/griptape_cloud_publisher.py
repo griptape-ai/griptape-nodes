@@ -818,18 +818,24 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 with temp_register_libraries_script_path.open("w", encoding="utf-8") as register_libraries_script_file:
                     register_libraries_script_file.write(register_libraries_script_contents)
 
-                download_commands = self._collect_workflow_download_commands()
-                download_commands_formatted = [repr(cmd) for cmd in download_commands]
-                with download_models_script_path.open("r", encoding="utf-8") as download_models_script_file:
-                    download_models_script_contents = download_models_script_file.read().replace(
-                        '["REPLACE_DOWNLOAD_COMMANDS"]',
-                        f"[{', '.join(download_commands_formatted)}]",
-                    )
-                with temp_download_models_script_path.open("w", encoding="utf-8") as download_models_script_file:
-                    download_models_script_file.write(download_models_script_contents)
-                with temp_post_build_install_script_path.open("a", encoding="utf-8", newline="\n") as f:
-                    f.write("\npython download_models_script.py\n")
-                self._normalize_line_endings(temp_post_build_install_script_path)
+                should_download_models = GriptapeNodes.ConfigManager().get_config_value(
+                    f"{GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY}.GT_CLOUD_PUBLISH_DOWNLOAD_MODELS",
+                    default=True,
+                    cast_type=bool,
+                )
+                if should_download_models:
+                    download_commands = self._collect_workflow_download_commands()
+                    download_commands_formatted = [repr(cmd) for cmd in download_commands]
+                    with download_models_script_path.open("r", encoding="utf-8") as download_models_script_file:
+                        download_models_script_contents = download_models_script_file.read().replace(
+                            '["REPLACE_DOWNLOAD_COMMANDS"]',
+                            f"[{', '.join(download_commands_formatted)}]",
+                        )
+                    with temp_download_models_script_path.open("w", encoding="utf-8") as download_models_script_file:
+                        download_models_script_file.write(download_models_script_contents)
+                    with temp_post_build_install_script_path.open("a", encoding="utf-8", newline="\n") as f:
+                        f.write("\npython download_models_script.py\n")
+                    self._normalize_line_endings(temp_post_build_install_script_path)
 
                 with structure_file_path.open("r", encoding="utf-8") as structure_file:
                     structure_file_contents = structure_file.read()
