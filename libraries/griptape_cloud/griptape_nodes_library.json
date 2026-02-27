@@ -7,15 +7,16 @@
       "description": "Configuration settings for Griptape Cloud",
       "category": "griptape_cloud_library",
       "contents": {
-        "GT_CLOUD_PUBLISH_BUCKET_ID": ""
+        "GT_CLOUD_PUBLISH_BUCKET_ID": "",
+        "GT_CLOUD_PUBLISH_DOWNLOAD_MODELS": true
       }
     }
   ],
   "metadata": {
     "author": "Griptape",
     "description": "Collection of nodes for accessing Griptape Cloud APIs and services.",
-    "library_version": "0.68.0",
-    "engine_version": "0.71.0",
+    "library_version": "0.69.0",
+    "engine_version": "0.75.2",
     "tags": ["Griptape", "AI", "Cloud"],
     "dependencies": {
       "pip_dependencies": ["griptape-cloud-client==0.1.1"]
