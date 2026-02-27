@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from pydantic import BaseModel
+
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
     ResultPayloadFailure,
@@ -10,8 +12,7 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
 
 
-@dataclass
-class Waypoint:
+class Waypoint(BaseModel):
     """Position for a connection edge bend point (e.g. in the flow canvas)."""
 
     x: float
@@ -52,7 +53,7 @@ class CreateConnectionRequest(RequestPayload):
     def __post_init__(self) -> None:
         """Normalize waypoints from dicts to Waypoint objects during deserialization."""
         if self.waypoints:
-            self.waypoints = [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in self.waypoints]
+            self.waypoints = [Waypoint.model_validate(w) for w in self.waypoints]
 
 
 @dataclass
