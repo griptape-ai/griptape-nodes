@@ -2237,6 +2237,8 @@ class WorkflowManager:
         import_recorder.add_import("argparse")
         import_recorder.add_import("asyncio")
         import_recorder.add_import("json")
+        import_recorder.add_import("logging")
+        import_recorder.add_from_import("pathlib", "Path")
         import_recorder.add_from_import(
             "griptape_nodes.bootstrap.workflow_executors.local_workflow_executor", "LocalWorkflowExecutor"
         )
@@ -2249,6 +2251,14 @@ class WorkflowManager:
         #   args
         arg_input = ast.arg(arg="input", annotation=ast.Name(id="dict", ctx=ast.Load()))
         arg_storage_backend = ast.arg(arg="storage_backend", annotation=ast.Name(id="str", ctx=ast.Load()))
+        arg_project_file_path = ast.arg(
+            arg="project_file_path",
+            annotation=ast.BinOp(
+                left=ast.Name(id="str", ctx=ast.Load()),
+                op=ast.BitOr(),
+                right=ast.Constant(value=None),
+            ),
+        )
         arg_workflow_executor = ast.arg(
             arg="workflow_executor",
             annotation=ast.BinOp(
@@ -2262,13 +2272,20 @@ class WorkflowManager:
         )
         args = ast.arguments(
             posonlyargs=[],
-            args=[arg_input, arg_storage_backend, arg_workflow_executor, arg_pickle_control_flow_result],
+            args=[
+                arg_input,
+                arg_storage_backend,
+                arg_project_file_path,
+                arg_workflow_executor,
+                arg_pickle_control_flow_result,
+            ],
             vararg=None,
             kwonlyargs=[],
             kw_defaults=[],
             kwarg=None,
             defaults=[
                 ast.Constant(StorageBackend.LOCAL.value),
+                ast.Constant(value=None),
                 ast.Constant(value=None),
                 ast.Constant(value=pickle_control_flow_result),
             ],
@@ -2293,7 +2310,25 @@ class WorkflowManager:
             ),
         )
 
-        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(storage_backend=storage_backend_enum, skip_library_loading=True, workflows_to_register=[__file__])
+        # Resolve project_file_path string to Path: project_file_path_resolved = Path(project_file_path) if project_file_path is not None else None
+        project_file_path_resolve = ast.Assign(
+            targets=[ast.Name(id="project_file_path_resolved", ctx=ast.Store())],
+            value=ast.IfExp(
+                test=ast.Compare(
+                    left=ast.Name(id="project_file_path", ctx=ast.Load()),
+                    ops=[ast.IsNot()],
+                    comparators=[ast.Constant(value=None)],
+                ),
+                body=ast.Call(
+                    func=ast.Name(id="Path", ctx=ast.Load()),
+                    args=[ast.Name(id="project_file_path", ctx=ast.Load())],
+                    keywords=[],
+                ),
+                orelse=ast.Constant(value=None),
+            ),
+        )
+
+        # Create conditional logic: workflow_executor = workflow_executor or LocalWorkflowExecutor(...)
         # TODO: https://github.com/griptape-ai/griptape-nodes/issues/3771 Update for workflows that call other workflows - need to include referenced workflows in the list
         executor_assign = ast.Assign(
             targets=[ast.Name(id="workflow_executor", ctx=ast.Store())],
@@ -2307,6 +2342,10 @@ class WorkflowManager:
                         keywords=[
                             ast.keyword(
                                 arg="storage_backend", value=ast.Name(id="storage_backend_enum", ctx=ast.Load())
+                            ),
+                            ast.keyword(
+                                arg="project_file_path",
+                                value=ast.Name(id="project_file_path_resolved", ctx=ast.Load()),
                             ),
                             ast.keyword(arg="skip_library_loading", value=ast.Constant(value=True)),
                             ast.keyword(
@@ -2360,7 +2399,14 @@ class WorkflowManager:
         async_func_def = ast.AsyncFunctionDef(
             name="aexecute_workflow",
             args=args,
-            body=[ensure_context_call, storage_backend_convert, executor_assign, with_stmt, return_stmt],
+            body=[
+                ensure_context_call,
+                storage_backend_convert,
+                project_file_path_resolve,
+                executor_assign,
+                with_stmt,
+                return_stmt,
+            ],
             decorator_list=[],
             returns=return_annotation,
             type_params=[],
@@ -2389,6 +2435,10 @@ class WorkflowManager:
                                         arg="storage_backend", value=ast.Name(id="storage_backend", ctx=ast.Load())
                                     ),
                                     ast.keyword(
+                                        arg="project_file_path",
+                                        value=ast.Name(id="project_file_path", ctx=ast.Load()),
+                                    ),
+                                    ast.keyword(
                                         arg="workflow_executor", value=ast.Name(id="workflow_executor", ctx=ast.Load())
                                     ),
                                     ast.keyword(
@@ -2409,6 +2459,15 @@ class WorkflowManager:
         ast.fix_missing_locations(sync_func_def)
 
         # === 2) build the `if __name__ == "__main__":` block ===
+        if_node = self._generate_main_block(workflow_shape)
+
+        # Generate the ensure flow context function
+        ensure_context_func = self._generate_ensure_flow_context_function(import_recorder)
+
+        return [ensure_context_func, sync_func_def, async_func_def, if_node]
+
+    def _generate_main_block(self, workflow_shape: dict) -> ast.If:
+        """Generates the `if __name__ == '__main__':` block for the serialized workflow file."""
         main_test = ast.Compare(
             left=ast.Name(id="__name__", ctx=ast.Load()),
             ops=[ast.Eq()],
@@ -2455,6 +2514,27 @@ class WorkflowManager:
                             value=ast.Constant(
                                 "Storage backend to use: 'local' for local filesystem or 'gtc' for Griptape Cloud"
                             ),
+                        ),
+                    ],
+                )
+            )
+        )
+
+        # Add project file path argument
+        add_arg_calls.append(
+            ast.Expr(
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Name(id="parser", ctx=ast.Load()),
+                        attr="add_argument",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant("--project-file-path")],
+                    keywords=[
+                        ast.keyword(arg="default", value=ast.Constant(None)),
+                        ast.keyword(
+                            arg="help",
+                            value=ast.Constant("Path to a project file to load for the workflow execution"),
                         ),
                     ],
                 )
@@ -2677,6 +2757,14 @@ class WorkflowManager:
                             ctx=ast.Load(),
                         ),
                     ),
+                    ast.keyword(
+                        arg="project_file_path",
+                        value=ast.Attribute(
+                            value=ast.Name(id="args", ctx=ast.Load()),
+                            attr="project_file_path",
+                            ctx=ast.Load(),
+                        ),
+                    ),
                 ],
             ),
         )
@@ -2688,9 +2776,34 @@ class WorkflowManager:
             )
         )
 
+        # logging.basicConfig(level=logging.INFO) — ensures a handler exists on the root logger
+        # so that log records from the "griptape_nodes" logger (whose level is set by ConfigManager)
+        # actually have somewhere to go when running workflows from the CLI.
+        logging_basic_config = ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Name(id="logging", ctx=ast.Load()),
+                    attr="basicConfig",
+                    ctx=ast.Load(),
+                ),
+                args=[],
+                keywords=[
+                    ast.keyword(
+                        arg="level",
+                        value=ast.Attribute(
+                            value=ast.Name(id="logging", ctx=ast.Load()),
+                            attr="INFO",
+                            ctx=ast.Load(),
+                        ),
+                    ),
+                ],
+            )
+        )
+
         if_node = ast.If(
             test=main_test,
             body=[
+                logging_basic_config,
                 parser_assign,
                 *add_arg_calls,
                 parse_args,
@@ -2704,10 +2817,7 @@ class WorkflowManager:
         )
         ast.fix_missing_locations(if_node)
 
-        # Generate the ensure flow context function
-        ensure_context_func = self._generate_ensure_flow_context_function(import_recorder)
-
-        return [ensure_context_func, sync_func_def, async_func_def, if_node]
+        return if_node
 
     def _generate_ensure_flow_context_function(
         self,
