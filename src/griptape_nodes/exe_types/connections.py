@@ -43,7 +43,7 @@ class Connections:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
-        waypoints: list[Waypoint] | list[dict[str, float]] | None = None,
+        waypoints: list[Waypoint] | None = None,
     ) -> Connection:
         if ParameterMode.OUTPUT not in source_parameter.get_mode():
             errormsg = f"Output Connection not allowed on Parameter '{source_parameter.name}'."
@@ -55,18 +55,13 @@ class Connections:
         if self.connection_allowed(source_node, source_parameter, is_source=True) and self.connection_allowed(
             target_node, target_parameter, is_source=False
         ):
-            normalized_waypoints = (
-                [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in waypoints]
-                if waypoints
-                else None
-            )
             connection = Connection(
                 source_node,
                 source_parameter,
                 target_node,
                 target_parameter,
                 is_node_group_internal=is_node_group_internal,
-                waypoints=normalized_waypoints,
+                waypoints=waypoints,
             )
             # New index management.
             connection_id = id(connection)

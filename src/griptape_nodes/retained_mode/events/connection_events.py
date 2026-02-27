@@ -49,6 +49,11 @@ class CreateConnectionRequest(RequestPayload):
     # Optional waypoints for the connection (e.g. when loading from file). Ordered list of Waypoint.
     waypoints: list[Waypoint] | None = None
 
+    def __post_init__(self) -> None:
+        """Normalize waypoints from dicts to Waypoint objects during deserialization."""
+        if self.waypoints:
+            self.waypoints = [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in self.waypoints]
+
 
 @dataclass
 @PayloadRegistry.register
