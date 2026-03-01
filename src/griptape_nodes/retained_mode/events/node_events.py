@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         IncomingConnection,
         ListConnectionsForNodeResultSuccess,
         OutgoingConnection,
+        Waypoint,
     )
     from griptape_nodes.retained_mode.events.parameter_events import (
         GetParameterDetailsResultSuccess,
@@ -607,12 +608,14 @@ class SerializedSelectedNodesCommands:
             source_parameter_name (str): Name of the source parameter.
             target_node_uuid (SerializedNodeCommands.NodeUUID): UUID of the target node.
             target_parameter_name (str): Name of the target parameter.
+            waypoints: Optional ordered list of {"x": float, "y": float} for edge bend points. Default empty.
         """
 
         source_node_uuid: SerializedNodeCommands.NodeUUID
         source_parameter_name: str
         target_node_uuid: SerializedNodeCommands.NodeUUID
         target_parameter_name: str
+        waypoints: list[Waypoint] = field(default_factory=list)
 
     serialized_node_commands: list[SerializedNodeCommands]
     set_parameter_value_commands: dict[

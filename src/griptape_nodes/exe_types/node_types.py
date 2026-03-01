@@ -31,6 +31,7 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
+from griptape_nodes.retained_mode.events.connection_events import Waypoint
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -1999,8 +2000,9 @@ class Connection:
     source_parameter: Parameter
     target_parameter: Parameter
     is_node_group_internal: bool
+    waypoints: list[Waypoint]
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 (waypoints is a required connection attribute)
         self,
         source_node: BaseNode,
         source_parameter: Parameter,
@@ -2008,12 +2010,16 @@ class Connection:
         target_parameter: Parameter,
         *,
         is_node_group_internal: bool = False,
+        waypoints: list[Waypoint] | None = None,
     ) -> None:
         self.source_node = source_node
         self.target_node = target_node
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
         self.is_node_group_internal = is_node_group_internal
+        self.waypoints = (
+            [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in waypoints] if waypoints else []
+        )
 
     def get_target_node(self) -> BaseNode:
         return self.target_node

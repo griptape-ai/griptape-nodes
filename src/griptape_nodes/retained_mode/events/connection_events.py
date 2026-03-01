@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from pydantic import BaseModel
 
 from griptape_nodes.retained_mode.events.base_events import (
     RequestPayload,
@@ -8,6 +10,13 @@ from griptape_nodes.retained_mode.events.base_events import (
     WorkflowNotAlteredMixin,
 )
 from griptape_nodes.retained_mode.events.payload_registry import PayloadRegistry
+
+
+class Waypoint(BaseModel):
+    """Position for a connection edge bend point (e.g. in the flow canvas)."""
+
+    x: float
+    y: float
 
 
 @dataclass
@@ -38,6 +47,13 @@ class CreateConnectionRequest(RequestPayload):
     initial_setup: bool = False
     # Mark this connection as internal to a node group proxy parameter
     is_node_group_internal: bool = False
+    # Optional waypoints for the connection (e.g. when loading from file). Ordered list of Waypoint.
+    waypoints: list[Waypoint] | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize waypoints from dicts to Waypoint objects during deserialization."""
+        if self.waypoints:
+            self.waypoints = [Waypoint.model_validate(w) for w in self.waypoints]
 
 
 @dataclass
@@ -118,6 +134,7 @@ class IncomingConnection:
     source_node_name: str
     source_parameter_name: str
     target_parameter_name: str
+    waypoints: list[Waypoint] = field(default_factory=list)
 
 
 @dataclass
@@ -125,6 +142,7 @@ class OutgoingConnection:
     source_parameter_name: str
     target_node_name: str
     target_parameter_name: str
+    waypoints: list[Waypoint] = field(default_factory=list)
 
 
 @dataclass
@@ -145,3 +163,124 @@ class ListConnectionsForNodeResultSuccess(WorkflowNotAlteredMixin, ResultPayload
 @PayloadRegistry.register
 class ListConnectionsForNodeResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Node connections listing failed. Common causes: node not found, no current context."""
+
+
+# --- Waypoint events ---
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointRequest(RequestPayload):
+    """Add a new waypoint to an existing connection.
+
+    Use when: User adds a bend point to an edge in the UI.
+
+    Args:
+        source_node_name: Source node of the connection
+        source_parameter_name: Source parameter name
+        target_node_name: Target node of the connection
+        target_parameter_name: Target parameter name
+        waypoint: {"x": float, "y": float} position of the new waypoint
+        insert_index: Optional 0-based index to insert at. If omitted, append to end.
+
+    Results: CreateWaypointResultSuccess (with updated waypoints) | CreateWaypointResultFailure
+    """
+
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
+    waypoint: Waypoint
+    insert_index: int | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint added successfully. waypoints is the full updated ordered list for the connection."""
+
+    waypoints: list[Waypoint]
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWaypointResultFailure(ResultPayloadFailure):
+    """Create waypoint failed. Common causes: connection not found, invalid index or coordinates."""
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointRequest(RequestPayload):
+    """Remove a waypoint from a connection.
+
+    Use when: User removes a bend point from an edge in the UI.
+
+    Args:
+        source_node_name: Source node of the connection
+        source_parameter_name: Source parameter name
+        target_node_name: Target node of the connection
+        target_parameter_name: Target parameter name
+        waypoint_index: 0-based index of waypoint to remove
+
+    Results: RemoveWaypointResultSuccess (with updated waypoints) | RemoveWaypointResultFailure
+    """
+
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
+    waypoint_index: int
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint removed successfully. waypoints is the full updated ordered list for the connection."""
+
+    waypoints: list[Waypoint]
+
+
+@dataclass
+@PayloadRegistry.register
+class RemoveWaypointResultFailure(ResultPayloadFailure):
+    """Remove waypoint failed. Common causes: connection not found, waypoint_index out of range."""
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointRequest(RequestPayload):
+    """Update the position of an existing waypoint.
+
+    Use when: User drags a bend point on an edge in the UI.
+
+    Args:
+        source_node_name: Source node of the connection
+        source_parameter_name: Source parameter name
+        target_node_name: Target node of the connection
+        target_parameter_name: Target parameter name
+        waypoint_index: 0-based index of waypoint to update
+        waypoint: {"x": float, "y": float} new position
+
+    Results: UpdateWaypointResultSuccess (with updated waypoints) | UpdateWaypointResultFailure
+    """
+
+    source_node_name: str
+    source_parameter_name: str
+    target_node_name: str
+    target_parameter_name: str
+    waypoint_index: int
+    waypoint: Waypoint
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Waypoint updated successfully. waypoints is the full updated ordered list for the connection."""
+
+    waypoints: list[Waypoint]
+
+
+@dataclass
+@PayloadRegistry.register
+class UpdateWaypointResultFailure(ResultPayloadFailure):
+    """Update waypoint failed. Common causes: connection not found, waypoint_index out of range."""

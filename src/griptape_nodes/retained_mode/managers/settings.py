@@ -131,7 +131,10 @@ class AppEvents(BaseModel):
     events_to_echo_as_retained_mode: list[str] = Field(
         default_factory=lambda: [
             "CreateConnectionRequest",
+            "CreateWaypointRequest",
             "DeleteConnectionRequest",
+            "RemoveWaypointRequest",
+            "UpdateWaypointRequest",
             "CreateFlowRequest",
             "DeleteFlowRequest",
             "CreateNodeRequest",
