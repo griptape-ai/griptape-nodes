@@ -272,6 +272,14 @@
         "description": "",
         "icon": "layers-2"
       }
+    },
+    {
+      "filesystem": {
+        "color": "border-blue-500",
+        "title": "Filesystem",
+        "description": "Nodes for configuring and managing file paths",
+        "icon": "FolderCog"
+      }
     }
   ],
   "nodes": [
@@ -2622,6 +2630,16 @@
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle",
         "group": "describe"
+      }
+    },
+    {
+      "class_name": "ConfigureProjectFileSave",
+      "file_path": "griptape_nodes_library/filesystem/configure_project_file_save.py",
+      "metadata": {
+        "category": "filesystem",
+        "description": "Configure file save paths using situation templates and macro expansion. Outputs a File object with an unresolved macro path.",
+        "display_name": "Configure Project File Save",
+        "icon": "FolderCog"
       }
     },
     {

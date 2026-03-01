@@ -16,7 +16,47 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import unquote, urlparse
+
+
+class FilenameParts(NamedTuple):
+    """Components of a file path split into directory, basename, and extension.
+
+    Attributes:
+        directory: Parent directory path
+        basename: Filename without extension
+        extension: File extension without leading dot
+    """
+
+    directory: Path
+    basename: str
+    extension: str
+
+
+def parse_filename_components(filename: str, default_extension: str = "png") -> FilenameParts:
+    """Parse a filename or path into its directory, base, and extension components.
+
+    Args:
+        filename: Filename or path to parse (e.g., "image.png", "/dir/output.tar.gz", "test")
+        default_extension: Extension to use if filename has none
+
+    Returns:
+        FilenameParts with directory, basename, and extension (no leading dot)
+
+    Examples:
+        parse_filename_components("image.png")
+        -> FilenameParts(directory=Path("."), basename="image", extension="png")
+
+        parse_filename_components("output.tar.gz")
+        -> FilenameParts(directory=Path("."), basename="output.tar", extension="gz")
+
+        parse_filename_components("/some/dir/test")
+        -> FilenameParts(directory=Path("/some/dir"), basename="test", extension="png")
+    """
+    path = Path(filename)
+    extension = path.suffix.lstrip(".") if path.suffix else default_extension
+    return FilenameParts(directory=path.parent, basename=path.stem, extension=extension)
 
 
 def parse_file_uri(location: str) -> str | None:
