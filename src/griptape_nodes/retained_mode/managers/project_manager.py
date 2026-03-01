@@ -34,6 +34,9 @@ from griptape_nodes.retained_mode.events.project_events import (
     AttemptMatchPathAgainstMacroRequest,
     AttemptMatchPathAgainstMacroResultFailure,
     AttemptMatchPathAgainstMacroResultSuccess,
+    FindProjectForPathRequest,
+    FindProjectForPathResultFailure,
+    FindProjectForPathResultSuccess,
     GetAllSituationsForProjectRequest,
     GetAllSituationsForProjectResultFailure,
     GetAllSituationsForProjectResultSuccess,
@@ -206,6 +209,9 @@ class ProjectManager:
             event_manager.assign_manager_to_request_type(
                 AttemptMapAbsolutePathToProjectRequest, self.on_attempt_map_absolute_path_to_project_request
             )
+            event_manager.assign_manager_to_request_type(
+                FindProjectForPathRequest, self.on_find_project_for_path_request
+            )
 
             # Register app initialization listener
             event_manager.add_listener_to_app_event(
@@ -266,9 +272,10 @@ class ProjectManager:
 
         if template is None:
             self._registered_template_status[request.project_path] = validation
+            parse_errors = "; ".join(p.message for p in validation.problems)
             return LoadProjectTemplateResultFailure(
                 validation=validation,
-                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed",
+                result_details=f"Attempted to load project template from '{request.project_path}'. Failed because YAML could not be parsed: {parse_errors}",
             )
 
         # Generate project_id from file path
@@ -788,6 +795,46 @@ class ProjectManager:
         return AttemptMapAbsolutePathToProjectResultSuccess(
             mapped_path=mapped_path,
             result_details=f"Successfully mapped absolute path to '{mapped_path}'",
+        )
+
+    def on_find_project_for_path_request(
+        self, request: FindProjectForPathRequest
+    ) -> FindProjectForPathResultSuccess | FindProjectForPathResultFailure:
+        """Find which project a file path belongs to across all loaded projects.
+
+        Checks all loaded non-default projects to find one whose directories
+        contain the given absolute path.
+
+        Args:
+            request: Request containing the absolute path to check
+
+        Returns:
+            Success with project_id if a project match is found, or None if no match
+            Failure if operation cannot be performed (secrets manager unavailable)
+        """
+        if self._secrets_manager is None:
+            return FindProjectForPathResultFailure(
+                result_details=f"Attempted to find project for path '{request.absolute_path}'. Failed because SecretsManager not available"
+            )
+
+        for project_id, project_info in self._successfully_loaded_project_templates.items():
+            if project_id == SYSTEM_DEFAULTS_KEY:
+                continue
+
+            try:
+                mapped_path = self._absolute_path_to_macro_path(request.absolute_path, project_info)
+            except (RuntimeError, NotImplementedError):
+                continue
+
+            if mapped_path is not None:
+                return FindProjectForPathResultSuccess(
+                    project_id=project_id,
+                    result_details=f"Successfully found project for path '{request.absolute_path}'. Project ID: '{project_id}'",
+                )
+
+        return FindProjectForPathResultSuccess(
+            project_id=None,
+            result_details=f"Attempted to find project for path '{request.absolute_path}'. Path does not belong to any loaded project",
         )
 
     # Helper methods (private)

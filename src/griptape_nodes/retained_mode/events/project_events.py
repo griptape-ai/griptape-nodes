@@ -537,3 +537,48 @@ class GetAllSituationsForProjectResultSuccess(WorkflowNotAlteredMixin, ResultPay
 @PayloadRegistry.register
 class GetAllSituationsForProjectResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
     """Failure result when cannot get situations."""
+
+
+@dataclass
+@PayloadRegistry.register
+class FindProjectForPathRequest(RequestPayload):
+    """Find which project a file path belongs to, across all loaded projects.
+
+    Use when: A workflow is loaded and you need to detect which project it
+    belongs to so you can set the active project accordingly.
+
+    Skips the system default project and checks all user-defined loaded projects.
+    Returns the first matching project ID.
+
+    Args:
+        absolute_path: The absolute filesystem path to check
+
+    Results: FindProjectForPathResultSuccess | FindProjectForPathResultFailure
+    """
+
+    absolute_path: Path
+
+
+@dataclass
+@PayloadRegistry.register
+class FindProjectForPathResultSuccess(WorkflowNotAlteredMixin, ResultPayloadSuccess):
+    """Path was checked against all loaded projects.
+
+    Success means the check was performed (not necessarily that a match was found).
+    - project_id is NOT None: Path belongs to a specific project
+    - project_id is None: Path does not belong to any loaded project
+
+    Args:
+        project_id: The ID of the matching project, or None if no project matched
+    """
+
+    project_id: ProjectID | None
+
+
+@dataclass
+@PayloadRegistry.register
+class FindProjectForPathResultFailure(WorkflowNotAlteredMixin, ResultPayloadFailure):
+    """Path check could not be performed.
+
+    Returned when the operation cannot be performed (secrets manager unavailable).
+    """

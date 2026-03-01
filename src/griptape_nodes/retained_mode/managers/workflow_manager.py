@@ -23,6 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from griptape_nodes.common.project_templates import PROJECT_FILE_NAME
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
@@ -72,6 +73,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     GetFileInfoResultSuccess,
     WriteFileRequest,
     WriteFileResultFailure,
+)
+from griptape_nodes.retained_mode.events.project_events import (
+    FindProjectForPathRequest,
+    FindProjectForPathResultSuccess,
+    LoadProjectTemplateRequest,
+    SetCurrentProjectRequest,
 )
 from griptape_nodes.retained_mode.events.workflow_events import (
     BranchWorkflowRequest,
@@ -646,6 +653,50 @@ class WorkflowManager:
                 error_message = "Workflow execution completed but no current flow context could be established"
                 raise RuntimeError(error_message)
 
+    async def _set_project_for_workflow_path(self, complete_file_path: str) -> None:
+        """Detect which project a workflow file belongs to and set it as the active project.
+
+        Walks up from the workflow file's directory to find the nearest griptape-nodes-project.yml,
+        loads it, then sets that project as the current project. Stops at the workspace
+        root to avoid picking up unrelated project files. Logs but does not fail on errors.
+
+        Args:
+            complete_file_path: Absolute path to the workflow file
+        """
+        workflow_path = Path(complete_file_path)
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path
+
+        # Walk up from the workflow's directory looking for the nearest griptape-nodes-project.yml,
+        # stopping at the workspace root.
+        current = workflow_path.parent
+        while True:
+            project_yml = current / PROJECT_FILE_NAME
+            if project_yml.is_file():
+                load_request = LoadProjectTemplateRequest(project_path=project_yml)
+                await GriptapeNodes.ahandle_request(load_request)
+                break
+            if current == workspace_path or not current.is_relative_to(workspace_path):
+                break
+            current = current.parent
+
+        find_request = FindProjectForPathRequest(absolute_path=workflow_path)
+        find_result = await GriptapeNodes.ahandle_request(find_request)
+
+        if not isinstance(find_result, FindProjectForPathResultSuccess):
+            logger.debug(
+                "Could not determine project for workflow '%s': %s", complete_file_path, find_result.result_details
+            )
+            return
+
+        if find_result.project_id is None:
+            return
+
+        set_request = SetCurrentProjectRequest(project_id=find_result.project_id)
+        await GriptapeNodes.ahandle_request(set_request)
+        logger.info(
+            "Set active project to '%s' based on workflow path '%s'", find_result.project_id, complete_file_path
+        )
+
     async def run_workflow(self, relative_file_path: str) -> WorkflowExecutionResult:
         # Resolve path using utility function
         workspace_path = GriptapeNodes.ConfigManager().workspace_path
@@ -689,6 +740,9 @@ class WorkflowManager:
                 details = f"Failed to clear the existing object state when trying to run '{complete_file_path}'."
                 return RunWorkflowFromScratchResultFailure(result_details=details)
 
+            # Set the project before running so nodes are created with the correct project context.
+            await self._set_project_for_workflow_path(complete_file_path)
+
             # Run the file, goddamn it
             execution_result = await self.run_workflow(relative_file_path=relative_file_path)
             if execution_result.execution_successful:
@@ -705,6 +759,10 @@ class WorkflowManager:
         if not Path(complete_file_path).is_file():
             details = f"Failed to find file. Path '{complete_file_path}' doesn't exist."
             return RunWorkflowWithCurrentStateResultFailure(result_details=details)
+
+        # Set the project before running so nodes are created with the correct project context.
+        await self._set_project_for_workflow_path(complete_file_path)
+
         execution_result = await self.run_workflow(relative_file_path=relative_file_path)
 
         if execution_result.execution_successful:
@@ -729,6 +787,10 @@ class WorkflowManager:
 
         # get file_path from workflow
         relative_file_path = workflow.file_path
+        complete_file_path = WorkflowRegistry.get_complete_file_path(relative_file_path=relative_file_path)
+
+        # Set the project before running so nodes are created with the correct project context.
+        await self._set_project_for_workflow_path(complete_file_path)
 
         # Squelch any ResultPayloads that indicate the workflow was changed, because we are loading it.
         with WorkflowManager.WorkflowSquelchContext(self):

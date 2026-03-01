@@ -1194,3 +1194,171 @@ class TestProjectManagerAttemptMapAbsolutePathToProject:
             result_message = str(result.result_details)
             assert "failed" in result_message.lower()
             assert "workflow" in result_message.lower() or "no current workflow" in result_message.lower()
+
+
+class TestProjectManagerFindProjectForPath:
+    """Test ProjectManager FindProjectForPath event handler."""
+
+    @pytest.fixture
+    def project_manager(self) -> ProjectManager:
+        """Create a ProjectManager instance for testing."""
+        mock_config = Mock()
+        mock_secrets = Mock()
+        mock_event_manager = Mock()
+        return ProjectManager(mock_event_manager, mock_config, mock_secrets)
+
+    def _register_project(self, project_manager: ProjectManager, project_id: str, project_base: Path) -> None:
+        from griptape_nodes.common.macro_parser import ParsedMacro
+        from griptape_nodes.common.project_templates import (
+            DEFAULT_PROJECT_TEMPLATE,
+            ProjectValidationInfo,
+            ProjectValidationStatus,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        directory_schemas = {
+            dir_name: ParsedMacro(dir_def.path_macro)
+            for dir_name, dir_def in DEFAULT_PROJECT_TEMPLATE.directories.items()
+        }
+
+        project_manager._successfully_loaded_project_templates[project_id] = ProjectInfo(
+            project_id=project_id,
+            project_file_path=project_base / "project.yml",
+            project_base_dir=project_base,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=ProjectValidationInfo(status=ProjectValidationStatus.GOOD),
+            parsed_situation_schemas={},
+            parsed_directory_schemas=directory_schemas,
+        )
+
+    def test_find_project_path_inside_loaded_project(self, project_manager: ProjectManager) -> None:
+        """Test that a path inside a loaded project returns that project's ID."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            FindProjectForPathRequest,
+            FindProjectForPathResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
+        project_base = Path("/Users/test/myproject")
+        project_id = str(project_base / "project.yml")
+
+        self._register_project(project_manager, SYSTEM_DEFAULTS_KEY, Path("/Users/test/workspace"))
+        self._register_project(project_manager, project_id, project_base)
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False
+            mock_gn.ContextManager.return_value = mock_context
+
+            from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+            mock_os_manager = Mock(spec=OSManager)
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
+            mock_gn.OSManager.return_value = mock_os_manager
+
+            absolute_path = project_base / "outputs" / "file.png"
+            request = FindProjectForPathRequest(absolute_path=absolute_path)
+            result = project_manager.on_find_project_for_path_request(request)
+
+            assert isinstance(result, FindProjectForPathResultSuccess)
+            assert result.project_id == project_id
+
+    def test_find_project_path_outside_all_projects(self, project_manager: ProjectManager) -> None:
+        """Test that a path outside all loaded projects returns None."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            FindProjectForPathRequest,
+            FindProjectForPathResultSuccess,
+        )
+
+        project_base = Path("/Users/test/myproject")
+        project_id = str(project_base / "project.yml")
+
+        self._register_project(project_manager, project_id, project_base)
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False
+            mock_gn.ContextManager.return_value = mock_context
+
+            from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+            mock_os_manager = Mock(spec=OSManager)
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
+            mock_gn.OSManager.return_value = mock_os_manager
+
+            absolute_path = Path("/Users/test/Downloads/file.png")
+            request = FindProjectForPathRequest(absolute_path=absolute_path)
+            result = project_manager.on_find_project_for_path_request(request)
+
+            assert isinstance(result, FindProjectForPathResultSuccess)
+            assert result.project_id is None
+
+    def test_find_project_skips_system_defaults(self, project_manager: ProjectManager) -> None:
+        """Test that the system defaults project is never returned as a match."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            FindProjectForPathRequest,
+            FindProjectForPathResultSuccess,
+        )
+        from griptape_nodes.retained_mode.managers.project_manager import SYSTEM_DEFAULTS_KEY
+
+        project_base = Path("/Users/test/workspace")
+
+        self._register_project(project_manager, SYSTEM_DEFAULTS_KEY, project_base)
+        project_manager._secrets_manager = Mock()
+        project_manager._secrets_manager.resolve.return_value = "test_value"
+
+        with patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes") as mock_gn:
+            mock_config = Mock()
+            mock_config.get_config_value.return_value = str(project_base)
+            mock_gn.ConfigManager.return_value = mock_config
+
+            mock_context = Mock()
+            mock_context.has_current_workflow.return_value = False
+            mock_gn.ContextManager.return_value = mock_context
+
+            from griptape_nodes.retained_mode.managers.os_manager import OSManager
+
+            mock_os_manager = Mock(spec=OSManager)
+            mock_os_manager.resolve_path_safely.side_effect = lambda p: Path(
+                os.path.normpath(p if p.is_absolute() else Path.cwd() / p)
+            )
+            mock_gn.OSManager.return_value = mock_os_manager
+
+            # Path is inside workspace (system defaults base), but system defaults should be skipped
+            absolute_path = project_base / "outputs" / "file.png"
+            request = FindProjectForPathRequest(absolute_path=absolute_path)
+            result = project_manager.on_find_project_for_path_request(request)
+
+            assert isinstance(result, FindProjectForPathResultSuccess)
+            assert result.project_id is None
+
+    def test_find_project_no_secrets_manager(self, project_manager: ProjectManager) -> None:
+        """Test that missing secrets manager returns Failure."""
+        from griptape_nodes.retained_mode.events.project_events import (
+            FindProjectForPathRequest,
+            FindProjectForPathResultFailure,
+        )
+
+        project_manager._secrets_manager = None
+
+        request = FindProjectForPathRequest(absolute_path=Path("/Users/test/project/outputs/file.png"))
+        result = project_manager.on_find_project_for_path_request(request)
+
+        assert isinstance(result, FindProjectForPathResultFailure)
+        assert "SecretsManager not available" in str(result.result_details)
