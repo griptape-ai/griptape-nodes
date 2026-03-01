@@ -27,7 +27,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path, sanitize_workflow_name
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -770,14 +770,16 @@ class WorkflowManager:
             if isinstance(request.metadata, dict):
                 request.metadata = WorkflowMetadata(**request.metadata)
 
-            workflow = WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
+            WorkflowRegistry.generate_new_workflow(metadata=request.metadata, file_path=request.file_name)
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             return RegisterWorkflowResultFailure(result_details=details)
+        # The registry key is derived from the file stem, independent of the display name.
+        registry_key = Path(request.file_name).stem
         return RegisterWorkflowResultSuccess(
-            workflow_name=workflow.metadata.name,
+            workflow_name=registry_key,
             result_details=ResultDetails(
-                message=f"Successfully registered workflow: {workflow.metadata.name}",
+                message=f"Successfully registered workflow: {registry_key}",
                 level=logging.DEBUG,
             ),
         )
@@ -790,8 +792,9 @@ class WorkflowManager:
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
 
-        # Check if workflow is already registered
-        workflow_name = load_metadata_result.metadata.name
+        # Check if workflow is already registered by file stem (registry key).
+        # The registry key is derived from the file path, not metadata.name (the display name).
+        workflow_name = Path(request.file_path).stem
         if WorkflowRegistry.has_workflow_with_name(workflow_name):
             # Workflow already exists - no need to re-register
             return ImportWorkflowResultSuccess(
@@ -811,7 +814,7 @@ class WorkflowManager:
             full_path = WorkflowRegistry.get_complete_file_path(request.file_path)
             GriptapeNodes.ConfigManager().save_user_workflow_json(full_path)
         except Exception as e:
-            details = f"Failed to add workflow '{register_result.workflow_name}' to user configuration: {e}"
+            details = f"Failed to add workflow '{workflow_name}' to user configuration: {e}"
 
             return ImportWorkflowResultFailure(result_details=details)
 
@@ -863,12 +866,20 @@ class WorkflowManager:
         )
 
     async def on_rename_workflow_request(self, request: RenameWorkflowRequest) -> ResultPayload:
+        # Preserve the raw user input as the display name (metadata.name).
+        display_name = request.requested_name
+        # Sanitize to a Python module-friendly name for the file stem (registry key).
+        sanitized_name = sanitize_workflow_name(request.requested_name)
+        if not sanitized_name:
+            details = f"Attempted to rename workflow '{request.workflow_name}'. The requested name '{request.requested_name}' produced an empty file name after sanitization."
+            return RenameWorkflowResultFailure(result_details=details)
+
         save_workflow_request = await GriptapeNodes.ahandle_request(
-            SaveWorkflowRequest(file_name=request.requested_name)
+            SaveWorkflowRequest(file_name=sanitized_name, display_name=display_name)
         )
 
         if isinstance(save_workflow_request, SaveWorkflowResultFailure):
-            details = f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. Failed while attempting to save."
+            details = f"Attempted to rename workflow '{request.workflow_name}' to '{sanitized_name}'. Failed while attempting to save."
             return RenameWorkflowResultFailure(result_details=details)
 
         # If the original workflow isn't registered, treat this as a Save As and skip deletion
@@ -878,15 +889,16 @@ class WorkflowManager:
             )
             if isinstance(delete_workflow_result, DeleteWorkflowResultFailure):
                 details = (
-                    f"Attempted to rename workflow '{request.workflow_name}' to '{request.requested_name}'. "
+                    f"Attempted to rename workflow '{request.workflow_name}' to '{sanitized_name}'. "
                     "Failed while attempting to remove the original file name from the registry."
                 )
                 return RenameWorkflowResultFailure(result_details=details)
 
         return RenameWorkflowResultSuccess(
+            new_workflow_name=sanitized_name,
             result_details=ResultDetails(
-                message=f"Successfully renamed workflow to: {request.requested_name}", level=logging.INFO
-            )
+                message=f"Successfully renamed workflow to: {sanitized_name}", level=logging.INFO
+            ),
         )
 
     def on_get_workflow_metadata_request(self, request: GetWorkflowMetadataRequest) -> ResultPayload:
@@ -1632,16 +1644,19 @@ class WorkflowManager:
         except ValueError:
             workflow_shape = None
 
-        # Build save request inline (preserve existing description/image/is_template if present)
-        existing_description, existing_image, existing_is_template = self._get_existing_metadata(file_name)
+        # Build save request inline (preserve existing display_name/description/image/is_template if present)
+        existing = self._get_existing_metadata(file_name)
+        # Prefer an explicitly provided display_name over the preserved existing value.
+        resolved_display_name = request.display_name if request.display_name is not None else existing.display_name
 
         save_file_request = SaveWorkflowFileFromSerializedFlowRequest(
             serialized_flow_commands=commands,
             file_name=file_name,
             creation_date=creation_date,
-            image_path=request.image_path if request.image_path is not None else existing_image,
-            description=existing_description,
-            is_template=existing_is_template,
+            display_name=resolved_display_name,
+            image_path=request.image_path if request.image_path is not None else existing.image,
+            description=existing.description,
+            is_template=existing.is_template,
             execution_flow_name=top_level_flow_name,
             branched_from=branched_from,
             workflow_shape=workflow_shape,
@@ -1676,17 +1691,28 @@ class WorkflowManager:
             file_path=save_file_result.file_path, result_details=ResultDetails(message=details, level=logging.INFO)
         )
 
-    def _get_existing_metadata(self, file_name: str) -> tuple[str | None, str | None, bool | None]:
-        """Return (description, image, is_template) for existing workflow if present; otherwise Nones."""
+    class _ExistingMetadata(NamedTuple):
+        display_name: str | None
+        description: str | None
+        image: str | None
+        is_template: bool | None
+
+    def _get_existing_metadata(self, file_name: str) -> _ExistingMetadata:
+        """Return metadata for an existing workflow, or all-None if not present."""
         if not WorkflowRegistry.has_workflow_with_name(file_name):
-            return None, None, None
+            return self._ExistingMetadata(None, None, None, None)
         try:
             existing = WorkflowRegistry.get_workflow_by_name(file_name)
         except Exception as err:
             logger.debug("Preserving existing metadata failed for workflow '%s': %s", file_name, err)
-            return None, None, None
+            return self._ExistingMetadata(None, None, None, None)
         else:
-            return existing.metadata.description, existing.metadata.image, existing.metadata.is_template
+            return self._ExistingMetadata(
+                display_name=existing.metadata.name,
+                description=existing.metadata.description,
+                image=existing.metadata.image,
+                is_template=existing.metadata.is_template,
+            )
 
     def _ensure_user_workflow_json_saved(self, relative_file_path: str, file_path: Path, file_name: str) -> str | None:
         """Save user workflow JSON when needed; return error details on failure, else None."""
@@ -1776,7 +1802,8 @@ class WorkflowManager:
             if template_workflow is None:
                 msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
                 raise ValueError(msg)
-            base_name = requested_file_name or template_workflow.metadata.name
+            # Use file stem (registry key) as base name, independent of the display name in metadata.
+            base_name = requested_file_name or Path(template_workflow.file_path).stem
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
@@ -1786,7 +1813,8 @@ class WorkflowManager:
         elif target_workflow:
             # Requested name exists in registry → overwrite it
             scenario = WorkflowManager.SaveWorkflowScenario.OVERWRITE_EXISTING
-            file_name = target_workflow.metadata.name
+            # Use file stem as the file name (registry key), independent of the display name in metadata.
+            file_name = Path(target_workflow.file_path).stem
             creation_date = target_workflow.metadata.creation_date
             branched_from = target_workflow.metadata.branched_from
             relative_file_path = target_workflow.file_path
@@ -1848,6 +1876,7 @@ class WorkflowManager:
                 serialized_flow_commands=request.serialized_flow_commands,
                 file_name=request.file_name,
                 creation_date=creation_date,
+                display_name=request.display_name,
                 image_path=request.image_path,
                 description=request.description,
                 is_template=request.is_template,
@@ -1892,6 +1921,7 @@ class WorkflowManager:
         file_name: str,
         creation_date: datetime,
         *,
+        display_name: str | None = None,
         image_path: str | None = None,
         description: str | None = None,
         is_template: bool | None = None,
@@ -1914,8 +1944,11 @@ class WorkflowManager:
         if serialized_flow_commands.node_dependencies.referenced_workflows:
             workflows_referenced = list(serialized_flow_commands.node_dependencies.referenced_workflows)
 
+        # display_name is the human-readable label (metadata.name); falls back to file_name if not provided.
+        metadata_name = display_name if display_name is not None else str(file_name)
+
         return WorkflowMetadata(
-            name=str(file_name),
+            name=metadata_name,
             schema_version=WorkflowMetadata.LATEST_SCHEMA_VERSION,
             engine_version_created_with=engine_version,
             node_libraries_referenced=list(serialized_flow_commands.node_dependencies.libraries),

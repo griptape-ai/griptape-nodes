@@ -94,7 +94,8 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_register_workflow_request",
-                return_value=RegisterWorkflowResultSuccess(workflow_name="test_workflow", result_details="Success"),
+                # Registry key is the file stem, independent of metadata.name.
+                return_value=RegisterWorkflowResultSuccess(workflow_name="workflow", result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
             patch.object(griptape_nodes.ConfigManager(), "save_user_workflow_json") as mock_save,
@@ -102,7 +103,8 @@ class TestWorkflowManager:
             result = workflow_manager.on_import_workflow_request(request)
 
             assert isinstance(result, ImportWorkflowResultSuccess)
-            assert result.workflow_name == "test_workflow"
+            # Registry key is derived from the file stem, not from metadata.name.
+            assert result.workflow_name == "workflow"
             mock_save.assert_called_once_with("/full/path/to/workflow.py")
 
     def test_on_import_workflow_request_already_registered(self, griptape_nodes: GriptapeNodes) -> None:
@@ -124,7 +126,8 @@ class TestWorkflowManager:
             result = workflow_manager.on_import_workflow_request(request)
 
             assert isinstance(result, ImportWorkflowResultSuccess)
-            assert result.workflow_name == "test_workflow"
+            # Registry key is derived from the file stem, not from metadata.name.
+            assert result.workflow_name == "workflow"
 
     def test_on_import_workflow_request_metadata_load_failure(self, griptape_nodes: GriptapeNodes) -> None:
         """Test import when metadata loading fails."""
@@ -199,7 +202,8 @@ class TestWorkflowManager:
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
             error_message = result.result_details.result_details[0].message
-            assert "Failed to add workflow 'test_workflow' to user configuration" in error_message
+            # Registry key is derived from file stem, so the error message uses the registry key.
+            assert "Failed to add workflow 'workflow' to user configuration" in error_message
             assert "Config save failed" in error_message
 
     def test_get_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
