@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.65.1",
+    "library_version": "0.66.0",
     "engine_version": "0.75.2",
     "tags": [
       "Griptape",
@@ -50,6 +50,13 @@
       ]
     }
   },
+  "widgets": [
+    {
+      "name": "KlingMultiShotEditor",
+      "path": "griptape_nodes_library/video/widgets/KlingMultiShotEditor.js",
+      "description": "Multi-shot editor for Kling v3 customize mode."
+    }
+  ],
   "categories": [
     {
       "misc": {
