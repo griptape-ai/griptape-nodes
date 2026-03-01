@@ -150,6 +150,15 @@
       }
     },
     {
+      "splat": {
+        "color": "border-emerald-500",
+        "title": "Splat",
+        "description": "Splat generation related nodes",
+        "icon": "Sparkles",
+        "group": "create"
+      }
+    },
+    {
       "audio": {
         "color": "border-sky-500",
         "title": "Audio",
@@ -2544,6 +2553,16 @@
         "category": "3D",
         "description": "Generate 3D models using Rodin Gen-2 via Griptape model proxy",
         "display_name": "Rodin 3D Generation",
+        "group": "create"
+      }
+    },
+    {
+      "class_name": "WorldLabsSplatGeneration",
+      "file_path": "griptape_nodes_library/splat/world_labs_splat_generation.py",
+      "metadata": {
+        "category": "splat",
+        "description": "Generate World Labs splats using Marble models via Griptape model proxy",
+        "display_name": "World Labs Splat Generation",
         "group": "create"
       }
     },
