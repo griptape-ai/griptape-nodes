@@ -123,8 +123,15 @@ class RequestPayload(Payload, ABC):
         failure_log_level: If set, override the log level for failure results.
                           Use logging.DEBUG (10) or logging.INFO (20) to suppress error toasts.
                           Default: None (use handler's default, typically ERROR).
+
+        broadcast_result: Whether handle_request should queue the result event for broadcast
+                          (e.g. to connected WebSocket clients). Defaults to True. Request types
+                          whose results are large or only relevant to the direct caller can
+                          default this to False on the subclass to avoid unnecessary serialization
+                          and transmission. Can also be set per-instance at construction time.
     """
 
+    broadcast_result: bool = True
     request_id: int | None = None
     failure_log_level: int | None = None
 

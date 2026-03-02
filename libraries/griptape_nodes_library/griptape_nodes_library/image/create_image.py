@@ -7,12 +7,13 @@ from griptape.drivers.image_generation.griptape_cloud import GriptapeCloudImageG
 from griptape.drivers.prompt.griptape_cloud import GriptapeCloudPromptDriver
 from griptape.tasks import PromptImageGenerationTask
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMessage, ParameterMode
 from griptape_nodes.exe_types.node_types import AsyncResult, BaseNode, ControlNode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+from griptape_nodes.traits.button import Button
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.agents.griptape_nodes_agent import GriptapeNodesAgent as GtAgent
 from griptape_nodes_library.utils.error_utils import try_throw_error
@@ -20,11 +21,16 @@ from griptape_nodes_library.utils.file_utils import generate_filename
 
 API_KEY_ENV_VAR = "GT_CLOUD_API_KEY"
 SERVICE = "Griptape"
-MODEL_CHOICES = ["dall-e-3", "gpt-image-1"]
-GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"]
-DALL_E_3_SIZES = ["1024x1024", "1024x1792", "1792x1024"]
+MODEL_CHOICES = ["gpt-image-1-mini", "gpt-image-1.5"]
+AVAILABLE_SIZES = ["1024x1024", "1536x1024", "1024x1536"]
 DEFAULT_MODEL = MODEL_CHOICES[0]
-DEFAULT_SIZE = DALL_E_3_SIZES[0]
+DEFAULT_SIZE = AVAILABLE_SIZES[0]
+
+# Deprecated models and their replacements
+DEPRECATED_MODELS = {
+    "dall-e-3": "gpt-image-1-mini",
+    "gpt-image-1": "gpt-image-1-mini",
+}
 
 
 class GenerateImage(ControlNode):
@@ -57,6 +63,22 @@ class GenerateImage(ControlNode):
                 ui_options={"display_name": "image model"},
             )
         )
+        self.add_node_element(
+            ParameterMessage(
+                name="model_deprecation_notice",
+                title="Model Deprecation Notice",
+                variant="info",
+                value="",
+                traits={
+                    Button(
+                        full_width=True,
+                        on_click=lambda _, __: self.hide_message_by_name("model_deprecation_notice"),
+                    )
+                },
+                button_text="Dismiss",
+                hide=True,
+            )
+        )
         self.add_parameter(
             ParameterString(
                 name="prompt",
@@ -73,7 +95,7 @@ class GenerateImage(ControlNode):
                 default_value=DEFAULT_SIZE,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 tooltip="Select the size of the generated image.",
-                traits={Options(choices=DALL_E_3_SIZES)},
+                traits={Options(choices=AVAILABLE_SIZES)},
             )
         )
 
@@ -129,6 +151,24 @@ class GenerateImage(ControlNode):
 
         return exceptions if exceptions else None
 
+    def before_value_set(
+        self,
+        parameter: Parameter,
+        value: Any,
+    ) -> Any:
+        if parameter.name == "model" and isinstance(value, str) and value in DEPRECATED_MODELS:
+            replacement = DEPRECATED_MODELS[value]
+            message = self.get_message_by_name_or_element_id("model_deprecation_notice")
+            if message is None:
+                raise RuntimeError("model_deprecation_notice message element not found")  # noqa: TRY003, EM101
+            message.value = f"The '{value}' model has been deprecated. The model has been updated to '{replacement}'. Please save your workflow to apply this change."
+            self.show_message_by_name("model_deprecation_notice")
+            value = replacement
+        elif parameter.name == "model" and isinstance(value, str):
+            self.hide_message_by_name("model_deprecation_notice")
+
+        return super().before_value_set(parameter, value)
+
     def after_value_set(
         self,
         parameter: Parameter,
@@ -144,12 +184,6 @@ class GenerateImage(ControlNode):
         if parameter.name == "model":
             # "model" supports either a string OR an Image Generation Driver. We can serialize strings, but not driver objects.
             if isinstance(value, str):
-                # If the model is gpt-image-1, update the size options accordingly
-                if value == "gpt-image-1":
-                    self._update_option_choices(param="image_size", choices=GPT_IMAGE_SIZES, default=GPT_IMAGE_SIZES[0])
-                elif value == "dall-e-3":
-                    self._update_option_choices(param="image_size", choices=DALL_E_3_SIZES, default=DALL_E_3_SIZES[0])
-
                 # Strings can serialize.
                 parameter.serializable = True
             else:

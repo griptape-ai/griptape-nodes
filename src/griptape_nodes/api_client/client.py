@@ -21,6 +21,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("griptape_nodes_client")
 
+# Payload size (in bytes) above which a warning is logged before sending.
+# Messages above this threshold can saturate the WebSocket send buffer and cause
+# connected clients (e.g. the editor) to stall or disconnect.
+LARGE_PAYLOAD_WARNING_THRESHOLD = 100_000
+
 
 def get_default_websocket_url() -> str:
     """Get the default WebSocket endpoint URL for connecting to Nodes API.
@@ -259,8 +264,17 @@ class Client:
             msg = "Not connected to WebSocket"
             raise ConnectionError(msg)
 
+        serialized = json.dumps(message)
+        if len(serialized) > LARGE_PAYLOAD_WARNING_THRESHOLD:
+            logger.warning(
+                "Sending large WebSocket message: type=%s (%s), size=%d bytes. "
+                "Large messages can saturate the send buffer and cause connected clients (e.g. the editor) to stall or disconnect.",
+                message.get("type"),
+                message.get("payload", {}).get("result_type"),
+                len(serialized),
+            )
         try:
-            await self._websocket.send(json.dumps(message))
+            await self._websocket.send(serialized)
             logger.debug("Sent message type: %s", message.get("type"))
         except Exception as e:
             logger.error("Failed to send message: %s", e)

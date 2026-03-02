@@ -192,8 +192,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         try:
             result_event = event_mgr.handle_request(request=request)
-            # Only queue result event if not suppressed
-            if not event_mgr.should_suppress_event(result_event):
+            # Only queue result event if broadcasting is enabled and not suppressed
+            if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 event_mgr.put_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(
@@ -210,7 +210,10 @@ class GriptapeNodes(metaclass=SingletonMeta):
             return result_event.result
 
     @classmethod
-    async def ahandle_request(cls, request: RequestPayload) -> ResultPayload:
+    async def ahandle_request(
+        cls,
+        request: RequestPayload,
+    ) -> ResultPayload:
         """Asynchronous request handler.
 
         Args:
@@ -220,8 +223,8 @@ class GriptapeNodes(metaclass=SingletonMeta):
 
         try:
             result_event = await event_mgr.ahandle_request(request=request)
-            # Only queue result event if not suppressed
-            if not event_mgr.should_suppress_event(result_event):
+            # Only queue result event if broadcasting is enabled and not suppressed
+            if request.broadcast_result and not event_mgr.should_suppress_event(result_event):
                 await event_mgr.aput_event(GriptapeNodeEvent(wrapped_event=result_event))
         except Exception as e:
             logger.exception(

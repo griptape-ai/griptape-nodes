@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json as _json
 import logging
 from contextlib import suppress
 from typing import Any, ClassVar
 
-import httpx
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
@@ -17,6 +15,7 @@ from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes.utils.artifact_normalization import normalize_artifact_list
@@ -490,26 +489,16 @@ class SeedanceVideoGeneration(GriptapeProxyNode):
         frame_url = self._coerce_image_url_or_data_uri(frame_input)
         if not frame_url:
             return None
-        return await self._inline_external_url_async(frame_url)
 
-    async def _inline_external_url_async(self, url: str) -> str | None:
-        """Inline external image URL as base64 data URI (async version)."""
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            return url
+        # Already a data URI — return as-is
+        if frame_url.startswith("data:image/"):
+            return frame_url
 
         try:
-            async with httpx.AsyncClient() as client:
-                rff = await client.get(url, timeout=20)
-                rff.raise_for_status()
-                ct = (rff.headers.get("content-type") or "image/jpeg").split(";")[0]
-                if not ct.startswith("image/"):
-                    ct = "image/jpeg"
-                b64 = base64.b64encode(rff.content).decode("utf-8")
-                self._log("Frame URL converted to data URI for proxy")
-                return f"data:{ct};base64,{b64}"
-        except Exception as e:
-            self._log(f"Warning: failed to inline frame URL: {e}")
-            return url
+            return await File(frame_url).aread_data_uri(fallback_mime="image/jpeg")
+        except FileLoadError as e:
+            logger.debug("%s failed to load frame from %s: %s", self.name, frame_url, e)
+            return None
 
     async def _parse_result(self, result_json: dict[str, Any], generation_id: str) -> None:
         """Parse the result and set output parameters.

@@ -1,10 +1,11 @@
 import os
 from typing import Any
 
-from griptape.loaders import PdfLoader, TextLoader
+from griptape.loaders import PdfLoader
 
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.files.file import File
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes_library.utils.file_utils import SUPPORTED_TEXT_EXTENSIONS
 
@@ -55,14 +56,14 @@ class LoadText(ControlNode):
         # Load file content based on extension
         ext = os.path.splitext(text_path)[1]  # noqa: PTH122
         if ext.lower() == ".pdf":
-            text_data = PdfLoader().load(text_path)[0]
+            output_text = PdfLoader().load(text_path)[0].value
         else:
-            text_data = TextLoader().load(text_path)
+            output_text = File(text_path).read_text()
 
         # Set output values
         self.parameter_output_values["path"] = text_path
-        self.parameter_output_values["output"] = text_data.value
+        self.parameter_output_values["output"] = output_text
 
         # Also set in parameter_values for get_value compatibility
         self.parameter_values["path"] = text_path
-        self.parameter_values["output"] = text_data.value
+        self.parameter_values["output"] = output_text

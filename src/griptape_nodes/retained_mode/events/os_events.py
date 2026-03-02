@@ -202,6 +202,7 @@ class ReadFileRequest(RequestPayload):
     Results: ReadFileResultSuccess (with content) | ReadFileResultFailure (file not found, permission denied)
     """
 
+    broadcast_result: bool = False
     file_path: str | None = None
     file_entry: FileSystemEntry | None = None
     encoding: str = "utf-8"
@@ -417,7 +418,7 @@ class GetNextUnusedFilenameResultFailure(WorkflowNotAlteredMixin, ResultPayloadF
     failure_reason: FileIOFailureReason
 
 
-@dataclass
+@dataclass(kw_only=True)
 @PayloadRegistry.register
 class WriteFileRequest(RequestPayload):
     """Write content to a file.
@@ -437,18 +438,22 @@ class WriteFileRequest(RequestPayload):
             - "fail": Return failure if file exists
             - "create_new": Create new file with auto-incrementing index (e.g., file_1.txt, file_2.txt)
         create_parents: If True, create parent directories if missing (default: True)
+        skip_metadata_injection: If True, skip automatic workflow metadata injection for supported file types
+            (default: False). Use when the content already contains metadata to avoid double-injection.
 
     Results: WriteFileResultSuccess | WriteFileResultFailure
 
     Note: existing_file_policy is ignored when append=True (append always allows existing files)
     """
 
+    broadcast_result: bool = False
     file_path: str | MacroPath
     content: str | bytes
     encoding: str = "utf-8"  # Ignored for bytes
     append: bool = False
     existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     create_parents: bool = True
+    skip_metadata_injection: bool = False
 
 
 @dataclass

@@ -18,7 +18,7 @@ The **[Maya MCP Server](https://github.com/PatrickPalmer/MayaMCP)** enables AI a
 
 ### 1. Download and Setup Maya MCP Server
 
-1. Open up a terminal or PowerShell and Navigate to the location on your machine where you'd like to download the repository. I would recommend placing the server in an easily discoverable location. For example, on my Mac I like to place it where I keep my GitHub repos: `$HOME/Documents/GitHub`.
+1. Open up a terminal and navigate to the location on your machine where you'd like to download the repository. I would recommend placing the server in an easily discoverable location. For example, on my Mac I like to place it where I keep my GitHub repos: `$HOME/Documents/GitHub`.
 
     ```bash
     cd $HOME/Documents/GitHub

@@ -1,9 +1,8 @@
 from typing import Any
 
-from griptape.loaders import TextLoader
-
 from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import ControlNode
+from griptape_nodes.files.file import File
 from griptape_nodes.traits.file_system_picker import FileSystemPicker
 from griptape_nodes.utils.dict_utils import to_dict
 from griptape_nodes_library.utils.file_utils import SUPPORTED_TEXT_EXTENSIONS
@@ -53,9 +52,9 @@ class LoadDictionary(ControlNode):
         text_path = self.get_parameter_value("file_path")
 
         # Load file content based on extension
-        text_data = TextLoader().load(text_path)
+        text_data = File(text_path).read_text()
 
-        text_data_dict = to_dict(text_data.value)
+        text_data_dict = to_dict(text_data)
         # Set output values
         self.parameter_output_values["file_path"] = text_path
         self.parameter_output_values["output"] = text_data_dict

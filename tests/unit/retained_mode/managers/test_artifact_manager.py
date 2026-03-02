@@ -3,9 +3,11 @@ import os
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.retained_mode.events.artifact_events import (
@@ -33,6 +35,11 @@ from griptape_nodes.retained_mode.managers.artifact_providers import (
     BaseArtifactProvider,
     ImageArtifactProvider,
 )
+
+if TYPE_CHECKING:
+    from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators.pil_thumbnail_generator import (
+        PILThumbnailParameters,
+    )
 
 # ==================================================================================
 # CRITICAL WARNING: Config Isolation for Tests
@@ -124,7 +131,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -209,7 +216,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -253,7 +260,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -296,7 +303,7 @@ class TestArtifactManager:
                 return "webp"
 
             @classmethod
-            def get_default_generators(cls) -> list:
+            def get_default_preview_generators(cls) -> list:
                 return []
 
         manager = ArtifactManager()
@@ -405,6 +412,37 @@ class TestGeneratePreview:
             yield Path(tmpdir)
 
     @pytest.fixture
+    def mock_project(self, temp_dir: Path) -> None:
+        """Set up a real project in ProjectManager with temp_dir as workspace."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        # Get ProjectManager singleton
+        project_manager = GriptapeNodes.ProjectManager()
+
+        # Parse macros for the template
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = project_manager._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = project_manager._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with temp_dir as workspace
+        project_info = ProjectInfo(
+            project_id="test_project",
+            project_file_path=temp_dir / "project.yml",
+            project_base_dir=temp_dir,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Load the project into ProjectManager
+        project_manager._successfully_loaded_project_templates["test_project"] = project_info
+        project_manager._current_project_id = "test_project"
+
+    @pytest.fixture
     def test_image_path(self, temp_dir: Path) -> Path:
         """Create a real test image file for preview generation.
 
@@ -426,7 +464,7 @@ class TestGeneratePreview:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager instance with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -452,7 +490,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file exists
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -483,7 +521,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file exists
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -575,7 +613,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview dimensions respect constraints
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
 
         with Image.open(str(preview_path)) as preview_img:
@@ -602,7 +640,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview file has correct extension
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -631,7 +669,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Verify preview was created
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         preview_path = preview_dir / f"{test_image_path.name}.webp"
         assert preview_path.exists()
 
@@ -653,7 +691,7 @@ class TestGeneratePreview:
         assert isinstance(result, GeneratePreviewResultSuccess)
 
         # Read metadata and deserialize with Pydantic
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         # Metadata is named after source file, not preview
         metadata_path = preview_dir / f"{test_image_path.name}.json"
 
@@ -682,6 +720,37 @@ class TestGetPreviewForArtifact:
             yield Path(tmpdir)
 
     @pytest.fixture
+    def mock_project(self, temp_dir: Path) -> None:
+        """Set up a real project in ProjectManager with temp_dir as workspace."""
+        from griptape_nodes.common.project_templates import ProjectValidationInfo, ProjectValidationStatus
+        from griptape_nodes.common.project_templates.default_project_template import DEFAULT_PROJECT_TEMPLATE
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+        from griptape_nodes.retained_mode.managers.project_manager import ProjectInfo
+
+        # Get ProjectManager singleton
+        project_manager = GriptapeNodes.ProjectManager()
+
+        # Parse macros for the template
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        situation_schemas = project_manager._parse_situation_macros(DEFAULT_PROJECT_TEMPLATE.situations, validation)
+        directory_schemas = project_manager._parse_directory_macros(DEFAULT_PROJECT_TEMPLATE.directories, validation)
+
+        # Create ProjectInfo with temp_dir as workspace
+        project_info = ProjectInfo(
+            project_id="test_project",
+            project_file_path=temp_dir / "project.yml",
+            project_base_dir=temp_dir,
+            template=DEFAULT_PROJECT_TEMPLATE,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+
+        # Load the project into ProjectManager
+        project_manager._successfully_loaded_project_templates["test_project"] = project_info
+        project_manager._current_project_id = "test_project"
+
+    @pytest.fixture
     def test_image_path(self, temp_dir: Path) -> Path:
         """Create a real test image file."""
         image_path = temp_dir / "test_source.jpg"
@@ -699,7 +768,7 @@ class TestGetPreviewForArtifact:
         return MacroPath(parsed_macro=parsed_macro, variables={})
 
     @pytest.fixture
-    def artifact_manager(self) -> ArtifactManager:
+    def artifact_manager(self, mock_project: None) -> ArtifactManager:  # noqa: ARG002
         """Create ArtifactManager with ImageArtifactProvider registered."""
         manager = ArtifactManager()
         # Register ImageArtifactProvider (no longer auto-registered)
@@ -708,9 +777,7 @@ class TestGetPreviewForArtifact:
         return manager
 
     @pytest.fixture
-    def generated_preview_with_metadata(
-        self, artifact_manager: ArtifactManager, test_macro_path: MacroPath, test_image_path: Path
-    ) -> Path:
+    def generated_preview_with_metadata(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> Path:
         """Generate a preview with metadata for testing retrieval."""
         import asyncio
 
@@ -725,8 +792,9 @@ class TestGetPreviewForArtifact:
         result = asyncio.run(artifact_manager.on_handle_generate_preview_request(request))
         assert isinstance(result, GeneratePreviewResultSuccess)
 
-        preview_dir = test_image_path.parent / "nodes_previews"
-        return preview_dir / f"{test_image_path.name}.webp"
+        # Return the actual preview path from the result
+        assert isinstance(result.paths_to_preview, str)
+        return Path(result.paths_to_preview)
 
     @pytest.mark.usefixtures("generated_preview_with_metadata")
     def test_get_preview_success(self, artifact_manager: ArtifactManager, test_macro_path: MacroPath) -> None:
@@ -793,7 +861,7 @@ class TestGetPreviewForArtifact:
         import asyncio
 
         # Corrupt the metadata file (named after source file, not preview)
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
         metadata_path.write_text("{ invalid json }")
 
@@ -819,7 +887,7 @@ class TestGetPreviewForArtifact:
         import asyncio
 
         # Write metadata with missing field (named after source file)
-        preview_dir = test_image_path.parent / "nodes_previews"
+        preview_dir = test_image_path.parent / ".griptape-nodes-previews"
         metadata_path = preview_dir / f"{test_image_path.name}.json"
         incomplete_metadata = {
             "version": "0.1.0",
@@ -993,38 +1061,195 @@ class TestGetPreviewForArtifact:
         assert isinstance(result, GetPreviewForArtifactResultSuccess)
         assert result.paths_to_preview is not None
 
-    def test_get_generator_config_schema(self) -> None:
-        """Test that get_preview_generator_config_schema generates correct config keys."""
-        from griptape_nodes.retained_mode.managers.artifact_providers.image import ImageArtifactProvider
+
+class TestGeneratorValidation:
+    """Test generator parameter validation logic."""
+
+    def test_pil_thumbnail_validate_parameters_valid(self) -> None:
+        """Test PILThumbnailGenerator validates correct parameters."""
         from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
             PILThumbnailGenerator,
         )
 
-        # Generate config schema for PILThumbnailGenerator using static method
-        config_schema = BaseArtifactProvider.get_preview_generator_config_schema(
-            ImageArtifactProvider, PILThumbnailGenerator
+        params = {"max_width": 1024, "max_height": 768}
+        params_model_class = PILThumbnailGenerator.get_parameters()
+        # Should not raise ValidationError
+        params_model_class.model_validate(params)
+
+    def test_pil_thumbnail_validate_parameters_invalid_type(self) -> None:
+        """Test PILThumbnailGenerator rejects invalid types."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
         )
 
-        # Verify the keys are correctly formatted
-        assert (
-            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
-            in config_schema
-        )
-        assert (
-            "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
-            in config_schema
+        params = {"max_width": "not_a_number", "max_height": 768}
+        params_model_class = PILThumbnailGenerator.get_parameters()
+
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "max_width" for e in errors)
+
+    def test_pil_thumbnail_validate_parameters_invalid_value(self) -> None:
+        """Test PILThumbnailGenerator rejects negative values."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
         )
 
-        # Verify the default values
-        assert (
-            config_schema[
-                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_width"
-            ]
-            == 1024  # noqa: PLR2004
+        params = {"max_width": -100, "max_height": 768}
+        params_model_class = PILThumbnailGenerator.get_parameters()
+
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "max_width" and "greater_than" in e["type"] for e in errors)
+
+    def test_pil_thumbnail_validate_parameters_missing_key(self) -> None:
+        """Test PILThumbnailGenerator uses defaults for missing parameters."""
+        from typing import cast
+
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
         )
-        assert (
-            config_schema[
-                "artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation.max_height"
-            ]
-            == 1024  # noqa: PLR2004
+
+        params = {"max_width": 1024}
+        params_model_class = PILThumbnailGenerator.get_parameters()
+
+        # With Pydantic, fields with defaults are optional - should use default value
+        validated_params = cast("PILThumbnailParameters", params_model_class.model_validate(params))
+        assert validated_params.max_width == 1024  # noqa: PLR2004
+        assert validated_params.max_height == 1024  # Uses default value  # noqa: PLR2004
+
+    def test_pil_thumbnail_validate_parameters_extra_key(self) -> None:
+        """Test PILThumbnailGenerator ignores unknown parameters (backward compatibility)."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
         )
+
+        params = {"max_width": 1024, "max_height": 768, "unknown_param": 42}
+        params_model_class = PILThumbnailGenerator.get_parameters()
+
+        # Extra fields are ignored (for backward compatibility with old configs)
+        # See https://github.com/griptape-ai/griptape-nodes/issues/3980
+        validated_params = cast("PILThumbnailParameters", params_model_class.model_validate(params))
+
+        # Only known fields are included in the model
+        assert validated_params.max_width == 1024  # noqa: PLR2004
+        assert validated_params.max_height == 768  # noqa: PLR2004
+        assert not hasattr(validated_params, "unknown_param")
+
+    def test_pil_rounded_validate_parameters_valid(self) -> None:
+        """Test PILRoundedPreviewGenerator validates correct parameters."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILRoundedPreviewGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768, "corner_radius_percent": 2.0}
+        params_model_class = PILRoundedPreviewGenerator.get_parameters()
+        # Should not raise ValidationError
+        params_model_class.model_validate(params)
+
+    def test_pil_rounded_validate_parameters_invalid_corner_radius_percent(self) -> None:
+        """Test PILRoundedPreviewGenerator rejects negative corner_radius_percent."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILRoundedPreviewGenerator,
+        )
+
+        params = {"max_width": 1024, "max_height": 768, "corner_radius_percent": -1.0}
+        params_model_class = PILRoundedPreviewGenerator.get_parameters()
+
+        with pytest.raises(ValidationError) as exc_info:
+            params_model_class.model_validate(params)
+
+        errors = exc_info.value.errors()
+        assert len(errors) >= 1
+        assert any(e["loc"][0] == "corner_radius_percent" and "greater_than_equal" in e["type"] for e in errors)
+
+    def test_generator_constructor_uses_validation(self) -> None:
+        """Test generator constructors use Pydantic validation and raise ValidationError on invalid params."""
+        from griptape_nodes.retained_mode.managers.artifact_providers.image.preview_generators import (
+            PILThumbnailGenerator,
+        )
+
+        invalid_params = {"max_width": "not_a_number", "max_height": 768}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "test.png"
+            dest_dir = Path(tmpdir) / "preview"
+
+            with pytest.raises(ValidationError):
+                PILThumbnailGenerator(
+                    source_file_location=str(source_path),
+                    preview_format="webp",
+                    destination_preview_directory=str(dest_dir),
+                    destination_preview_file_name="preview.webp",
+                    params=invalid_params,
+                )
+
+    @pytest.mark.asyncio
+    async def test_get_artifact_schemas_structure(self) -> None:
+        """Test that get_artifact_schemas returns properly structured Pydantic model."""
+        from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
+        from griptape_nodes.retained_mode.managers.artifact_providers.artifact_schema_models import ArtifactSchemas
+
+        artifact_manager = ArtifactManager()
+
+        # Register default providers (Image provider with its generators)
+        await artifact_manager.on_app_initialization_complete(AppInitializationComplete())
+
+        schemas = artifact_manager._get_artifact_schemas()
+
+        # Verify it's the correct model type
+        assert isinstance(schemas, ArtifactSchemas)
+
+        # Verify we can serialize to dict
+        schemas_dict = schemas.model_dump()
+        assert isinstance(schemas_dict, dict)
+
+        # Verify structure
+        assert "image" in schemas_dict
+        image_schema = schemas_dict["image"]
+        assert "preview_generation" in image_schema
+
+        preview_gen = image_schema["preview_generation"]
+        assert "preview_format" in preview_gen
+        assert "preview_generator" in preview_gen
+        assert "preview_generator_configurations" in preview_gen
+
+        # Verify format schema structure
+        format_schema = preview_gen["preview_format"]
+        assert format_schema["type"] == "string"
+        assert "enum" in format_schema
+        assert "default" in format_schema
+        assert "description" in format_schema
+        assert isinstance(format_schema["enum"], list)
+        assert format_schema["default"] in format_schema["enum"]
+
+        # Verify generator schema structure
+        gen_schema = preview_gen["preview_generator"]
+        assert gen_schema["type"] == "string"
+        assert "enum" in gen_schema
+        assert "default" in gen_schema
+        assert gen_schema["default"] in gen_schema["enum"]
+
+        # Verify generator configurations structure
+        gen_configs = preview_gen["preview_generator_configurations"]
+        assert isinstance(gen_configs, dict)
+        assert len(gen_configs) > 0  # At least one generator registered
+
+        # Check parameter schema structure
+        first_gen_key = next(iter(gen_configs.keys()))
+        first_gen_params = gen_configs[first_gen_key]
+        assert isinstance(first_gen_params, dict)
+
+        # All parameters should have type, default, description
+        for param_schema in first_gen_params.values():
+            assert "type" in param_schema
+            assert "default" in param_schema
+            assert "description" in param_schema
+            assert isinstance(param_schema["type"], str)
+            assert isinstance(param_schema["description"], str)

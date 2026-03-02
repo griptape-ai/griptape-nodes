@@ -144,7 +144,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
 
             # Package the workflow
             self._emit_progress_event(additional_progress=20.0, message="Packaging workflow...")
-            package_path = self._package_workflow(self._workflow_name)
+            package_path = self._package_workflow(self._workflow_name, griptape_cloud_start_flow_node)
             logger.info("Workflow packaged to path: %s", package_path)
 
             # Deploy the workflow to Griptape Cloud
@@ -246,6 +246,15 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         with path.open("w", encoding="utf-8", newline="\n") as f:
             f.write(content)
 
+    @staticmethod
+    def _validate_custom_install_script_path(path: str, workflow_name: str) -> None:
+        if not Path(path).is_file():
+            msg = (
+                f"Attempted to package workflow '{workflow_name}'. "
+                f"Failed because custom_install_script_path '{path}' does not exist."
+            )
+            raise FileNotFoundError(msg)
+
     def _get_publish_workflow_response_metadata(self, structure_id: str) -> dict[str, Any]:
         structure_url = urljoin(
             self._get_base_url(api_url=False),
@@ -322,6 +331,41 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             if node.__class__.__name__ == GriptapeCloudStartFlow.__name__:
                 return cast("GriptapeCloudStartFlow", node)
         return None
+
+    @classmethod
+    def _collect_workflow_download_commands(cls) -> list[str]:
+        """Collect huggingface-cli download commands for all HuggingFace model parameters in the workflow."""
+        from griptape_nodes.exe_types.param_components.huggingface.huggingface_model_parameter import (
+            HuggingFaceModelParameter,
+        )
+
+        get_top_level_flow_result = GriptapeNodes.handle_request(GetTopLevelFlowRequest())
+        if (
+            not isinstance(get_top_level_flow_result, GetTopLevelFlowResultSuccess)
+            or get_top_level_flow_result.flow_name is None
+        ):
+            return []
+
+        flow_manager = GriptapeNodes.FlowManager()
+        control_flow = flow_manager.get_flow_by_name(get_top_level_flow_result.flow_name)
+        workflow_manager = GriptapeNodes.WorkflowManager()
+
+        commands: list[str] = []
+        seen: set[str] = set()
+        for node in control_flow.nodes.values():
+            hf_params: list[HuggingFaceModelParameter] = []
+
+            def collect_hf_param(_cls: type, obj: Any, _hf_params: list = hf_params) -> None:
+                if isinstance(obj, HuggingFaceModelParameter):
+                    _hf_params.append(obj)
+
+            workflow_manager._walk_object_tree(node, collect_hf_param)
+            for hf_param in hf_params:
+                for cmd in hf_param.get_download_commands():
+                    if cmd not in seen:
+                        seen.add(cmd)
+                        commands.append(cmd)
+        return commands
 
     def _update_griptape_cloud_start_flow_metadata(
         self,
@@ -674,7 +718,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         for key, val in env_file_dict.items():
             set_key(env_file_path, key, str(val))
 
-    def _package_workflow(self, workflow_name: str) -> str:  # noqa: PLR0915
+    def _package_workflow(self, workflow_name: str, start_flow_node: GriptapeCloudStartFlow | None) -> str:  # noqa: PLR0915
         config_manager = GriptapeNodes.ConfigManager()
         secrets_manager = GriptapeNodes.SecretsManager()
         workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
@@ -704,8 +748,8 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
         structure_config_file_path = publish_workflow_path / "structure_config.yaml"
         pre_build_install_script_path = publish_workflow_path / "pre_build_install_script.sh"
         post_build_install_script_path = publish_workflow_path / "post_build_install_script.sh"
-        # Note: register_libraries_script.py might need to be created if it doesn't exist
         register_libraries_script_path = publish_workflow_path / "register_libraries_script.py"
+        download_models_script_path = publish_workflow_path / "download_models_script.py"
         full_workflow_file_path = WorkflowRegistry.get_complete_file_path(workflow.file_path)
 
         env_file_mapping = self._get_merged_env_file_mapping(secrets_manager.workspace_env_path)
@@ -722,6 +766,7 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
             temp_pre_build_install_script_path = tmp_dir_path / "pre_build_install_script.sh"
             temp_post_build_install_script_path = tmp_dir_path / "post_build_install_script.sh"
             temp_register_libraries_script_path = tmp_dir_path / "register_libraries_script.py"
+            temp_download_models_script_path = tmp_dir_path / "download_models_script.py"
             config_file_path = tmp_dir_path / "GriptapeNodes" / "griptape_nodes_config.json"
             init_file_path = tmp_dir_path / "__init__.py"
 
@@ -731,6 +776,16 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                 self._copy_file(structure_workflow_executor_file_path, temp_structure_workflow_executor_path)
                 self._copy_file(pre_build_install_script_path, temp_pre_build_install_script_path)
                 self._normalize_line_endings(temp_pre_build_install_script_path)
+                custom_install_script_path_val: str | None = None
+                if start_flow_node is not None:
+                    custom_install_script_path_val = start_flow_node.get_parameter_value("custom_install_script_path")
+                if custom_install_script_path_val:
+                    self._validate_custom_install_script_path(custom_install_script_path_val, workflow_name)
+                    custom_script_contents = Path(custom_install_script_path_val).read_text(encoding="utf-8")
+                    with temp_pre_build_install_script_path.open("a", encoding="utf-8", newline="\n") as f:
+                        f.write("\n")
+                        f.write(custom_script_contents)
+                    self._normalize_line_endings(temp_pre_build_install_script_path)
                 self._copy_file(post_build_install_script_path, temp_post_build_install_script_path)
                 self._normalize_line_endings(temp_post_build_install_script_path)
                 self._copy_file(structure_config_file_path, tmp_dir_path / "structure_config.yaml")
@@ -762,6 +817,25 @@ class GriptapeCloudPublisher(GriptapeCloudApiMixin):
                     )
                 with temp_register_libraries_script_path.open("w", encoding="utf-8") as register_libraries_script_file:
                     register_libraries_script_file.write(register_libraries_script_contents)
+
+                should_download_models = GriptapeNodes.ConfigManager().get_config_value(
+                    f"{GRIPTAPE_CLOUD_LIBRARY_CONFIG_KEY}.GT_CLOUD_PUBLISH_DOWNLOAD_MODELS",
+                    default=True,
+                    cast_type=bool,
+                )
+                if should_download_models:
+                    download_commands = self._collect_workflow_download_commands()
+                    download_commands_formatted = [repr(cmd) for cmd in download_commands]
+                    with download_models_script_path.open("r", encoding="utf-8") as download_models_script_file:
+                        download_models_script_contents = download_models_script_file.read().replace(
+                            '["REPLACE_DOWNLOAD_COMMANDS"]',
+                            f"[{', '.join(download_commands_formatted)}]",
+                        )
+                    with temp_download_models_script_path.open("w", encoding="utf-8") as download_models_script_file:
+                        download_models_script_file.write(download_models_script_contents)
+                    with temp_post_build_install_script_path.open("a", encoding="utf-8", newline="\n") as f:
+                        f.write("\npython download_models_script.py\n")
+                    self._normalize_line_endings(temp_post_build_install_script_path)
 
                 with structure_file_path.open("r", encoding="utf-8") as structure_file:
                     structure_file_contents = structure_file.read()

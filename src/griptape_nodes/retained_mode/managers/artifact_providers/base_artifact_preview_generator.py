@@ -5,9 +5,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
+from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
+    normalize_friendly_name_to_key,
+)
+
 if TYPE_CHECKING:
-    from griptape_nodes.retained_mode.managers.artifact_providers.base_artifact_provider import (
-        ProviderValue,
+    from griptape_nodes.retained_mode.managers.artifact_providers.base_generator_parameters import (
+        BaseGeneratorParameters,
     )
 
 
@@ -35,7 +39,10 @@ class BaseArtifactPreviewGenerator(ABC):
             preview_format: Target format for the preview (e.g., "png", "jpg", "webp")
             destination_preview_directory: Directory where the preview should be saved
             destination_preview_file_name: Filename for the preview
-            _params: Generator-specific parameters (concrete implementations validate internally)
+            _params: Generator-specific parameters (validated by subclass __init__)
+
+        Note:
+            Subclass __init__ must validate _params and set self.params to a Pydantic model instance.
         """
         self.source_file_location = source_file_location
         self.preview_format = preview_format
@@ -74,17 +81,14 @@ class BaseArtifactPreviewGenerator(ABC):
 
     @classmethod
     @abstractmethod
-    def get_parameters(cls) -> dict[str, ProviderValue]:
-        """Get metadata about generator parameters.
+    def get_parameters(cls) -> type[BaseGeneratorParameters]:
+        """Get parameter model class.
 
         Returns:
-            Dict mapping parameter names to their metadata (default value and required flag)
+            Pydantic model class (subclass of BaseGeneratorParameters)
 
         Example:
-            {
-                "max_width": ProviderValue(default_value=800, required=False),
-                "max_height": ProviderValue(default_value=600, required=False),
-            }
+            return PILThumbnailParameters
         """
         ...
 
@@ -93,14 +97,13 @@ class BaseArtifactPreviewGenerator(ABC):
         """Get the config key prefix for this generator's parameters.
 
         Args:
-            provider_friendly_name: The friendly name of the provider (e.g., 'Image')
+            provider_friendly_name: Friendly name of the provider (e.g., 'Image')
 
         Returns:
-            Config key prefix (e.g., 'artifacts.image.preview_generation.preview_generator_configurations.standard_thumbnail_generation')
+            Config key prefix (e.g., 'artifacts.image.preview_generation.preview_generator_configurations.rounded_image_preview_generation')
         """
-        friendly_name = cls.get_friendly_name()
-        generator_key = friendly_name.lower().replace(" ", "_")
-        provider_key = provider_friendly_name.lower().replace(" ", "_")
+        provider_key = normalize_friendly_name_to_key(provider_friendly_name)
+        generator_key = normalize_friendly_name_to_key(cls.get_friendly_name())
         return f"artifacts.{provider_key}.preview_generation.preview_generator_configurations.{generator_key}"
 
     @abstractmethod

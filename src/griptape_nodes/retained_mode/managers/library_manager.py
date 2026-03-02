@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import json
 import logging
@@ -28,7 +29,7 @@ from semver import Version
 from xdg_base_dirs import xdg_data_home
 
 from griptape_nodes.exe_types.node_types import BaseNode
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     CategoryDefinition,
     Library,
@@ -186,7 +187,9 @@ from griptape_nodes.utils.git_utils import (
     get_git_remote,
     get_local_commit_sha,
     is_git_url,
+    normalize_github_url,
     parse_git_url_with_ref,
+    sparse_checkout_library_json,
     switch_branch_or_tag,
     update_library_git,
 )
@@ -345,6 +348,7 @@ class LibraryManager:
             type[Payload], dict[str, LibraryManager.RegisteredEventHandler[Any]]
         ] = {}
         self._libraries_loading_complete = asyncio.Event()
+        self._libraries_loading_complete.set()  # Not loading initially; load_all_libraries_from_config will clear/set this
 
         event_manager.assign_manager_to_request_type(
             ListRegisteredLibrariesRequest, self.on_list_registered_libraries_request
@@ -468,26 +472,8 @@ class LibraryManager:
             library_name_with_details.overflow = "fold"
 
             # Problems column - collate by type then format
-            if not lib_info.problems:
-                problems = "No problems detected."
-            else:
-                # Group problems by type
-                problems_by_type = defaultdict(list)
-                for problem in lib_info.problems:
-                    problems_by_type[type(problem)].append(problem)
-
-                # Collate each group
-                collated_strings = []
-                for problem_class, instances in problems_by_type.items():
-                    collated_display = problem_class.collate_problems_for_display(instances)
-                    collated_strings.append(collated_display)
-
-                # Format for display
-                if len(collated_strings) == 1:
-                    problems = collated_strings[0]
-                else:
-                    # Number the problems when there's more than one
-                    problems = "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
+            collated = self._collate_problems_for_lib_info(lib_info)
+            problems = collated if collated is not None else "No problems detected."
 
             # Add the row to the table
             table.add_row(library_name_with_details, problems)
@@ -509,6 +495,35 @@ class LibraryManager:
             if library_info.library_name == library_name:
                 return library_info
         return None
+
+    def _collate_problems_for_lib_info(self, lib_info: LibraryInfo) -> str | None:
+        """Return a collated display string for a LibraryInfo's problems, or None if there are none."""
+        if not lib_info.problems:
+            return None
+
+        # Group problems by type
+        problems_by_type: defaultdict[type, list] = defaultdict(list)
+        for problem in lib_info.problems:
+            problems_by_type[type(problem)].append(problem)
+
+        # Collate each group
+        collated_strings = []
+        for problem_class, instances in problems_by_type.items():
+            collated_display = problem_class.collate_problems_for_display(instances)
+            collated_strings.append(collated_display)
+
+        if len(collated_strings) == 1:
+            return collated_strings[0]
+
+        # Number the problems when there's more than one
+        return "\n".join([f"{j + 1}. {problem}" for j, problem in enumerate(collated_strings)])
+
+    def get_collated_problems_for_library(self, library_name: str) -> str | None:
+        """Return a collated display string for a library's fitness problems, or None if not found or no problems."""
+        library_info = self.get_library_info_by_library_name(library_name)
+        if library_info is None:
+            return None
+        return self._collate_problems_for_lib_info(library_info)
 
     def on_register_event_handler(
         self,
@@ -547,7 +562,8 @@ class LibraryManager:
             result_details=f"Successfully listed {len(handler_mappings)} capable library event handlers",
         )
 
-    def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
+    async def on_list_registered_libraries_request(self, _request: ListRegisteredLibrariesRequest) -> ResultPayload:
+        await self._libraries_loading_complete.wait()
         # Make a COPY of the list
         snapshot_list = LibraryRegistry.list_libraries()
         event_copy = snapshot_list.copy()
@@ -588,8 +604,8 @@ class LibraryManager:
             library = LibraryRegistry.get_library(name=request.library)
         except KeyError:
             details = f"Attempted to get metadata for Library '{request.library}'. Failed because no Library with that name was registered."
-
-            result = GetLibraryMetadataResultFailure(result_details=details)
+            problems = self.get_collated_problems_for_library(request.library)
+            result = GetLibraryMetadataResultFailure(result_details=details, problems=problems)
             return result
 
         # Get the metadata off of it.
@@ -1366,6 +1382,7 @@ class LibraryManager:
                     )
                     if isinstance(evaluate_result, EvaluateLibraryFitnessResultFailure):
                         library_info.fitness = evaluate_result.fitness
+                        library_info.lifecycle_state = LibraryManager.LibraryLifecycleState.FAILURE
                         library_info.problems.extend(evaluate_result.problems)
                         self._library_file_path_to_info[library_info.library_path] = library_info
                         return RegisterLibraryFromFileResultFailure(result_details=evaluate_result.result_details)
@@ -1878,20 +1895,13 @@ class LibraryManager:
         return UnloadLibraryFromRegistryResultSuccess(result_details=details)
 
     def get_all_info_for_all_libraries_request(self, request: GetAllInfoForAllLibrariesRequest) -> ResultPayload:  # noqa: ARG002
-        list_libraries_request = ListRegisteredLibrariesRequest()
-        list_libraries_result = self.on_list_registered_libraries_request(list_libraries_request)
-
-        if not list_libraries_result.succeeded():
-            details = "Attempted to get all info for all libraries, but listing the registered libraries failed."
-            return GetAllInfoForAllLibrariesResultFailure(result_details=details)
+        libraries = LibraryRegistry.list_libraries()
 
         try:
-            list_libraries_success = cast("ListRegisteredLibrariesResultSuccess", list_libraries_result)
-
             # Create a mapping of library name to all its info.
             library_name_to_all_info = {}
 
-            for library_name in list_libraries_success.libraries:
+            for library_name in libraries:
                 library_all_info_request = GetAllInfoForLibraryRequest(library=library_name)
                 library_all_info_result = self.get_all_info_for_library_request(library_all_info_request)
 
@@ -1920,7 +1930,7 @@ class LibraryManager:
         await self._libraries_loading_complete.wait()
         return await asyncio.to_thread(self.get_all_info_for_all_libraries_request, request)
 
-    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, C901
+    def get_all_info_for_library_request(self, request: GetAllInfoForLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         # Does this library exist?
         try:
             library = LibraryRegistry.get_library(name=request.library)
@@ -1991,11 +2001,23 @@ class LibraryManager:
             )
             # Get the static server base URL for constructing absolute bundle URLs
             static_server_base_url = GriptapeNodes.ConfigManager().get_config_value("static_server_base_url")
+            # Get the library directory so we can hash each bundle file
+            library_info_for_path = self.get_library_info_by_library_name(request.library)
+            library_dir = Path(library_info_for_path.library_path).parent if library_info_for_path is not None else None
             widgets_info = []
             for widget_def in library_data.widgets:
                 # Construct the full URL for this widget
                 # The frontend will fetch from: {static_server_base_url}/api/libraries/{library_name}/widgets/{path}
-                bundle_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                base_url = f"{static_server_base_url}/api/libraries/{request.library}/widgets/{widget_def.path}"
+                # Append a content hash so browsers re-fetch when the bundle file changes
+                try:
+                    if library_dir is not None:
+                        content_hash = hashlib.sha256((library_dir / widget_def.path).read_bytes()).hexdigest()[:8]
+                        bundle_url = f"{base_url}?v={content_hash}"
+                    else:
+                        bundle_url = base_url
+                except OSError:
+                    bundle_url = base_url
                 logger.debug(
                     "Widget '%s' from library '%s': bundle_url=%s",
                     widget_def.name,
@@ -2550,7 +2572,7 @@ class LibraryManager:
 
         # Load workflows specified by libraries.
         library_workflow_files_to_register = []
-        library_result = self.on_list_registered_libraries_request(ListRegisteredLibrariesRequest())
+        library_result = await GriptapeNodes.ahandle_request(ListRegisteredLibrariesRequest())
         if isinstance(library_result, ListRegisteredLibrariesResultSuccess):
             for library_name in library_result.libraries:
                 try:
@@ -3789,7 +3811,7 @@ class LibraryManager:
 
     async def download_library_request(self, request: DownloadLibraryRequest) -> ResultPayload:  # noqa: PLR0911, PLR0912, PLR0915, C901
         """Download a library from a git repository."""
-        git_url = request.git_url
+        git_url = normalize_github_url(request.git_url)
         branch_tag_commit = request.branch_tag_commit
         target_directory_name = request.target_directory_name
         download_directory = request.download_directory
@@ -4169,8 +4191,6 @@ class LibraryManager:
         ref = request.ref
 
         # Normalize GitHub shorthand to full URL
-        from griptape_nodes.utils.git_utils import normalize_github_url, sparse_checkout_library_json
-
         normalized_url = normalize_github_url(git_url)
         logger.info("Inspecting library metadata from '%s' (ref: %s)", normalized_url, ref)
 

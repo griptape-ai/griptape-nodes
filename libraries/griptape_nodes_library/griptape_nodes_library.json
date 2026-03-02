@@ -28,15 +28,15 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.63.6",
-    "engine_version": "0.74.0",
+    "library_version": "0.65.1",
+    "engine_version": "0.75.2",
     "tags": [
       "Griptape",
       "AI"
     ],
     "dependencies": {
       "pip_dependencies": [
-        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.9.1",
+        "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image,loaders-pdf]>=1.9.3",
         "json-repair>=0.46.1",
         "static-ffmpeg>=2.8",
         "jmespath>=1.0.1",
@@ -1587,7 +1587,7 @@
       "file_path": "griptape_nodes_library/image/seedream_image_generation.py",
       "metadata": {
         "category": "image",
-        "description": "Generate images using Seedream models (seedream-4.0, seedream-3.0-t2i) via Griptape model proxy",
+        "description": "Generate images using Seedream models via Griptape model proxy",
         "display_name": "Seedream Image Generation",
         "group": "create",
         "icon": "Sparkles"

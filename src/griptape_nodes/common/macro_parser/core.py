@@ -12,7 +12,7 @@ from griptape_nodes.common.macro_parser.exceptions import (
 from griptape_nodes.common.macro_parser.matching import extract_unknown_variables
 from griptape_nodes.common.macro_parser.parsing import parse_segments
 from griptape_nodes.common.macro_parser.resolution import partial_resolve
-from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable, VariableInfo
+from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedStaticValue, ParsedVariable, VariableInfo
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -48,7 +48,7 @@ class ParsedMacro:
 
     def resolve(
         self,
-        variables: dict[str, str | int],
+        variables: MacroVariables,
         secrets_manager: SecretsManager,
     ) -> str:
         """Fully resolve the macro template with variable values."""
@@ -72,7 +72,7 @@ class ParsedMacro:
     def matches(
         self,
         path: str,
-        known_variables: dict[str, str | int],
+        known_variables: MacroVariables,
         secrets_manager: SecretsManager,
     ) -> bool:
         """Check if a path matches this template."""
@@ -82,9 +82,9 @@ class ParsedMacro:
     def extract_variables(
         self,
         path: str,
-        known_variables: dict[str, str | int],
+        known_variables: MacroVariables,
         secrets_manager: SecretsManager,
-    ) -> dict[str, str | int] | None:
+    ) -> MacroVariables | None:
         """Extract variable values from a path (plain string keys)."""
         detailed = self.find_matches_detailed(path, known_variables, secrets_manager)
         if detailed is None:
@@ -95,7 +95,7 @@ class ParsedMacro:
     def find_matches_detailed(
         self,
         path: str,
-        known_variables: dict[str, str | int],
+        known_variables: MacroVariables,
         secrets_manager: SecretsManager,
     ) -> dict[VariableInfo, str | int] | None:
         """Extract variable values from a path with metadata (greedy match).

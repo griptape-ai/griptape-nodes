@@ -1,10 +1,13 @@
 """Models command for managing AI models."""
 
 import asyncio
+import json
+import os
 import sys
 from typing import TYPE_CHECKING
 
 import typer
+from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 from rich.table import Table
 
 from griptape_nodes.cli.shared import console
@@ -27,6 +30,7 @@ from griptape_nodes.retained_mode.events.model_events import (
     SearchModelsResultFailure,
     SearchModelsResultSuccess,
 )
+from griptape_nodes.retained_mode.managers.model_manager import _PROGRESS_PIPE_ENV_VAR
 from griptape_nodes.retained_mode.retained_mode import GriptapeNodes
 
 if TYPE_CHECKING:
@@ -99,6 +103,18 @@ def search_command(
     asyncio.run(_search_models(query, task, limit, sort, direction))
 
 
+def _emit_error_event(error_type: str, error_message: str) -> None:
+    """Write a structured JSON error event to stderr when running in pipe mode.
+
+    Only emits when GRIPTAPE_NODES_PROGRESS_PIPE is set, i.e. when spawned by
+    the ModelManager subprocess. On direct CLI invocations this is a no-op.
+    Uses stderr to avoid mixing with stdout JSON progress events.
+    """
+    if os.environ.get(_PROGRESS_PIPE_ENV_VAR) == "1":
+        sys.stderr.write(json.dumps({"error_type": error_type, "error_message": error_message}) + "\n")
+        sys.stderr.flush()
+
+
 async def _download_model(
     model_id: str,
     local_dir: str | None,
@@ -127,6 +143,16 @@ async def _download_model(
         # Success case
         console.print("[bold green]Model downloaded successfully![/bold green]")
         console.print(f"[green]Downloaded to: {local_path}[/green]")
+
+    except GatedRepoError as e:
+        _emit_error_event("gated_repo", str(e))
+        console.print(f"[bold red]Model download failed:[/bold red] {e}")
+        sys.exit(1)
+
+    except RepositoryNotFoundError as e:
+        _emit_error_event("repo_not_found", str(e))
+        console.print(f"[bold red]Model download failed:[/bold red] {e}")
+        sys.exit(1)
 
     except Exception as e:
         console.print("[bold red]Model download failed:[/bold red]")

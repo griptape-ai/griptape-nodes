@@ -1,4 +1,7 @@
-# 🎨 Griptape Nodes
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/img/griptape_nodes_from_foundry_white.svg">
+  <img alt="Griptape Nodes" src="docs/assets/img/griptape_nodes_from_foundry_black.svg" width="600">
+</picture>
 
 Griptape Nodes is a powerful, visual, node-based workflow builder designed for professional artists and creators. Build and execute complex AI workflows through the cloud-based [Griptape Nodes IDE](https://app.nodes.griptape.ai/) - an intuitive drag-and-drop interface.
 
@@ -34,17 +37,21 @@ ______________________________________________________________________
 
 ## 🚀 Quick Installation
 
-Follow these steps to get the Griptape Nodes engine running on your system:
+### Option 1: Griptape Nodes Desktop (Recommended)
+
+Download [Griptape Nodes Desktop](https://www.griptapenodes.com/griptape-nodes-desktop) — a bundled app that includes both the engine and the editor. No additional setup required.
+
+### Option 2: Manual Engine Install
+
+For users who prefer to install the engine directly:
 
 1. **🔐 Login:** Visit [Griptape Nodes](https://app.nodes.griptape.ai/) and log in or sign up using your Griptape Cloud credentials.
 
-1. **💾 Install Command:** Once logged in, you'll find a setup screen. Copy the installation command provided in the "New Installation" section. It will look similar to this (use the **exact** command provided on the website):
+1. **💾 Install Engine:** Install the engine using [uv](https://docs.astral.sh/uv/):
 
     ```bash
-    curl -LsSf https://raw.githubusercontent.com/griptape-ai/griptape-nodes/main/install.sh | bash
+    uv tool install griptape-nodes
     ```
-
-1. **⚡ Run Installer:** Open a terminal on your machine (local or cloud environment) and paste/run the command. The installer uses `uv` for fast installation; if `uv` isn't present, the script will typically handle installing it.
 
 1. **⚙️ Initial Configuration (Automatic on First Run):**
 

@@ -19,7 +19,7 @@ from griptape_nodes.common.macro_parser.formats import (
     SlugFormat,
     UpperCaseFormat,
 )
-from griptape_nodes.common.macro_parser.segments import ParsedStaticValue, ParsedVariable, VariableInfo
+from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedStaticValue, ParsedVariable, VariableInfo
 
 __all__ = [
     "DateFormat",
@@ -32,6 +32,7 @@ __all__ = [
     "MacroResolutionFailure",
     "MacroResolutionFailureReason",
     "MacroSyntaxError",
+    "MacroVariables",
     "NumericPaddingFormat",
     "ParsedMacro",
     "ParsedStaticValue",

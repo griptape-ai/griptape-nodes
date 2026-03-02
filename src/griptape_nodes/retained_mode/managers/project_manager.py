@@ -12,6 +12,7 @@ from griptape_nodes.common.macro_parser import (
     MacroMatchFailureReason,
     MacroResolutionError,
     MacroResolutionFailureReason,
+    MacroVariables,
     ParsedMacro,
 )
 from griptape_nodes.common.project_templates import (
@@ -23,7 +24,7 @@ from griptape_nodes.common.project_templates import (
     SituationTemplate,
     load_project_template_from_yaml,
 )
-from griptape_nodes.file.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
@@ -445,7 +446,7 @@ class ProjectManager:
                 result_details=f"Attempted to resolve macro path. Failed because variables conflict with directory names: {', '.join(sorted(conflicting))}",
             )
 
-        resolution_bag: dict[str, str | int] = {}
+        resolution_bag: MacroVariables = {}
         disallowed_overrides: set[str] = set()
 
         for var_info in variable_infos:
@@ -935,7 +936,7 @@ class ProjectManager:
 
         # Build builtin variables dict - only resolve variables actually needed by the macros
         # If a required variable fails to resolve, let the error propagate (will be caught by handler)
-        builtin_vars: dict[str, str | int] = {}
+        builtin_vars: MacroVariables = {}
         for var_name in variables_needed:
             if var_name in BUILTIN_VARIABLES:
                 builtin_vars[var_name] = self._get_builtin_variable_value(var_name, project_info)

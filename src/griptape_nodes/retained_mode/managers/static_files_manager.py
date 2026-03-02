@@ -7,12 +7,17 @@ from pathlib import Path
 import httpx
 from xdg_base_dirs import xdg_config_home
 
+from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultSuccess,
+)
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
     CreateStaticFileDownloadUrlRequest,
@@ -28,7 +33,6 @@ from griptape_nodes.retained_mode.events.static_file_events import (
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.retained_mode.managers.config_manager import ConfigManager
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
-from griptape_nodes.retained_mode.managers.image_metadata_injector import inject_workflow_metadata_if_image
 from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
 from griptape_nodes.servers.static import STATIC_SERVER_URL, start_static_server
 from griptape_nodes.utils.url_utils import uri_to_path
@@ -223,26 +227,45 @@ class StaticFilesManager:
         Returns:
             Result with download URL or failure message.
         """
+        file_path = request.file_path
+
+        # Resolve macro paths (e.g. "{outputs}/file.png") before further processing
+        try:
+            parsed = ParsedMacro(file_path)
+        except MacroSyntaxError as e:
+            msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because the path has invalid macro syntax: {e}"
+            logger.warning(msg)
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+
+        if parsed.get_variables():
+            resolve_result = GriptapeNodes.handle_request(
+                GetPathForMacroRequest(parsed_macro=parsed, variables=request.macro_variables)
+            )
+            if not isinstance(resolve_result, GetPathForMacroResultSuccess):
+                msg = f"Attempted to create download URL. Failed with file_path='{file_path}' because macro resolution failed: {resolve_result.result_details}"
+                return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
+            file_path = str(resolve_result.absolute_path)
+
         # Detect if this is a Griptape Cloud URL and extract bucket_id
-        bucket_id = GriptapeCloudStorageDriver.extract_bucket_id_from_url(request.file_path)
+        bucket_id = GriptapeCloudStorageDriver.extract_bucket_id_from_url(file_path)
 
         if bucket_id is not None:
             driver = self._create_cloud_storage_driver(bucket_id)
             if driver is None:
-                msg = f"Attempted to create download URL for Griptape Cloud file. Failed with file_path='{request.file_path}' because GT_CLOUD_API_KEY secret is not available."
+                msg = f"Attempted to create download URL for Griptape Cloud file. Failed with file_path='{file_path}' because GT_CLOUD_API_KEY secret is not available."
                 return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
             # For cloud URLs, pass the full URL to the driver
-            file_path_for_driver = Path(request.file_path)
+            file_path_for_driver = Path(file_path)
         else:
             driver = self.storage_driver
             # For local paths, convert URI to path
-            file_path_for_driver = Path(uri_to_path(request.file_path))
+            file_path_for_driver = Path(uri_to_path(file_path))
 
         try:
             url = driver.create_signed_download_url(file_path_for_driver)
         except Exception as e:
-            msg = f"Failed to create presigned URL for file {request.file_path}: {e}"
+            msg = f"Failed to create presigned URL for file {file_path}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
@@ -296,13 +319,10 @@ class StaticFilesManager:
         # Inject workflow metadata if enabled (only when not using direct save)
         if (
             not use_direct_save
-            and self.config_manager.get_config_value("auto_inject_workflow_metadata", default=True)
+            and self.config_manager.get_config_value("auto_inject_workflow_metadata")
             and not skip_metadata_injection
         ):
-            try:
-                data = inject_workflow_metadata_if_image(data, file_name)
-            except Exception as e:
-                logger.warning("Failed to inject workflow metadata into %s: %s", file_name, e)
+            data = GriptapeNodes.ArtifactManager().prepare_content_for_write(data, file_name)
 
         # NEW BEHAVIOR: Direct save via storage driver
         if use_direct_save:

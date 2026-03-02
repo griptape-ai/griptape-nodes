@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import subprocess
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-import httpx
 from griptape.artifacts.video_url_artifact import VideoUrlArtifact
 
 # static_ffmpeg is dynamically installed by the library loader at runtime
@@ -19,6 +15,7 @@ from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_range import ParameterRange
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.exe_types.param_types.parameter_video import ParameterVideo
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.traits.options import Options
 from griptape_nodes_library.griptape_proxy_node import GriptapeProxyNode
@@ -359,70 +356,14 @@ class LTXVideoRetake(GriptapeProxyNode):
         if not video_url:
             return None
 
-        # If it's already a data URL, return it
         if video_url.startswith("data:video/"):
             return video_url
 
-        # If it's an external URL, download and convert to data URL
-        if video_url.startswith(("http://", "https://")):
-            return await self._download_and_encode_video_async(video_url)
-
-        # If it's a local URL (e.g., from static files), read and encode
-        return await self._read_local_video_and_encode_async(video_url)
-
-    async def _download_and_encode_video_async(self, url: str) -> str | None:
-        """Download external video URL and convert to base64 data URL."""
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=60)
-                resp.raise_for_status()
-        except (httpx.HTTPError, httpx.TimeoutException) as e:
-            logger.debug("%s failed to download video URL: %s", self.name, e)
+            return await File(video_url).aread_data_uri(fallback_mime="video/mp4")
+        except FileLoadError:
+            logger.debug("%s failed to load video value: %s", self.name, video_url)
             return None
-        else:
-            content_type = (resp.headers.get("content-type") or "video/mp4").split(";")[0]
-            if not content_type.startswith("video/"):
-                content_type = "video/mp4"
-            b64 = base64.b64encode(resp.content).decode("utf-8")
-            logger.debug("Video URL converted to base64 data URI for proxy")
-            return f"data:{content_type};base64,{b64}"
-
-    async def _read_local_video_and_encode_async(self, url: str) -> str | None:
-        """Read local video file and convert to base64 data URL."""
-        try:
-            workspace_path = GriptapeNodes.ConfigManager().workspace_path
-            static_files_dir = "staticfiles"  # Default static files directory
-            static_files_path = workspace_path / static_files_dir
-
-            # Parse the URL to get the filename
-            parsed_url = urlparse(url)
-            filename = Path(parsed_url.path).name
-
-            file_path = static_files_path / filename
-            if not file_path.exists():
-                logger.error("%s local video file not found: %s", self.name, file_path)
-                return None
-
-            with file_path.open("rb") as f:
-                video_bytes = f.read()
-
-            # Determine content type from file extension
-            file_ext = file_path.suffix.lower()
-            content_type_map = {
-                ".mp4": "video/mp4",
-                ".mov": "video/quicktime",
-                ".avi": "video/x-msvideo",
-                ".webm": "video/webm",
-            }
-            content_type = content_type_map.get(file_ext, "video/mp4")
-
-            b64 = base64.b64encode(video_bytes).decode("utf-8")
-            logger.debug("Local video file converted to base64 data URI")
-        except (OSError, PermissionError) as e:
-            logger.error("%s failed to read local video file: %s", self.name, e)
-            return None
-        else:
-            return f"data:{content_type};base64,{b64}"
 
     async def _build_payload(self) -> dict[str, Any]:
         """Build the request payload for LTX Retake API."""

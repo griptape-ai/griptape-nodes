@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.common.macro_parser.exceptions import MacroResolutionError, MacroResolutionFailureReason
-from griptape_nodes.common.macro_parser.segments import ParsedSegment, ParsedStaticValue, ParsedVariable
+from griptape_nodes.common.macro_parser.segments import MacroVariables, ParsedSegment, ParsedStaticValue, ParsedVariable
 
 if TYPE_CHECKING:
     from griptape_nodes.retained_mode.managers.secrets_manager import SecretsManager
@@ -22,7 +22,7 @@ class PartiallyResolvedMacro:
 
     original_template: str
     segments: list[ParsedSegment]
-    known_variables: dict[str, str | int]
+    known_variables: MacroVariables
 
     def is_fully_resolved(self) -> bool:
         """Check if all variables have been resolved."""
@@ -50,7 +50,7 @@ class PartiallyResolvedMacro:
 def partial_resolve(
     template: str,
     segments: list[ParsedSegment],
-    variables: dict[str, str | int],
+    variables: MacroVariables,
     secrets_manager: SecretsManager,
 ) -> PartiallyResolvedMacro:
     """Partially resolve the macro template with known variables.

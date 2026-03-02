@@ -859,28 +859,33 @@ def switch_branch_or_tag(library_path: Path, ref_name: str) -> None:
         raise GitRefError(msg) from e
 
 
-def _get_ssh_callbacks() -> pygit2.RemoteCallbacks | None:
-    """Get SSH callbacks for pygit2 operations.
+class _CredentialCallbacks(pygit2.RemoteCallbacks):
+    """RemoteCallbacks that handle both SSH and public HTTPS authentication.
 
-    Tries multiple SSH authentication methods:
-    1. SSH agent (KeypairFromAgent) - works if ssh-agent has keys loaded
-    2. SSH key files (Keypair) - reads keys directly from common paths
-
-    Returns:
-        pygit2.RemoteCallbacks configured with SSH credentials, or None if no keys found.
+    When libgit2 requests SSH credentials (either for SSH URLs or HTTPS URLs
+    rewritten via url.insteadOf git config), tries SSH key files then falls
+    back to the SSH agent. For HTTPS, returns empty credentials (sufficient
+    for public repos).
     """
-    # First, try to find an SSH key file
-    for key_path in _SSH_KEY_PATHS:
-        if key_path.exists():
-            pub_key_path = key_path.with_suffix(key_path.suffix + ".pub")
-            if pub_key_path.exists():
-                logger.debug("Using SSH key from %s", key_path)
-                credentials = pygit2.Keypair("git", str(pub_key_path), str(key_path), "")
-                return pygit2.RemoteCallbacks(credentials=credentials)
 
-    # Fall back to SSH agent (may work if user has ssh-agent configured)
-    logger.debug("No SSH key files found, falling back to SSH agent")
-    return pygit2.RemoteCallbacks(credentials=pygit2.KeypairFromAgent("git"))
+    def credentials(self, url: str, username_from_url: str | None, allowed_types: int) -> object:  # type: ignore[override]
+        ssh_types = (
+            pygit2.enums.CredentialType.SSH_KEY
+            | pygit2.enums.CredentialType.SSH_CUSTOM
+            | pygit2.enums.CredentialType.SSH_MEMORY
+        )
+        if allowed_types & ssh_types:
+            # libgit2 rewrote the HTTPS URL to SSH via a url.insteadOf git config rule,
+            # or this is an SSH URL directly. Try key files first, then agent.
+            for key_path in _SSH_KEY_PATHS:
+                pub_key_path = key_path.with_suffix(key_path.suffix + ".pub")
+                if key_path.exists() and pub_key_path.exists():
+                    logger.debug("Using SSH key from %s for %s", key_path, url)
+                    return pygit2.Keypair(username_from_url or "git", str(pub_key_path), str(key_path), "")
+            logger.debug("No SSH key files found, falling back to SSH agent for %s", url)
+            return pygit2.KeypairFromAgent(username_from_url or "git")
+
+        return pygit2.UserPass("", "")
 
 
 def _is_git_available() -> bool:
@@ -999,14 +1004,9 @@ def clone_repository(git_url: str, target_path: Path, branch_tag_commit: str | N
         msg = f"Cannot clone: target path {target_path} already exists"
         raise GitCloneError(msg)
 
-    # Use SSH callbacks for SSH URLs
-    callbacks = None
-    if git_url.startswith(("git@", "ssh://")):
-        callbacks = _get_ssh_callbacks()
-
     try:
         # Clone the repository
-        repo = pygit2.clone_repository(git_url, str(target_path), callbacks=callbacks)
+        repo = pygit2.clone_repository(git_url, str(target_path), callbacks=_CredentialCallbacks())
         if repo is None:
             msg = f"Failed to clone repository from {git_url}"
             raise GitCloneError(msg)
@@ -1166,10 +1166,7 @@ def _shallow_clone_with_pygit2(remote_url: str, ref: str) -> tuple[str, str, dic
         repo = None  # Initialize for finally block
 
         try:
-            # Use SSH callbacks for SSH URLs
-            callbacks = None
-            if remote_url.startswith(("git@", "ssh://")):
-                callbacks = _get_ssh_callbacks()
+            callbacks = _CredentialCallbacks()
 
             # Shallow clone with depth=1
             # Note: We don't use checkout_branch here because it only works with branches,
