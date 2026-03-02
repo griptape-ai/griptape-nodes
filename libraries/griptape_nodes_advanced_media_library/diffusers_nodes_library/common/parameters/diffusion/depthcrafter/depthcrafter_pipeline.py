@@ -14,6 +14,9 @@ from diffusers.utils.torch_utils import randn_tensor  # pyright: ignore[reportMi
 
 logger = logging.getLogger("diffusers_nodes_library")
 
+# Maximum elements a single CUDA tensor can have before 32-bit kernel indexing fails.
+MAX_CUDA_TENSOR_ELEMENTS = 2**31 - 1
+
 
 class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline):
     """Inspired by: https://github.com/Tencent/DepthCrafter/blob/main/depthcrafter/depth_crafter_ppl.py."""
@@ -38,8 +41,15 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
         :param chunk_size: the chunk size to encode video
         :return: image_embeddings in shape of [b, 1024]
         """
-        video_224 = _resize_with_antialiasing(video.float(), (224, 224))
-        video_224 = (video_224 + 1.0) / 2.0  # [-1, 1] -> [0, 1]
+        # Chunk the resize to avoid exceeding 32-bit index limits on high-res, long videos.
+        elements_per_frame = video.shape[1] * video.shape[2] * video.shape[3]
+        resize_chunk_size = max(1, MAX_CUDA_TENSOR_ELEMENTS // elements_per_frame)
+
+        resized_chunks = []
+        for i in range(0, video.shape[0], resize_chunk_size):
+            chunk_224 = _resize_with_antialiasing(video[i : i + resize_chunk_size].float(), (224, 224))
+            resized_chunks.append((chunk_224 + 1.0) / 2.0)
+        video_224 = torch.cat(resized_chunks, dim=0)  # [t, 3, 224, 224]
 
         embeddings = []
         for i in range(0, video_224.shape[0], chunk_size):
@@ -159,7 +169,15 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
         else:
             assert isinstance(video, torch.Tensor)  # noqa: S101
         video = video.to(device=device, dtype=self.dtype)  # pyright: ignore[reportAttributeAccessIssue]
-        video = video * 2.0 - 1.0  # [0,1] -> [-1,1], in [t, c, h, w]
+
+        # Compute max frames per chunk to keep CUDA kernel operations under the
+        # 32-bit index limit (2^31 - 1 elements per tensor).
+        elements_per_frame = video.shape[1] * video.shape[2] * video.shape[3]
+        safe_chunk_frames = max(1, MAX_CUDA_TENSOR_ELEMENTS // elements_per_frame)
+
+        # Normalize [0,1] -> [-1,1] in chunks.
+        for i in range(0, num_frames, safe_chunk_frames):
+            video[i : i + safe_chunk_frames] = video[i : i + safe_chunk_frames] * 2.0 - 1.0
 
         # Initialize timing events
         start_event = None
@@ -176,9 +194,11 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
 
         video_embeddings = self.encode_video(video, chunk_size=decode_chunk_size).unsqueeze(0)  # [1, t, 1024]
         torch.cuda.empty_cache()
-        # 4. Encode input image using VAE
-        noise = randn_tensor(video.shape, generator=generator, device=device, dtype=video.dtype)
-        video = video + noise_aug_strength * noise  # in [t, c, h, w]
+        # 4. Add noise augmentation in chunks.
+        for i in range(0, num_frames, safe_chunk_frames):
+            chunk = video[i : i + safe_chunk_frames]
+            noise = randn_tensor(chunk.shape, generator=generator, device=device, dtype=video.dtype)
+            video[i : i + safe_chunk_frames] = chunk + noise_aug_strength * noise
 
         # pdb.set_trace()  # noqa: ERA001
         needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast

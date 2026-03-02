@@ -28,12 +28,9 @@
   "metadata": {
     "author": "Griptape, Inc.",
     "description": "Advanced media generation and manipulation nodes for Griptape Nodes.",
-    "library_version": "0.66.6",
+    "library_version": "0.66.7",
     "engine_version": "0.67.0",
-    "tags": [
-      "Griptape",
-      "AI"
-    ],
+    "tags": ["Griptape", "AI"],
     "dependencies": {
       "pip_dependencies": [
         "accelerate>=1.6.0",
@@ -67,10 +64,7 @@
         "supervision>=0.27.0",
         "griptape[drivers-prompt-amazon-bedrock,drivers-prompt-anthropic,drivers-prompt-cohere,drivers-prompt-ollama,drivers-web-scraper-trafilatura,drivers-web-search-duckduckgo,drivers-web-search-exa,loaders-image]>=1.8.12"
       ],
-      "pip_install_flags": [
-        "--preview",
-        "--torch-backend=auto"
-      ]
+      "pip_install_flags": ["--preview", "--torch-backend=auto"]
     },
     "resources": {
       "required": {
@@ -346,7 +340,5 @@
       }
     }
   ],
-  "workflows": [
-    "workflows/templates/qwen_edit_2509_camera_control.py"
-  ]
+  "workflows": ["workflows/templates/qwen_edit_2509_camera_control.py"]
 }
