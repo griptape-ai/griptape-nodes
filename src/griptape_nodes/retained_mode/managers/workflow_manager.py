@@ -3600,6 +3600,21 @@ class WorkflowManager:
                 ast.keyword(arg="initial_setup", value=ast.Constant(value=True)),
             ]
 
+            # Add waypoints if they exist
+            if connection.waypoints:
+                # Convert waypoints to a list of dicts
+                waypoints_list = ast.List(
+                    elts=[
+                        ast.Dict(
+                            keys=[ast.Constant(value="x"), ast.Constant(value="y")],
+                            values=[ast.Constant(value=wp.x), ast.Constant(value=wp.y)],
+                        )
+                        for wp in connection.waypoints
+                    ],
+                    ctx=ast.Load(),
+                )
+                create_connection_request_args.append(ast.keyword(arg="waypoints", value=waypoints_list))
+
             create_connection_call = ast.Expr(
                 value=ast.Call(
                     func=ast.Attribute(

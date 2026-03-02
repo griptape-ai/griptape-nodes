@@ -41,6 +41,26 @@ def default_json_encoder(obj: Any) -> Any:
         return str(obj)
 
 
+def pydantic_aware_dict_factory(field_list: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Dict factory for asdict() that converts Pydantic models to dicts.
+
+    Args:
+        field_list: List of (field_name, field_value) tuples from asdict()
+
+    Returns:
+        Dictionary with Pydantic models converted to dicts
+    """
+    result = {}
+    for key, value in field_list:
+        if isinstance(value, BaseModel):
+            result[key] = value.model_dump()
+        elif isinstance(value, list):
+            result[key] = [item.model_dump() if isinstance(item, BaseModel) else item for item in value]
+        else:
+            result[key] = value
+    return result
+
+
 @dataclass
 class ResultDetail:
     """A single detail about an operation result, including logging level and human readable message."""
@@ -104,7 +124,7 @@ class Payload(ABC):  # noqa: B024
         """
         # Convert payload to dict
         if is_dataclass(self):
-            payload_dict = asdict(self)
+            payload_dict = asdict(self, dict_factory=pydantic_aware_dict_factory)
         elif hasattr(self, "__dict__"):
             payload_dict = self.__dict__
         else:
@@ -306,7 +326,7 @@ class EventRequest[P: Payload](BaseEvent):
         if hasattr(self.request, "__dict__"):
             result["request"] = self.request.__dict__
         elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
+            result["request"] = asdict(self.request, dict_factory=pydantic_aware_dict_factory)
         else:
             # Handle other object types if needed
             result["request"] = str(self.request)
@@ -372,14 +392,14 @@ class EventResult[P: RequestPayload, R: ResultPayload](BaseEvent, ABC):
         if hasattr(self.request, "__dict__"):
             result["request"] = self.request.__dict__
         elif is_dataclass(self.request):
-            result["request"] = asdict(self.request)
+            result["request"] = asdict(self.request, dict_factory=pydantic_aware_dict_factory)
         else:
             result["request"] = str(self.request)
 
         # Handle result payload
         if is_dataclass(self.result):
             try:
-                result["result"] = asdict(self.result)
+                result["result"] = asdict(self.result, dict_factory=pydantic_aware_dict_factory)
             except TypeError:
                 result["result"] = self.result.__dict__
         elif hasattr(self.result, "__dict__"):
@@ -552,7 +572,7 @@ class ExecutionEvent[E: ExecutionPayload](BaseEvent):
         if hasattr(self.payload, "__dict__"):
             result["payload"] = self.payload.__dict__
         elif is_dataclass(self.payload):
-            result["payload"] = asdict(self.payload)
+            result["payload"] = asdict(self.payload, dict_factory=pydantic_aware_dict_factory)
         else:
             # Handle other object types if needed
             result["payload"] = str(self.payload)

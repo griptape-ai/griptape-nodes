@@ -193,6 +193,10 @@ class CreateWaypointRequest(RequestPayload):
     waypoint: Waypoint
     insert_index: int | None = None
 
+    def __post_init__(self) -> None:
+        """Normalize waypoint from dict to Waypoint object during deserialization."""
+        self.waypoint = Waypoint.model_validate(self.waypoint)
+
 
 @dataclass
 @PayloadRegistry.register
@@ -270,6 +274,10 @@ class UpdateWaypointRequest(RequestPayload):
     target_parameter_name: str
     waypoint_index: int
     waypoint: Waypoint
+
+    def __post_init__(self) -> None:
+        """Normalize waypoint from dict to Waypoint object during deserialization."""
+        self.waypoint = Waypoint.model_validate(self.waypoint)
 
 
 @dataclass

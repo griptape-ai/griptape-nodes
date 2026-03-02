@@ -31,7 +31,6 @@ from griptape_nodes.retained_mode.events.base_events import (
     ProgressEvent,
     RequestPayload,
 )
-from griptape_nodes.retained_mode.events.connection_events import Waypoint
 from griptape_nodes.retained_mode.events.parameter_events import (
     AddParameterToNodeRequest,
     RemoveElementEvent,
@@ -44,6 +43,7 @@ from griptape_nodes.utils import async_utils
 if TYPE_CHECKING:
     from griptape_nodes.exe_types.core_types import NodeMessagePayload
     from griptape_nodes.node_library.library_registry import LibraryNameAndVersion
+    from griptape_nodes.retained_mode.events.connection_events import Waypoint
 
 logger = logging.getLogger("griptape_nodes")
 
@@ -2015,9 +2015,7 @@ class Connection:
         self.source_parameter = source_parameter
         self.target_parameter = target_parameter
         self.is_node_group_internal = is_node_group_internal
-        self.waypoints = (
-            [w if isinstance(w, Waypoint) else Waypoint(x=w["x"], y=w["y"]) for w in waypoints] if waypoints else []
-        )
+        self.waypoints = waypoints if waypoints else []
 
     def get_target_node(self) -> BaseNode:
         return self.target_node
