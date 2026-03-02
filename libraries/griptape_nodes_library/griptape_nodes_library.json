@@ -2644,12 +2644,12 @@
       }
     },
     {
-      "class_name": "ConfigureProjectFileSave",
-      "file_path": "griptape_nodes_library/filesystem/configure_project_file_save.py",
+      "class_name": "FileOutputSettings",
+      "file_path": "griptape_nodes_library/filesystem/file_output_settings.py",
       "metadata": {
         "category": "filesystem",
         "description": "Configure file save paths using situation templates and macro expansion. Outputs a File object with an unresolved macro path.",
-        "display_name": "Configure Project File Save",
+        "display_name": "File Output Settings",
         "icon": "FolderCog"
       }
     },

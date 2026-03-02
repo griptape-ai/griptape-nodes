@@ -89,7 +89,7 @@ class ProjectFileParameter:
                     icon="cog",
                     size="icon",
                     variant="secondary",
-                    tooltip="Create and connect a ConfigureProjectFileSave node",
+                    tooltip="Create and connect a FileOutputSettings node",
                     on_click=self._on_configure_button_clicked,
                 )
             )
@@ -111,7 +111,7 @@ class ProjectFileParameter:
     def build_file(self, **extra_vars: str | int) -> FileDestination:
         """Build a FileDestination with a MacroPath from the parameter's current value.
 
-        If an upstream node implements FileDestinationProvider (e.g., ConfigureProjectFileSave),
+        If an upstream node implements FileDestinationProvider (e.g., FileOutputSettings),
         its FileDestination is retrieved directly without deserializing from the wire.
 
         If the parameter holds a string filename, parses it into
@@ -160,7 +160,7 @@ class ProjectFileParameter:
         button: Button,  # noqa: ARG002
         button_details: ButtonDetailsMessagePayload,
     ) -> NodeMessageResult:
-        """Create and connect a ConfigureProjectFileSave node to this parameter."""
+        """Create and connect a FileOutputSettings node to this parameter."""
         node_name = self._node.name
 
         has_incoming = False
@@ -178,7 +178,7 @@ class ProjectFileParameter:
 
         create_result = RetainedMode.create_node_relative_to(
             reference_node_name=node_name,
-            new_node_type="ConfigureProjectFileSave",
+            new_node_type="FileOutputSettings",
             offset_side="left",
             offset_x=-750,
             offset_y=0,
@@ -188,7 +188,7 @@ class ProjectFileParameter:
         if not isinstance(create_result, str):
             return NodeMessageResult(
                 success=False,
-                details=f"{node_name}: Failed to create ConfigureProjectFileSave node",
+                details=f"{node_name}: Failed to create FileOutputSettings node",
                 response=button_details,
                 altered_workflow_state=False,
             )

@@ -1,4 +1,4 @@
-"""ConfigureProjectFileSave node - configure file save paths using macro expansion."""
+"""FileOutputSettings node - configure file save paths using macro expansion."""
 
 import logging
 from dataclasses import dataclass
@@ -67,7 +67,7 @@ class ClassifiedPath:
     macro_form: str | None = None
 
 
-class ConfigureProjectFileSave(BaseNode):
+class FileOutputSettings(BaseNode):
     """Configure file save paths using situation templates and macro expansion.
 
     Stores a FileDestination internally (accessible via the file_destination property)
