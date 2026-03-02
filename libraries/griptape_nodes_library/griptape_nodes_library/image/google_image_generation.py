@@ -222,7 +222,6 @@ class GoogleImageGeneration(GriptapeProxyNode):
             )
         )
 
-
         # OUTPUTS
         self.add_parameter(
             ParameterString(

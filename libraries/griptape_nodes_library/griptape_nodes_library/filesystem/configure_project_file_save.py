@@ -173,7 +173,7 @@ class ConfigureProjectFileSave(BaseNode):
         )
         self.add_parameter(self.filename)
 
-        self.file_location = Parameter(
+        self.file_destination_parameter = Parameter(
             name="file_destination",
             type="str",
             default_value=None,
@@ -181,7 +181,7 @@ class ConfigureProjectFileSave(BaseNode):
             tooltip="Resolved file path for downstream save nodes",
             output_type="str",
         )
-        self.add_parameter(self.file_location)
+        self.add_parameter(self.file_destination_parameter)
 
     def _load_project_situation(self) -> None:
         """Load situation template from project and set macro default."""
@@ -306,7 +306,7 @@ class ConfigureProjectFileSave(BaseNode):
 
         resolved_path_str = str(resolve_result.absolute_path)
         self._file_destination = self._build_file_from_template(macro_template, variables)
-        self.set_parameter_value(self.file_location.name, resolved_path_str)
+        self.set_parameter_value(self.file_destination_parameter.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_inside_project(self, classified: ClassifiedPath) -> None:
@@ -322,7 +322,7 @@ class ConfigureProjectFileSave(BaseNode):
 
         resolved_path_str = str(resolve_result.absolute_path)
         self._file_destination = self._build_file_from_template(macro_template, {})
-        self.set_parameter_value(self.file_location.name, resolved_path_str)
+        self.set_parameter_value(self.file_destination_parameter.name, resolved_path_str)
         self.absolute_path_warning.ui_options = {"hide": True}
 
     def _handle_absolute_path_outside_project(self, classified: ClassifiedPath) -> None:
@@ -334,7 +334,7 @@ class ConfigureProjectFileSave(BaseNode):
             existing_file_policy=self._get_file_policy(),
             create_parents=create_dirs,
         )
-        self.set_parameter_value(self.file_location.name, absolute_path)
+        self.set_parameter_value(self.file_destination_parameter.name, absolute_path)
         self.absolute_path_warning.ui_options = {"hide": False}
 
     def _get_target_node_name(self) -> str:
@@ -349,7 +349,7 @@ class ConfigureProjectFileSave(BaseNode):
         result = GriptapeNodes.handle_request(ListConnectionsForNodeRequest(node_name=self.name))
         if isinstance(result, ListConnectionsForNodeResultSuccess):
             for conn in result.outgoing_connections:
-                if conn.source_parameter_name == self.file_location.name:
+                if conn.source_parameter_name == self.file_destination_parameter.name:
                     return conn.target_node_name
         return self.name
 
@@ -360,7 +360,7 @@ class ConfigureProjectFileSave(BaseNode):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Re-resolve path using the newly connected downstream node's name."""
-        if source_parameter.name == self.file_location.name:
+        if source_parameter.name == self.file_destination_parameter.name:
             self._resolve_and_update_path()
 
     def after_outgoing_connection_removed(
@@ -370,7 +370,7 @@ class ConfigureProjectFileSave(BaseNode):
         target_parameter: Parameter,  # noqa: ARG002
     ) -> None:
         """Re-resolve path, falling back to this node's own name."""
-        if source_parameter.name == self.file_location.name:
+        if source_parameter.name == self.file_destination_parameter.name:
             self._resolve_and_update_path()
 
     def after_value_set(self, parameter: Parameter, value: Any, *, initial_setup: bool = False) -> None:  # noqa: ARG002
