@@ -27,7 +27,7 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.exe_types.core_types import ParameterTypeBuiltin
 from griptape_nodes.exe_types.flow import ControlFlow
 from griptape_nodes.exe_types.node_types import BaseNode, EndNode, StartNode
-from griptape_nodes.files.path_utils import resolve_workspace_path, sanitize_workflow_name
+from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.workflow_registry import (
     Workflow,
     WorkflowMetadata,
@@ -161,6 +161,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
+from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -869,7 +870,7 @@ class WorkflowManager:
         # Preserve the raw user input as the display name (metadata.name).
         display_name = request.requested_name
         # Sanitize to a Python module-friendly name for the file stem (registry key).
-        sanitized_name = sanitize_workflow_name(request.requested_name)
+        sanitized_name = normalize_display_name(request.requested_name)
         if not sanitized_name:
             details = f"Attempted to rename workflow '{request.workflow_name}'. The requested name '{request.requested_name}' produced an empty file name after sanitization."
             return RenameWorkflowResultFailure(result_details=details)
