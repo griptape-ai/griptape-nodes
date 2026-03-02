@@ -300,25 +300,33 @@ class Connections:
 
     # Used to check data connections for all future nodes to be BAD!
     def unresolve_future_nodes(self, node: BaseNode, _visited: set[str] | None = None) -> None:
+        # Recursively traverse downstream nodes, tracking visited nodes to avoid cycles.
         if _visited is None:
             _visited = set()
         if node.name in _visited:
             return
         _visited.add(node.name)
 
+        # There are no outgoing connections from this node.
         if node.name not in self.outgoing_index:
             return
         for parameter in node.parameters:
+            # If it is a data connection and has an OUTPUT type
+            # and an outgoing connection exists from this parameter
             if (
                 ParameterMode.OUTPUT in parameter.allowed_modes
                 and ParameterTypeBuiltin.CONTROL_TYPE.value != parameter.output_type
                 and parameter.name in self.outgoing_index[node.name]
             ):
+                # A connection or connections exist
                 connections = self.outgoing_index[node.name][parameter.name]
+                # For each connection, check the next node and do all the same.
                 for connection_id in connections:
                     if connection_id in self.connections:
                         connection = self.connections[connection_id]
                         target_node = connection.target_node
+                        # If that node is resolved, mark it unresolved.
+                        # Emit an event so clients know this node has changed resolution state.
                         if target_node.state == NodeResolutionState.RESOLVED:
                             target_node.make_node_unresolved(
                                 current_states_to_trigger_change_event=set(
