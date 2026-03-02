@@ -392,6 +392,21 @@ class ContextManager:
         current_workflow = self._workflow_stack[-1]
         return current_workflow._name
 
+    def set_current_workflow_name(self, new_name: str) -> None:
+        """Update the name of the current Workflow context.
+
+        Args:
+            new_name: The new name to assign to the current Workflow.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
+        """
+        if not self.has_current_workflow():
+            msg = "No active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
+
+        self._workflow_stack[-1]._name = new_name
+
     def get_current_flow(self) -> ControlFlow:
         """Get the current Flow object.
 
