@@ -894,6 +894,15 @@ class WorkflowManager:
                 )
                 return RenameWorkflowResultFailure(result_details=details)
 
+        # If the renamed workflow is the current context, update the context name so the
+        # heartbeat and other callers reflect the new registry key immediately.
+        context_manager = GriptapeNodes.ContextManager()
+        if (
+            context_manager.has_current_workflow()
+            and context_manager.get_current_workflow_name() == request.workflow_name
+        ):
+            context_manager.set_current_workflow_name(sanitized_name)
+
         return RenameWorkflowResultSuccess(
             new_workflow_name=sanitized_name,
             result_details=ResultDetails(
