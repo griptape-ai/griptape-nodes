@@ -148,6 +148,9 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
         # Use the file stem as the registry key, independent of the display name in metadata.
+        # TODO(https://github.com/griptape-ai/griptape-nodes/issues/4057): file_path should be
+        # resolved from a "save_workflow" situation macro (like ArtifactManager._resolve_preview_path)
+        # so the save location is user-configurable per project rather than hard-coded.
         registry_key = Path(file_path).stem
         if registry_key in instance._workflows:
             msg = f"Workflow with file name '{registry_key}' already registered."
