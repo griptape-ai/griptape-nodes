@@ -152,7 +152,7 @@ class ConfigureProjectFileSave(BaseNode):
         self.absolute_path_warning = ParameterMessage(
             name="absolute_path_warning",
             variant="warning",
-            value="The file path specified could not be found within a directory defined within the current project. This may affect portability.",
+            value="The file path specified could not be found within a directory defined within the current project. This will affect portability.",
             ui_options={"hide": True},
         )
         self.add_node_element(self.absolute_path_warning)
