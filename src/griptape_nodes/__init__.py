@@ -3,7 +3,12 @@
 import sys
 from pathlib import Path
 
+import truststore
 from rich.console import Console
+
+# uses the system certificate store for SSL verification
+# this patches the ssl module which is used by all HTTP libraries
+truststore.inject_into_ssl()
 
 
 def main() -> None:
