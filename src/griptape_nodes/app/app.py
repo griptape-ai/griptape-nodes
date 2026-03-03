@@ -118,7 +118,7 @@ griptape_nodes_logger.setLevel(log_level)
 
 # Root logger only gets RichHandler for console output
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(show_time=True, show_path=False, markup=True, rich_tracebacks=True)],
