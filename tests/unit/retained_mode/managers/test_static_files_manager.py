@@ -672,7 +672,7 @@ class TestStaticFilesManagerResolveStaticFilePath:
 
         assert result is None
         assert "save_static_file" in caplog.text
-        assert "Legacy projects" in caplog.text
+        assert "StaticFilesManager.save_static_file" in caplog.text
 
     def test_resolve_returns_none_and_warns_when_macro_parsing_fails(
         self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture

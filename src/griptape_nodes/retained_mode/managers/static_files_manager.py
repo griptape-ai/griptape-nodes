@@ -397,7 +397,7 @@ class StaticFilesManager:
         if not isinstance(situation_result, GetSituationResultSuccess):
             logger.warning(
                 "Project template does not include '%s' situation; static files will save to the default directory. "
-                "Legacy projects may need to be updated with this situation.",
+                "Projects using StaticFilesManager.save_static_file require this situation in their project template.",
                 SAVE_STATIC_FILE_SITUATION,
             )
             return None
