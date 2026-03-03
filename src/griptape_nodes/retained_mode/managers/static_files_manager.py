@@ -8,6 +8,7 @@ import httpx
 from xdg_base_dirs import xdg_config_home
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
+from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
@@ -17,6 +18,8 @@ from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultSuccess,
 )
 from griptape_nodes.retained_mode.events.static_file_events import (
     CreateStaticFileDownloadUrlFromPathRequest,
@@ -283,7 +286,7 @@ class StaticFilesManager:
         self,
         data: bytes,
         file_name: str,
-        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        existing_file_policy: ExistingFilePolicy | None = None,
         *,
         use_direct_save: bool = False,
         skip_metadata_injection: bool = False,
@@ -295,8 +298,9 @@ class StaticFilesManager:
         Args:
             data: The file data to save.
             file_name: The name of the file to save.
-            existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
-                - OVERWRITE: Replace existing file content (default)
+            existing_file_policy: How to handle existing files. When None, uses the policy from the
+                save_static_file situation (falling back to OVERWRITE if unavailable).
+                - OVERWRITE: Replace existing file content
                 - CREATE_NEW: Auto-generate unique filename (e.g., file_1.txt, file_2.txt)
                 - FAIL: Raise FileExistsError if file exists
             use_direct_save: If True, use direct storage driver save (new behavior).
@@ -313,8 +317,18 @@ class StaticFilesManager:
             RuntimeError: If file write fails (new behavior).
             ValueError: If file upload fails (legacy behavior).
         """
-        resolved_directory = self._get_static_files_directory()
-        file_path = Path(resolved_directory) / file_name
+        situation_result = self._resolve_static_file_path(file_name)
+        if situation_result is not None:
+            file_path, situation_policy = situation_result
+        else:
+            resolved_directory = self._get_static_files_directory()
+            file_path = Path(resolved_directory) / file_name
+            situation_policy = ExistingFilePolicy.OVERWRITE
+
+        if existing_file_policy is not None:
+            effective_policy = existing_file_policy
+        else:
+            effective_policy = situation_policy
 
         # Inject workflow metadata if enabled (only when not using direct save)
         if (
@@ -327,7 +341,7 @@ class StaticFilesManager:
         # NEW BEHAVIOR: Direct save via storage driver
         if use_direct_save:
             try:
-                saved_path = self.storage_driver.save_file(file_path, data, existing_file_policy)
+                saved_path = self.storage_driver.save_file(file_path, data, effective_policy)
             except FileExistsError:
                 raise
             except Exception as e:
@@ -337,7 +351,7 @@ class StaticFilesManager:
             return saved_path
 
         # OLD BEHAVIOR: Presigned URL upload
-        response = self.storage_driver.create_signed_upload_url(file_path, existing_file_policy)
+        response = self.storage_driver.create_signed_upload_url(file_path, effective_policy)
         resolved_file_path = Path(response["file_path"])
 
         try:
@@ -352,6 +366,63 @@ class StaticFilesManager:
 
         url = self.storage_driver.create_signed_download_url(resolved_file_path)
         return url
+
+    def _resolve_static_file_path(self, file_name: str) -> tuple[Path, ExistingFilePolicy] | None:
+        """Resolve the file path for a static file using the save_static_file situation.
+
+        Args:
+            file_name: The name of the file (e.g., "output.png").
+
+        Returns:
+            A tuple of (absolute_path, policy) if situation resolution succeeds, or None on failure.
+        """
+        situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name="save_static_file"))
+        if not isinstance(situation_result, GetSituationResultSuccess):
+            return None
+
+        situation = situation_result.situation
+
+        # Split file_name into base and extension
+        path_obj = Path(file_name)
+        file_name_base = path_obj.stem
+        file_extension = path_obj.suffix.lstrip(".")
+
+        try:
+            parsed_macro = ParsedMacro(situation.macro)
+        except MacroSyntaxError as e:
+            logger.warning("Failed to parse save_static_file situation macro: %s", e)
+            return None
+
+        macro_result = GriptapeNodes.handle_request(
+            GetPathForMacroRequest(
+                parsed_macro=parsed_macro,
+                variables={"file_name_base": file_name_base, "file_extension": file_extension},
+            )
+        )
+        if not isinstance(macro_result, GetPathForMacroResultSuccess):
+            logger.warning("Failed to resolve save_static_file situation path: %s", macro_result.result_details)
+            return None
+
+        policy = self._map_situation_policy(situation.policy.on_collision)
+        return macro_result.absolute_path, policy
+
+    @staticmethod
+    def _map_situation_policy(situation_policy: SituationFilePolicy) -> ExistingFilePolicy:
+        """Map a SituationFilePolicy to an ExistingFilePolicy.
+
+        Args:
+            situation_policy: The situation policy to map.
+
+        Returns:
+            The corresponding ExistingFilePolicy.
+        """
+        match situation_policy:
+            case SituationFilePolicy.OVERWRITE:
+                return ExistingFilePolicy.OVERWRITE
+            case SituationFilePolicy.FAIL:
+                return ExistingFilePolicy.FAIL
+            case SituationFilePolicy.CREATE_NEW | SituationFilePolicy.PROMPT:
+                return ExistingFilePolicy.CREATE_NEW
 
     def _get_static_files_directory(self) -> str:
         """Get the appropriate static files directory based on the current workflow context.

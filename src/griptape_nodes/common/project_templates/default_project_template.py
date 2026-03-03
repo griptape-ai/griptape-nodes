@@ -83,5 +83,15 @@ DEFAULT_PROJECT_TEMPLATE = ProjectTemplate(
             ),
             fallback="save_file",
         ),
+        "save_static_file": SituationTemplate(
+            name="save_static_file",
+            description="Save static file to workflow-relative staticfiles directory",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(
+                on_collision=SituationFilePolicy.OVERWRITE,
+                create_dirs=True,
+            ),
+            fallback="save_file",
+        ),
     },
 )
