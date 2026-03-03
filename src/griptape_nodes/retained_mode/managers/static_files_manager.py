@@ -43,6 +43,8 @@ from griptape_nodes.utils.url_utils import uri_to_path
 
 logger = logging.getLogger("griptape_nodes")
 
+SAVE_STATIC_FILE_SITUATION = "save_static_file"
+
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
 
 
@@ -377,7 +379,7 @@ class StaticFilesManager:
         Returns:
             A tuple of (absolute_path, policy) if situation resolution succeeds, or None on failure.
         """
-        situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name="save_static_file"))
+        situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=SAVE_STATIC_FILE_SITUATION))
         if not isinstance(situation_result, GetSituationResultSuccess):
             return None
 
@@ -388,7 +390,7 @@ class StaticFilesManager:
         try:
             parsed_macro = ParsedMacro(situation.macro)
         except MacroSyntaxError as e:
-            logger.warning("Failed to parse save_static_file situation macro: %s", e)
+            logger.warning("Failed to parse %s situation macro: %s", SAVE_STATIC_FILE_SITUATION, e)
             return None
 
         macro_result = GriptapeNodes.handle_request(
@@ -398,7 +400,9 @@ class StaticFilesManager:
             )
         )
         if not isinstance(macro_result, GetPathForMacroResultSuccess):
-            logger.warning("Failed to resolve save_static_file situation path: %s", macro_result.result_details)
+            logger.warning(
+                "Failed to resolve %s situation path: %s", SAVE_STATIC_FILE_SITUATION, macro_result.result_details
+            )
             return None
 
         policy = self._map_situation_policy(situation.policy.on_collision)
