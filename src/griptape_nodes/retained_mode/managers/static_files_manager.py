@@ -3,6 +3,7 @@ import binascii
 import logging
 import threading
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 from xdg_base_dirs import xdg_config_home
@@ -46,6 +47,18 @@ logger = logging.getLogger("griptape_nodes")
 SAVE_STATIC_FILE_SITUATION = "save_static_file"
 
 USER_CONFIG_PATH = xdg_config_home() / "griptape_nodes" / "griptape_nodes_config.json"
+
+
+class ResolvedStaticFilePath(NamedTuple):
+    """Resolved static file path and its write policy.
+
+    Attributes:
+        path: Absolute path where the static file should be written.
+        policy: How to handle an existing file at that path.
+    """
+
+    path: Path
+    policy: ExistingFilePolicy
 
 
 class StaticFilesManager:
@@ -326,7 +339,8 @@ class StaticFilesManager:
             file_path = Path(resolved_directory) / file_name
             situation_policy = ExistingFilePolicy.OVERWRITE
         else:
-            file_path, situation_policy = situation_result
+            file_path = situation_result.path
+            situation_policy = situation_result.policy
 
         if existing_file_policy is None:
             effective_policy = situation_policy
@@ -370,14 +384,14 @@ class StaticFilesManager:
         url = self.storage_driver.create_signed_download_url(resolved_file_path)
         return url
 
-    def _resolve_static_file_path(self, file_name: str) -> tuple[Path, ExistingFilePolicy] | None:
+    def _resolve_static_file_path(self, file_name: str) -> ResolvedStaticFilePath | None:
         """Resolve the file path for a static file using the save_static_file situation.
 
         Args:
             file_name: The name of the file (e.g., "output.png").
 
         Returns:
-            A tuple of (absolute_path, policy) if situation resolution succeeds, or None on failure.
+            ResolvedStaticFilePath if situation resolution succeeds, or None on failure.
         """
         situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=SAVE_STATIC_FILE_SITUATION))
         if not isinstance(situation_result, GetSituationResultSuccess):
@@ -406,7 +420,7 @@ class StaticFilesManager:
             return None
 
         policy = self._map_situation_policy(situation.policy.on_collision)
-        return macro_result.absolute_path, policy
+        return ResolvedStaticFilePath(path=macro_result.absolute_path, policy=policy)
 
     @staticmethod
     def _map_situation_policy(situation_policy: SituationFilePolicy) -> ExistingFilePolicy:
