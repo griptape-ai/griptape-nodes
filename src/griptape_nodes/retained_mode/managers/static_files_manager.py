@@ -14,7 +14,6 @@ from griptape_nodes.drivers.storage import StorageBackend
 from griptape_nodes.drivers.storage.griptape_cloud_storage_driver import GriptapeCloudStorageDriver
 from griptape_nodes.drivers.storage.local_storage_driver import LocalStorageDriver
 from griptape_nodes.files.path_utils import FilenameParts
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
@@ -166,11 +165,13 @@ class StaticFilesManager:
         """
         file_name = request.file_name
 
-        resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / file_name
+        resolved = self._resolve_static_file_path(file_name)
+        if resolved is None:
+            msg = f"Attempted to create upload URL for '{file_name}'. Failed because the project template is missing the '{SAVE_STATIC_FILE_SITUATION}' situation."
+            return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
 
         try:
-            response = self.storage_driver.create_signed_upload_url(full_file_path)
+            response = self.storage_driver.create_signed_upload_url(resolved.path)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {file_name}: {e}"
             return CreateStaticFileUploadUrlResultFailure(error=msg, result_details=msg)
@@ -195,18 +196,20 @@ class StaticFilesManager:
         Returns:
             A result object indicating success or failure.
         """
-        resolved_directory = self._get_static_files_directory()
-        full_file_path = Path(resolved_directory) / request.file_name
+        resolved = self._resolve_static_file_path(request.file_name)
+        if resolved is None:
+            msg = f"Attempted to create download URL for '{request.file_name}'. Failed because the project template is missing the '{SAVE_STATIC_FILE_SITUATION}' situation."
+            return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         try:
-            url = self.storage_driver.create_signed_download_url(full_file_path)
+            url = self.storage_driver.create_signed_download_url(resolved.path)
         except Exception as e:
             msg = f"Failed to create presigned URL for file {request.file_name}: {e}"
             return CreateStaticFileDownloadUrlResultFailure(error=msg, result_details=msg)
 
         return CreateStaticFileDownloadUrlResultSuccess(
             url=url,
-            file_url=self.storage_driver.get_asset_url(full_file_path),
+            file_url=self.storage_driver.get_asset_url(resolved.path),
             result_details="Successfully created static file download URL",
         )
 
@@ -315,7 +318,7 @@ class StaticFilesManager:
             data: The file data to save.
             file_name: The name of the file to save.
             existing_file_policy: How to handle existing files. When None, uses the policy from the
-                save_static_file situation (falling back to OVERWRITE if unavailable).
+                save_static_file situation.
                 - OVERWRITE: Replace existing file content
                 - CREATE_NEW: Auto-generate unique filename (e.g., file_1.txt, file_2.txt)
                 - FAIL: Raise FileExistsError if file exists
@@ -330,20 +333,18 @@ class StaticFilesManager:
 
         Raises:
             FileExistsError: When existing_file_policy is FAIL and file already exists.
-            RuntimeError: If file write fails (new behavior).
+            RuntimeError: If the project template is missing the save_static_file situation, or if the file write fails.
             ValueError: If file upload fails (legacy behavior).
         """
-        situation_result = self._resolve_static_file_path(file_name)
-        if situation_result is None:
-            resolved_directory = self._get_static_files_directory()
-            file_path = Path(resolved_directory) / file_name
-            situation_policy = ExistingFilePolicy.OVERWRITE
-        else:
-            file_path = situation_result.path
-            situation_policy = situation_result.policy
+        resolved = self._resolve_static_file_path(file_name)
+        if resolved is None:
+            msg = f"Attempted to save static file '{file_name}'. Failed because the project template is missing the '{SAVE_STATIC_FILE_SITUATION}' situation."
+            raise RuntimeError(msg)
+
+        file_path = resolved.path
 
         if existing_file_policy is None:
-            effective_policy = situation_policy
+            effective_policy = resolved.policy
         else:
             effective_policy = existing_file_policy
 
@@ -444,41 +445,3 @@ class StaticFilesManager:
                 return ExistingFilePolicy.FAIL
             case SituationFilePolicy.CREATE_NEW | SituationFilePolicy.PROMPT:
                 return ExistingFilePolicy.CREATE_NEW
-
-    def _get_static_files_directory(self) -> str:
-        """Get the appropriate static files directory based on the current workflow context.
-
-        Returns:
-            The directory path to use for static files, relative to the workspace directory.
-            If a workflow is active, returns the staticfiles subdirectory within the
-            workflow's directory relative to workspace. Otherwise, returns the staticfiles
-            subdirectory relative to workspace.
-        """
-        workspace_path = self.config_manager.workspace_path
-        static_files_subdir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
-
-        # Check if there's an active workflow context
-        context_manager = GriptapeNodes.ContextManager()
-        if context_manager.has_current_workflow():
-            try:
-                # Get the current workflow name and its file path
-                workflow_name = context_manager.get_current_workflow_name()
-                workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
-
-                # Get the directory containing the workflow file
-                workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
-                workflow_directory = workflow_file_path.parent
-
-                # Make the workflow directory relative to workspace
-                relative_workflow_dir = workflow_directory.relative_to(workspace_path)
-                return str(relative_workflow_dir / static_files_subdir)
-
-            except (KeyError, AttributeError) as e:
-                # If anything goes wrong getting workflow info, fall back to workspace-relative
-                logger.warning("Failed to get workflow directory for static files, using workspace: %s", e)
-            except ValueError as e:
-                # If workflow directory is not within workspace, fall back to workspace-relative
-                logger.warning("Workflow directory is outside workspace, using workspace-relative static files: %s", e)
-
-        # If no workflow context or workflow lookup failed, return just the static files subdirectory
-        return static_files_subdir

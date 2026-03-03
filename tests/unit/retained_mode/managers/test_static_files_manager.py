@@ -65,26 +65,16 @@ class TestStaticFilesManagerSaveStaticFile:
         """Standard mock response for create_signed_download_url."""
         return "http://test.com/download/test_file.jpg"
 
-    def test_save_static_file_default_policy_is_overwrite(
+    def test_save_static_file_raises_when_situation_missing(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """Verify default behavior when situation resolution fails (backward compatibility)."""
-        expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
-        mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
-
+        """Raises RuntimeError when the save_static_file situation is not in the project template."""
         with (
             patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            pytest.raises(RuntimeError, match="save_static_file"),
         ):
-            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
-
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.OVERWRITE
-
-            assert result == expected_file_path
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
 
     def test_save_static_file_explicit_overwrite_policy(
         self,
@@ -93,21 +83,22 @@ class TestStaticFilesManagerSaveStaticFile:
         """Explicitly passed OVERWRITE policy overrides situation policy."""
         expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.CREATE_NEW),
         ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
             )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.OVERWRITE
-
-            assert result == expected_file_path
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.OVERWRITE
+        assert result == expected_file_path
 
     def test_save_static_file_fail_policy_success(
         self,
@@ -116,21 +107,22 @@ class TestStaticFilesManagerSaveStaticFile:
         """Explicitly passed FAIL policy succeeds when file doesn't exist."""
         expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
             )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.FAIL
-
-            assert result == expected_file_path
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.FAIL
+        assert result == expected_file_path
 
     def test_save_static_file_fail_policy_raises_file_exists_error(
         self, mock_static_files_manager: StaticFilesManager
@@ -139,40 +131,45 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_static_files_manager.storage_driver.save_file.side_effect = FileExistsError(
             f"File {TEST_FILE_NAME} already exists"
         )
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
         with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"),
         ):
-            with pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
-                )
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
+            )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.FAIL
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.FAIL
 
     def test_save_static_file_create_new_policy(self, mock_static_files_manager: StaticFilesManager) -> None:
         """Explicitly passed CREATE_NEW policy is forwarded to the storage driver."""
         expected_file_path = f"/mock/workspace/staticfiles/{TEST_ALTERNATIVE_NAME}"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path(f"/mock/workspace/staticfiles/{TEST_FILE_NAME}")
 
-        with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
             )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
-
-            assert TEST_ALTERNATIVE_NAME in result
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+        assert TEST_ALTERNATIVE_NAME in result
 
     def test_save_static_file_storage_driver_exception_propagation(
         self, mock_static_files_manager: StaticFilesManager
@@ -181,58 +178,66 @@ class TestStaticFilesManagerSaveStaticFile:
         mock_static_files_manager.storage_driver.save_file.side_effect = RuntimeError(
             "Storage driver connection failed"
         )
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
         with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(RuntimeError, match="Failed to save static file"),
         ):
-            with pytest.raises(RuntimeError, match="Failed to save static file"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-                )
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
+            )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
     def test_save_static_file_http_upload_failure(self, mock_static_files_manager: StaticFilesManager) -> None:
         """Non-FileExistsError exceptions from the storage driver are wrapped in RuntimeError."""
         mock_static_files_manager.storage_driver.save_file.side_effect = ValueError("Upload failed")
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
         with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(RuntimeError, match="Failed to save static file"),
         ):
-            with pytest.raises(RuntimeError, match="Failed to save static file"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-                )
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
+            )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
     def test_save_static_file_complete_success_flow(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """End-to-end success path: situation fallback, explicit policy, direct save."""
+        """End-to-end success path: situation resolution, explicit policy, direct save."""
         expected_file_path = f"/mock/workspace/staticfiles/{TEST_ALTERNATIVE_NAME}"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path(f"/mock/workspace/staticfiles/{TEST_FILE_NAME}")
 
-        with (
-            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
-            patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"),
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
         ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
             )
 
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert "staticfiles" in str(call_args[0][0])
-            assert TEST_FILE_NAME in str(call_args[0][0])
-            assert call_args[0][1] == TEST_FILE_DATA
-            assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
-
-            assert result == expected_file_path
-            assert TEST_ALTERNATIVE_NAME in result
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][0] == situation_path
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+        assert result == expected_file_path
+        assert TEST_ALTERNATIVE_NAME in result
 
     def test_save_static_file_situation_path_used_when_resolved(
         self, mock_static_files_manager: StaticFilesManager
