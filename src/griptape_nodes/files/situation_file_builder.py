@@ -83,7 +83,7 @@ def build_file_from_situation(
     situation_config: SituationConfig,
     node_name: str,
     *,
-    default_extension: str = "png",
+    default_extension: str,
     extra_variables: dict[str, str | int] | None = None,
 ) -> FileDestination:
     """Build a FileDestination with a MacroPath from a situation template and filename.

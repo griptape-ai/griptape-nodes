@@ -43,6 +43,20 @@ from griptape_nodes.traits.options import Options
 
 logger = logging.getLogger("griptape_nodes")
 
+_IF_FILE_EXISTS_CHOICES = [
+    {"name": "Increment Version", "option_value": SituationFilePolicy.CREATE_NEW},
+    {"name": "Overwrite Existing", "option_value": SituationFilePolicy.OVERWRITE},
+    {"name": "Abort / Error", "option_value": SituationFilePolicy.FAIL},
+    {"name": "Ask Me", "option_value": SituationFilePolicy.PROMPT},
+]
+_IF_FILE_EXISTS_DISPLAY_NAMES = [choice["name"] for choice in _IF_FILE_EXISTS_CHOICES]
+_POLICY_VALUE_TO_DISPLAY_NAME: dict[str, str] = {
+    choice["option_value"]: choice["name"] for choice in _IF_FILE_EXISTS_CHOICES
+}
+_DISPLAY_NAME_TO_POLICY_VALUE: dict[str, str] = {
+    choice["name"]: choice["option_value"] for choice in _IF_FILE_EXISTS_CHOICES
+}
+
 
 class PathResolutionScenario(StrEnum):
     """Classification of how to handle user's filename input."""
@@ -114,7 +128,7 @@ class FileOutputSettings(BaseNode):
         )
         self.add_parameter(self.situation)
 
-        with ParameterGroup(name="Situation") as situation_group:
+        with ParameterGroup(name="Situation Options") as situation_group:
             self.macro = ParameterString(
                 name="macro",
                 default_value="",
@@ -122,17 +136,17 @@ class FileOutputSettings(BaseNode):
                 settable=True,
             )
 
-            self.on_collision = ParameterString(
-                name="on_collision",
-                default_value=SituationFilePolicy.CREATE_NEW,
+            self.if_file_exists = ParameterString(
+                name="if_file_exists",
+                default_value=_POLICY_VALUE_TO_DISPLAY_NAME[SituationFilePolicy.CREATE_NEW],
                 tooltip="Policy for handling existing files when writing",
                 allowed_modes={ParameterMode.PROPERTY},
-                traits={Options(choices=[p.value for p in SituationFilePolicy])},
+                traits={Options(choices=_IF_FILE_EXISTS_DISPLAY_NAMES)},
                 settable=True,
             )
 
-            self.create_directories = ParameterBool(
-                name="create_directories",
+            self.auto_create_path = ParameterBool(
+                name="auto_create_path",
                 default_value=True,
                 tooltip="Whether to create parent directories automatically when saving",
                 allowed_modes={ParameterMode.PROPERTY},
@@ -159,7 +173,6 @@ class FileOutputSettings(BaseNode):
 
         self.filename = ParameterString(
             name="filename",
-            default_value="output.png",
             allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             tooltip="Filename with extension (supports macros like {workflow_name}_output.png)",
             traits={
@@ -189,8 +202,11 @@ class FileOutputSettings(BaseNode):
         situation_config = fetch_situation_config(situation_name, self.name)
 
         self.set_parameter_value(self.macro.name, situation_config.macro_template, initial_setup=True)
-        self.set_parameter_value(self.on_collision.name, situation_config.on_collision_value, initial_setup=True)
-        self.set_parameter_value(self.create_directories.name, situation_config.create_dirs, initial_setup=True)
+        display_name = _POLICY_VALUE_TO_DISPLAY_NAME.get(
+            situation_config.on_collision_value, _POLICY_VALUE_TO_DISPLAY_NAME[SituationFilePolicy.CREATE_NEW]
+        )
+        self.set_parameter_value(self.if_file_exists.name, display_name, initial_setup=True)
+        self.set_parameter_value(self.auto_create_path.name, situation_config.create_dirs, initial_setup=True)
         self._resolve_and_update_path()
         self._update_collision_badge()
 
@@ -249,20 +265,22 @@ class FileOutputSettings(BaseNode):
         )
 
     def _get_file_policy(self) -> ExistingFilePolicy:
-        """Map the current on_collision parameter value to an ExistingFilePolicy."""
-        on_collision = self.get_parameter_value(self.on_collision.name) or SituationFilePolicy.CREATE_NEW
-        return SITUATION_TO_FILE_POLICY.get(on_collision, ExistingFilePolicy.CREATE_NEW)
+        """Map the current if_file_exists parameter value to an ExistingFilePolicy."""
+        display_name = self.get_parameter_value(self.if_file_exists.name)
+        policy_value = _DISPLAY_NAME_TO_POLICY_VALUE.get(display_name, SituationFilePolicy.CREATE_NEW)
+        return SITUATION_TO_FILE_POLICY.get(policy_value, ExistingFilePolicy.CREATE_NEW)
 
     def _update_collision_badge(self) -> None:
-        """Set or clear the info badge on on_collision based on the current policy."""
-        on_collision = self.get_parameter_value(self.on_collision.name)
-        if on_collision == SituationFilePolicy.CREATE_NEW:
-            self.on_collision.set_badge(
+        """Set or clear the info badge on if_file_exists based on the current policy."""
+        display_name = self.get_parameter_value(self.if_file_exists.name)
+        policy_value = _DISPLAY_NAME_TO_POLICY_VALUE.get(display_name)
+        if policy_value == SituationFilePolicy.CREATE_NEW:
+            self.if_file_exists.set_badge(
                 variant="info",
                 message="Filename is not guaranteed. The next available name will be used if a file already exists.",
             )
         else:
-            self.on_collision.clear_badge()
+            self.if_file_exists.clear_badge()
 
     def _build_file_from_template(self, macro_template: str, variables: dict[str, str | int]) -> FileDestination:
         """Build a FileDestination with a MacroPath from a template and variables.
@@ -275,7 +293,7 @@ class FileOutputSettings(BaseNode):
             FileDestination with an unresolved MacroPath and baked-in write policy
         """
         macro_path = MacroPath(ParsedMacro(macro_template), variables)
-        create_dirs = bool(self.get_parameter_value(self.create_directories.name))
+        create_dirs = bool(self.get_parameter_value(self.auto_create_path.name))
         return FileDestination(macro_path, existing_file_policy=self._get_file_policy(), create_parents=create_dirs)
 
     def _handle_relative_path(self, classified: ClassifiedPath) -> None:
@@ -286,8 +304,7 @@ class FileOutputSettings(BaseNode):
             return
 
         filename_path = Path(classified.normalized_path)
-        default_ext = parse_filename_components("output.png").extension
-        parts = parse_filename_components(filename_path.name, default_extension=default_ext)
+        parts = parse_filename_components(filename_path.name)
 
         variables: dict[str, str | int] = {
             "file_name_base": parts.basename,
@@ -328,7 +345,7 @@ class FileOutputSettings(BaseNode):
     def _handle_absolute_path_outside_project(self, classified: ClassifiedPath) -> None:
         """Handle absolute path outside project: use directly as a literal path."""
         absolute_path = classified.normalized_path
-        create_dirs = bool(self.get_parameter_value(self.create_directories.name))
+        create_dirs = bool(self.get_parameter_value(self.auto_create_path.name))
         self._file_destination = FileDestination(
             absolute_path,
             existing_file_policy=self._get_file_policy(),
@@ -382,8 +399,8 @@ class FileOutputSettings(BaseNode):
             self.situation.name,
             self.filename.name,
             self.macro.name,
-            self.on_collision.name,
-            self.create_directories.name,
+            self.if_file_exists.name,
+            self.auto_create_path.name,
         ):
             self._updating_lock = True
             try:
@@ -391,11 +408,11 @@ class FileOutputSettings(BaseNode):
                     self._load_project_situation()
                     self.publish_update_to_parameter(self.macro.name, self.get_parameter_value(self.macro.name))
                     self.publish_update_to_parameter(
-                        self.on_collision.name, self.get_parameter_value(self.on_collision.name)
+                        self.if_file_exists.name, self.get_parameter_value(self.if_file_exists.name)
                     )
                 else:
                     self._resolve_and_update_path()
-                    if parameter.name == self.on_collision.name:
+                    if parameter.name == self.if_file_exists.name:
                         self._update_collision_badge()
             finally:
                 self._updating_lock = False
@@ -413,9 +430,9 @@ class FileOutputSettings(BaseNode):
         self._load_project_situation()
 
         self.publish_update_to_parameter(self.macro.name, self.get_parameter_value(self.macro.name))
-        self.publish_update_to_parameter(self.on_collision.name, self.get_parameter_value(self.on_collision.name))
+        self.publish_update_to_parameter(self.if_file_exists.name, self.get_parameter_value(self.if_file_exists.name))
         self.publish_update_to_parameter(
-            self.create_directories.name, self.get_parameter_value(self.create_directories.name)
+            self.auto_create_path.name, self.get_parameter_value(self.auto_create_path.name)
         )
 
         return NodeMessageResult(
