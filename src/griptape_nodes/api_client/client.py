@@ -275,7 +275,6 @@ class Client:
             )
         try:
             await self._websocket.send(serialized)
-            logger.debug("Sent message type: %s", message.get("type"))
         except Exception as e:
             logger.error("Failed to send message: %s", e)
 
