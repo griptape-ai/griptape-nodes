@@ -21,28 +21,34 @@ from urllib.parse import unquote, urlparse
 
 
 class FilenameParts(NamedTuple):
-    """Components of a filename split into base name and extension.
+    """Components of a filename split into directory, stem, and extension.
+
+    Used for macro variable extraction and path decomposition.
 
     Attributes:
+        directory: Parent directory path (e.g. Path("/some/dir") from "/some/dir/output.png",
+            or Path(".") when the input has no directory component)
         stem: Filename without extension (e.g. "output" from "output.png")
         extension: Extension without leading dot (e.g. "png" from "output.png")
     """
 
+    directory: Path
     stem: str
     extension: str
 
     @classmethod
     def from_filename(cls, file_name: str) -> "FilenameParts":
-        """Split a filename into stem and extension.
+        """Split a filename or path into directory, stem, and extension.
 
         Args:
-            file_name: Filename to split (e.g. "output.png" or "archive.tar.gz")
+            file_name: Filename or path to split (e.g. "output.png", "archive.tar.gz",
+                or "/some/dir/output.png")
 
         Returns:
-            FilenameParts with stem and extension (extension has no leading dot)
+            FilenameParts with directory, stem, and extension (extension has no leading dot)
         """
         path = Path(file_name)
-        return cls(stem=path.stem, extension=path.suffix.lstrip("."))
+        return cls(directory=path.parent, stem=path.stem, extension=path.suffix.lstrip("."))
 
 
 def parse_file_uri(location: str) -> str | None:

@@ -328,6 +328,25 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_static_files_dir_resolves_from_config(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = "my_static"
+        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
+
+        parsed_macro = ParsedMacro("{static_files_dir}/output.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("my_static/output.png")
+
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""
         from griptape_nodes.common.macro_parser import ParsedMacro

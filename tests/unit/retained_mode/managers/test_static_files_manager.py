@@ -592,3 +592,172 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "invalid macro syntax" in result.error
+
+
+class TestStaticFilesManagerResolveStaticFilePath:
+    """Test StaticFilesManager._resolve_static_file_path() method."""
+
+    @pytest.fixture
+    def mock_static_files_manager(self) -> StaticFilesManager:
+        """Create a StaticFilesManager with mocked dependencies."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(config_manager=mock_config, secrets_manager=Mock(), event_manager=None)
+        return manager
+
+    def test_resolve_returns_path_and_policy_on_success(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Returns ResolvedStaticFilePath with the resolved absolute path and mapped policy."""
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultSuccess,
+            GetSituationResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+        expected_path = Path("/workflow/staticfiles/output.png")
+
+        def handle_request(request: object) -> object:
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetSituationRequest,
+            )
+
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultSuccess(
+                    resolved_path=expected_path,
+                    absolute_path=expected_path,
+                    result_details="ok",
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        with patch.object(GriptapeNodes, "handle_request", side_effect=handle_request):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is not None
+        assert result.path == expected_path
+        assert result.policy == ExistingFilePolicy.OVERWRITE
+
+    def test_resolve_returns_none_and_warns_when_situation_not_found(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when the save_static_file situation is missing."""
+        import logging
+
+        from griptape_nodes.retained_mode.events.project_events import GetSituationResultFailure
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        with (
+            patch.object(
+                GriptapeNodes,
+                "handle_request",
+                return_value=GetSituationResultFailure(result_details="situation not found"),
+            ),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text
+        assert "Legacy projects" in caplog.text
+
+    def test_resolve_returns_none_and_warns_when_macro_parsing_fails(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when the situation macro cannot be parsed."""
+        import logging
+
+        from griptape_nodes.common.macro_parser import MacroSyntaxError
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import GetSituationResultSuccess
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="valid/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+
+        with (
+            patch.object(
+                GriptapeNodes,
+                "handle_request",
+                return_value=GetSituationResultSuccess(situation=situation, result_details="ok"),
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.static_files_manager.ParsedMacro",
+                side_effect=MacroSyntaxError("bad macro"),
+            ),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text
+
+    def test_resolve_returns_none_and_warns_when_path_resolution_fails(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when macro path resolution fails."""
+        import logging
+
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultFailure,
+            GetSituationResultSuccess,
+            PathResolutionFailureReason,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+
+        def handle_request(request: object) -> object:
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetSituationRequest,
+            )
+
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultFailure(
+                    result_details="could not resolve",
+                    failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                    missing_variables=set(),
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text

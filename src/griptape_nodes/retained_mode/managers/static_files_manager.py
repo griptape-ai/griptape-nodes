@@ -395,6 +395,11 @@ class StaticFilesManager:
         """
         situation_result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=SAVE_STATIC_FILE_SITUATION))
         if not isinstance(situation_result, GetSituationResultSuccess):
+            logger.warning(
+                "Project template does not include '%s' situation; static files will save to the default directory. "
+                "Legacy projects may need to be updated with this situation.",
+                SAVE_STATIC_FILE_SITUATION,
+            )
             return None
 
         situation = situation_result.situation

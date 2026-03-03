@@ -87,6 +87,7 @@ BUILTIN_PROJECT_NAME = "project_name"
 BUILTIN_WORKSPACE_DIR = "workspace_dir"
 BUILTIN_WORKFLOW_NAME = "workflow_name"
 BUILTIN_WORKFLOW_DIR = "workflow_dir"
+BUILTIN_STATIC_FILES_DIR = "static_files_dir"
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ _BUILTIN_VARIABLE_DEFINITIONS = [
     BuiltinVariableInfo(name=BUILTIN_WORKSPACE_DIR, is_directory=True),
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_NAME, is_directory=False),
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_STATIC_FILES_DIR, is_directory=False),
 ]
 
 # Map of variable name to metadata
@@ -895,6 +897,10 @@ class ProjectManager:
                 workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
                 workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
                 return str(workflow_file_path.parent)
+
+            case "static_files_dir":
+                config_manager = GriptapeNodes.ConfigManager()
+                return config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
