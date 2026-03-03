@@ -321,17 +321,17 @@ class StaticFilesManager:
             ValueError: If file upload fails (legacy behavior).
         """
         situation_result = self._resolve_static_file_path(file_name)
-        if situation_result is not None:
-            file_path, situation_policy = situation_result
-        else:
+        if situation_result is None:
             resolved_directory = self._get_static_files_directory()
             file_path = Path(resolved_directory) / file_name
             situation_policy = ExistingFilePolicy.OVERWRITE
-
-        if existing_file_policy is not None:
-            effective_policy = existing_file_policy
         else:
+            file_path, situation_policy = situation_result
+
+        if existing_file_policy is None:
             effective_policy = situation_policy
+        else:
+            effective_policy = existing_file_policy
 
         # Inject workflow metadata if enabled (only when not using direct save)
         if (
