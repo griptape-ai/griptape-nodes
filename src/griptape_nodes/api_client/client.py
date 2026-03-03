@@ -175,12 +175,7 @@ class Client:
             logger.debug("WebSocket client connected")
         except TimeoutError as e:
             logger.error("Failed to connect WebSocket client: timeout")
-            msg = (
-                "Connection timeout - failed to connect to Nodes API. "
-                "This may indicate an invalid or missing GT_CLOUD_API_KEY, "
-                "or an SSL certificate verification failure. "
-                "Please verify your API key is correct and that your system's CA certificates are up to date."
-            )
+            msg = "Connection timeout - failed to connect to Nodes API."
             raise ConnectionError(msg) from e
 
     async def disconnect(self) -> None:
