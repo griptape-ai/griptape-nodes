@@ -534,6 +534,46 @@ class BranchWorkflowResultFailure(ResultPayloadFailure):
 
 @dataclass
 @PayloadRegistry.register
+class CreateWorkflowFromTemplateRequest(RequestPayload):
+    """Create a new workflow file from a template (Griptape-provided or user-provided).
+
+    Use when: User selects a template from a list and wants to create a new workflow
+    without opening the template first. Creates a copy in the workspace root with
+    a unique name.
+
+    Args:
+        template_name: Registry name of the template workflow
+        file_name: Base name for new file (None = use template stem)
+
+    Results: CreateWorkflowFromTemplateResultSuccess (with workflow_name, file_path) | CreateWorkflowFromTemplateResultFailure
+    """
+
+    template_name: str
+    file_name: str | None = None
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkflowFromTemplateResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
+    """Workflow created from template successfully.
+
+    Args:
+        workflow_name: Registry name of the created workflow
+        file_path: Path where the workflow file was written
+    """
+
+    workflow_name: str
+    file_path: str
+
+
+@dataclass
+@PayloadRegistry.register
+class CreateWorkflowFromTemplateResultFailure(ResultPayloadFailure):
+    """Create workflow from template failed. Common causes: template not found, not a template, file not found."""
+
+
+@dataclass
+@PayloadRegistry.register
 class MergeWorkflowBranchRequest(RequestPayload):
     """Merge a branch back into its source workflow, removing the branch when complete.
 
