@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import ssl
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urljoin
 
@@ -212,7 +213,7 @@ class Client:
                 if not should_reconnect:
                     break
         except InvalidStatus as e:
-            if e.response.status_code in (401, 403):
+            if e.response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
                 logger.error(
                     "Nodes API rejected connection with HTTP %d. "
                     "This indicates an invalid or missing GT_CLOUD_API_KEY.",
