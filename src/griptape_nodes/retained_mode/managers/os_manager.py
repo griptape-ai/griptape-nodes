@@ -30,6 +30,7 @@ from griptape_nodes.files.drivers.griptape_cloud_file_driver import GriptapeClou
 from griptape_nodes.files.drivers.http_file_driver import HttpFileDriver
 from griptape_nodes.files.drivers.local_file_driver import LocalFileDriver
 from griptape_nodes.files.drivers.static_server_file_driver import StaticServerFileDriver
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.file_driver import FileDriverNotFoundError, FileDriverRegistry
 from griptape_nodes.files.path_utils import path_needs_expansion
 from griptape_nodes.files.path_utils import resolve_path_safely as pr_resolve
@@ -1291,13 +1292,27 @@ class OSManager:
     def on_list_directory_request(self, request: ListDirectoryRequest) -> ResultPayload:  # noqa: C901, PLR0911, PLR0912, PLR0915
         """Handle a request to list directory contents."""
         try:
-            # Get the directory path to list
-            if request.directory_path is None:
-                directory = self._get_workspace_path()
-            elif path_needs_expansion(request.directory_path):
-                directory = self._expand_path(request.directory_path)
+            # Resolve path: strings support macro syntax like "{project_dir}".
+            # File handles the string → MacroPath conversion and project-aware resolution.
+            directory_path_str: str | None
+            if request.directory_path is not None:
+                try:
+                    directory_path_str = File(request.directory_path).resolve_path()
+                except FileLoadError as e:
+                    return ListDirectoryResultFailure(
+                        failure_reason=e.failure_reason,
+                        result_details=e.result_details,
+                    )
             else:
-                directory = self.resolve_path_safely(self._get_workspace_path() / request.directory_path)
+                directory_path_str = None
+
+            # Get the directory path to list
+            if directory_path_str is None:
+                directory = self._get_workspace_path()
+            elif path_needs_expansion(directory_path_str):
+                directory = self._expand_path(directory_path_str)
+            else:
+                directory = self.resolve_path_safely(self._get_workspace_path() / directory_path_str)
 
             # Check if directory exists
             if not directory.exists():

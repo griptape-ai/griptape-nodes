@@ -134,7 +134,7 @@ class ListDirectoryRequest(RequestPayload):
     implementing file pickers, navigating folder structures.
 
     Args:
-        directory_path: Path to the directory to list (None for current directory)
+        directory_path: Path to the directory to list (None for current directory, supports macro syntax like {project_dir})
         show_hidden: Whether to show hidden files/folders
         workspace_only: If True, constrain to workspace directory. If False, allow system-wide browsing.
                         If None, workspace constraints don't apply (e.g., cloud environments).
