@@ -16,7 +16,33 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import unquote, urlparse
+
+
+class FilenameParts(NamedTuple):
+    """Components of a filename split into base name and extension.
+
+    Attributes:
+        stem: Filename without extension (e.g. "output" from "output.png")
+        extension: Extension without leading dot (e.g. "png" from "output.png")
+    """
+
+    stem: str
+    extension: str
+
+    @classmethod
+    def from_filename(cls, file_name: str) -> "FilenameParts":
+        """Split a filename into stem and extension.
+
+        Args:
+            file_name: Filename to split (e.g. "output.png" or "archive.tar.gz")
+
+        Returns:
+            FilenameParts with stem and extension (extension has no leading dot)
+        """
+        path = Path(file_name)
+        return cls(stem=path.stem, extension=path.suffix.lstrip("."))
 
 
 def parse_file_uri(location: str) -> str | None:
