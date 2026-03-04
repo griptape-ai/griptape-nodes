@@ -630,7 +630,9 @@ class TestStaticFilesManagerResolveStaticFilePath:
             macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
             policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
         )
-        expected_path = Path("/workflow/staticfiles/output.png")
+        workspace_dir = Path("/workflow")
+        absolute_path = workspace_dir / "staticfiles/output.png"
+        expected_relative_path = Path("staticfiles/output.png")
 
         def handle_request(request: object) -> object:
             from griptape_nodes.retained_mode.events.project_events import (
@@ -642,18 +644,24 @@ class TestStaticFilesManagerResolveStaticFilePath:
                 return GetSituationResultSuccess(situation=situation, result_details="ok")
             if isinstance(request, GetPathForMacroRequest):
                 return GetPathForMacroResultSuccess(
-                    resolved_path=expected_path,
-                    absolute_path=expected_path,
+                    resolved_path=absolute_path,
+                    absolute_path=absolute_path,
                     result_details="ok",
                 )
             msg = f"Unexpected request: {request}"
             raise AssertionError(msg)
 
-        with patch.object(GriptapeNodes, "handle_request", side_effect=handle_request):
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = str(workspace_dir)
+
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
+            patch.object(GriptapeNodes, "ConfigManager", return_value=mock_config_manager),
+        ):
             result = mock_static_files_manager._resolve_static_file_path("output.png")
 
         assert result is not None
-        assert result.path == expected_path
+        assert result.path == expected_relative_path
         assert result.policy == ExistingFilePolicy.OVERWRITE
 
     def test_resolve_returns_none_and_warns_when_situation_not_found(
