@@ -345,6 +345,10 @@ class DepthCrafterVideoDiffusionPipeline(diffusers.StableVideoDiffusionPipeline)
         # Ensure latents_all was set during the loop
         assert latents_all is not None  # noqa: S101
 
+        # Trim to exactly the input frame count — the sliding window can accumulate
+        # more latent frames than the original video due to stride/overlap arithmetic.
+        latents_all = latents_all[:, :num_frames]
+
         if track_time:
             assert denoise_event is not None  # noqa: S101
             assert encode_event is not None  # noqa: S101
