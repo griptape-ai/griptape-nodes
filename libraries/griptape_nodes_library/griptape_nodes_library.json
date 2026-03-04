@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.65.1",
+    "library_version": "0.66.0",
     "engine_version": "0.75.2",
     "tags": [
       "Griptape",
@@ -2069,6 +2069,17 @@
         "display_name": "Logger",
         "icon": "file-text",
         "group": "create"
+      }
+    },
+    {
+      "class_name": "DotNode",
+      "file_path": "griptape_nodes_library/misc/dot_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "A simple pass-through node that can be used as a visual marker or reroute point",
+        "display_name": "Dot",
+        "icon": "circle",
+        "group": "misc"
       }
     },
     {
