@@ -69,7 +69,8 @@ class LocalStorageDriver(BaseStorageDriver):
 
         # WriteFileRequest always returns an absolute path; convert back to workspace-relative
         # since the static server upload handler prepends the workspace directory itself.
-        resolved_path = resolved_path.relative_to(self.workspace_directory.resolve())
+        # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
+        resolved_path = resolved_path.resolve().relative_to(self.workspace_directory.resolve())
 
         static_url = urljoin(self.base_url, "/static-upload-urls")
         try:

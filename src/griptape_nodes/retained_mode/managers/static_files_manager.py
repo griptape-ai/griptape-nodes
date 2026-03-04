@@ -427,7 +427,8 @@ class StaticFilesManager:
 
         workspace_dir = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory")).resolve()
         try:
-            workspace_relative_path = macro_result.absolute_path.relative_to(workspace_dir)
+            # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
+            workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir)
         except ValueError:
             logger.warning(
                 "Failed to resolve %s situation path: resolved path %s is outside workspace %s",
