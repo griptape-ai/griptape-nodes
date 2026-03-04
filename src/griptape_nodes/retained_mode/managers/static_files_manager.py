@@ -425,8 +425,20 @@ class StaticFilesManager:
             )
             return None
 
+        workspace_dir = Path(GriptapeNodes.ConfigManager().get_config_value("workspace_directory")).resolve()
+        try:
+            workspace_relative_path = macro_result.absolute_path.relative_to(workspace_dir)
+        except ValueError:
+            logger.warning(
+                "Failed to resolve %s situation path: resolved path %s is outside workspace %s",
+                SAVE_STATIC_FILE_SITUATION,
+                macro_result.absolute_path,
+                workspace_dir,
+            )
+            return None
+
         policy = self._map_situation_policy(situation.policy.on_collision)
-        return ResolvedStaticFilePath(path=macro_result.absolute_path, policy=policy)
+        return ResolvedStaticFilePath(path=workspace_relative_path, policy=policy)
 
     @staticmethod
     def _map_situation_policy(situation_policy: SituationFilePolicy) -> ExistingFilePolicy:
