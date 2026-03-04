@@ -47,12 +47,20 @@ class TestParallelFlowExecution:
             # Verify that the ParallelResolutionMachine has the correct DAG builder
             assert control_flow._context.resolution_machine._context.dag_builder is mock_dag_builder
 
-    def test_control_flow_machine_uses_sequential_for_non_parallel_execution(self) -> None:
-        """Test that ControlFlowMachine uses SequentialResolutionMachine when execution type is not PARALLEL."""
+    def test_control_flow_machine_uses_parallel_for_sequential_mode(self) -> None:
+        """Test that ControlFlowMachine uses ParallelResolutionMachine with max_nodes_in_parallel=1 when execution type is SEQUENTIAL.
+
+        SEQUENTIAL mode now maps to PARALLEL mode with max_nodes_in_parallel=1 for backward compatibility.
+        """
         flow_name = "test_flow"
 
-        with patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.ConfigManager") as mock_config_manager:
-            # Mock ConfigManager to return SEQUENTIAL execution mode
+        mock_dag_builder = MagicMock(spec=DagBuilder)
+
+        with (
+            patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.FlowManager") as mock_flow_manager,
+            patch("griptape_nodes.retained_mode.griptape_nodes.GriptapeNodes.ConfigManager") as mock_config_manager,
+        ):
+            mock_flow_manager.return_value.global_dag_builder = mock_dag_builder
             mock_config = MagicMock()
             mock_config_manager.return_value = mock_config
             mock_config.get_config_value.side_effect = lambda key, default=None: {
@@ -63,10 +71,12 @@ class TestParallelFlowExecution:
             # Create ControlFlowMachine - it will read SEQUENTIAL from config
             control_flow = ControlFlowMachine(flow_name)
 
-            # Verify that a SequentialResolutionMachine was created
-            from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
-
-            assert isinstance(control_flow._context.resolution_machine, SequentialResolutionMachine)
+            # Verify ParallelResolutionMachine was created (SEQUENTIAL now maps to PARALLEL)
+            assert isinstance(control_flow._context.resolution_machine, ParallelResolutionMachine)
+            # Verify max_nodes_in_parallel was overridden to 1 for sequential behavior
+            assert control_flow._context.resolution_machine._context.max_nodes_in_parallel == 1
+            # Verify DAG builder was set correctly
+            assert control_flow._context.resolution_machine._context.dag_builder is mock_dag_builder
 
     def test_parallel_resolution_machine_initializes_with_dag_builder(self) -> None:
         """Test that ParallelResolutionMachine properly initializes with a DAG builder."""
