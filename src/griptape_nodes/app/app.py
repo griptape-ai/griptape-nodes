@@ -7,7 +7,6 @@ import sys
 import threading
 from dataclasses import dataclass
 
-import truststore
 from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
@@ -32,10 +31,6 @@ from griptape_nodes.retained_mode.events.base_events import (
 from griptape_nodes.retained_mode.events.logger_events import LogHandlerEvent
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 from griptape_nodes.utils import install_file_url_support
-
-# uses the system certificate store for SSL verification
-# this patches the ssl module which is used by all HTTP libraries
-truststore.inject_into_ssl()
 
 
 # WebSocket thread communication message types
