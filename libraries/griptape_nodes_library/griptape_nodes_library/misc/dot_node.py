@@ -16,7 +16,7 @@ class DotNode(DataNode):
             Parameter(
                 name="value",
                 default_value=None,
-                output_type="any",
+                output_type="all",
                 type="any",
                 tooltip="Pass-through value",
             )
