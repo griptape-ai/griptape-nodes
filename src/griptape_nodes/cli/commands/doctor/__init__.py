@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import typer
+from rich.box import HEAVY_EDGE
 from rich.table import Table
 
 from griptape_nodes.cli.commands.doctor.websocket_connection import WebSocketConnectionCheck
@@ -22,7 +23,7 @@ def doctor_command() -> None:
 
     results = [check.run() for check in checks]
 
-    table = Table(title="Griptape Nodes Health Checks")
+    table = Table(show_header=True, box=HEAVY_EDGE, show_lines=True, expand=True)
     table.add_column("Check", style="bold")
     table.add_column("Status")
     table.add_column("Details")
