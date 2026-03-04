@@ -25,6 +25,7 @@ from griptape_nodes.common.project_templates import (
     load_project_template_from_yaml,
 )
 from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
 from griptape_nodes.retained_mode.events.os_events import ReadFileRequest, ReadFileResultSuccess
 from griptape_nodes.retained_mode.events.project_events import (
@@ -86,6 +87,7 @@ BUILTIN_PROJECT_NAME = "project_name"
 BUILTIN_WORKSPACE_DIR = "workspace_dir"
 BUILTIN_WORKFLOW_NAME = "workflow_name"
 BUILTIN_WORKFLOW_DIR = "workflow_dir"
+BUILTIN_STATIC_FILES_DIR = "static_files_dir"
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,7 @@ _BUILTIN_VARIABLE_DEFINITIONS = [
     BuiltinVariableInfo(name=BUILTIN_WORKSPACE_DIR, is_directory=True),
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_NAME, is_directory=False),
     BuiltinVariableInfo(name=BUILTIN_WORKFLOW_DIR, is_directory=True),
+    BuiltinVariableInfo(name=BUILTIN_STATIC_FILES_DIR, is_directory=False),
 ]
 
 # Map of variable name to metadata
@@ -462,6 +465,8 @@ class ProjectManager:
                 try:
                     builtin_value = self._get_builtin_variable_value(var_name, project_info)
                 except (RuntimeError, NotImplementedError) as e:
+                    if not var_info.is_required:
+                        continue
                     return GetPathForMacroResultFailure(
                         failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
                         result_details=f"Attempted to resolve macro path. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
@@ -674,6 +679,8 @@ class ProjectManager:
                 try:
                     builtin_value = self._get_builtin_variable_value(var_name, project_info)
                 except (RuntimeError, NotImplementedError) as e:
+                    if not var_info.is_required:
+                        continue
                     return GetStateForMacroResultFailure(
                         result_details=f"Attempted to analyze macro state. Failed because builtin variable '{var_name}' cannot be resolved: {e}",
                     )
@@ -882,8 +889,18 @@ class ProjectManager:
                 return context_manager.get_current_workflow_name()
 
             case "workflow_dir":
-                msg = f"{BUILTIN_WORKFLOW_DIR} not yet implemented"
-                raise NotImplementedError(msg)
+                context_manager = GriptapeNodes.ContextManager()
+                if not context_manager.has_current_workflow():
+                    msg = "No current workflow"
+                    raise RuntimeError(msg)
+                workflow_name = context_manager.get_current_workflow_name()
+                workflow = WorkflowRegistry.get_workflow_by_name(workflow_name)
+                workflow_file_path = Path(WorkflowRegistry.get_complete_file_path(workflow.file_path))
+                return str(workflow_file_path.parent)
+
+            case "static_files_dir":
+                config_manager = GriptapeNodes.ConfigManager()
+                return config_manager.get_config_value("static_files_directory", default="staticfiles")
 
             case _:
                 msg = f"Unknown builtin variable: {var_name}"
