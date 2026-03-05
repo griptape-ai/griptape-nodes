@@ -7,12 +7,14 @@ import sys
 import threading
 from dataclasses import dataclass
 
+import truststore
 from rich.align import Align
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 
 from griptape_nodes.api_client import Client
+from griptape_nodes.bootstrap.utils.subprocess_websocket_base import WebSocketMessage
 from griptape_nodes.retained_mode.events import app_events, execution_events
 
 # This import is necessary to register all events, even if not technically used
@@ -34,15 +36,6 @@ from griptape_nodes.utils import install_file_url_support
 
 
 # WebSocket thread communication message types
-@dataclass
-class WebSocketMessage:
-    """Message to send via WebSocket."""
-
-    event_type: str
-    payload: str
-    topic: str | None = None
-
-
 @dataclass
 class SubscribeCommand:
     """Command to subscribe to a topic."""
@@ -158,6 +151,10 @@ def _ensure_api_key() -> str:
 
 def start_app() -> None:
     """Legacy sync entry point - runs async app."""
+    # Use the system certificate store for SSL verification.
+    # Called here (not at module level) so it only applies in server mode,
+    # not when app.py is imported by headless/subprocess contexts.
+    truststore.inject_into_ssl()
     try:
         asyncio.run(astart_app())
     except KeyboardInterrupt:

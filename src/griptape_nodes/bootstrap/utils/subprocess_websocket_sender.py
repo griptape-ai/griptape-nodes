@@ -10,8 +10,7 @@ import asyncio
 import json
 import logging
 
-from griptape_nodes.app.app import WebSocketMessage
-from griptape_nodes.bootstrap.utils.subprocess_websocket_base import SubprocessWebSocketBaseMixin
+from griptape_nodes.bootstrap.utils.subprocess_websocket_base import SubprocessWebSocketBaseMixin, WebSocketMessage
 
 logger = logging.getLogger(__name__)
 
