@@ -3,40 +3,18 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime  # noqa: TC003 (can't put into type checking block as Pydantic model relies on it)
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
 from griptape_nodes.utils.metaclasses import SingletonMeta
 
 logger = logging.getLogger("griptape_nodes")
-
-
-def derive_registry_key(file_path: str) -> str:
-    """Derive a workflow registry key from a file path.
-
-    Strips the file extension and normalizes directory separators to forward slashes,
-    preserving directory components for uniqueness across different directories.
-
-    Args:
-        file_path: Path to the workflow file, e.g. "subdir/my_workflow.py"
-
-    Returns:
-        Registry key with directory components preserved, e.g. "subdir/my_workflow"
-
-    Examples:
-        >>> derive_registry_key("my_workflow.py")
-        "my_workflow"
-        >>> derive_registry_key("subdir/my_workflow.py")
-        "subdir/my_workflow"
-    """
-    normalized = file_path.replace("\\", "/")
-    return str(PurePosixPath(normalized).with_suffix(""))
 
 
 class LibraryNameAndNodeType(NamedTuple):

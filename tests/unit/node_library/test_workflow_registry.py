@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry, derive_registry_key
+from griptape_nodes.files.path_utils import derive_registry_key
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
 
