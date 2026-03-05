@@ -4,7 +4,39 @@ from __future__ import annotations
 
 import pytest
 
-from griptape_nodes.utils.string_utils import normalize_display_name
+from griptape_nodes.utils.string_utils import derive_registry_key, normalize_display_name
+
+
+class TestDeriveRegistryKey:
+    def test_flat_workflow(self) -> None:
+        assert derive_registry_key("my_workflow.py") == "my_workflow"
+
+    def test_subdirectory(self) -> None:
+        assert derive_registry_key("subdir/my_workflow.py") == "subdir/my_workflow"
+
+    def test_nested_subdirectory(self) -> None:
+        assert derive_registry_key("a/b/c/my_workflow.py") == "a/b/c/my_workflow"
+
+    def test_backslash_normalization(self) -> None:
+        assert derive_registry_key("subdir\\my_workflow.py") == "subdir/my_workflow"
+
+    def test_no_extension(self) -> None:
+        assert derive_registry_key("my_workflow") == "my_workflow"
+
+    def test_dot_prefix_normalized(self) -> None:
+        assert derive_registry_key("./my_workflow.py") == "my_workflow"
+
+    @pytest.mark.parametrize(
+        ("input_path", "expected"),
+        [
+            ("my_workflow.py", "my_workflow"),
+            ("subdir/my_workflow.py", "subdir/my_workflow"),
+            ("a/b/deep_workflow.py", "a/b/deep_workflow"),
+            ("windows\\path\\workflow.py", "windows/path/workflow"),
+        ],
+    )
+    def test_known_inputs(self, input_path: str, expected: str) -> None:
+        assert derive_registry_key(input_path) == expected
 
 
 class TestNormalizeDisplayName:

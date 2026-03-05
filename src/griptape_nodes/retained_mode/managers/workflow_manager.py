@@ -164,7 +164,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.utils.string_utils import normalize_display_name
+from griptape_nodes.utils.string_utils import derive_registry_key, normalize_display_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -782,8 +782,8 @@ class WorkflowManager:
         except Exception as e:
             details = f"Failed to register workflow with name '{request.metadata.name}'. Error: {e}"
             return RegisterWorkflowResultFailure(result_details=details)
-        # The registry key is derived from the file stem, independent of the display name.
-        registry_key = Path(request.file_name).stem
+        # The registry key is derived from the file path (minus extension), independent of the display name.
+        registry_key = derive_registry_key(request.file_name)
         return RegisterWorkflowResultSuccess(
             workflow_name=registry_key,
             result_details=ResultDetails(
@@ -800,9 +800,9 @@ class WorkflowManager:
         if not isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
             return ImportWorkflowResultFailure(result_details=load_metadata_result.result_details)
 
-        # Check if workflow is already registered by file stem (registry key).
+        # Check if workflow is already registered by file path (registry key).
         # The registry key is derived from the file path, not metadata.name (the display name).
-        workflow_name = Path(request.file_path).stem
+        workflow_name = derive_registry_key(request.file_path)
         if WorkflowRegistry.has_workflow_with_name(workflow_name):
             # Workflow already exists - no need to re-register
             return ImportWorkflowResultSuccess(
@@ -1129,7 +1129,7 @@ class WorkflowManager:
             )
         )
 
-    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: PLR0911
+    def on_move_workflow_request(self, request: MoveWorkflowRequest) -> ResultPayload:  # noqa: C901, PLR0911
         try:
             # Validate source workflow exists
             workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
@@ -1173,6 +1173,10 @@ class WorkflowManager:
             )
             return MoveWorkflowResultFailure(result_details=details)
 
+        old_relative_path = workflow.file_path
+        old_registry_key = derive_registry_key(old_relative_path)
+        new_registry_key = derive_registry_key(new_relative_path)
+
         try:
             # Move the file
             Path(current_file_path).rename(new_absolute_path)
@@ -1181,8 +1185,18 @@ class WorkflowManager:
             workflow.file_path = new_relative_path
 
             # Update configuration - remove old path and add new path
-            config_manager.delete_user_workflow(workflow.file_path)
+            config_manager.delete_user_workflow(old_relative_path)
             config_manager.save_user_workflow_json(str(new_absolute_path))
+
+            # Update registry key if directory changed
+            if old_registry_key != new_registry_key:
+                WorkflowRegistry.rekey_workflow(old_registry_key, new_registry_key)
+                context_manager = GriptapeNodes.ContextManager()
+                if (
+                    context_manager.has_current_workflow()
+                    and context_manager.get_current_workflow_name() == old_registry_key
+                ):
+                    context_manager.set_current_workflow_name(new_registry_key)
 
         except OSError as e:
             error_messages = []
@@ -1206,7 +1220,9 @@ class WorkflowManager:
         else:
             details = f"Successfully moved workflow '{request.workflow_name}' to '{new_relative_path}'"
             return MoveWorkflowResultSuccess(
-                moved_file_path=new_relative_path, result_details=ResultDetails(message=details, level=logging.INFO)
+                moved_file_path=new_relative_path,
+                new_workflow_name=new_registry_key,
+                result_details=ResultDetails(message=details, level=logging.INFO),
             )
 
     def on_load_workflow_metadata_request(  # noqa: C901, PLR0912, PLR0915
@@ -1627,6 +1643,7 @@ class WorkflowManager:
         relative_file_path = save_target.relative_file_path
         creation_date = save_target.creation_date
         branched_from = save_target.branched_from
+        registry_key = derive_registry_key(relative_file_path)
 
         logger.info(
             "Save workflow: scenario=%s, file_name=%s, file_path=%s, branched_from=%s",
@@ -1653,7 +1670,7 @@ class WorkflowManager:
 
         # Extract workflow shape if available; ignore failures
         try:
-            workflow_shape_dict = self.extract_workflow_shape(workflow_name=file_name)
+            workflow_shape_dict = self.extract_workflow_shape(workflow_name=registry_key)
             workflow_shape = WorkflowShape(
                 inputs=workflow_shape_dict["input"],
                 outputs=workflow_shape_dict["output"],
@@ -1662,7 +1679,7 @@ class WorkflowManager:
             workflow_shape = None
 
         # Build save request inline (preserve existing display_name/description/image/is_template if present)
-        existing = self._get_existing_metadata(file_name)
+        existing = self._get_existing_metadata(registry_key)
         # Prefer an explicitly provided display_name over the preserved existing value.
         resolved_display_name = request.display_name if request.display_name is not None else existing.display_name
 
@@ -1695,13 +1712,13 @@ class WorkflowManager:
         workflow_metadata = save_file_result.workflow_metadata
 
         registered_workflows = WorkflowRegistry.list_workflows()
-        if file_name not in registered_workflows:
-            error_details = self._ensure_user_workflow_json_saved(relative_file_path, file_path, file_name)
+        if registry_key not in registered_workflows:
+            error_details = self._ensure_user_workflow_json_saved(relative_file_path, file_path, registry_key)
             if error_details:
                 return SaveWorkflowResultFailure(result_details=error_details)
             WorkflowRegistry.generate_new_workflow(metadata=workflow_metadata, file_path=relative_file_path)
 
-        existing_workflow = WorkflowRegistry.get_workflow_by_name(file_name)
+        existing_workflow = WorkflowRegistry.get_workflow_by_name(registry_key)
         existing_workflow.metadata = workflow_metadata
         details = f"Successfully saved workflow to: {save_file_result.file_path}"
         return SaveWorkflowResultSuccess(
@@ -1819,8 +1836,8 @@ class WorkflowManager:
             if template_workflow is None:
                 msg = "Save From Template scenario requires either target_workflow or current_workflow to be present"
                 raise ValueError(msg)
-            # Use file stem (registry key) as base name, independent of the display name in metadata.
-            base_name = requested_file_name or Path(template_workflow.file_path).stem
+            # Use the registry key as base name, independent of the display name in metadata.
+            base_name = requested_file_name or derive_registry_key(template_workflow.file_path)
             file_name = self._generate_unique_filename(base_name)
             creation_date = datetime.now(tz=UTC)
             branched_from = None
@@ -1830,8 +1847,8 @@ class WorkflowManager:
         elif target_workflow:
             # Requested name exists in registry → overwrite it
             scenario = WorkflowManager.SaveWorkflowScenario.OVERWRITE_EXISTING
-            # Use file stem as the file name (registry key), independent of the display name in metadata.
-            file_name = Path(target_workflow.file_path).stem
+            # Use the registry key as the file name, independent of the display name in metadata.
+            file_name = derive_registry_key(target_workflow.file_path)
             creation_date = target_workflow.metadata.creation_date
             branched_from = target_workflow.metadata.branched_from
             relative_file_path = target_workflow.file_path
@@ -4100,7 +4117,7 @@ class WorkflowManager:
             workflow_file_name = request.workflow_name
             try:
                 workflow = WorkflowRegistry.get_workflow_by_name(request.workflow_name)
-                workflow_file_name = Path(workflow.file_path).stem
+                workflow_file_name = derive_registry_key(workflow.file_path)
             except KeyError:
                 details = (
                     f"While publishing, workflow '{request.workflow_name}' had not been saved or could not be found in the Workflow Registry. "
@@ -4138,10 +4155,11 @@ class WorkflowManager:
             )
             load_metadata_result = self.on_load_workflow_metadata_request(load_workflow_metadata_request)
             if isinstance(load_metadata_result, LoadWorkflowMetadataResultSuccess):
+                workflow_registry_key = derive_registry_key(workflow_file.name)
                 try:
-                    _workflow = WorkflowRegistry.get_workflow_by_name(load_metadata_result.metadata.name)
+                    _workflow = WorkflowRegistry.get_workflow_by_name(workflow_registry_key)
                     # This workflow was registered previously, but now it's been updated (potentially including the metadata), so let's re-register
-                    WorkflowRegistry.delete_workflow_by_name(load_metadata_result.metadata.name)
+                    WorkflowRegistry.delete_workflow_by_name(workflow_registry_key)
                 except KeyError:
                     pass
 
@@ -4411,7 +4429,7 @@ class WorkflowManager:
             )
             return CreateWorkflowFromTemplateResultFailure(result_details=details)
 
-        base_name = request.file_name or Path(template_workflow.file_path).stem
+        base_name = request.file_name or derive_registry_key(template_workflow.file_path)
         new_file_name = self._generate_unique_filename(base_name)
         relative_file_path = f"{new_file_name}.py"
 
@@ -4975,14 +4993,7 @@ class WorkflowManager:
             logger.debug("Skipping workflow with invalid metadata: %s", workflow_file)
             return None
 
-        workflow_metadata = load_metadata_result.metadata
-
-        # Check if workflow is already registered using the parsed metadata
-        if WorkflowRegistry.has_workflow_with_name(workflow_metadata.name):
-            logger.debug("Skipping already registered workflow: %s", workflow_file)
-            return None
-
-        # Convert to relative path if the workflow is under workspace_path
+        # Convert to relative path if the workflow is under workspace_path before checking registry
         config_mgr = GriptapeNodes.ConfigManager()
         workspace_path = config_mgr.workspace_path
 
@@ -4992,11 +5003,18 @@ class WorkflowManager:
         else:
             file_path_to_register = str(workflow_file)
 
+        registry_key = derive_registry_key(file_path_to_register)
+
+        # Check if workflow is already registered using the path-based registry key
+        if WorkflowRegistry.has_workflow_with_name(registry_key):
+            logger.debug("Skipping already registered workflow: %s", workflow_file)
+            return None
+
         # Register workflow using existing method with parsed metadata available
         # The _register_workflow method will re-parse metadata, but this is acceptable
         # since we've already validated it's parseable and the duplicate work is minimal
         if self._register_workflow(file_path_to_register):
-            return workflow_metadata.name
+            return registry_key
         return None
 
 

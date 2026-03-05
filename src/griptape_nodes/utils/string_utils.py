@@ -3,6 +3,29 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePosixPath
+
+
+def derive_registry_key(file_path: str) -> str:
+    """Derive a workflow registry key from a file path.
+
+    Strips the file extension and normalizes directory separators to forward slashes,
+    preserving directory components for uniqueness across different directories.
+
+    Args:
+        file_path: Path to the workflow file, e.g. "subdir/my_workflow.py"
+
+    Returns:
+        Registry key with directory components preserved, e.g. "subdir/my_workflow"
+
+    Examples:
+        >>> derive_registry_key("my_workflow.py")
+        "my_workflow"
+        >>> derive_registry_key("subdir/my_workflow.py")
+        "subdir/my_workflow"
+    """
+    normalized = file_path.replace("\\", "/")
+    return str(PurePosixPath(normalized).with_suffix(""))
 
 
 def normalize_display_name(name: str) -> str:
