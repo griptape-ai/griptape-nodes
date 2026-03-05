@@ -78,7 +78,12 @@ from griptape_nodes.retained_mode.events.os_events import (
     WriteFileResultFailure,
     WriteFileResultSuccess,
 )
-from griptape_nodes.retained_mode.events.project_events import MacroPath
+from griptape_nodes.retained_mode.events.project_events import (
+    GetPathForMacroRequest,
+    GetPathForMacroResultFailure,
+    MacroPath,
+    PathResolutionFailureReason,
+)
 from griptape_nodes.retained_mode.events.resource_events import (
     CreateResourceInstanceRequest,
     CreateResourceInstanceResultSuccess,
@@ -970,7 +975,7 @@ class OSManager:
 
         return max(existing_indices) + 1
 
-    def _convert_str_path_to_macro_with_index(self, path_str: str) -> MacroPath:
+    def _convert_str_path_to_macro_with_index(self, path_str: str, index_padding_width: int | None = None) -> MacroPath:
         """Convert string path to MacroPath with required {_index} variable for indexed filenames.
 
         This is used when the base filename (without index) is already taken.
@@ -978,18 +983,20 @@ class OSManager:
 
         Args:
             path_str: String path like "/outputs/render.png"
+            index_padding_width: Optional padding width for the index variable (e.g. 3 produces
+                "_001", "_002", ...). When None, uses plain integers ("_1", "_2", ...).
 
         Returns:
             MacroPath with required _index variable for indexed filenames
 
         Examples:
+            Input: "/outputs/render.png", index_padding_width=3
+            Output: MacroPath with template "/outputs/render_{_index:3}.png"
+            Behavior: render_001.png → render_002.png → render_003.png → ...
+
             Input: "/outputs/render.png"
             Output: MacroPath with template "/outputs/render_{_index}.png"
             Behavior: render_1.png → render_2.png → render_3.png → ...
-
-            Input: "/outputs/file"
-            Output: MacroPath with template "/outputs/file_{_index}"
-            Behavior: file_1 → file_2 → file_3 → ...
 
         Note:
             The base filename (e.g., "render.png") should be tried first before
@@ -1000,10 +1007,15 @@ class OSManager:
         suffix = path.suffix
         parent = str(path.parent)
 
-        if suffix:
-            template = f"{parent}/{stem}_{{_index}}{suffix}"
+        if index_padding_width is not None:
+            index_var = f"{{_index:{index_padding_width}}}"
         else:
-            template = f"{parent}/{stem}_{{_index}}"
+            index_var = "{_index}"
+
+        if suffix:
+            template = f"{parent}/{stem}_{index_var}{suffix}"
+        else:
+            template = f"{parent}/{stem}_{index_var}"
 
         parsed_macro = ParsedMacro(template)
 
@@ -1737,21 +1749,35 @@ class OSManager:
         final_file_path: Path | None = None
         final_bytes_written: int | None = None
         used_indexed_fallback = False
+        original_macro_path: MacroPath | None = None
 
         # COMMON SETUP: Resolve path for all policies
-        # Resolve MacroPath → str
+        # Resolve MacroPath → str using project-aware resolution
         if isinstance(request.file_path, MacroPath):
-            resolution_result = self._resolve_macro_path_to_string(request.file_path)
-            if isinstance(resolution_result, MacroResolutionFailure):
-                path_display = f"{request.file_path.parsed_macro}"
-                msg = f"Attempted to write to file '{path_display}'. Failed due to missing variables: {resolution_result.error_details}"
+            original_macro_path = request.file_path
+            path_display = f"{request.file_path.parsed_macro}"
+            resolution_result = GriptapeNodes.handle_request(
+                GetPathForMacroRequest(
+                    parsed_macro=request.file_path.parsed_macro,
+                    variables=request.file_path.variables,
+                )
+            )
+            if isinstance(resolution_result, GetPathForMacroResultFailure):
+                _path_failure_to_file_io = {
+                    PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES: FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                    PathResolutionFailureReason.MACRO_RESOLUTION_ERROR: FileIOFailureReason.INVALID_PATH,
+                    PathResolutionFailureReason.DIRECTORY_OVERRIDE_ATTEMPTED: FileIOFailureReason.INVALID_PATH,
+                }
+                failure_reason = _path_failure_to_file_io.get(
+                    resolution_result.failure_reason, FileIOFailureReason.INVALID_PATH
+                )
+                msg = f"Attempted to write to file '{path_display}'. Failed due to path resolution error: {resolution_result.result_details}"
                 return WriteFileResultFailure(
-                    failure_reason=FileIOFailureReason.MISSING_MACRO_VARIABLES,
+                    failure_reason=failure_reason,
                     missing_variables=resolution_result.missing_variables,
                     result_details=msg,
                 )
-            resolved_path_str = resolution_result
-            path_display = f"{request.file_path.parsed_macro}"
+            resolved_path_str = str(resolution_result.absolute_path)  # type: ignore[union-attr]
         else:
             # Sanitize string path (removes shell escapes, quotes, etc.)
             resolved_path_str = self.sanitize_path_string(request.file_path)
@@ -1865,7 +1891,17 @@ class OSManager:
                     # (e.g., if they gave us "output.png" we'll convert that to a macro that tries "output_1.png", "output_2.png", etc.)
                     # For MacroPath inputs, the path is already fully resolved at this point,
                     # so convert the resolved path string to inject {_index} as well.
-                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path))
+                    # Extract padding width from original MacroPath template if present (e.g., {_index?:03} → 3).
+                    index_padding_width: int | None = None
+                    if original_macro_path is not None:
+                        for segment in original_macro_path.parsed_macro.segments:
+                            if isinstance(segment, ParsedVariable) and segment.info.name == "_index":
+                                for fmt in segment.format_specs:
+                                    if isinstance(fmt, NumericPaddingFormat):
+                                        index_padding_width = fmt.width
+                                        break
+                                break
+                    macro_path = self._convert_str_path_to_macro_with_index(str(file_path), index_padding_width)
                     parsed_macro = macro_path.parsed_macro
                     variables = macro_path.variables
 

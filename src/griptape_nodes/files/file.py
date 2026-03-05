@@ -552,16 +552,8 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        resolved_path = _resolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=self._file_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
@@ -604,16 +596,8 @@ class File:
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        resolved_path = await _aresolve_file_path(self._file_path)
-
-        if resolved_path is None:
-            raise FileWriteError(
-                failure_reason=FileIOFailureReason.INVALID_PATH,
-                result_details="Cannot write: file_path is None",
-            )
-
         request = WriteFileRequest(
-            file_path=resolved_path,
+            file_path=self._file_path,
             content=content,
             encoding=encoding,
             existing_file_policy=existing_file_policy,
