@@ -328,6 +328,62 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result, GetPathForMacroResultSuccess)
         assert result.resolved_path == Path("staticfiles/output.txt")
 
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_unregistered_workflow_fails(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """Test that required {workflow_dir} fails when the workflow exists but is not registered (unsaved)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("workflow_5")
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultFailure)
+        assert result.failure_reason == PathResolutionFailureReason.MACRO_RESOLUTION_ERROR
+        from griptape_nodes.retained_mode.events.base_events import ResultDetails
+
+        assert isinstance(result.result_details, ResultDetails)
+        assert "workflow_5" in str(result.result_details)
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_optional_skipped_when_workflow_unregistered(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """Test that optional {workflow_dir?:/} falls back gracefully when the workflow is not registered (unsaved)."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "workflow_5"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        mock_workflow_registry.get_workflow_by_name.side_effect = KeyError("workflow_5")
+
+        parsed_macro = ParsedMacro("{workflow_dir?:/}staticfiles/output.txt")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("staticfiles/output.txt")
+
     @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
     def test_builtin_static_files_dir_resolves_from_config(
         self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
