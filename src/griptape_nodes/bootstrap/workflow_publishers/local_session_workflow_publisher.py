@@ -142,6 +142,11 @@ class LocalSessionWorkflowPublisher(LocalWorkflowPublisher, SubprocessWebSocketS
                     event_result_success = EventResultSuccess(request=publish_workflow_request, result=publish_result)
                     self.send_event("success_result", event_result_success.json())
                     is_publish_finished = True
+                    # Add a dummy event to wake up the loop now that publishing is done
+                    event_queue = GriptapeNodes.EventManager().event_queue
+                    queue_event_task = asyncio.create_task(event_queue.put(None))
+                    background_tasks.add(queue_event_task)
+                    queue_event_task.add_done_callback(background_tasks.discard)
 
             except Exception as e:
                 msg = "Error during publish workflow"

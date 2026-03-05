@@ -34,6 +34,7 @@ dependencies = [
   "portalocker>=2.10.0",
   "pygit2>=1.19.0",
   "send2trash>=2.1.0",
+  "truststore>=0.10.1",
 ]
 
 [project.optional-dependencies]
