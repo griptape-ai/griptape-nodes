@@ -25,6 +25,7 @@ from griptape_nodes.common.project_templates import (
     load_partial_project_template,
     load_project_template_from_yaml,
 )
+from griptape_nodes.files.file import File, FileLoadError
 from griptape_nodes.files.path_utils import resolve_workspace_path
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.app_events import AppInitializationComplete
@@ -1111,22 +1112,15 @@ class ProjectManager:
 
         logger.info("Found workspace project file at '%s', loading", workspace_project_path)
 
-        read_request = ReadFileRequest(
-            file_path=str(workspace_project_path),
-            encoding="utf-8",
-            workspace_only=False,
-        )
-        read_result = GriptapeNodes.handle_request(read_request)
-
-        if not isinstance(read_result, ReadFileResultSuccess) or not isinstance(read_result.content, str):
+        try:
+            yaml_text = File(str(workspace_project_path)).read_text()
+        except FileLoadError as e:
             logger.error(
                 "Attempted to read workspace project file at '%s'. Failed with: %s",
                 workspace_project_path,
-                read_result.result_details,
+                e.result_details,
             )
             return
-
-        yaml_text = read_result.content
 
         validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
         overlay = load_partial_project_template(yaml_text, validation)
