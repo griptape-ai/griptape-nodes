@@ -177,6 +177,8 @@ class ProjectFileParameter:
                 altered_workflow_state=False,
             )
 
+        # TODO: https://github.com/griptape-ai/griptape-nodes/issues/4097
+        # Replace with a non-RM utility for creating sibling nodes relative to a given node.
         create_result = RetainedMode.create_node_relative_to(
             reference_node_name=node_name,
             new_node_type="FileOutputSettings",
