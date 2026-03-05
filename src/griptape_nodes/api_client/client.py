@@ -7,11 +7,13 @@ import contextlib
 import json
 import logging
 import os
+import ssl
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import urljoin
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidStatus, InvalidURI
 
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
 
@@ -173,11 +175,7 @@ class Client:
             logger.debug("WebSocket client connected")
         except TimeoutError as e:
             logger.error("Failed to connect WebSocket client: timeout")
-            msg = (
-                "Connection timeout - failed to connect to Nodes API. "
-                "This usually indicates an invalid or missing GT_CLOUD_API_KEY. "
-                "Please verify your API key is correct."
-            )
+            msg = "Connection timeout - failed to connect to Nodes API."
             raise ConnectionError(msg) from e
 
     async def disconnect(self) -> None:
@@ -206,28 +204,68 @@ class Client:
         """
         try:
             async for websocket in connect(self.url, additional_headers=self.headers):
-                self._websocket = websocket
-                self._connection_ready.set()
-                if self._subscribed_topics:
-                    logger.info("WebSocket reconnected successfully")
-                else:
-                    logger.debug("WebSocket connection established: %s", self.url)
-
-                # Resubscribe to all topics after reconnection
-                if self._subscribed_topics:
-                    logger.debug("Resubscribing to %d topics after reconnection", len(self._subscribed_topics))
-                    for topic in self._subscribed_topics:
-                        await self._send_subscribe_command(topic)
-
-                try:
-                    await self._receive_messages(websocket)
-                except ConnectionClosed:
-                    logger.info("WebSocket connection closed, reconnecting...")
-                    self._connection_ready.clear()
-                    continue
-
+                should_reconnect = await self._handle_websocket_session(websocket)
+                if not should_reconnect:
+                    break
+        except InvalidStatus as e:
+            if e.response.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+                logger.error(
+                    "Nodes API rejected connection with HTTP %d. "
+                    "This indicates an invalid or missing GT_CLOUD_API_KEY.",
+                    e.response.status_code,
+                )
+            else:
+                logger.error(
+                    "Nodes API rejected WebSocket connection: HTTP %d.",
+                    e.response.status_code,
+                )
+        except InvalidURI as e:
+            logger.error(
+                "Invalid WebSocket URL: %s. Check GRIPTAPE_NODES_API_BASE_URL configuration.",
+                e,
+            )
+        except ssl.SSLError as e:
+            logger.error(
+                "SSL error while connecting to Nodes API: %s. "
+                "This may indicate a certificate verification failure. "
+                "Check that your system's CA certificates are up to date.",
+                e,
+            )
+        except OSError as e:
+            logger.error(
+                "Network error while connecting to Nodes API: %s. "
+                "Check your network connection and that the API endpoint is reachable.",
+                e,
+            )
         except asyncio.CancelledError:
             logger.debug("Connection manager task cancelled")
+
+    async def _handle_websocket_session(self, websocket: Any) -> bool:
+        """Handle a single WebSocket session: log, resubscribe, and receive messages.
+
+        Args:
+            websocket: Active WebSocket connection
+
+        Returns:
+            True if the connection should be retried, False if it should not
+        """
+        self._websocket = websocket
+        self._connection_ready.set()
+        if self._subscribed_topics:
+            logger.info("WebSocket reconnected successfully")
+            logger.debug("Resubscribing to %d topics after reconnection", len(self._subscribed_topics))
+            for topic in self._subscribed_topics:
+                await self._send_subscribe_command(topic)
+        else:
+            logger.debug("WebSocket connection established: %s", self.url)
+
+        try:
+            await self._receive_messages(websocket)
+        except ConnectionClosed:
+            logger.info("WebSocket connection closed, reconnecting...")
+            self._connection_ready.clear()
+            return True
+        return False
 
     async def _receive_messages(self, websocket: Any) -> None:
         """Receive messages from WebSocket and put them in message queue.
