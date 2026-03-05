@@ -6,6 +6,9 @@ from griptape_nodes.exe_types.core_types import Parameter
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
 from griptape_nodes.retained_mode.events.base_events import ResultDetails
 from griptape_nodes.retained_mode.events.workflow_events import (
+    CreateWorkflowFromTemplateRequest,
+    CreateWorkflowFromTemplateResultFailure,
+    CreateWorkflowFromTemplateResultSuccess,
     GetWorkflowMetadataRequest,
     GetWorkflowMetadataResultFailure,
     GetWorkflowMetadataResultSuccess,
@@ -264,5 +267,129 @@ class TestWorkflowManager:
 
         assert isinstance(result, SetWorkflowMetadataResultSuccess)
         write_mock.assert_called_once()
+
+    def test_on_create_workflow_from_template_request_success(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test successful create workflow from template (Griptape or user-provided)."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = CreateWorkflowFromTemplateRequest(template_name="my_template")
+
+        mock_template = MagicMock()
+        mock_template.file_path = "libraries/lib/workflows/templates/my_template.py"
+        mock_template.metadata = MagicMock()
+        mock_template.metadata.is_template = True
+        mock_template.metadata.schema_version = "0.16.0"
+        mock_template.metadata.engine_version_created_with = "1.0.0"
+        mock_template.metadata.node_libraries_referenced = []
+        mock_template.metadata.node_types_used = set()
+        mock_template.metadata.workflows_referenced = None
+        mock_template.metadata.description = "A template"
+        mock_template.metadata.image = None
+        mock_template.metadata.last_modified_date = None
+
+        template_content = "# /// script\n# [tool]\n# ///\nprint('body')\n"
+        new_full_path = "/workspace/my_template_1.py"
+
+        def get_complete_file_path(relative_path: str) -> str:
+            if "templates" in relative_path:
+                return "/lib/path/my_template.py"
+            return new_full_path
+
+        with (
+            patch.object(
+                WorkflowRegistry,
+                "get_workflow_by_name",
+                return_value=mock_template,
+            ),
+            patch.object(
+                WorkflowRegistry,
+                "get_complete_file_path",
+                side_effect=get_complete_file_path,
+            ),
+            patch.object(Path, "is_file", return_value=True),
+            patch.object(Path, "read_text", return_value=template_content),
+            patch.object(
+                workflow_manager,
+                "_generate_unique_filename",
+                return_value="my_template_1",
+            ),
+            patch.object(
+                workflow_manager,
+                "_replace_workflow_metadata_header",
+                return_value="updated_content",
+            ),
+            patch.object(Path, "write_text"),
+            patch.object(WorkflowRegistry, "generate_new_workflow"),
+            patch.object(
+                griptape_nodes.ConfigManager(),
+                "save_user_workflow_json",
+            ) as mock_save,
+        ):
+            result = workflow_manager.on_create_workflow_from_template_request(request)
+
+        assert isinstance(result, CreateWorkflowFromTemplateResultSuccess)
+        assert result.workflow_name == "my_template_1"
+        assert result.file_path == new_full_path
+        mock_save.assert_called_once_with(new_full_path)
+
+    def test_on_create_workflow_from_template_request_template_not_found(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test create from template when template is not in registry."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = CreateWorkflowFromTemplateRequest(template_name="missing_template")
+
+        with patch.object(
+            WorkflowRegistry,
+            "get_workflow_by_name",
+            side_effect=KeyError("not found"),
+        ):
+            result = workflow_manager.on_create_workflow_from_template_request(request)
+
+        assert isinstance(result, CreateWorkflowFromTemplateResultFailure)
+        assert "missing_template" in str(result.result_details)
+
+    def test_on_create_workflow_from_template_request_not_a_template(self, griptape_nodes: GriptapeNodes) -> None:
+        """Test create from template when workflow is not marked as template."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = CreateWorkflowFromTemplateRequest(template_name="regular_workflow")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "workflows/regular_workflow.py"
+        mock_workflow.metadata = MagicMock()
+        mock_workflow.metadata.is_template = False
+
+        with patch.object(
+            WorkflowRegistry,
+            "get_workflow_by_name",
+            return_value=mock_workflow,
+        ):
+            result = workflow_manager.on_create_workflow_from_template_request(request)
+
+        assert isinstance(result, CreateWorkflowFromTemplateResultFailure)
+        assert "not marked as a template" in str(result.result_details)
+
+    def test_on_create_workflow_from_template_request_template_file_not_found(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        """Test create from template when template file does not exist."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = CreateWorkflowFromTemplateRequest(template_name="my_template")
+
+        mock_template = MagicMock()
+        mock_template.file_path = "libraries/lib/workflows/templates/my_template.py"
+        mock_template.metadata = MagicMock()
+        mock_template.metadata.is_template = True
+
+        with (
+            patch.object(
+                WorkflowRegistry,
+                "get_workflow_by_name",
+                return_value=mock_template,
+            ),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/missing/path.py"),
+            patch.object(Path, "is_file", return_value=False),
+        ):
+            result = workflow_manager.on_create_workflow_from_template_request(request)
+
+        assert isinstance(result, CreateWorkflowFromTemplateResultFailure)
+        assert "does not exist" in str(result.result_details)
 
     # Removed tests for invalid keys/types; metadata is replaced as a whole object

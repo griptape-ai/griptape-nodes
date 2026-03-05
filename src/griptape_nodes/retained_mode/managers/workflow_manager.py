@@ -80,6 +80,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     CompareWorkflowsRequest,
     CompareWorkflowsResultFailure,
     CompareWorkflowsResultSuccess,
+    CreateWorkflowFromTemplateRequest,
+    CreateWorkflowFromTemplateResultFailure,
+    CreateWorkflowFromTemplateResultSuccess,
     DeleteWorkflowRequest,
     DeleteWorkflowResultFailure,
     DeleteWorkflowResultSuccess,
@@ -378,6 +381,10 @@ class WorkflowManager:
         event_manager.assign_manager_to_request_type(
             BranchWorkflowRequest,
             self.on_branch_workflow_request,
+        )
+        event_manager.assign_manager_to_request_type(
+            CreateWorkflowFromTemplateRequest,
+            self.on_create_workflow_from_template_request,
         )
         event_manager.assign_manager_to_request_type(
             MergeWorkflowBranchRequest,
@@ -4377,6 +4384,76 @@ class WorkflowManager:
 
             traceback.print_exc()
             return BranchWorkflowResultFailure(result_details=details)
+
+    def on_create_workflow_from_template_request(self, request: CreateWorkflowFromTemplateRequest) -> ResultPayload:
+        """Create a new workflow file from a template (Griptape-provided or user-provided)."""
+        try:
+            template_workflow = WorkflowRegistry.get_workflow_by_name(request.template_name)
+        except KeyError:
+            details = (
+                f"Attempted to create workflow from template '{request.template_name}'. "
+                "Failed because template workflow was not found in registry."
+            )
+            return CreateWorkflowFromTemplateResultFailure(result_details=details)
+
+        if not template_workflow.metadata.is_template:
+            details = (
+                f"Attempted to create workflow from template '{request.template_name}'. "
+                "Failed because workflow is not marked as a template (is_template must be True)."
+            )
+            return CreateWorkflowFromTemplateResultFailure(result_details=details)
+
+        source_file_path = WorkflowRegistry.get_complete_file_path(template_workflow.file_path)
+        if not Path(source_file_path).is_file():
+            details = (
+                f"Attempted to create workflow from template '{request.template_name}'. "
+                f"Failed because template file path '{source_file_path}' does not exist."
+            )
+            return CreateWorkflowFromTemplateResultFailure(result_details=details)
+
+        base_name = request.file_name or Path(template_workflow.file_path).stem
+        new_file_name = self._generate_unique_filename(base_name)
+        relative_file_path = f"{new_file_name}.py"
+
+        new_metadata = WorkflowMetadata(
+            name=new_file_name,
+            schema_version=template_workflow.metadata.schema_version,
+            engine_version_created_with=template_workflow.metadata.engine_version_created_with,
+            node_libraries_referenced=template_workflow.metadata.node_libraries_referenced.copy(),
+            node_types_used=template_workflow.metadata.node_types_used.copy(),
+            workflows_referenced=template_workflow.metadata.workflows_referenced.copy()
+            if template_workflow.metadata.workflows_referenced
+            else None,
+            description=template_workflow.metadata.description,
+            image=template_workflow.metadata.image,
+            is_griptape_provided=False,
+            is_template=False,
+            creation_date=datetime.now(tz=UTC),
+            last_modified_date=template_workflow.metadata.last_modified_date,
+            branched_from=None,
+        )
+
+        source_content = Path(source_file_path).read_text(encoding="utf-8")
+        new_content = self._replace_workflow_metadata_header(source_content, new_metadata)
+        if new_content is None:
+            details = (
+                f"Attempted to create workflow from template '{request.template_name}'. "
+                f"Failed because metadata header replacement failed for '{new_file_name}'."
+            )
+            return CreateWorkflowFromTemplateResultFailure(result_details=details)
+
+        new_full_path = WorkflowRegistry.get_complete_file_path(relative_file_path)
+        Path(new_full_path).write_text(new_content, encoding="utf-8")
+        WorkflowRegistry.generate_new_workflow(metadata=new_metadata, file_path=relative_file_path)
+        config_manager = GriptapeNodes.ConfigManager()
+        config_manager.save_user_workflow_json(new_full_path)
+
+        details = f"Successfully created workflow '{new_file_name}' from template '{request.template_name}'"
+        return CreateWorkflowFromTemplateResultSuccess(
+            workflow_name=new_file_name,
+            file_path=new_full_path,
+            result_details=ResultDetails(message=details, level=logging.INFO),
+        )
 
     def on_merge_workflow_branch_request(self, request: MergeWorkflowBranchRequest) -> ResultPayload:
         """Merge a branch back into its source workflow, removing the branch when complete."""
