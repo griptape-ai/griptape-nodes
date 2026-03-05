@@ -1109,7 +1109,7 @@ class ProjectManager:
             logger.debug("No workspace project file found at '%s'", workspace_project_path)
             return
 
-        logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
+        logger.info("Found workspace project file at '%s', loading", workspace_project_path)
 
         read_request = ReadFileRequest(
             file_path=str(workspace_project_path),
@@ -1175,4 +1175,4 @@ class ProjectManager:
             )
             return
 
-        logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
+        logger.info("Successfully loaded workspace project from '%s'", workspace_project_path)
