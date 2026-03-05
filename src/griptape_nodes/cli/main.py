@@ -9,7 +9,7 @@ from rich.console import Console
 # Add current directory to path for imports to work
 sys.path.append(str(Path.cwd()))
 
-from griptape_nodes.cli.commands import config, engine, init, libraries, models, self
+from griptape_nodes.cli.commands import config, doctor, engine, init, libraries, models, self
 from griptape_nodes.cli.commands.engine import _auto_update_self
 from griptape_nodes.utils.version_utils import get_complete_version_string
 
@@ -30,6 +30,7 @@ app.add_typer(self.app, name="self")
 app.add_typer(libraries.app, name="libraries")
 app.add_typer(models.app, name="models")
 app.command("engine")(engine.engine_command)
+app.command("doctor")(doctor.doctor_command)
 
 
 @app.callback()

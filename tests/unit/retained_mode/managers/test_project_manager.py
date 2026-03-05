@@ -257,12 +257,47 @@ class TestProjectManagerBuiltinVariables:
         assert isinstance(result.result_details, ResultDetails)
         assert "project_name not yet implemented" in str(result.result_details)
 
-    def test_builtin_workflow_dir_not_implemented(self, project_manager_with_template: ProjectManager) -> None:
-        """Test that {workflow_dir} raises NotImplementedError."""
+    @patch("griptape_nodes.retained_mode.managers.project_manager.WorkflowRegistry")
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_resolves_correctly(
+        self,
+        mock_griptape_nodes: Mock,
+        mock_workflow_registry: Mock,
+        project_manager_with_template: ProjectManager,
+    ) -> None:
+        """Test that {workflow_dir} resolves to the workflow file's parent directory."""
         from griptape_nodes.common.macro_parser import ParsedMacro
 
-        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = True
+        mock_context_manager.get_current_workflow_name.return_value = "my_workflow"
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
 
+        mock_workflow = Mock()
+        mock_workflow.file_path = "my_project/my_workflow.json"
+        mock_workflow_registry.get_workflow_by_name.return_value = mock_workflow
+        mock_workflow_registry.get_complete_file_path.return_value = "/workspace/my_project/my_workflow.json"
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("/workspace/my_project/output.txt")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_no_current_workflow(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that required {workflow_dir} fails when there is no current workflow."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        parsed_macro = ParsedMacro("{workflow_dir}/output.txt")
         request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
 
         result = project_manager_with_template.on_get_path_for_macro_request(request)
@@ -272,7 +307,45 @@ class TestProjectManagerBuiltinVariables:
         from griptape_nodes.retained_mode.events.base_events import ResultDetails
 
         assert isinstance(result.result_details, ResultDetails)
-        assert "workflow_dir not yet implemented" in str(result.result_details)
+        assert "No current workflow" in str(result.result_details)
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_workflow_dir_optional_skipped_when_no_workflow(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that optional {workflow_dir?:/} is skipped (not an error) when no current workflow."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_context_manager = Mock()
+        mock_context_manager.has_current_workflow.return_value = False
+        mock_griptape_nodes.ContextManager.return_value = mock_context_manager
+
+        parsed_macro = ParsedMacro("{workflow_dir?:/}staticfiles/output.txt")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("staticfiles/output.txt")
+
+    @patch("griptape_nodes.retained_mode.managers.project_manager.GriptapeNodes")
+    def test_builtin_static_files_dir_resolves_from_config(
+        self, mock_griptape_nodes: Mock, project_manager_with_template: ProjectManager
+    ) -> None:
+        """Test that {static_files_dir} resolves to the configured static_files_directory setting."""
+        from griptape_nodes.common.macro_parser import ParsedMacro
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = "my_static"
+        mock_griptape_nodes.ConfigManager.return_value = mock_config_manager
+
+        parsed_macro = ParsedMacro("{static_files_dir}/output.png")
+        request = GetPathForMacroRequest(parsed_macro=parsed_macro, variables={})
+
+        result = project_manager_with_template.on_get_path_for_macro_request(request)
+
+        assert isinstance(result, GetPathForMacroResultSuccess)
+        assert result.resolved_path == Path("my_static/output.png")
 
     def test_builtin_override_matching_value_allowed(self, project_manager_with_template: ProjectManager) -> None:
         """Test that providing matching value for builtin variable is allowed."""

@@ -45,7 +45,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
     def create_signed_upload_url(
         self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
     ) -> CreateSignedUploadUrlResponse:
-        normalized_path = get_workspace_relative_path(path, self.workspace_directory)
+        normalized_path = path
 
         if existing_file_policy != ExistingFilePolicy.OVERWRITE:
             logger.warning(
