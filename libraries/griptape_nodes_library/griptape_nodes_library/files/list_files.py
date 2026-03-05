@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Any
 
 from griptape_nodes.exe_types.core_types import Parameter
@@ -124,22 +123,9 @@ class ListFiles(SuccessFailureNode):
 
     def _convert_paths(self, entries: list, *, use_absolute_paths: bool) -> list[str]:
         """Extract paths from entries, optionally converting to absolute paths."""
-        file_paths = []
-        os_manager = GriptapeNodes.OSManager()
-        for entry in entries:
-            if use_absolute_paths:
-                entry_path = Path(entry.path)
-                if not entry_path.is_absolute():
-                    workspace_path = GriptapeNodes.ConfigManager().workspace_path
-                    combined_path = workspace_path / entry_path
-                    absolute_path = os_manager.resolve_path_safely(combined_path)
-                    file_paths.append(str(absolute_path))
-                else:
-                    absolute_path = os_manager.resolve_path_safely(entry_path)
-                    file_paths.append(str(absolute_path))
-            else:
-                file_paths.append(entry.path)
-        return file_paths
+        if use_absolute_paths:
+            return [entry.absolute_path for entry in entries]
+        return [entry.path for entry in entries]
 
     def process(self) -> None:
         self._clear_execution_status()
