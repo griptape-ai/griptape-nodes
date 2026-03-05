@@ -29,7 +29,7 @@ from griptape_nodes.exe_types.node_types import (
 )
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
-from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
+from griptape_nodes.node_library.workflow_registry import WorkflowRegistry, derive_registry_key
 from griptape_nodes.retained_mode.events.agent_events import AgentStreamEvent
 from griptape_nodes.retained_mode.events.base_events import ProgressEvent
 from griptape_nodes.retained_mode.events.connection_events import (
@@ -100,7 +100,6 @@ from griptape_nodes.retained_mode.managers.event_manager import (
     EventSuppressionContext,
     EventTranslationContext,
 )
-from griptape_nodes.utils.string_utils import derive_registry_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -33,6 +33,7 @@ from griptape_nodes.node_library.workflow_registry import (
     WorkflowMetadata,
     WorkflowRegistry,
     WorkflowShape,
+    derive_registry_key,
 )
 from griptape_nodes.retained_mode.events.app_events import (
     EngineInitializationProgress,
@@ -164,7 +165,7 @@ from griptape_nodes.retained_mode.managers.fitness_problems.workflows import (
     WorkflowNotFoundProblem,
 )
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
-from griptape_nodes.utils.string_utils import derive_registry_key, normalize_display_name
+from griptape_nodes.utils.string_utils import normalize_display_name
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -1163,7 +1164,7 @@ class WorkflowManager:
 
         # Create new file path
         workflow_filename = Path(workflow.file_path).name
-        new_relative_path = str(Path(target_directory) / workflow_filename)
+        new_relative_path = (Path(target_directory) / workflow_filename).as_posix()
         new_absolute_path = config_manager.workspace_path / new_relative_path
 
         # Check if target file already exists
