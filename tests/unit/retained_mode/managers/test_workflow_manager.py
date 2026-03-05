@@ -17,6 +17,9 @@ from griptape_nodes.retained_mode.events.workflow_events import (
     ImportWorkflowResultSuccess,
     LoadWorkflowMetadataResultFailure,
     LoadWorkflowMetadataResultSuccess,
+    MoveWorkflowRequest,
+    MoveWorkflowResultFailure,
+    MoveWorkflowResultSuccess,
     RegisterWorkflowResultFailure,
     RegisterWorkflowResultSuccess,
     SetWorkflowMetadataRequest,
@@ -97,7 +100,7 @@ class TestWorkflowManager:
             patch.object(
                 workflow_manager,
                 "on_register_workflow_request",
-                # Registry key is the file stem, independent of metadata.name.
+                # Registry key is the file path (minus extension), independent of metadata.name.
                 return_value=RegisterWorkflowResultSuccess(workflow_name="workflow", result_details="Success"),
             ),
             patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/full/path/to/workflow.py"),
@@ -106,7 +109,7 @@ class TestWorkflowManager:
             result = workflow_manager.on_import_workflow_request(request)
 
             assert isinstance(result, ImportWorkflowResultSuccess)
-            # Registry key is derived from the file stem, not from metadata.name.
+            # Registry key is derived from the file path (minus extension), not from metadata.name.
             assert result.workflow_name == "workflow"
             mock_save.assert_called_once_with("/full/path/to/workflow.py")
 
@@ -129,8 +132,8 @@ class TestWorkflowManager:
             result = workflow_manager.on_import_workflow_request(request)
 
             assert isinstance(result, ImportWorkflowResultSuccess)
-            # Registry key is derived from the file stem, not from metadata.name.
-            assert result.workflow_name == "workflow"
+            # Registry key is derived from the file path (minus extension), not from metadata.name.
+            assert result.workflow_name == "/path/to/workflow"
 
     def test_on_import_workflow_request_metadata_load_failure(self, griptape_nodes: GriptapeNodes) -> None:
         """Test import when metadata loading fails."""
@@ -205,8 +208,8 @@ class TestWorkflowManager:
             assert isinstance(result, ImportWorkflowResultFailure)
             assert isinstance(result.result_details, ResultDetails)
             error_message = result.result_details.result_details[0].message
-            # Registry key is derived from file stem, so the error message uses the registry key.
-            assert "Failed to add workflow 'workflow' to user configuration" in error_message
+            # Registry key is derived from file path (minus extension), so the error message uses the registry key.
+            assert "Failed to add workflow '/path/to/workflow' to user configuration" in error_message
             assert "Config save failed" in error_message
 
     def test_get_workflow_metadata_success(self, griptape_nodes: GriptapeNodes) -> None:
@@ -393,3 +396,155 @@ class TestWorkflowManager:
         assert "does not exist" in str(result.result_details)
 
     # Removed tests for invalid keys/types; metadata is replaced as a whole object
+
+    def test_on_move_workflow_request_workflow_not_found(self, griptape_nodes: GriptapeNodes) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="nonexistent", target_directory="subdir")
+
+        with patch.object(WorkflowRegistry, "get_workflow_by_name", side_effect=KeyError("not found")):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultFailure)
+        assert "nonexistent" in str(result.result_details)
+
+    def test_on_move_workflow_request_source_file_missing(self, griptape_nodes: GriptapeNodes) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "my_workflow.py"
+
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
+            patch.object(Path, "exists", return_value=False),
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultFailure)
+        assert "/workspace/my_workflow.py" in str(result.result_details)
+
+    def test_on_move_workflow_request_target_already_exists(self, griptape_nodes: GriptapeNodes) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "my_workflow.py"
+
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
+            patch.object(Path, "exists", return_value=True),
+            patch.object(Path, "mkdir"),
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultFailure)
+        assert "already exists" in str(result.result_details)
+
+    def test_on_move_workflow_request_success_directory_change(self, griptape_nodes: GriptapeNodes) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "my_workflow.py"
+
+        config_mgr = griptape_nodes.ConfigManager()
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
+            patch.object(Path, "exists", side_effect=[True, False]),
+            patch.object(Path, "mkdir"),
+            patch.object(Path, "rename"),
+            patch.object(WorkflowRegistry, "rekey_workflow") as mock_rekey,
+            patch.object(config_mgr, "delete_user_workflow"),
+            patch.object(config_mgr, "save_user_workflow_json"),
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultSuccess)
+        assert result.moved_file_path == "subdir/my_workflow.py"
+        assert result.new_workflow_name == "subdir/my_workflow"
+        mock_rekey.assert_called_once_with("my_workflow", "subdir/my_workflow")
+
+    def test_on_move_workflow_request_no_rekey_same_directory(self, griptape_nodes: GriptapeNodes) -> None:
+        """Moving within the same directory level produces the same registry key; no rekey occurs."""
+        workflow_manager = griptape_nodes.WorkflowManager()
+        # Workflow already in "subdir", moving target is also "subdir" — key stays the same.
+        request = MoveWorkflowRequest(workflow_name="subdir/my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "subdir/my_workflow.py"
+
+        config_mgr = griptape_nodes.ConfigManager()
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/subdir/my_workflow.py"),
+            patch.object(Path, "exists", side_effect=[True, False]),
+            patch.object(Path, "mkdir"),
+            patch.object(Path, "rename"),
+            patch.object(WorkflowRegistry, "rekey_workflow") as mock_rekey,
+            patch.object(config_mgr, "delete_user_workflow"),
+            patch.object(config_mgr, "save_user_workflow_json"),
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultSuccess)
+        assert result.new_workflow_name == "subdir/my_workflow"
+        mock_rekey.assert_not_called()
+
+    def test_on_move_workflow_request_updates_context_for_current_workflow(self, griptape_nodes: GriptapeNodes) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "my_workflow.py"
+
+        context_mgr = griptape_nodes.ContextManager()
+        config_mgr = griptape_nodes.ConfigManager()
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
+            patch.object(Path, "exists", side_effect=[True, False]),
+            patch.object(Path, "mkdir"),
+            patch.object(Path, "rename"),
+            patch.object(WorkflowRegistry, "rekey_workflow"),
+            patch.object(config_mgr, "delete_user_workflow"),
+            patch.object(config_mgr, "save_user_workflow_json"),
+            patch.object(context_mgr, "has_current_workflow", return_value=True),
+            patch.object(context_mgr, "get_current_workflow_name", return_value="my_workflow"),
+            patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultSuccess)
+        mock_set_name.assert_called_once_with("subdir/my_workflow")
+
+    def test_on_move_workflow_request_does_not_update_context_for_other_workflow(
+        self, griptape_nodes: GriptapeNodes
+    ) -> None:
+        workflow_manager = griptape_nodes.WorkflowManager()
+        request = MoveWorkflowRequest(workflow_name="my_workflow", target_directory="subdir")
+
+        mock_workflow = MagicMock()
+        mock_workflow.file_path = "my_workflow.py"
+
+        context_mgr = griptape_nodes.ContextManager()
+        config_mgr = griptape_nodes.ConfigManager()
+        with (
+            patch.object(WorkflowRegistry, "get_workflow_by_name", return_value=mock_workflow),
+            patch.object(WorkflowRegistry, "get_complete_file_path", return_value="/workspace/my_workflow.py"),
+            patch.object(Path, "exists", side_effect=[True, False]),
+            patch.object(Path, "mkdir"),
+            patch.object(Path, "rename"),
+            patch.object(WorkflowRegistry, "rekey_workflow"),
+            patch.object(config_mgr, "delete_user_workflow"),
+            patch.object(config_mgr, "save_user_workflow_json"),
+            patch.object(context_mgr, "has_current_workflow", return_value=True),
+            patch.object(context_mgr, "get_current_workflow_name", return_value="other_workflow"),
+            patch.object(context_mgr, "set_current_workflow_name") as mock_set_name,
+        ):
+            result = workflow_manager.on_move_workflow_request(request)
+
+        assert isinstance(result, MoveWorkflowResultSuccess)
+        mock_set_name.assert_not_called()

@@ -27,6 +27,7 @@ from griptape_nodes.exe_types.node_types import (
     NodeResolutionState,
     StartNode,
 )
+from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.machines.dag_builder import DagBuilder
 from griptape_nodes.node_library.library_registry import Library, LibraryRegistry
 from griptape_nodes.node_library.workflow_registry import WorkflowRegistry
@@ -303,7 +304,7 @@ class NodeExecutor:
         finally:
             if workflow_result is not None:
                 await self._delete_workflow(
-                    workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+                    derive_registry_key(workflow_result.file_path), workflow_path=Path(workflow_result.file_path)
                 )
 
     async def _execute_library_workflow(self, node: BaseNode, execution_type: str) -> None:
@@ -382,7 +383,8 @@ class NodeExecutor:
         finally:
             if workflow_result is not None:
                 await self._delete_workflow(
-                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=Path(workflow_result.file_path)
+                    workflow_name=derive_registry_key(workflow_result.file_path),
+                    workflow_path=Path(workflow_result.file_path),
                 )
             if published_workflow_filename is not None:
                 published_filename = published_workflow_filename.stem
@@ -2720,7 +2722,7 @@ class NodeExecutor:
         finally:
             try:
                 await self._delete_workflow(
-                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=workflow_path
+                    workflow_name=derive_registry_key(workflow_result.file_path), workflow_path=workflow_path
                 )
             except Exception as e:
                 logger.warning("Failed to cleanup workflow file: %s", e)
@@ -2756,7 +2758,7 @@ class NodeExecutor:
         finally:
             try:
                 await self._delete_workflow(
-                    workflow_name=workflow_result.workflow_metadata.name, workflow_path=workflow_path
+                    workflow_name=derive_registry_key(workflow_result.file_path), workflow_path=workflow_path
                 )
             except Exception as e:
                 logger.warning("Failed to cleanup workflow file: %s", e)
@@ -2998,7 +3000,7 @@ class NodeExecutor:
         """
         try:
             await self._delete_workflow(
-                workflow_name=workflow_result.workflow_metadata.name,
+                workflow_name=derive_registry_key(workflow_result.file_path),
                 workflow_path=Path(workflow_result.file_path),
             )
             published_filename = published_workflow_filename.stem

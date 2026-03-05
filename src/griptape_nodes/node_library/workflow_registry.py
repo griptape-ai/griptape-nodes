@@ -8,7 +8,7 @@ from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
-from griptape_nodes.files.path_utils import resolve_workspace_path
+from griptape_nodes.files.path_utils import derive_registry_key, resolve_workspace_path
 from griptape_nodes.node_library.library_registry import (
     LibraryNameAndVersion,  # noqa: TC001 (putting this into type checking causes it to not be defined)
 )
@@ -147,11 +147,12 @@ class WorkflowRegistry(metaclass=SingletonMeta):
     @classmethod
     def generate_new_workflow(cls, file_path: str, metadata: WorkflowMetadata) -> Workflow:
         instance = cls()
-        # Use the file stem as the registry key, independent of the display name in metadata.
+        # Use the file path (minus extension) as the registry key, preserving directory components
+        # so workflows with the same filename in different directories get distinct keys.
         # TODO(https://github.com/griptape-ai/griptape-nodes/issues/4057): file_path should be
         # resolved from a "save_workflow" situation macro (like ArtifactManager._resolve_preview_path)
         # so the save location is user-configurable per project rather than hard-coded.
-        registry_key = Path(file_path).stem
+        registry_key = derive_registry_key(file_path)
         if registry_key in instance._workflows:
             msg = f"Workflow with file name '{registry_key}' already registered."
             raise KeyError(msg)
@@ -194,6 +195,16 @@ class WorkflowRegistry(metaclass=SingletonMeta):
             msg = f"Failed to delete Workflow. Workflow with name '{name}' has not been registered."
             raise KeyError(msg)
         return instance._workflows.pop(name)
+
+    @classmethod
+    def rekey_workflow(cls, old_key: str, new_key: str) -> None:
+        """Re-key a workflow in the registry from old_key to new_key."""
+        instance = cls()
+        if old_key not in instance._workflows:
+            msg = f"Failed to rekey Workflow. Workflow with key '{old_key}' has not been registered."
+            raise KeyError(msg)
+        workflow = instance._workflows.pop(old_key)
+        instance._workflows[new_key] = workflow
 
     @classmethod
     def get_branches_of_workflow(cls, workflow_name: str) -> list[str]:

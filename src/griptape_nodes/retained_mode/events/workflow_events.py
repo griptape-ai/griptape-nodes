@@ -715,9 +715,11 @@ class MoveWorkflowResultSuccess(WorkflowAlteredMixin, ResultPayloadSuccess):
 
     Args:
         moved_file_path: New file path after the move
+        new_workflow_name: New registry key for the workflow after the move
     """
 
     moved_file_path: str
+    new_workflow_name: str
 
 
 @dataclass
