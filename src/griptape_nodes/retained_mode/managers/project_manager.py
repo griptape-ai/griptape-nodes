@@ -22,6 +22,7 @@ from griptape_nodes.common.project_templates import (
     ProjectValidationInfo,
     ProjectValidationStatus,
     SituationTemplate,
+    load_partial_project_template,
     load_project_template_from_yaml,
 )
 from griptape_nodes.files.path_utils import resolve_workspace_path
@@ -80,6 +81,9 @@ ProjectID = str
 
 # Synthetic identifier for the system default project template
 SYSTEM_DEFAULTS_KEY: ProjectID = "<system-defaults>"
+
+# Filename for workspace-level project template overrides
+WORKSPACE_PROJECT_FILE = "griptape-nodes-project.yml"
 
 # Builtin variable name constants
 BUILTIN_PROJECT_DIR = "project_dir"
@@ -709,17 +713,23 @@ class ProjectManager:
         """Load system default project template when app initializes.
 
         Called by EventManager after all libraries are loaded.
+        Loads system defaults, then checks workspace for a griptape-nodes-project.yml
+        overlay file and sets it as the current project if found.
         """
         self._load_system_defaults()
 
-        # Set as current project (using synthetic key for system defaults)
+        # Set system defaults as current project (using synthetic key for system defaults)
         set_request = SetCurrentProjectRequest(project_id=SYSTEM_DEFAULTS_KEY)
         result = self.on_set_current_project_request(set_request)
 
         if result.failed():
             logger.error("Failed to set default project as current: %s", result.result_details)
-        else:
-            logger.debug("Successfully loaded default project template")
+            return
+
+        logger.debug("Successfully loaded default project template")
+
+        # Check workspace for an optional project overlay file
+        self._load_workspace_project()
 
     def on_get_all_situations_for_project_request(
         self, _request: GetAllSituationsForProjectRequest
@@ -1079,3 +1089,90 @@ class ProjectManager:
         self._successfully_loaded_project_templates[SYSTEM_DEFAULTS_KEY] = project_info
 
         logger.debug("System defaults loaded successfully")
+
+    def _load_workspace_project(self) -> None:
+        """Load workspace-level project template overlay if present.
+
+        Checks for griptape-nodes-project.yml in the workspace directory.
+        If found, loads it as an overlay on top of system defaults and sets it
+        as the current project. If the file is not present, the system defaults
+        remain current.
+        """
+        config_manager = GriptapeNodes.ConfigManager()
+        workspace_dir_value = config_manager.get_config_value("workspace_directory")
+        if workspace_dir_value is None:
+            logger.debug("Skipping workspace project load: 'workspace_directory' config value is None")
+            return
+
+        workspace_project_path = Path(workspace_dir_value) / WORKSPACE_PROJECT_FILE
+        if not workspace_project_path.exists():
+            logger.debug("No workspace project file found at '%s'", workspace_project_path)
+            return
+
+        logger.debug("Found workspace project file at '%s', loading", workspace_project_path)
+
+        read_request = ReadFileRequest(
+            file_path=str(workspace_project_path),
+            encoding="utf-8",
+            workspace_only=False,
+        )
+        read_result = GriptapeNodes.handle_request(read_request)
+
+        if not isinstance(read_result, ReadFileResultSuccess) or not isinstance(read_result.content, str):
+            logger.error(
+                "Attempted to read workspace project file at '%s'. Failed with: %s",
+                workspace_project_path,
+                read_result.result_details,
+            )
+            return
+
+        yaml_text = read_result.content
+
+        validation = ProjectValidationInfo(status=ProjectValidationStatus.GOOD)
+        overlay = load_partial_project_template(yaml_text, validation)
+
+        if overlay is None:
+            logger.error(
+                "Attempted to load workspace project from '%s'. Failed because YAML could not be parsed",
+                workspace_project_path,
+            )
+            return
+
+        template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
+
+        if not validation.is_usable():
+            logger.error(
+                "Attempted to load workspace project from '%s'. Failed because template is not usable (status: %s)",
+                workspace_project_path,
+                validation.status,
+            )
+            return
+
+        project_id = str(workspace_project_path)
+        situation_schemas = self._parse_situation_macros(template.situations, validation)
+        directory_schemas = self._parse_directory_macros(template.directories, validation)
+
+        project_info = ProjectInfo(
+            project_id=project_id,
+            project_file_path=workspace_project_path,
+            project_base_dir=workspace_project_path.parent,
+            template=template,
+            validation=validation,
+            parsed_situation_schemas=situation_schemas,
+            parsed_directory_schemas=directory_schemas,
+        )
+        self._successfully_loaded_project_templates[project_id] = project_info
+        self._registered_template_status[workspace_project_path] = validation
+
+        set_request = SetCurrentProjectRequest(project_id=project_id)
+        set_result = self.on_set_current_project_request(set_request)
+
+        if set_result.failed():
+            logger.error(
+                "Attempted to set workspace project '%s' as current. Failed with: %s",
+                workspace_project_path,
+                set_result.result_details,
+            )
+            return
+
+        logger.debug("Successfully loaded workspace project from '%s'", workspace_project_path)
