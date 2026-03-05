@@ -35,7 +35,6 @@ class ProjectFileParameter:
         self._file_param = ProjectFileParameter(
             node=self,
             name="output_file",
-            situation="save_node_output",
             default_filename="image.png",
         )
         self._file_param.add_parameter()
@@ -44,13 +43,15 @@ class ProjectFileParameter:
         output_file = self._file_param.build_file(sub_dirs="renders")
     """
 
+    DEFAULT_SITUATION = "save_node_output"
+
     def __init__(
         self,
         node: BaseNode,
         name: str,
-        situation: str,
         *,
         default_filename: str,
+        situation: str = DEFAULT_SITUATION,
         allowed_modes: set[ParameterMode] | None = None,
     ) -> None:
         """Initialize with situation context.
@@ -58,8 +59,8 @@ class ProjectFileParameter:
         Args:
             node: Parent node instance
             name: Parameter name
-            situation: Situation name (e.g., "save_node_output")
             default_filename: Default filename if parameter is empty
+            situation: Situation name (default: "save_node_output")
             allowed_modes: Set of allowed parameter modes (default: INPUT, PROPERTY)
         """
         self._node = node
@@ -195,10 +196,13 @@ class ProjectFileParameter:
 
         configure_node_name = create_result
 
-        current_filename = self._node.get_parameter_value(self._name)
-        if isinstance(current_filename, str) and current_filename:
-            configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
-            if configure_node is not None:
+        configure_node = GriptapeNodes.ObjectManager().attempt_get_object_by_name(configure_node_name)
+        if configure_node is not None:
+            configure_node.set_parameter_value("situation", self._situation_name)
+            configure_node.publish_update_to_parameter("situation", self._situation_name)
+
+            current_filename = self._node.get_parameter_value(self._name)
+            if isinstance(current_filename, str) and current_filename:
                 configure_node.set_parameter_value("filename", current_filename)
                 configure_node.publish_update_to_parameter("filename", current_filename)
 

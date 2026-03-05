@@ -245,7 +245,6 @@ class SeedreamImageGeneration(GriptapeProxyNode):
         self._output_file_param = ProjectFileParameter(
             node=self,
             name="output_file",
-            situation="save_node_output",
             default_filename="seedream_image.png",
         )
         self._output_file_param.add_parameter()
