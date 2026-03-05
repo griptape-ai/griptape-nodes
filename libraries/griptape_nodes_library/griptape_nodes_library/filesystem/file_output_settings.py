@@ -47,7 +47,6 @@ _IF_FILE_EXISTS_CHOICES = [
     {"name": "Increment Version", "option_value": SituationFilePolicy.CREATE_NEW},
     {"name": "Overwrite Existing", "option_value": SituationFilePolicy.OVERWRITE},
     {"name": "Abort / Error", "option_value": SituationFilePolicy.FAIL},
-    {"name": "Ask Me", "option_value": SituationFilePolicy.PROMPT},
 ]
 _IF_FILE_EXISTS_DISPLAY_NAMES = [choice["name"] for choice in _IF_FILE_EXISTS_CHOICES]
 _POLICY_VALUE_TO_DISPLAY_NAME: dict[str, str] = {
