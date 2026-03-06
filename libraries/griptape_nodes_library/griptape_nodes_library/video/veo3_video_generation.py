@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 from copy import deepcopy
+from enum import StrEnum
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -28,12 +29,27 @@ logger = logging.getLogger("griptape_nodes")
 
 __all__ = ["Veo3VideoGeneration"]
 
+
+class ModelName(StrEnum):
+    VEO_3_1 = "Veo 3.1"
+    VEO_3_1_FAST = "Veo 3.1 Fast"
+    VEO_3_0 = "Veo 3.0"
+    VEO_3_0_FAST = "Veo 3.0 Fast"
+
+
+class ModelId(StrEnum):
+    VEO_3_1_GENERATE_PREVIEW = "veo-3.1-generate-preview"
+    VEO_3_1_FAST_GENERATE_PREVIEW = "veo-3.1-fast-generate-preview"
+    VEO_3_0_GENERATE_001 = "veo-3.0-generate-001"
+    VEO_3_0_FAST_GENERATE_001 = "veo-3.0-fast-generate-001"
+
+
 # Model mapping from human-friendly names to API model IDs
 MODEL_MAPPING = {
-    "Veo 3.1": "veo-3.1-generate-preview",
-    "Veo 3.1 Fast": "veo-3.1-fast-generate-preview",
-    "Veo 3.0": "veo-3.0-generate-001",
-    "Veo 3.0 Fast": "veo-3.0-fast-generate-001",
+    ModelName.VEO_3_1.value: ModelId.VEO_3_1_GENERATE_PREVIEW,
+    ModelName.VEO_3_1_FAST.value: ModelId.VEO_3_1_FAST_GENERATE_PREVIEW,
+    ModelName.VEO_3_0.value: ModelId.VEO_3_0_GENERATE_001,
+    ModelName.VEO_3_0_FAST.value: ModelId.VEO_3_0_FAST_GENERATE_001,
 }
 
 
@@ -76,7 +92,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         self.add_parameter(
             ParameterString(
                 name="model_id",
-                default_value="Veo 3.1",
+                default_value=ModelName.VEO_3_1.value,
                 tooltip="Model id to call via proxy",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={
@@ -85,10 +101,10 @@ class Veo3VideoGeneration(GriptapeProxyNode):
                 traits={
                     Options(
                         choices=[
-                            "Veo 3.1",
-                            "Veo 3.1 Fast",
-                            "Veo 3.0",
-                            "Veo 3.0 Fast",
+                            ModelName.VEO_3_1.value,
+                            ModelName.VEO_3_1_FAST.value,
+                            ModelName.VEO_3_0.value,
+                            ModelName.VEO_3_0_FAST.value,
                         ]
                     )
                 },
@@ -276,13 +292,18 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         # Set initial parameter visibility based on default model
         self._initialize_parameter_visibility()
 
-    def _map_api_model_id(self, friendly_name: str) -> str:
+    def _map_api_model_id(self, friendly_name: str) -> ModelId | str:
         """Map friendly model name to API model ID."""
-        return MODEL_MAPPING.get(friendly_name, friendly_name)
+        mapped_model = MODEL_MAPPING.get(friendly_name, friendly_name)
+
+        try:
+            return ModelId(mapped_model)
+        except ValueError:
+            return mapped_model
 
     def _initialize_parameter_visibility(self) -> None:
         """Initialize parameter visibility based on default model selection."""
-        default_model = self.get_parameter_value("model_id") or "Veo 3.1"
+        default_model = self.get_parameter_value("model_id") or ModelName.VEO_3_1.value
         self._update_parameter_visibility_for_model(default_model)
 
     def after_value_set(self, parameter: Parameter, value: Any) -> None:
@@ -311,13 +332,16 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         api_model_id = self._map_api_model_id(model_id)
 
         # last_frame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
-        if api_model_id in ["veo-3.1-generate-preview", "veo-3.1-fast-generate-preview"]:
+        if api_model_id in {
+            ModelId.VEO_3_1_GENERATE_PREVIEW,
+            ModelId.VEO_3_1_FAST_GENERATE_PREVIEW,
+        }:
             self.show_parameter_by_name("last_frame")
         else:
             self.hide_parameter_by_name("last_frame")
 
         # reference_images and reference_type are only supported by veo-3.1-generate-preview
-        if api_model_id == "veo-3.1-generate-preview":
+        if api_model_id == ModelId.VEO_3_1_GENERATE_PREVIEW:
             self.show_parameter_by_name("reference_images")
             self.show_parameter_by_name("reference_type")
         else:
@@ -380,7 +404,7 @@ class Veo3VideoGeneration(GriptapeProxyNode):
 
         return {
             "prompt": self.get_parameter_value("prompt") or "",
-            "model_id": self.get_parameter_value("model_id") or "Veo 3.1",
+            "model_id": self.get_parameter_value("model_id") or ModelName.VEO_3_1.value,
             "negative_prompt": self.get_parameter_value("negative_prompt") or "",
             "image": self.get_parameter_value("start_frame"),
             "last_frame": self.get_parameter_value("last_frame"),
@@ -396,8 +420,9 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         }
 
     def _get_api_model_id(self) -> str:
-        model_id = self.get_parameter_value("model_id") or "Veo 3.1"
-        return self._map_api_model_id(model_id)
+        model_id = self.get_parameter_value("model_id") or ModelName.VEO_3_1.value
+        api_model_id = self._map_api_model_id(model_id)
+        return api_model_id.value if isinstance(api_model_id, ModelId) else api_model_id
 
     def _validate_model_parameters(self, params: dict[str, Any]) -> None:
         """Validate that parameters are supported by the selected model.
@@ -409,19 +434,26 @@ class Veo3VideoGeneration(GriptapeProxyNode):
         api_model_id = self._map_api_model_id(model_id)
 
         # lastFrame is only supported by veo-3.1-generate-preview and veo-3.1-fast-generate-preview
-        if params.get("last_frame") and api_model_id not in [
-            "veo-3.1-generate-preview",
-            "veo-3.1-fast-generate-preview",
-        ]:
-            msg = f"{self.name}: lastFrame parameter is only supported by Veo 3.1 and Veo 3.1 Fast models. Current model: {model_id}"
+        if params.get("last_frame") and api_model_id not in {
+            ModelId.VEO_3_1_GENERATE_PREVIEW,
+            ModelId.VEO_3_1_FAST_GENERATE_PREVIEW,
+        }:
+            msg = (
+                f"{self.name}: lastFrame parameter is only supported by "
+                f"{ModelName.VEO_3_1.value} and {ModelName.VEO_3_1_FAST.value} models. "
+                f"Current model: {model_id}"
+            )
             raise ValueError(msg)
 
         # referenceImages are only supported by veo-3.1-generate-preview
         reference_images = params.get("reference_images", [])
         has_reference_images = reference_images and len(reference_images) > 0
         if has_reference_images:
-            if api_model_id != "veo-3.1-generate-preview":
-                msg = f"{self.name}: referenceImages parameter is only supported by Veo 3.1 model. Current model: {model_id}"
+            if api_model_id != ModelId.VEO_3_1_GENERATE_PREVIEW:
+                msg = (
+                    f"{self.name}: referenceImages parameter is only supported by "
+                    f"{ModelName.VEO_3_1.value} model. Current model: {model_id}"
+                )
                 raise ValueError(msg)
 
             # When referenceImages are provided, duration must be 8 seconds
