@@ -57,7 +57,7 @@ class TestPushWorkflow:
             finally:
                 config_manager.workspace_path = original
 
-        expected = str(Path(other_dir).resolve() / "my_flow")
+        expected = (Path(other_dir).resolve() / "my_flow").as_posix()
         assert result == expected
         assert context_manager.get_current_workflow_name() == expected
 
