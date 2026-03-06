@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import base64
-from typing import NamedTuple, cast
+from pathlib import Path
+from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
 from griptape_nodes.retained_mode.events.os_events import (
@@ -223,7 +224,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Write bytes to the file.
 
         Args:
@@ -254,7 +255,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Async version of write_bytes().
 
         Args:
@@ -286,7 +287,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Write text to the file.
 
         Args:
@@ -320,7 +321,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Async version of write_text().
 
         Args:
@@ -535,7 +536,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Perform the sync file write.
 
         Args:
@@ -577,7 +578,7 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return cast("WriteFileResultSuccess", result).final_file_path
+        return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
     async def _awrite_content(
         self,
@@ -587,7 +588,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> str:
+    ) -> Path:
         """Async version of _write_content.
 
         Args:
@@ -629,7 +630,7 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return cast("WriteFileResultSuccess", result).final_file_path
+        return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
 
 class FileDestination:
@@ -677,7 +678,7 @@ class FileDestination:
         """
         return self._file.resolve_path()
 
-    def write_bytes(self, content: bytes) -> str:
+    def write_bytes(self, content: bytes) -> Path:
         """Write bytes to the file using the configured write policy.
 
         Args:
@@ -696,7 +697,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    async def awrite_bytes(self, content: bytes) -> str:
+    async def awrite_bytes(self, content: bytes) -> Path:
         """Async version of write_bytes().
 
         Args:
@@ -715,7 +716,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    def write_text(self, content: str, encoding: str = "utf-8") -> str:
+    def write_text(self, content: str, encoding: str = "utf-8") -> Path:
         """Write text to the file using the configured write policy.
 
         Args:
@@ -736,7 +737,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> str:
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> Path:
         """Async version of write_text().
 
         Args:
@@ -756,6 +757,14 @@ class FileDestination:
             append=self._append,
             create_parents=self._create_parents,
         )
+
+
+@runtime_checkable
+class FileDestinationProvider(Protocol):
+    """Protocol for nodes that provide a FileDestination without serializing it over the wire."""
+
+    @property
+    def file_destination(self) -> FileDestination | None: ...
 
 
 def _to_bytes(fc: FileContent) -> bytes:

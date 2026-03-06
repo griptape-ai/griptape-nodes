@@ -42,7 +42,7 @@ class TestFilenameParts:
         assert parts.extension == "gz"
 
     def test_filename_with_no_extension(self) -> None:
-        """Filename without an extension returns empty string for extension."""
+        """Filename without an extension has an empty extension."""
         parts = FilenameParts.from_filename("Makefile")
         assert parts.stem == "Makefile"
         assert parts.extension == ""
