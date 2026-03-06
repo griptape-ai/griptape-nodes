@@ -1283,7 +1283,7 @@ class OSManager:
             directory_path_str: str | None
             if request.directory_path is not None:
                 try:
-                    directory_path_str = File(request.directory_path).resolve_path()
+                    directory_path_str = File(request.directory_path).resolve()
                 except FileLoadError as e:
                     return ListDirectoryResultFailure(
                         failure_reason=e.failure_reason,

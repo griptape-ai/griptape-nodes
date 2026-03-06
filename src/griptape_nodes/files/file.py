@@ -197,7 +197,7 @@ class File:
         else:
             self._file_path = file_path
 
-    def resolve_path(self) -> str:
+    def resolve(self) -> str:
         """Resolve and return the absolute path string for this file.
 
         Useful when a caller needs the path for writing (not reading). Macro
@@ -216,6 +216,25 @@ class File:
                 result_details="Cannot resolve path: file_path is None",
             )
         return resolved
+
+    @property
+    def location(self) -> str:
+        """Return the most portable string representation of this file's location.
+
+        Returns the macro template (e.g. ``"{outputs}/image.png"``) when the file
+        holds a macro path, otherwise the plain path string.  No I/O is performed.
+        """
+        if isinstance(self._file_path, MacroPath):
+            return self._file_path.parsed_macro.template
+        return self._file_path
+
+    @property
+    def name(self) -> str:
+        """Return the filename component of this file's location.
+
+        For example, a File holding ``"{outputs}/image.png"`` returns ``"image.png"``.
+        """
+        return Path(self.location).name
 
     def write_bytes(
         self,
@@ -667,7 +686,7 @@ class FileDestination:
         self._append = append
         self._create_parents = create_parents
 
-    def resolve_path(self) -> str:
+    def resolve(self) -> str:
         """Resolve and return the absolute path string for this destination.
 
         Returns:
@@ -676,47 +695,49 @@ class FileDestination:
         Raises:
             FileLoadError: If macro resolution fails (e.g. no project loaded).
         """
-        return self._file.resolve_path()
+        return self._file.resolve()
 
-    def write_bytes(self, content: bytes) -> Path:
+    def write_bytes(self, content: bytes) -> File:
         """Write bytes to the file using the configured write policy.
 
         Args:
             content: The bytes to write.
 
         Returns:
-            The actual path where the file was written.
+            A File referencing the path where the content was written.
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return self._file.write_bytes(
+        path = self._file.write_bytes(
             content,
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
         )
+        return File(str(path))
 
-    async def awrite_bytes(self, content: bytes) -> Path:
+    async def awrite_bytes(self, content: bytes) -> File:
         """Async version of write_bytes().
 
         Args:
             content: The bytes to write.
 
         Returns:
-            The actual path where the file was written.
+            A File referencing the path where the content was written.
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return await self._file.awrite_bytes(
+        path = await self._file.awrite_bytes(
             content,
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
         )
+        return File(str(path))
 
-    def write_text(self, content: str, encoding: str = "utf-8") -> Path:
+    def write_text(self, content: str, encoding: str = "utf-8") -> File:
         """Write text to the file using the configured write policy.
 
         Args:
@@ -724,20 +745,21 @@ class FileDestination:
             encoding: Text encoding to use when writing.
 
         Returns:
-            The actual path where the file was written.
+            A File referencing the path where the content was written.
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return self._file.write_text(
+        path = self._file.write_text(
             content,
             encoding,
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
         )
+        return File(str(path))
 
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> Path:
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> File:
         """Async version of write_text().
 
         Args:
@@ -745,18 +767,19 @@ class FileDestination:
             encoding: Text encoding to use when writing.
 
         Returns:
-            The actual path where the file was written.
+            A File referencing the path where the content was written.
 
         Raises:
             FileWriteError: If the file cannot be written.
         """
-        return await self._file.awrite_text(
+        path = await self._file.awrite_text(
             content,
             encoding,
             existing_file_policy=self._existing_file_policy,
             append=self._append,
             create_parents=self._create_parents,
         )
+        return File(str(path))
 
 
 @runtime_checkable
