@@ -9,7 +9,7 @@ from typing import Any
 from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.param_components.artifact_url.public_artifact_url_parameter import (
     PublicArtifactUrlParameter,
 )
@@ -87,18 +87,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             )
         )
 
-        # Noise scale selection
-        self.add_parameter(
-            ParameterFloat(
-                name="noise_scale",
-                default_value=0.1,
-                tooltip="Noise scale",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.001},
-            )
-        )
-
-        # Resolution selection
+        # Resolution selection (when upscale_mode is "target")
         self.add_parameter(
             ParameterString(
                 name="target_resolution",
@@ -110,18 +99,7 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             )
         )
 
-        # Output format selection
-        self.add_parameter(
-            ParameterString(
-                name="output_format",
-                default_value="jpg",
-                tooltip="Output format",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-                traits={Options(choices=["png", "jpg", "webp"])},
-            )
-        )
-
-        # Upscale factor
+        # Upscale factor (when upscale_mode is "factor")
         self.add_parameter(
             ParameterFloat(
                 name="upscale_factor",
@@ -132,12 +110,26 @@ class SeedVRImageUpscale(GriptapeProxyNode):
             )
         )
 
-        # Initialize SeedParameter component
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
-        # Polling timeout (0 = no timeout)
-        self.add_parameter(
+            ParameterFloat(
+                name="noise_scale",
+                default_value=0.1,
+                tooltip="Noise scale",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                ui_options={"slider": {"min_val": 0.0, "max_val": 1.0}, "step": 0.001},
+            )
+
+            ParameterString(
+                name="output_format",
+                default_value="jpg",
+                tooltip="Output format",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+                traits={Options(choices=["png", "jpg", "webp"])},
+            )
+
             ParameterInt(
                 name="timeout",
                 default_value=600,
@@ -146,7 +138,8 @@ class SeedVRImageUpscale(GriptapeProxyNode):
                 min_val=0,
                 max_val=86400,
             )
-        )
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(

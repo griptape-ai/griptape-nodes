@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 
 from griptape.artifacts import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import ParameterMode
+from griptape_nodes.exe_types.core_types import ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
 from griptape_nodes.exe_types.param_types.parameter_int import ParameterInt
@@ -106,7 +106,7 @@ class GrokImageGeneration(GriptapeProxyNode):
             )
         )
 
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
             ParameterInt(
                 name="n",
                 default_value=1,
@@ -116,9 +116,7 @@ class GrokImageGeneration(GriptapeProxyNode):
                 max_val=10,
                 slider=True,
             )
-        )
 
-        self.add_parameter(
             ParameterString(
                 name="quality",
                 default_value="medium",
@@ -126,9 +124,7 @@ class GrokImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=self.QUALITY_OPTIONS)},
             )
-        )
 
-        self.add_parameter(
             ParameterString(
                 name="resolution",
                 default_value="1k",
@@ -136,7 +132,8 @@ class GrokImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 traits={Options(choices=self.RESOLUTION_OPTIONS)},
             )
-        )
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(

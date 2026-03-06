@@ -12,7 +12,7 @@ from typing import Any
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 from PIL import Image
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
 from griptape_nodes.exe_types.param_types.parameter_image import ParameterImage
@@ -207,18 +207,14 @@ class SeedreamImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Seed parameter
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
             ParameterInt(
                 name="seed",
                 default_value=-1,
                 tooltip="Random seed for reproducible results (-1 for random)",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Max images parameter for models that support sequential generation (Seedream 5.0 Lite, 4.5, and 4.0)
-        self.add_parameter(
             ParameterInt(
                 name="max_images",
                 tooltip="Maximum number of images to generate (1-15, Seedream 5.0 Lite, 4.5, and 4.0 only)",
@@ -229,10 +225,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 hide=False,
             )
-        )
 
-        # Guidance scale for Seedream 3.0 T2I
-        self.add_parameter(
             ParameterFloat(
                 name="guidance_scale",
                 default_value=2.5,
@@ -240,7 +233,8 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 ui_options={"hide": True},
             )
-        )
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(

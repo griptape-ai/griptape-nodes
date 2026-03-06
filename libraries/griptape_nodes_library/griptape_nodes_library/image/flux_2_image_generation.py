@@ -8,7 +8,7 @@ from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -167,12 +167,10 @@ class Flux2ImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Seed parameter (using SeedParameter component)
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
-        # Output format parameter
-        self.add_parameter(
             ParameterString(
                 name="output_format",
                 default_value="jpeg",
@@ -180,10 +178,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
                 allow_output=False,
                 traits={Options(choices=OUTPUT_FORMAT_OPTIONS)},
             )
-        )
 
-        # Safety tolerance parameter
-        self.add_parameter(
             ParameterString(
                 name="safety_tolerance",
                 default_value=SAFETY_TOLERANCE_OPTIONS[0],
@@ -191,9 +186,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
                 allow_output=False,
                 traits={Options(choices=SAFETY_TOLERANCE_OPTIONS)},
             )
-        )
-        # Steps parameter
-        self.add_parameter(
+
             ParameterInt(
                 name="steps",
                 default_value=MAX_STEPS_FLEX,
@@ -204,10 +197,7 @@ class Flux2ImageGeneration(GriptapeProxyNode):
                 max_val=MAX_STEPS_FLEX,
                 hide=True,
             )
-        )
 
-        # Guidance parameter
-        self.add_parameter(
             ParameterFloat(
                 name="guidance",
                 default_value=DEFAULT_GUIDANCE_FLEX,
@@ -218,7 +208,8 @@ class Flux2ImageGeneration(GriptapeProxyNode):
                 max_val=MAX_GUIDANCE_FLEX,
                 hide=True,
             )
-        )
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
