@@ -10,7 +10,7 @@ from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
@@ -138,19 +138,18 @@ class QwenImageEdit(GriptapeProxyNode):
             )
         )
 
-        # Watermark parameter
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
+
             ParameterBool(
                 name="watermark",
                 default_value=False,
                 tooltip="Add 'Qwen-Image' watermark in bottom-right corner",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Initialize SeedParameter component (at the bottom of input parameters)
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(

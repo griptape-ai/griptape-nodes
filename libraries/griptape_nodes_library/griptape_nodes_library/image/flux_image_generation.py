@@ -9,7 +9,7 @@ from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterMode
 from griptape_nodes.exe_types.param_components.api_key_provider_parameter import ApiKeyProviderParameter
 from griptape_nodes.exe_types.param_components.seed_parameter import SeedParameter
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
@@ -144,22 +144,17 @@ class FluxImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Seed parameter (using SeedParameter component)
-        self._seed_parameter = SeedParameter(self)
-        self._seed_parameter.add_input_parameters()
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
+            self._seed_parameter = SeedParameter(self)
+            self._seed_parameter.add_input_parameters(inside_param_group=True)
 
-        # Prompt upsampling parameter
-        self.add_parameter(
             ParameterBool(
                 name="prompt_upsampling",
                 default_value=False,
                 tooltip="If true, performs upsampling on the prompt",
                 allow_output=False,
             )
-        )
 
-        # Output format parameter
-        self.add_parameter(
             ParameterString(
                 name="output_format",
                 default_value="jpeg",
@@ -167,10 +162,7 @@ class FluxImageGeneration(GriptapeProxyNode):
                 allow_output=False,
                 traits={Options(choices=OUTPUT_FORMAT_OPTIONS)},
             )
-        )
 
-        # Safety tolerance parameter
-        self.add_parameter(
             ParameterString(
                 name="safety_tolerance",
                 default_value=SAFETY_TOLERANCE_OPTIONS[0],
@@ -178,7 +170,8 @@ class FluxImageGeneration(GriptapeProxyNode):
                 allow_output=False,
                 traits={Options(choices=SAFETY_TOLERANCE_OPTIONS)},
             )
-        )
+
+        self.add_node_element(generation_settings_group)
 
         # OUTPUTS
         self.add_parameter(
