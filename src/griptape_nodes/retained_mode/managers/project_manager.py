@@ -1139,10 +1139,17 @@ class ProjectManager:
         template = ProjectTemplate.merge(DEFAULT_PROJECT_TEMPLATE, overlay, validation)
 
         if not validation.is_usable():
+            problem_details = "; ".join(
+                f"{p.field_path} (line {p.line_number}): {p.message}"
+                if p.line_number is not None
+                else f"{p.field_path}: {p.message}"
+                for p in validation.problems
+            )
             logger.error(
-                "Attempted to load workspace project from '%s'. Failed because template is not usable (status: %s)",
+                "Attempted to load workspace project from '%s'. Failed because template is not usable (status: %s). Problems: %s",
                 workspace_project_path,
                 validation.status,
+                problem_details,
             )
             return
 
