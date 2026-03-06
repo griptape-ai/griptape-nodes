@@ -610,7 +610,7 @@ class TestFileWrite:
         with patch(HANDLE_REQUEST_PATH, return_value=success_result):
             path = File("workspace/output.png").write_bytes(b"\x89PNG")
 
-        assert path == "/workspace/output.png"
+        assert path == Path("/workspace/output.png")
 
     def test_write_bytes_failure_raises_file_write_error(self) -> None:
         failure_result = WriteFileResultFailure(
@@ -664,7 +664,7 @@ class TestFileWrite:
         with patch(HANDLE_REQUEST_PATH, return_value=success_result):
             path = File("workspace/output.txt").write_text("hello")
 
-        assert path == "/workspace/output.txt"
+        assert path == Path("/workspace/output.txt")
 
     def test_write_text_passes_encoding_to_request(self) -> None:
         success_result = WriteFileResultSuccess(
@@ -702,7 +702,7 @@ class TestFileWriteAsync:
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
             path = await File("workspace/output.png").awrite_bytes(b"\x89PNG")
 
-        assert path == "/workspace/output.png"
+        assert path == Path("/workspace/output.png")
 
     @pytest.mark.asyncio
     async def test_awrite_bytes_failure_raises_file_write_error(self) -> None:
@@ -739,7 +739,7 @@ class TestFileWriteAsync:
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result):
             path = await File("workspace/output.txt").awrite_text("hello")
 
-        assert path == "/workspace/output.txt"
+        assert path == Path("/workspace/output.txt")
 
     @pytest.mark.asyncio
     async def test_awrite_text_passes_encoding_to_request(self) -> None:
@@ -796,7 +796,7 @@ class TestFileDestinationWrite:
         with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
             path = dest.write_bytes(b"\x89PNG")
 
-        assert path == "/workspace/output_1.png"
+        assert path == Path("/workspace/output_1.png")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
 
@@ -835,7 +835,7 @@ class TestFileDestinationWrite:
         with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
             path = dest.write_text("hello")
 
-        assert path == "/workspace/output.txt"
+        assert path == Path("/workspace/output.txt")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.FAIL
 
@@ -872,7 +872,7 @@ class TestFileDestinationAsync:
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
             path = await dest.awrite_bytes(b"\x89PNG")
 
-        assert path == "/workspace/output_1.png"
+        assert path == Path("/workspace/output_1.png")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
 
@@ -897,7 +897,7 @@ class TestFileDestinationAsync:
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
             path = await dest.awrite_text("hello")
 
-        assert path == "/workspace/output.txt"
+        assert path == Path("/workspace/output.txt")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.FAIL
 

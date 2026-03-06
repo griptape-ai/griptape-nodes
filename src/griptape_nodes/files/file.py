@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 from typing import NamedTuple, Protocol, cast, runtime_checkable
 
 from griptape_nodes.common.macro_parser import MacroSyntaxError, ParsedMacro
@@ -23,21 +24,6 @@ from griptape_nodes.retained_mode.events.project_events import (
     PathResolutionFailureReason,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
-
-
-class WrittenPath(str):
-    """A path string returned from a file write operation with a convenience `.name` property."""
-
-    __slots__ = ()
-
-    @property
-    def name(self) -> str:
-        """Return the final component of the path (the filename)."""
-        for sep in ("/", "\\"):
-            _head, found, tail = self.rpartition(sep)
-            if found:
-                return tail
-        return str(self)
 
 
 class FileLoadError(Exception):
@@ -238,7 +224,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Write bytes to the file.
 
         Args:
@@ -269,7 +255,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Async version of write_bytes().
 
         Args:
@@ -301,7 +287,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Write text to the file.
 
         Args:
@@ -335,7 +321,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Async version of write_text().
 
         Args:
@@ -550,7 +536,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Perform the sync file write.
 
         Args:
@@ -592,7 +578,7 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return WrittenPath(cast("WriteFileResultSuccess", result).final_file_path)
+        return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
     async def _awrite_content(
         self,
@@ -602,7 +588,7 @@ class File:
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         append: bool = False,
         create_parents: bool = True,
-    ) -> WrittenPath:
+    ) -> Path:
         """Async version of _write_content.
 
         Args:
@@ -644,7 +630,7 @@ class File:
                 missing_variables=result.missing_variables,
             )
 
-        return WrittenPath(cast("WriteFileResultSuccess", result).final_file_path)
+        return Path(cast("WriteFileResultSuccess", result).final_file_path)
 
 
 class FileDestination:
@@ -692,7 +678,7 @@ class FileDestination:
         """
         return self._file.resolve_path()
 
-    def write_bytes(self, content: bytes) -> WrittenPath:
+    def write_bytes(self, content: bytes) -> Path:
         """Write bytes to the file using the configured write policy.
 
         Args:
@@ -711,7 +697,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    async def awrite_bytes(self, content: bytes) -> WrittenPath:
+    async def awrite_bytes(self, content: bytes) -> Path:
         """Async version of write_bytes().
 
         Args:
@@ -730,7 +716,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    def write_text(self, content: str, encoding: str = "utf-8") -> WrittenPath:
+    def write_text(self, content: str, encoding: str = "utf-8") -> Path:
         """Write text to the file using the configured write policy.
 
         Args:
@@ -751,7 +737,7 @@ class FileDestination:
             create_parents=self._create_parents,
         )
 
-    async def awrite_text(self, content: str, encoding: str = "utf-8") -> WrittenPath:
+    async def awrite_text(self, content: str, encoding: str = "utf-8") -> Path:
         """Async version of write_text().
 
         Args:

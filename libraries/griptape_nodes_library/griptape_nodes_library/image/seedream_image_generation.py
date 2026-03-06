@@ -751,7 +751,7 @@ class SeedreamImageGeneration(GriptapeProxyNode):
                 return ImageUrlArtifact(value=image_url)
             self._log(f"Saved image {index} to {actual_path}")
 
-            return ImageUrlArtifact(value=actual_path, name=actual_path.name)
+            return ImageUrlArtifact(value=str(actual_path), name=actual_path.name)
 
         except Exception as e:
             self._log(f"Failed to save image {index} from URL: {e}")
