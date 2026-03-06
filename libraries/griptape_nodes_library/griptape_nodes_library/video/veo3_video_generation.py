@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 from copy import deepcopy
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from griptape.artifacts import ImageArtifact, ImageUrlArtifact
@@ -30,14 +30,14 @@ logger = logging.getLogger("griptape_nodes")
 __all__ = ["Veo3VideoGeneration"]
 
 
-class ModelName(str, Enum):
+class ModelName(StrEnum):
     VEO_3_1 = "Veo 3.1"
     VEO_3_1_FAST = "Veo 3.1 Fast"
     VEO_3_0 = "Veo 3.0"
     VEO_3_0_FAST = "Veo 3.0 Fast"
 
 
-class ModelId(str, Enum):
+class ModelId(StrEnum):
     VEO_3_1_GENERATE_PREVIEW = "veo-3.1-generate-preview"
     VEO_3_1_FAST_GENERATE_PREVIEW = "veo-3.1-fast-generate-preview"
     VEO_3_0_GENERATE_001 = "veo-3.0-generate-001"
