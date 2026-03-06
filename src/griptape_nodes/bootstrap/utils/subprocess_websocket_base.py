@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from griptape_nodes.api_client import Client
@@ -18,6 +19,15 @@ if TYPE_CHECKING:
     from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WebSocketMessage:
+    """Message to send via WebSocket."""
+
+    event_type: str
+    payload: str
+    topic: str | None = None
 
 
 class SubprocessWebSocketBaseMixin:

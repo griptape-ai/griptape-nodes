@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
-from griptape_nodes.retained_mode.managers.static_files_manager import StaticFilesManager
+from griptape_nodes.retained_mode.managers.static_files_manager import ResolvedStaticFilePath, StaticFilesManager
 
 # pyright: reportAttributeAccessIssue=false
 
@@ -65,183 +65,279 @@ class TestStaticFilesManagerSaveStaticFile:
         """Standard mock response for create_signed_download_url."""
         return "http://test.com/download/test_file.jpg"
 
-    def test_save_static_file_default_policy_is_overwrite(
+    def test_save_static_file_raises_when_situation_missing(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """Test line 202: Verify default behavior unchanged (backward compatibility)."""
-        # Mock save_file to return a file path
-        expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
-        mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
-
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITHOUT policy parameter (tests line 202 default)
-            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
-
-            # Verify the default policy (OVERWRITE) was passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
-            assert call_args[0][2] == ExistingFilePolicy.OVERWRITE  # Third positional argument
-
-            # Verify successful return
-            assert result == expected_file_path
+        """Raises RuntimeError when the save_static_file situation is not in the project template."""
+        with (
+            patch.object(mock_static_files_manager, "_resolve_static_file_path", return_value=None),
+            pytest.raises(RuntimeError, match="save_static_file"),
+        ):
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
 
     def test_save_static_file_explicit_overwrite_policy(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """Test line 230: Explicitly pass OVERWRITE policy."""
-        # Mock save_file to return a file path
+        """Explicitly passed OVERWRITE policy overrides situation policy."""
         expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITH explicit OVERWRITE policy (tests line 230)
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.CREATE_NEW),
+        ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
             )
 
-            # Verify the OVERWRITE policy was passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
-            assert call_args[0][2] == ExistingFilePolicy.OVERWRITE  # Third positional argument
-
-            # Verify successful return
-            assert result == expected_file_path
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.OVERWRITE
+        assert result == expected_file_path
 
     def test_save_static_file_fail_policy_success(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """Test line 230: Pass FAIL policy when file doesn't exist (success case)."""
-        # Mock save_file to return a file path
+        """Explicitly passed FAIL policy succeeds when file doesn't exist."""
         expected_file_path = "/mock/workspace/staticfiles/test_image.jpg"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITH FAIL policy (tests line 230)
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+        ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
             )
 
-            # Verify the FAIL policy was passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
-            assert call_args[0][2] == ExistingFilePolicy.FAIL  # Third positional argument
-
-            # Verify successful return (file didn't exist so FAIL policy succeeded)
-            assert result == expected_file_path
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.FAIL
+        assert result == expected_file_path
 
     def test_save_static_file_fail_policy_raises_file_exists_error(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
-        """Test line 230: Pass FAIL policy when file exists (failure case)."""
-        # Mock storage driver to raise FileExistsError (simulating file exists)
+        """Explicitly passed FAIL policy raises FileExistsError when file exists."""
         mock_static_files_manager.storage_driver.save_file.side_effect = FileExistsError(
             f"File {TEST_FILE_NAME} already exists"
         )
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITH FAIL policy should raise FileExistsError (line 232)
-            with pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
-                )
+        with (
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(FileExistsError, match=f"File {TEST_FILE_NAME} already exists"),
+        ):
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
+            )
 
-            # Verify the FAIL policy was passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
-            assert call_args[0][2] == ExistingFilePolicy.FAIL  # Third positional argument
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.FAIL
 
     def test_save_static_file_create_new_policy(self, mock_static_files_manager: StaticFilesManager) -> None:
-        """Test line 230: Pass CREATE_NEW policy."""
-        # Mock save_file to return alternative filename (storage driver handles unique filename generation)
+        """Explicitly passed CREATE_NEW policy is forwarded to the storage driver."""
         expected_file_path = f"/mock/workspace/staticfiles/{TEST_ALTERNATIVE_NAME}"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path(f"/mock/workspace/staticfiles/{TEST_FILE_NAME}")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file WITH CREATE_NEW policy (tests line 230)
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+        ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
             )
 
-            # Verify the CREATE_NEW policy was passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            assert call_args[0][1] == TEST_FILE_DATA  # Second positional argument
-            assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW  # Third positional argument
-
-            # Verify successful return with potentially modified filename
-            assert TEST_ALTERNATIVE_NAME in result
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+        assert TEST_ALTERNATIVE_NAME in result
 
     def test_save_static_file_storage_driver_exception_propagation(
         self, mock_static_files_manager: StaticFilesManager
     ) -> None:
-        """Test that storage driver exceptions are propagated as RuntimeError (line 236-237)."""
-        # Mock storage driver to raise a generic exception
+        """Storage driver exceptions are wrapped in RuntimeError."""
         mock_static_files_manager.storage_driver.save_file.side_effect = RuntimeError(
             "Storage driver connection failed"
         )
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file should propagate exception as RuntimeError (line 237)
-            with pytest.raises(RuntimeError, match="Failed to save static file"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-                )
+        with (
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(RuntimeError, match="Failed to save static file"),
+        ):
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
+            )
 
-            # Verify storage driver was called before exception
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
     def test_save_static_file_http_upload_failure(self, mock_static_files_manager: StaticFilesManager) -> None:
-        """Test generic exception handling (non-FileExistsError exceptions wrapped in RuntimeError)."""
-        # Mock storage driver to raise a generic exception (simulating upload failure)
+        """Non-FileExistsError exceptions from the storage driver are wrapped in RuntimeError."""
         mock_static_files_manager.storage_driver.save_file.side_effect = ValueError("Upload failed")
+        situation_path = Path("/mock/workspace/staticfiles/test_image.jpg")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file should wrap generic exception in RuntimeError (line 237)
-            with pytest.raises(RuntimeError, match="Failed to save static file"):
-                mock_static_files_manager.save_static_file(
-                    TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
-                )
+        with (
+            patch.object(
+                mock_static_files_manager,
+                "_resolve_static_file_path",
+                return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+            ),
+            pytest.raises(RuntimeError, match="Failed to save static file"),
+        ):
+            mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.OVERWRITE, use_direct_save=True
+            )
 
-            # Verify storage driver was called
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
 
     def test_save_static_file_complete_success_flow(
         self,
         mock_static_files_manager: StaticFilesManager,
     ) -> None:
-        """Test end-to-end success path with new policy parameter."""
-        # Mock save_file to return a file path with alternative filename
+        """End-to-end success path: situation resolution, explicit policy, direct save."""
         expected_file_path = f"/mock/workspace/staticfiles/{TEST_ALTERNATIVE_NAME}"
         mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+        situation_path = Path(f"/mock/workspace/staticfiles/{TEST_FILE_NAME}")
 
-        with patch.object(mock_static_files_manager, "_get_static_files_directory", return_value="staticfiles"):
-            # Call save_static_file with CREATE_NEW policy for full flow test
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=ExistingFilePolicy.OVERWRITE),
+        ):
             result = mock_static_files_manager.save_static_file(
                 TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.CREATE_NEW, use_direct_save=True
             )
 
-            # Verify complete workflow
-            # 1. Policy passed to storage driver (line 230)
-            mock_static_files_manager.storage_driver.save_file.assert_called_once()
-            call_args = mock_static_files_manager.storage_driver.save_file.call_args
-            # Verify first positional argument is the file path
-            assert "staticfiles" in str(call_args[0][0])
-            assert TEST_FILE_NAME in str(call_args[0][0])
-            # Verify second positional argument is the file data
-            assert call_args[0][1] == TEST_FILE_DATA
-            # Verify third positional argument is the policy
-            assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][0] == situation_path
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+        assert result == expected_file_path
+        assert TEST_ALTERNATIVE_NAME in result
 
-            # 2. Correct file path returned
-            assert result == expected_file_path
-            assert TEST_ALTERNATIVE_NAME in result
+    def test_save_static_file_situation_path_used_when_resolved(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """When situation resolution succeeds, its path and policy are used."""
+        expected_file_path = "/workflow/dir/staticfiles/test_image.jpg"
+        mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+
+        situation_path = Path("/workflow/dir/staticfiles/test_image.jpg")
+        situation_policy = ExistingFilePolicy.OVERWRITE
+
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
+        ):
+            result = mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
+
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][0] == situation_path
+        assert call_args[0][1] == TEST_FILE_DATA
+        assert call_args[0][2] == ExistingFilePolicy.OVERWRITE
+        assert result == expected_file_path
+
+    def test_save_static_file_explicit_policy_overrides_situation_policy(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """An explicitly passed existing_file_policy overrides the situation policy."""
+        expected_file_path = "/workflow/dir/staticfiles/test_image.jpg"
+        mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+
+        situation_path = Path("/workflow/dir/staticfiles/test_image.jpg")
+        situation_policy = ExistingFilePolicy.OVERWRITE
+
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
+        ):
+            result = mock_static_files_manager.save_static_file(
+                TEST_FILE_DATA, TEST_FILE_NAME, ExistingFilePolicy.FAIL, use_direct_save=True
+            )
+
+        mock_static_files_manager.storage_driver.save_file.assert_called_once()
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][2] == ExistingFilePolicy.FAIL
+        assert result == expected_file_path
+
+    def test_save_static_file_none_policy_uses_situation_policy(
+        self, mock_static_files_manager: StaticFilesManager
+    ) -> None:
+        """When existing_file_policy is None, the situation policy is used."""
+        expected_file_path = "/workflow/dir/staticfiles/test_image.jpg"
+        mock_static_files_manager.storage_driver.save_file.return_value = expected_file_path
+
+        situation_path = Path("/workflow/dir/staticfiles/test_image.jpg")
+        situation_policy = ExistingFilePolicy.CREATE_NEW
+
+        with patch.object(
+            mock_static_files_manager,
+            "_resolve_static_file_path",
+            return_value=ResolvedStaticFilePath(path=situation_path, policy=situation_policy),
+        ):
+            mock_static_files_manager.save_static_file(TEST_FILE_DATA, TEST_FILE_NAME, use_direct_save=True)
+
+        call_args = mock_static_files_manager.storage_driver.save_file.call_args
+        assert call_args[0][2] == ExistingFilePolicy.CREATE_NEW
+
+
+class TestStaticFilesManagerMapSituationPolicy:
+    """Test StaticFilesManager._map_situation_policy() static method."""
+
+    def test_map_overwrite(self) -> None:
+        """SituationFilePolicy.OVERWRITE maps to ExistingFilePolicy.OVERWRITE."""
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        result = StaticFilesManager._map_situation_policy(SituationFilePolicy.OVERWRITE)
+        assert result == ExistingFilePolicy.OVERWRITE
+
+    def test_map_fail(self) -> None:
+        """SituationFilePolicy.FAIL maps to ExistingFilePolicy.FAIL."""
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        result = StaticFilesManager._map_situation_policy(SituationFilePolicy.FAIL)
+        assert result == ExistingFilePolicy.FAIL
+
+    def test_map_create_new(self) -> None:
+        """SituationFilePolicy.CREATE_NEW maps to ExistingFilePolicy.CREATE_NEW."""
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        result = StaticFilesManager._map_situation_policy(SituationFilePolicy.CREATE_NEW)
+        assert result == ExistingFilePolicy.CREATE_NEW
+
+    def test_map_prompt(self) -> None:
+        """SituationFilePolicy.PROMPT maps to ExistingFilePolicy.CREATE_NEW."""
+        from griptape_nodes.common.project_templates.situation import SituationFilePolicy
+
+        result = StaticFilesManager._map_situation_policy(SituationFilePolicy.PROMPT)
+        assert result == ExistingFilePolicy.CREATE_NEW
 
 
 class TestStaticFilesManagerCreateDownloadUrlFromPath:
@@ -501,3 +597,180 @@ class TestStaticFilesManagerCreateDownloadUrlFromPath:
 
         assert isinstance(result, CreateStaticFileDownloadUrlResultFailure)
         assert "invalid macro syntax" in result.error
+
+
+class TestStaticFilesManagerResolveStaticFilePath:
+    """Test StaticFilesManager._resolve_static_file_path() method."""
+
+    @pytest.fixture
+    def mock_static_files_manager(self) -> StaticFilesManager:
+        """Create a StaticFilesManager with mocked dependencies."""
+        mock_config = Mock()
+        mock_config.get_config_value.return_value = "local"
+        mock_config.workspace_path = Path("/mock/workspace")
+        with patch("griptape_nodes.retained_mode.managers.static_files_manager.LocalStorageDriver"):
+            manager = StaticFilesManager(config_manager=mock_config, secrets_manager=Mock(), event_manager=None)
+        return manager
+
+    def test_resolve_returns_path_and_policy_on_success(self, mock_static_files_manager: StaticFilesManager) -> None:
+        """Returns ResolvedStaticFilePath with the resolved absolute path and mapped policy."""
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultSuccess,
+            GetSituationResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+        workspace_dir = Path("/workflow")
+        absolute_path = workspace_dir / "staticfiles/output.png"
+        expected_relative_path = Path("staticfiles/output.png")
+
+        def handle_request(request: object) -> object:
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetSituationRequest,
+            )
+
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultSuccess(
+                    resolved_path=absolute_path,
+                    absolute_path=absolute_path,
+                    result_details="ok",
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.return_value = str(workspace_dir)
+
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
+            patch.object(GriptapeNodes, "ConfigManager", return_value=mock_config_manager),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is not None
+        assert result.path == expected_relative_path
+        assert result.policy == ExistingFilePolicy.OVERWRITE
+
+    def test_resolve_returns_none_and_warns_when_situation_not_found(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when the save_static_file situation is missing."""
+        import logging
+
+        from griptape_nodes.retained_mode.events.project_events import GetSituationResultFailure
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        with (
+            patch.object(
+                GriptapeNodes,
+                "handle_request",
+                return_value=GetSituationResultFailure(result_details="situation not found"),
+            ),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text
+        assert "StaticFilesManager.save_static_file" in caplog.text
+
+    def test_resolve_returns_none_and_warns_when_macro_parsing_fails(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when the situation macro cannot be parsed."""
+        import logging
+
+        from griptape_nodes.common.macro_parser import MacroSyntaxError
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import GetSituationResultSuccess
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="valid/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+
+        with (
+            patch.object(
+                GriptapeNodes,
+                "handle_request",
+                return_value=GetSituationResultSuccess(situation=situation, result_details="ok"),
+            ),
+            patch(
+                "griptape_nodes.retained_mode.managers.static_files_manager.ParsedMacro",
+                side_effect=MacroSyntaxError("bad macro"),
+            ),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text
+
+    def test_resolve_returns_none_and_warns_when_path_resolution_fails(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Returns None and logs a warning when macro path resolution fails."""
+        import logging
+
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultFailure,
+            GetSituationResultSuccess,
+            PathResolutionFailureReason,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+
+        def handle_request(request: object) -> object:
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetSituationRequest,
+            )
+
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultFailure(
+                    result_details="could not resolve",
+                    failure_reason=PathResolutionFailureReason.MACRO_RESOLUTION_ERROR,
+                    missing_variables=set(),
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is None
+        assert "save_static_file" in caplog.text

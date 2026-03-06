@@ -32,7 +32,6 @@ from griptape_nodes.exe_types.node_types import (
     TransformedParameterValue,
 )
 from griptape_nodes.exe_types.type_validator import TypeValidator
-from griptape_nodes.machines.sequential_resolution import SequentialResolutionMachine
 from griptape_nodes.node_library.library_registry import LibraryNameAndVersion, LibraryRegistry
 from griptape_nodes.retained_mode.events.base_events import (
     ResultDetails,
@@ -2278,6 +2277,12 @@ class NodeManager:
         if not parent_flow:
             details = f"Attempted to set parameter value for '{node_name}.{request.parameter_name}'. Failed because the node's parent flow does not exist. Could not unresolve future nodes."
             return SetParameterValueResultFailure(result_details=details)
+        # Snapshot output values to detect side-effect changes from after_value_set.
+        # Some nodes recompute their output in after_value_set when an input changes.
+        # We need to detect those changes and propagate them downstream.
+        should_check_output_side_effects = not request.initial_setup and not request.is_output
+        output_snapshot = dict(node.parameter_output_values) if should_check_output_side_effects else None
+
         try:
             finalized_value, modified = self._set_and_pass_through_values(request, node)
         except Exception as err:
@@ -2314,6 +2319,39 @@ class NodeManager:
                             data_type=object_type,  # Do type instead of output type, because it hasn't been processed.
                             incoming_connection_source_node_name=node.name,
                             incoming_connection_source_parameter_name=parameter.name,
+                        )
+                    )
+
+        # Propagate side-effect output changes to downstream nodes.
+        # When after_value_set modifies output parameters, those
+        # changes must reach downstream nodes.
+        if output_snapshot is not None and modified:
+            for output_param_name, new_value in node.parameter_output_values.items():
+                old_value = output_snapshot.get(output_param_name)
+                if old_value is new_value or old_value == new_value:
+                    continue
+                output_param = node.get_parameter_by_name(output_param_name)
+                if output_param is None:
+                    continue
+                if ParameterMode.OUTPUT not in output_param.allowed_modes:
+                    continue
+                is_control = (
+                    ParameterType.attempt_get_builtin(output_param.output_type) == ParameterTypeBuiltin.CONTROL_TYPE
+                )
+                if is_control:
+                    continue
+                conn_targets = parent_flow.get_connected_output_parameters(node, output_param)
+                for target_node, target_parameter in conn_targets:
+                    if target_node.lock:
+                        continue
+                    GriptapeNodes.handle_request(
+                        SetParameterValueRequest(
+                            parameter_name=target_parameter.name,
+                            node_name=target_node.name,
+                            value=new_value,
+                            data_type=output_param.output_type,
+                            incoming_connection_source_node_name=node.name,
+                            incoming_connection_source_parameter_name=output_param.name,
                         )
                     )
 
@@ -2596,17 +2634,10 @@ class NodeManager:
 
         # Check for existing running flow
         flow_mgr = GriptapeNodes.FlowManager()
-        if flow_mgr.check_for_existing_running_flow():
-            # Behavior should stay the same for sequential flows.
-            if flow_mgr._global_control_flow_machine and isinstance(
-                flow_mgr._global_control_flow_machine.resolution_machine, SequentialResolutionMachine
-            ):
-                errormsg = f"This workflow is already in progress. Please wait for the current process to finish before starting {node.name} again."
-                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+        if flow_mgr.check_for_existing_running_flow() and not flow_mgr._global_single_node_resolution:
             # Behavior should also match if the flow running is a Control Flow, and not a singular node resolution.
-            if not flow_mgr._global_single_node_resolution:
-                errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
-                return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
+            errormsg = f"This workflow is already in progress. Please wait for the current control process to finish before starting {node.name} again."
+            return ResolveNodeResultFailure(validation_exceptions=[RuntimeError(errormsg)], result_details=errormsg)
 
         # Check if the node is already in the DAG - if so, skip this resolution. It's already queued or has been resolved.
         if node.name in flow_mgr._global_dag_builder.node_to_reference:

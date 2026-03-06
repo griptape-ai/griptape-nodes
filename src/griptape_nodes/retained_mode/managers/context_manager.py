@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from griptape_nodes.exe_types.flow import ControlFlow
+from griptape_nodes.files.path_utils import derive_registry_key
 from griptape_nodes.retained_mode.events.context_events import (
     GetWorkflowContextRequest,
     GetWorkflowContextSuccess,
@@ -392,6 +394,21 @@ class ContextManager:
         current_workflow = self._workflow_stack[-1]
         return current_workflow._name
 
+    def set_current_workflow_name(self, new_name: str) -> None:
+        """Update the name of the current Workflow context.
+
+        Args:
+            new_name: The new name to assign to the current Workflow.
+
+        Raises:
+            NoActiveWorkflowError: If no Workflow context is active.
+        """
+        if not self.has_current_workflow():
+            msg = "No active Workflow context"
+            raise self.NoActiveWorkflowError(msg)
+
+        self._workflow_stack[-1]._name = new_name
+
     def get_current_flow(self) -> ControlFlow:
         """Get the current Flow object.
 
@@ -450,18 +467,43 @@ class ContextManager:
         current_node = current_flow._node_stack[-1]
         return current_node.get_current_element()
 
-    def push_workflow(self, workflow_name: str) -> str:
+    def push_workflow(self, workflow_name: str | None = None, *, file_path: str | None = None) -> str:
         """Push a new Workflow context onto the stack.
 
         Args:
-            workflow_name: The name of the Workflow to enter.
+            workflow_name: The name of the Workflow to enter. Use this when the registry key is already known.
+            file_path: Path to the workflow file. The registry key will be derived from this path,
+                using a workspace-relative path if possible. Mutually exclusive with workflow_name.
 
         Returns:
             The name of the Workflow that was entered.
+
+        Raises:
+            ValueError: If neither or both of workflow_name and file_path are provided.
         """
-        workflow_context_state = self.WorkflowContextState(workflow_name)
+        if workflow_name is not None and file_path is not None:
+            msg = "Provide either workflow_name or file_path, not both."
+            raise ValueError(msg)
+        if workflow_name is not None:
+            resolved_name = workflow_name
+        elif file_path is not None:
+            # Lazy import required: context_manager is imported by griptape_nodes, creating a circular dependency.
+            from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+            resolved = Path(file_path).resolve()
+            workspace_path = GriptapeNodes.ConfigManager().workspace_path
+            if resolved.is_relative_to(workspace_path):
+                path_for_key = str(resolved.relative_to(workspace_path))
+            else:
+                path_for_key = str(resolved)
+            resolved_name = derive_registry_key(path_for_key)
+        else:
+            msg = "Either workflow_name or file_path must be provided."
+            raise ValueError(msg)
+
+        workflow_context_state = self.WorkflowContextState(resolved_name)
         self._workflow_stack.append(workflow_context_state)
-        return workflow_name
+        return resolved_name
 
     def pop_workflow(self) -> str:
         """Pop the top Workflow from the stack.

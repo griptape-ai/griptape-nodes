@@ -15,9 +15,6 @@ class LocalPublisherError(Exception):
 
 
 class LocalWorkflowPublisher(LocalWorkflowExecutor):
-    def __init__(self) -> None:
-        return
-
     async def arun(
         self,
         workflow_name: str,

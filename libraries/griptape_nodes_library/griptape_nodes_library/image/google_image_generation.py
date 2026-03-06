@@ -11,7 +11,7 @@ import httpx
 from griptape.artifacts import ImageArtifact
 from griptape.artifacts.image_url_artifact import ImageUrlArtifact
 
-from griptape_nodes.exe_types.core_types import Parameter, ParameterList, ParameterMode
+from griptape_nodes.exe_types.core_types import Parameter, ParameterGroup, ParameterList, ParameterMode
 from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_dict import ParameterDict
 from griptape_nodes.exe_types.param_types.parameter_float import ParameterFloat
@@ -155,16 +155,6 @@ class GoogleImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Strict image size validation
-        self.add_parameter(
-            ParameterBool(
-                name="auto_image_resize",
-                default_value=True,
-                tooltip=f"If disabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If enabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
-                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
-            )
-        )
-
         # Aspect ratio
         self.add_parameter(
             ParameterString(
@@ -175,7 +165,6 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 traits={Options(choices=self.ASPECT_RATIO_OPTIONS[self.DEFAULT_MODEL])},
             )
         )
-
         # Image size (resolution)
         self.add_parameter(
             ParameterString(
@@ -187,8 +176,14 @@ class GoogleImageGeneration(GriptapeProxyNode):
             )
         )
 
-        # Temperature
-        self.add_parameter(
+        with ParameterGroup(name="Generation Settings", ui_options={"collapsed": True}) as generation_settings_group:
+            ParameterBool(
+                name="auto_image_resize",
+                default_value=True,
+                tooltip=f"If disabled, raises an error when input images exceed the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit. If enabled, oversized images are best-effort scaled to fit within the {MAX_IMAGE_SIZE_BYTES / (1024 * 1024)}MB limit.",
+                allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
+            )
+
             ParameterFloat(
                 name="temperature",
                 tooltip="Temperature for controlling generation randomness (0.0-2.0)",
@@ -199,20 +194,14 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 step=0.1,
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Google Search
-        self.add_parameter(
             ParameterBool(
                 name="use_google_search",
                 default_value=False,
                 tooltip="Enable Google Search to ground the model's responses",
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
             )
-        )
 
-        # Google Image Search (Nano Banana 2 only)
-        self.add_parameter(
             ParameterBool(
                 name="use_google_image_search",
                 default_value=False,
@@ -220,8 +209,8 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 allowed_modes={ParameterMode.INPUT, ParameterMode.PROPERTY},
                 hide=True,
             )
-        )
 
+        self.add_node_element(generation_settings_group)
         # OUTPUTS
         self.add_parameter(
             ParameterString(
@@ -260,7 +249,8 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 tooltip="All generated images",
                 allowed_modes={ParameterMode.OUTPUT, ParameterMode.PROPERTY},
                 settable=False,
-                ui_options={"is_full_width": True, "pulse_on_run": True},
+                hide=True,
+                ui_options={"pulse_on_run": True},
             )
         )
 
@@ -329,7 +319,7 @@ class GoogleImageGeneration(GriptapeProxyNode):
                 ValueError(f"{self.name} total input images cannot exceed {MAX_INPUT_IMAGES}, got {total_images}")
             )
 
-        return exceptions if exceptions else None
+        return exceptions or None
 
     async def _process_generation(self) -> None:
         await super()._process_generation()

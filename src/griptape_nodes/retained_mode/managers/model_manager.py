@@ -428,6 +428,8 @@ class ModelManager:
                 break
             try:
                 progress = json.loads(line.decode().strip())
+                if not isinstance(progress, dict):
+                    continue
                 last_progress = progress
                 updated = {
                     **initial_data,

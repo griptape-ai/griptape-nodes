@@ -53,12 +53,25 @@ class GriptapeCloudStartFlow(StartNode):
         )
         self._webhook_config_params.set_webhook_config_param_visibility(visible=False)
 
+        self.add_parameter(
+            Parameter(
+                name="custom_install_script_path",
+                input_types=["str"],
+                type="str",
+                output_type="str",
+                default_value=None,
+                tooltip="Path to a .sh file whose contents will be appended to the pre-build install script before publishing.",
+                allowed_modes={ParameterMode.PROPERTY},
+            )
+        )
+
     @classmethod
     def get_default_node_parameter_names(cls) -> list[str]:
         """Get the names of the parameters configured on the node by default."""
         params = []
         params.extend(GriptapeCloudStructureConfigParameter.get_param_names())
         params.extend(GriptapeCloudWebhookConfigParameter.get_param_names())
+        params.extend(["custom_install_script_path"])
         params.extend(["was_successful", "result_details"])
         params.extend(["exec_in", "exec_out", "failed"])
         return params

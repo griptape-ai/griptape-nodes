@@ -39,7 +39,7 @@ GriptapeNodes.handle_request(LoadLibrariesRequest())
 context_manager = GriptapeNodes.ContextManager()
 
 if not context_manager.has_current_workflow():
-    context_manager.push_workflow(workflow_name='Nano Banana Pro - Product Advertisement')
+    context_manager.push_workflow(file_path=__file__)
 
 """
 1. We've collated all of the unique parameter values into a dictionary so that we do not have to duplicate them.

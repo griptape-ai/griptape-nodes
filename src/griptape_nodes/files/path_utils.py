@@ -15,8 +15,62 @@ and are used by OSManager, FileDrivers, and workspace managers.
 import os
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 from urllib.parse import unquote, urlparse
+
+
+def derive_registry_key(file_path: str) -> str:
+    """Derive a workflow registry key from a file path.
+
+    Strips the file extension and normalizes directory separators to forward slashes,
+    preserving directory components for uniqueness across different directories.
+
+    Args:
+        file_path: Path to the workflow file, e.g. "subdir/my_workflow.py"
+
+    Returns:
+        Registry key with directory components preserved, e.g. "subdir/my_workflow"
+
+    Examples:
+        >>> derive_registry_key("my_workflow.py")
+        "my_workflow"
+        >>> derive_registry_key("subdir/my_workflow.py")
+        "subdir/my_workflow"
+    """
+    normalized = file_path.replace("\\", "/")
+    return str(PurePosixPath(normalized).with_suffix(""))
+
+
+class FilenameParts(NamedTuple):
+    """Components of a filename split into directory, stem, and extension.
+
+    Used for macro variable extraction and path decomposition.
+
+    Attributes:
+        directory: Parent directory path (e.g. Path("/some/dir") from "/some/dir/output.png",
+            or Path(".") when the input has no directory component)
+        stem: Filename without extension (e.g. "output" from "output.png")
+        extension: Extension without leading dot (e.g. "png" from "output.png")
+    """
+
+    directory: Path
+    stem: str
+    extension: str
+
+    @classmethod
+    def from_filename(cls, file_name: str) -> "FilenameParts":
+        """Split a filename or path into directory, stem, and extension.
+
+        Args:
+            file_name: Filename or path to split (e.g. "output.png", "archive.tar.gz",
+                or "/some/dir/output.png")
+
+        Returns:
+            FilenameParts with directory, stem, and extension (extension has no leading dot)
+        """
+        path = Path(file_name)
+        return cls(directory=path.parent, stem=path.stem, extension=path.suffix.lstrip("."))
 
 
 def parse_file_uri(location: str) -> str | None:

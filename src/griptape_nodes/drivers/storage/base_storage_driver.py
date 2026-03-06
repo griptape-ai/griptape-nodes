@@ -20,7 +20,12 @@ class CreateSignedUploadUrlResponse(TypedDict):
 
 
 class BaseStorageDriver(ABC):
-    """Base class for storage drivers."""
+    """Base class for storage drivers.
+
+    All path arguments accepted by this driver's methods must be workspace-relative
+    (e.g., ``outputs/image.png``), not absolute paths. Callers are responsible for
+    converting absolute paths to workspace-relative before calling driver methods.
+    """
 
     def __init__(self, workspace_directory: Path) -> None:
         """Initialize the storage driver with a workspace directory.
@@ -37,7 +42,7 @@ class BaseStorageDriver(ABC):
         """Create a signed upload URL for the given path.
 
         Args:
-            path: The path of the file to create a signed URL for.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
 
         Returns:
@@ -50,7 +55,7 @@ class BaseStorageDriver(ABC):
         """Create a signed download URL for the given path.
 
         Args:
-            path: The path of the file to create a signed URL for.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
 
         Returns:
             str: The signed URL for downloading the file.
@@ -62,7 +67,7 @@ class BaseStorageDriver(ABC):
         """Delete a file from storage.
 
         Args:
-            path: The path of the file to delete.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
         """
         ...
 
@@ -80,7 +85,7 @@ class BaseStorageDriver(ABC):
         """Get the permanent unsigned URL for an asset.
 
         Args:
-            path: The path of the file
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
 
         Returns:
             Permanent URL for accessing the asset
@@ -94,7 +99,7 @@ class BaseStorageDriver(ABC):
         """Save a file to storage.
 
         Args:
-            path: The path of the file to save.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
 
@@ -117,7 +122,7 @@ class BaseStorageDriver(ABC):
         """Upload a file to storage.
 
         Args:
-            path: The path of the file to upload.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
             timeout: Optional timeout in seconds for upload request, None falls back to the httpx default.
@@ -157,7 +162,7 @@ class BaseStorageDriver(ABC):
         """Download a file from storage.
 
         Args:
-            path: The path of the file to download.
+            path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             timeout: Optional timeout in seconds for download request, None falls back to the httpx default.
 
         Returns:

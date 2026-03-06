@@ -28,7 +28,7 @@
   "metadata": {
     "author": "Griptape, Inc",
     "description": "Default nodes for Griptape Nodes",
-    "library_version": "0.66.0",
+    "library_version": "0.67.0",
     "engine_version": "0.75.2",
     "tags": [
       "Griptape",
@@ -278,6 +278,14 @@
         "title": "LoRA",
         "description": "",
         "icon": "layers-2"
+      }
+    },
+    {
+      "filesystem": {
+        "color": "border-blue-500",
+        "title": "Filesystem",
+        "description": "Nodes for configuring and managing file paths",
+        "icon": "FolderCog"
       }
     }
   ],
@@ -2079,6 +2087,17 @@
       }
     },
     {
+      "class_name": "DotNode",
+      "file_path": "griptape_nodes_library/misc/dot_node.py",
+      "metadata": {
+        "category": "misc",
+        "description": "A simple pass-through node that can be used as a visual marker or reroute point",
+        "display_name": "Dot",
+        "icon": "circle",
+        "group": "misc"
+      }
+    },
+    {
       "class_name": "Askulator",
       "file_path": "griptape_nodes_library/number/askulator.py",
       "metadata": {
@@ -2629,6 +2648,16 @@
         "display_name": "Has Variable",
         "icon": "QuestionMarkCircle",
         "group": "describe"
+      }
+    },
+    {
+      "class_name": "FileOutputSettings",
+      "file_path": "griptape_nodes_library/filesystem/file_output_settings.py",
+      "metadata": {
+        "category": "filesystem",
+        "description": "Configure file save paths using situation templates and macro expansion. Outputs a File object with an unresolved macro path.",
+        "display_name": "File Output Settings",
+        "icon": "FolderCog"
       }
     },
     {
