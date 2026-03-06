@@ -21,7 +21,7 @@ from griptape_nodes.exe_types.param_types.parameter_button import ParameterButto
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import FileDestination
 from griptape_nodes.files.path_utils import FilenameParts
-from griptape_nodes.files.situation_file_builder import SITUATION_TO_FILE_POLICY, fetch_situation_config
+from griptape_nodes.files.project_file import FALLBACK_MACRO_TEMPLATE, SITUATION_TO_FILE_POLICY
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
@@ -34,6 +34,8 @@ from griptape_nodes.retained_mode.events.project_events import (
     GetAllSituationsForProjectResultSuccess,
     GetPathForMacroRequest,
     GetPathForMacroResultSuccess,
+    GetSituationRequest,
+    GetSituationResultSuccess,
     MacroPath,
 )
 from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
@@ -198,14 +200,24 @@ class FileOutputSettings(BaseNode):
     def _load_project_situation(self) -> None:
         """Load situation template from project and set macro default."""
         situation_name = self.get_parameter_value(self.situation.name)
-        situation_config = fetch_situation_config(situation_name, self.name)
+        result = GriptapeNodes.handle_request(GetSituationRequest(situation_name=situation_name))
 
-        self.set_parameter_value(self.macro.name, situation_config.macro_template, initial_setup=True)
+        if isinstance(result, GetSituationResultSuccess):
+            macro_template = result.situation.macro
+            on_collision = result.situation.policy.on_collision
+            create_dirs = result.situation.policy.create_dirs
+        else:
+            logger.error("%s: Failed to load situation '%s', using fallback macro template", self.name, situation_name)
+            macro_template = FALLBACK_MACRO_TEMPLATE
+            on_collision = SituationFilePolicy.CREATE_NEW
+            create_dirs = True
+
+        self.set_parameter_value(self.macro.name, macro_template, initial_setup=True)
         display_name = _POLICY_VALUE_TO_DISPLAY_NAME.get(
-            situation_config.on_collision_value, _POLICY_VALUE_TO_DISPLAY_NAME[SituationFilePolicy.CREATE_NEW]
+            on_collision, _POLICY_VALUE_TO_DISPLAY_NAME[SituationFilePolicy.CREATE_NEW]
         )
         self.set_parameter_value(self.if_file_exists.name, display_name, initial_setup=True)
-        self.set_parameter_value(self.auto_create_path.name, situation_config.create_dirs, initial_setup=True)
+        self.set_parameter_value(self.auto_create_path.name, create_dirs, initial_setup=True)
         self._resolve_and_update_path()
         self._update_collision_badge()
 

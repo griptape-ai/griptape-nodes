@@ -5,11 +5,7 @@ import logging
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.file import FileDestination, FileDestinationProvider
-from griptape_nodes.files.situation_file_builder import (
-    SituationConfig,
-    build_file_from_situation,
-    fetch_situation_config,
-)
+from griptape_nodes.files.project_file import ProjectFileDestination
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
     ListConnectionsForNodeResultSuccess,
@@ -67,9 +63,6 @@ class ProjectFileParameter:
         self._situation_name = situation
         self._default_filename = default_filename
         self._allowed_modes = allowed_modes or {ParameterMode.INPUT, ParameterMode.PROPERTY}
-
-        # Fetch situation's macro template and policy directly via GetSituationRequest
-        self._situation_config: SituationConfig = fetch_situation_config(situation, node.name)
 
     def add_parameter(self) -> None:
         """Create and add the file path parameter to the node."""
@@ -141,11 +134,11 @@ class ProjectFileParameter:
         else:
             filename = self._default_filename
 
-        return build_file_from_situation(
+        return ProjectFileDestination(
             filename=filename,
-            situation_config=self._situation_config,
+            situation=self._situation_name,
             node_name=self._node.name,
-            extra_variables=extra_vars if extra_vars else None,
+            **extra_vars,
         )
 
     def _reset_to_default(self, parameter: Parameter, source_node_name: str, source_parameter_name: str) -> None:  # noqa: ARG002
