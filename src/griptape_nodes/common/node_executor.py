@@ -303,9 +303,7 @@ class NodeExecutor:
             raise RuntimeError(msg) from e
         finally:
             if workflow_result is not None:
-                await self._delete_workflow(
-                    derive_registry_key(workflow_result.file_path), workflow_path=Path(workflow_result.file_path)
-                )
+                await self._delete_workflow(workflow_path=Path(workflow_result.file_path))
 
     async def _execute_library_workflow(self, node: BaseNode, execution_type: str) -> None:
         """Execute node via library handler.
@@ -382,13 +380,9 @@ class NodeExecutor:
             raise RuntimeError(msg) from e
         finally:
             if workflow_result is not None:
-                await self._delete_workflow(
-                    workflow_name=derive_registry_key(workflow_result.file_path),
-                    workflow_path=Path(workflow_result.file_path),
-                )
+                await self._delete_workflow(workflow_path=Path(workflow_result.file_path))
             if published_workflow_filename is not None:
-                published_filename = published_workflow_filename.stem
-                await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
+                await self._delete_workflow(workflow_path=published_workflow_filename)
 
     async def _get_workflow_start_end_nodes(self, library: Library | None) -> PublishWorkflowStartEndNodes:
         library_name = "Griptape Nodes Library"
@@ -2721,9 +2715,7 @@ class NodeExecutor:
             )
         finally:
             try:
-                await self._delete_workflow(
-                    workflow_name=derive_registry_key(workflow_result.file_path), workflow_path=workflow_path
-                )
+                await self._delete_workflow(workflow_path=workflow_path)
             except Exception as e:
                 logger.warning("Failed to cleanup workflow file: %s", e)
 
@@ -2757,9 +2749,7 @@ class NodeExecutor:
             )
         finally:
             try:
-                await self._delete_workflow(
-                    workflow_name=derive_registry_key(workflow_result.file_path), workflow_path=workflow_path
-                )
+                await self._delete_workflow(workflow_path=workflow_path)
             except Exception as e:
                 logger.warning("Failed to cleanup workflow file: %s", e)
 
@@ -2999,12 +2989,8 @@ class NodeExecutor:
             published_workflow_filename: Path to the published workflow file
         """
         try:
-            await self._delete_workflow(
-                workflow_name=derive_registry_key(workflow_result.file_path),
-                workflow_path=Path(workflow_result.file_path),
-            )
-            published_filename = published_workflow_filename.stem
-            await self._delete_workflow(workflow_name=published_filename, workflow_path=published_workflow_filename)
+            await self._delete_workflow(workflow_path=Path(workflow_result.file_path))
+            await self._delete_workflow(workflow_path=published_workflow_filename)
         except Exception as e:
             logger.warning("Failed to cleanup workflow files: %s", e)
 
@@ -3265,15 +3251,24 @@ class NodeExecutor:
             len(last_iteration_values),
         )
 
-    async def _delete_workflow(self, workflow_name: str, workflow_path: Path) -> None:
-        try:
-            WorkflowRegistry.get_workflow_by_name(workflow_name)
-        except KeyError:
-            # Register the workflow if not already registered since a subprocess may have created it
+    async def _delete_workflow(self, workflow_path: Path) -> None:
+        # Derive the registry key from the workflow path using workspace-relative logic so it
+        # matches the key used during registration (push_workflow(file_path=__file__) in the workflow).
+        workspace_path = GriptapeNodes.ConfigManager().workspace_path.resolve()
+        resolved = workflow_path.resolve()
+        if resolved.is_relative_to(workspace_path):
+            path_for_key = str(resolved.relative_to(workspace_path))
+        else:
+            path_for_key = str(resolved)
+        workflow_name = derive_registry_key(path_for_key)
+
+        if not WorkflowRegistry.has_workflow_with_name(workflow_name):
+            # Register the workflow so DeleteWorkflowRequest can find and remove it.
+            # A subprocess may have registered it in its own process but not in the main process.
             load_workflow_metadata_request = LoadWorkflowMetadata(file_name=workflow_path.name)
             result = GriptapeNodes.handle_request(load_workflow_metadata_request)
             if isinstance(result, LoadWorkflowMetadataResultSuccess):
-                WorkflowRegistry.generate_new_workflow(str(workflow_path), result.metadata)
+                WorkflowRegistry.generate_new_workflow(path_for_key, result.metadata)
 
         delete_request = DeleteWorkflowRequest(name=workflow_name)
         delete_result = await GriptapeNodes.ahandle_request(delete_request)

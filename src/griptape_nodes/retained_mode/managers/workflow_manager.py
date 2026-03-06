@@ -2026,7 +2026,7 @@ class WorkflowManager:
         library_names = [lib.library_name for lib in workflow_metadata.node_libraries_referenced]
 
         prereq_code = self._generate_workflow_run_prerequisite_code(
-            workflow_name=workflow_metadata.name, import_recorder=import_recorder, library_names=library_names
+            import_recorder=import_recorder, library_names=library_names
         )
         for node in prereq_code:
             ast_container.add_node(node)
@@ -3079,7 +3079,6 @@ class WorkflowManager:
 
     def _generate_workflow_run_prerequisite_code(
         self,
-        workflow_name: str,
         import_recorder: ImportRecorder,
         library_names: list[str],
     ) -> list[ast.AST]:
@@ -3155,7 +3154,7 @@ class WorkflowManager:
                     ctx=ast.Load(),
                 ),
                 args=[],
-                keywords=[ast.keyword(arg="workflow_name", value=ast.Constant(value=workflow_name))],
+                keywords=[ast.keyword(arg="file_path", value=ast.Name(id="__file__", ctx=ast.Load()))],
             )
         )
         ast.fix_missing_locations(push_call)
