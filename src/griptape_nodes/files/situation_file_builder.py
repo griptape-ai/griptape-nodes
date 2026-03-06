@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from griptape_nodes.common.macro_parser import ParsedMacro
 from griptape_nodes.common.project_templates.situation import SituationFilePolicy
 from griptape_nodes.files.file import FileDestination
-from griptape_nodes.files.path_utils import parse_filename_components
+from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.retained_mode.events.os_events import ExistingFilePolicy
 from griptape_nodes.retained_mode.events.project_events import (
     GetSituationRequest,
@@ -83,7 +83,6 @@ def build_file_from_situation(
     situation_config: SituationConfig,
     node_name: str,
     *,
-    default_extension: str,
     extra_variables: dict[str, str | int] | None = None,
 ) -> FileDestination:
     """Build a FileDestination with a MacroPath from a situation template and filename.
@@ -95,16 +94,15 @@ def build_file_from_situation(
         filename: The filename to parse (e.g., "output.png").
         situation_config: Resolved situation configuration with macro template and policy.
         node_name: Node name for the {node_name} macro variable.
-        default_extension: Extension to use if filename has no suffix.
         extra_variables: Additional macro variables to include.
 
     Returns:
         FileDestination with an unresolved MacroPath and baked-in write policy.
     """
-    parts = parse_filename_components(filename, default_extension=default_extension)
+    parts = FilenameParts.from_filename(filename)
 
     variables: dict[str, str | int] = {
-        "file_name_base": parts.basename,
+        "file_name_base": parts.stem,
         "file_extension": parts.extension,
         "node_name": node_name,
         **(extra_variables or {}),

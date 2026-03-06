@@ -5,7 +5,6 @@ import logging
 from griptape_nodes.exe_types.core_types import NodeMessageResult, Parameter, ParameterMode
 from griptape_nodes.exe_types.node_types import BaseNode
 from griptape_nodes.files.file import FileDestination, FileDestinationProvider
-from griptape_nodes.files.path_utils import parse_filename_components
 from griptape_nodes.files.situation_file_builder import (
     SituationConfig,
     build_file_from_situation,
@@ -142,13 +141,10 @@ class ProjectFileParameter:
         else:
             filename = self._default_filename
 
-        default_extension = parse_filename_components(self._default_filename).extension
-
         return build_file_from_situation(
             filename=filename,
             situation_config=self._situation_config,
             node_name=self._node.name,
-            default_extension=default_extension,
             extra_variables=extra_vars if extra_vars else None,
         )
 

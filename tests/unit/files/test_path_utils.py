@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from griptape_nodes.files.path_utils import (
+    FilenameParts,
     expand_path,
     normalize_path_for_platform,
     parse_file_uri,
-    parse_filename_components,
     path_needs_expansion,
     resolve_file_path,
     resolve_path_safely,
@@ -20,43 +20,43 @@ from griptape_nodes.files.path_utils import (
 )
 
 
-class TestParseFilenameComponents:
-    """Tests for parse_filename_components function."""
+class TestFilenameParts:
+    """Tests for FilenameParts.from_filename classmethod."""
 
     def test_splits_simple_filename(self) -> None:
-        """Standard filename splits into basename and extension."""
-        parts = parse_filename_components("output.png")
-        assert parts.basename == "output"
+        """Standard filename splits into stem and extension."""
+        parts = FilenameParts.from_filename("output.png")
+        assert parts.stem == "output"
         assert parts.extension == "png"
 
     def test_extension_has_no_leading_dot(self) -> None:
         """Extension does not include the leading dot."""
-        parts = parse_filename_components("file.txt")
+        parts = FilenameParts.from_filename("file.txt")
         assert parts.extension == "txt"
         assert not parts.extension.startswith(".")
 
     def test_splits_compound_extension(self) -> None:
         """Only the last suffix is treated as the extension."""
-        parts = parse_filename_components("archive.tar.gz")
-        assert parts.basename == "archive.tar"
+        parts = FilenameParts.from_filename("archive.tar.gz")
+        assert parts.stem == "archive.tar"
         assert parts.extension == "gz"
 
     def test_filename_with_no_extension(self) -> None:
-        """Filename without an extension uses the provided default_extension."""
-        parts = parse_filename_components("Makefile", default_extension="")
-        assert parts.basename == "Makefile"
+        """Filename without an extension has an empty extension."""
+        parts = FilenameParts.from_filename("Makefile")
+        assert parts.stem == "Makefile"
         assert parts.extension == ""
 
     def test_captures_directory_component(self) -> None:
         """Directory portion of a path is captured in the directory field."""
-        parts = parse_filename_components("/some/dir/output.jpg")
+        parts = FilenameParts.from_filename("/some/dir/output.jpg")
         assert parts.directory == Path("/some/dir")
-        assert parts.basename == "output"
+        assert parts.stem == "output"
         assert parts.extension == "jpg"
 
     def test_directory_is_dot_when_no_path(self) -> None:
         """Directory is Path('.') when the input has no directory component."""
-        parts = parse_filename_components("output.png")
+        parts = FilenameParts.from_filename("output.png")
         assert parts.directory == Path()
 
 

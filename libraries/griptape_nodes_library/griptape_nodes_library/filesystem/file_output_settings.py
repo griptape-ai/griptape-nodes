@@ -20,7 +20,7 @@ from griptape_nodes.exe_types.param_types.parameter_bool import ParameterBool
 from griptape_nodes.exe_types.param_types.parameter_button import ParameterButton
 from griptape_nodes.exe_types.param_types.parameter_string import ParameterString
 from griptape_nodes.files.file import FileDestination
-from griptape_nodes.files.path_utils import parse_filename_components
+from griptape_nodes.files.path_utils import FilenameParts
 from griptape_nodes.files.situation_file_builder import SITUATION_TO_FILE_POLICY, fetch_situation_config
 from griptape_nodes.retained_mode.events.connection_events import (
     ListConnectionsForNodeRequest,
@@ -303,10 +303,10 @@ class FileOutputSettings(BaseNode):
             return
 
         filename_path = Path(classified.normalized_path)
-        parts = parse_filename_components(filename_path.name)
+        parts = FilenameParts.from_filename(filename_path.name)
 
         variables: dict[str, str | int] = {
-            "file_name_base": parts.basename,
+            "file_name_base": parts.stem,
             "file_extension": parts.extension,
             "node_name": self._get_target_node_name(),
         }

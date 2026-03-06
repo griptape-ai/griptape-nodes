@@ -21,42 +21,34 @@ from urllib.parse import unquote, urlparse
 
 
 class FilenameParts(NamedTuple):
-    """Components of a file path split into directory, basename, and extension.
+    """Components of a filename split into directory, stem, and extension.
+
+    Used for macro variable extraction and path decomposition.
 
     Attributes:
-        directory: Parent directory path
-        basename: Filename without extension
-        extension: File extension without leading dot
+        directory: Parent directory path (e.g. Path("/some/dir") from "/some/dir/output.png",
+            or Path(".") when the input has no directory component)
+        stem: Filename without extension (e.g. "output" from "output.png")
+        extension: Extension without leading dot (e.g. "png" from "output.png")
     """
 
     directory: Path
-    basename: str
+    stem: str
     extension: str
 
+    @classmethod
+    def from_filename(cls, file_name: str) -> "FilenameParts":
+        """Split a filename or path into directory, stem, and extension.
 
-def parse_filename_components(filename: str, default_extension: str = "png") -> FilenameParts:
-    """Parse a filename or path into its directory, base, and extension components.
+        Args:
+            file_name: Filename or path to split (e.g. "output.png", "archive.tar.gz",
+                or "/some/dir/output.png")
 
-    Args:
-        filename: Filename or path to parse (e.g., "image.png", "/dir/output.tar.gz", "test")
-        default_extension: Extension to use if filename has none
-
-    Returns:
-        FilenameParts with directory, basename, and extension (no leading dot)
-
-    Examples:
-        parse_filename_components("image.png")
-        -> FilenameParts(directory=Path("."), basename="image", extension="png")
-
-        parse_filename_components("output.tar.gz")
-        -> FilenameParts(directory=Path("."), basename="output.tar", extension="gz")
-
-        parse_filename_components("/some/dir/test")
-        -> FilenameParts(directory=Path("/some/dir"), basename="test", extension="png")
-    """
-    path = Path(filename)
-    extension = path.suffix.lstrip(".") if path.suffix else default_extension
-    return FilenameParts(directory=path.parent, basename=path.stem, extension=extension)
+        Returns:
+            FilenameParts with directory, stem, and extension (extension has no leading dot)
+        """
+        path = Path(file_name)
+        return cls(directory=path.parent, stem=path.stem, extension=path.suffix.lstrip("."))
 
 
 def parse_file_uri(location: str) -> str | None:
