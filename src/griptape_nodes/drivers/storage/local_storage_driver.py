@@ -42,7 +42,11 @@ class LocalStorageDriver(BaseStorageDriver):
             self.base_url = base_url
 
     def create_signed_upload_url(
-        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        file_metadata: dict[str, str] | None = None,
     ) -> CreateSignedUploadUrlResponse:
         # on_write_file_request seems to work most reliably with an absolute path.
         absolute_path = resolve_workspace_path(path, self.workspace_directory)
@@ -56,6 +60,7 @@ class LocalStorageDriver(BaseStorageDriver):
             file_path=str(absolute_path),
             content=b"",  # Empty content for URL generation
             existing_file_policy=existing_file_policy,
+            file_metadata=file_metadata,
         )
         result = os_manager.on_write_file_request(write_request)
 
@@ -96,7 +101,12 @@ class LocalStorageDriver(BaseStorageDriver):
         }
 
     def save_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        file_metadata: dict[str, str] | None = None,
     ) -> str:
         """Save a file to local storage by writing directly to disk.
 
@@ -104,6 +114,7 @@ class LocalStorageDriver(BaseStorageDriver):
             path: The path of the file to save.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+            file_metadata: Optional caller-provided context for sidecar metadata generation.
 
         Returns:
             The absolute file path where the file was saved.
@@ -119,6 +130,7 @@ class LocalStorageDriver(BaseStorageDriver):
                 file_path=str(absolute_path),
                 content=file_content,
                 existing_file_policy=existing_file_policy,
+                file_metadata=file_metadata,
             )
         )
 
