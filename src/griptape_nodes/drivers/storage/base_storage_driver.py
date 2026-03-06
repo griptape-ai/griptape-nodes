@@ -37,13 +37,18 @@ class BaseStorageDriver(ABC):
 
     @abstractmethod
     def create_signed_upload_url(
-        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        file_metadata: dict[str, str] | None = None,
     ) -> CreateSignedUploadUrlResponse:
         """Create a signed upload URL for the given path.
 
         Args:
             path: Workspace-relative path of the file (e.g., ``outputs/image.png``).
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE for backward compatibility.
+            file_metadata: Optional caller-provided context for sidecar metadata generation.
 
         Returns:
             CreateSignedUploadUrlResponse: A dictionary containing the signed URL, headers, and operation type.
@@ -100,6 +105,7 @@ class BaseStorageDriver(ABC):
         existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
         *,
         skip_metadata_injection: bool = False,
+        file_metadata: dict[str, str] | None = None,
     ) -> str:
         """Save a file to storage.
 
@@ -108,6 +114,8 @@ class BaseStorageDriver(ABC):
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
             skip_metadata_injection: If True, skip automatic workflow metadata injection.
+            file_metadata: Optional caller-provided context for sidecar metadata generation.
+                           Passed through to WriteFileRequest; ignored by cloud storage drivers.
 
         Returns:
             The absolute file path where the file was saved.

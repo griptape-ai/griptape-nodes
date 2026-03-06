@@ -22,7 +22,11 @@ class TestBaseStorageDriverUploadFile:
         """Concrete implementation for testing the abstract BaseStorageDriver."""
 
         def create_signed_upload_url(
-            self, path: Path, _existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+            self,
+            path: Path,
+            _existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+            *,
+            file_metadata: dict[str, str] | None = None,  # noqa: ARG002
         ) -> CreateSignedUploadUrlResponse:
             """Mock implementation of abstract method."""
             return {
