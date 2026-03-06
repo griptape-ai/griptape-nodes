@@ -93,6 +93,7 @@ from griptape_nodes.retained_mode.managers.artifact_providers.utils import (
     normalize_friendly_name_to_key,
 )
 from griptape_nodes.retained_mode.managers.event_manager import EventManager
+from griptape_nodes.retained_mode.managers.metadata.sidecar_metadata import build_situation_metadata
 from griptape_nodes.retained_mode.managers.os_manager import OSManager
 
 logger = logging.getLogger("griptape_nodes")
@@ -104,10 +105,12 @@ class ResolvedPreviewPath(NamedTuple):
     Attributes:
         destination_dir: Directory where preview should be saved
         file_name: Preview filename with extension
+        file_metadata: Situation context to pass to WriteFileRequest for sidecar generation.
     """
 
     destination_dir: Path
     file_name: str
+    file_metadata: dict[str, str] | None = None
 
 
 class PreviewMetadata(BaseModel):
@@ -413,6 +416,7 @@ class ArtifactManager:
                 content=metadata_content,
                 create_parents=True,
                 existing_file_policy=ExistingFilePolicy.OVERWRITE,
+                file_metadata=resolved_path.file_metadata,
             )
             metadata_write_result = GriptapeNodes.handle_request(metadata_write_request)
 
@@ -1431,9 +1435,11 @@ class ArtifactManager:
             msg = f"Failed to resolve preview path macro: {path_result.result_details}"
             raise RuntimeError(msg)  # noqa: TRY004
 
-        # Return destination directory and filename
+        # Return destination directory and filename with situation context for sidecar
         full_preview_path = path_result.absolute_path
+        preview_file_metadata = build_situation_metadata("save_preview", situation, dict(variables))
         return ResolvedPreviewPath(
             destination_dir=full_preview_path.parent,
             file_name=full_preview_path.name,
+            file_metadata=preview_file_metadata,
         )

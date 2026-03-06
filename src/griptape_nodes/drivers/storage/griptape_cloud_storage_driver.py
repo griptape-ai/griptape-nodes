@@ -43,7 +43,11 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         self.bucket_id = bucket_id
 
     def create_signed_upload_url(
-        self, path: Path, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        file_metadata: dict[str, str] | None = None,  # noqa: ARG002
     ) -> CreateSignedUploadUrlResponse:
         normalized_path = path
 
@@ -151,7 +155,12 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
         return response_data["url"]
 
     def save_file(
-        self, path: Path, file_content: bytes, existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE
+        self,
+        path: Path,
+        file_content: bytes,
+        existing_file_policy: ExistingFilePolicy = ExistingFilePolicy.OVERWRITE,
+        *,
+        file_metadata: dict[str, str] | None = None,  # noqa: ARG002
     ) -> str:
         """Save a file to cloud storage via HTTP upload.
 
@@ -159,6 +168,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
             path: The path of the file to save.
             file_content: The file content as bytes.
             existing_file_policy: How to handle existing files. Defaults to OVERWRITE.
+            file_metadata: Ignored by cloud storage driver (sidecar metadata is local-only).
 
         Returns:
             The full asset URL for the saved file.
