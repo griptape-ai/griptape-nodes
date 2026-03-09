@@ -1,1 +1,0 @@
-"""OpenPose model implementations."""
