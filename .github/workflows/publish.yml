@@ -74,7 +74,7 @@ jobs:
 
       - name: Build and push CPU image
         id: push_cpu
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -145,7 +145,7 @@ jobs:
 
       - name: Build and push GPU image
         id: push_gpu
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
