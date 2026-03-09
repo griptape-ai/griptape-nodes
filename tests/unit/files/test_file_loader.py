@@ -794,9 +794,9 @@ class TestFileDestinationWrite:
         )
         dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.CREATE_NEW)
         with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
-            path = dest.write_bytes(b"\x89PNG")
+            result = dest.write_bytes(b"\x89PNG")
 
-        assert path == Path("/workspace/output_1.png")
+        assert Path(result.resolve()) == Path("/workspace/output_1.png")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
 
@@ -833,9 +833,9 @@ class TestFileDestinationWrite:
         )
         dest = FileDestination("workspace/output.txt", existing_file_policy=ExistingFilePolicy.FAIL)
         with patch(HANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
-            path = dest.write_text("hello")
+            result = dest.write_text("hello")
 
-        assert path == Path("/workspace/output.txt")
+        assert Path(result.resolve()) == Path("/workspace/output.txt")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.FAIL
 
@@ -852,10 +852,10 @@ class TestFileDestinationWrite:
         request = mock_handle.call_args.args[0]
         assert request.encoding == "latin-1"
 
-    def test_resolve_path_returns_path_string(self) -> None:
+    def test_resolve_returns_path_string(self) -> None:
         dest = FileDestination("workspace/output.png")
 
-        assert dest.resolve_path() == "workspace/output.png"
+        assert dest.resolve() == "workspace/output.png"
 
 
 class TestFileDestinationAsync:
@@ -870,9 +870,9 @@ class TestFileDestinationAsync:
         )
         dest = FileDestination("workspace/output.png", existing_file_policy=ExistingFilePolicy.CREATE_NEW)
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
-            path = await dest.awrite_bytes(b"\x89PNG")
+            result = await dest.awrite_bytes(b"\x89PNG")
 
-        assert path == Path("/workspace/output_1.png")
+        assert Path(result.resolve()) == Path("/workspace/output_1.png")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.CREATE_NEW
 
@@ -895,9 +895,9 @@ class TestFileDestinationAsync:
         )
         dest = FileDestination("workspace/output.txt", existing_file_policy=ExistingFilePolicy.FAIL)
         with patch(AHANDLE_REQUEST_PATH, return_value=success_result) as mock_handle:
-            path = await dest.awrite_text("hello")
+            result = await dest.awrite_text("hello")
 
-        assert path == Path("/workspace/output.txt")
+        assert Path(result.resolve()) == Path("/workspace/output.txt")
         request = mock_handle.call_args.args[0]
         assert request.existing_file_policy == ExistingFilePolicy.FAIL
 
@@ -914,3 +914,80 @@ class TestFileDestinationAsync:
 
         request = mock_handle.call_args.args[0]
         assert request.encoding == "latin-1"
+
+
+class TestFileLocation:
+    """Tests for File.location property."""
+
+    def test_location_plain_string(self) -> None:
+        f = File("workspace/outputs/image.png")
+        assert f.location == "workspace/outputs/image.png"
+
+    def test_location_macro_path_returns_template(self) -> None:
+        f = File("{outputs}/image.png")
+        assert f.location == "{outputs}/image.png"
+
+    def test_location_macro_path_object_returns_template(self) -> None:
+        macro_path = MacroPath(ParsedMacro("{outputs}/file.txt"), {"outputs": "/resolved"})
+        f = File(macro_path)
+        assert f.location == "{outputs}/file.txt"
+
+    def test_location_no_io_performed(self) -> None:
+        with patch(HANDLE_REQUEST_PATH) as mock_handle:
+            f = File("{outputs}/image.png")
+            _ = f.location
+        mock_handle.assert_not_called()
+
+
+class TestFileName:
+    """Tests for File.name property."""
+
+    def test_name_plain_string(self) -> None:
+        f = File("workspace/outputs/image.png")
+        assert f.name == "image.png"
+
+    def test_name_macro_path_returns_filename_from_template(self) -> None:
+        f = File("{outputs}/image.png")
+        assert f.name == "image.png"
+
+    def test_name_macro_path_object(self) -> None:
+        macro_path = MacroPath(ParsedMacro("{outputs}/subdir/file.txt"), {"outputs": "/resolved"})
+        f = File(macro_path)
+        assert f.name == "file.txt"
+
+    def test_name_delegates_to_location(self) -> None:
+        """Name is always Path(location).name."""
+        from pathlib import Path as _Path
+
+        f = File("{outputs}/report.csv")
+        assert f.name == _Path(f.location).name
+
+
+class TestFileResolve:
+    """Tests for File.resolve() method."""
+
+    def test_resolve_plain_string(self) -> None:
+        f = File("/absolute/path/image.png")
+        assert Path(f.resolve()) == Path("/absolute/path/image.png")
+
+    def test_resolve_macro_path_calls_handle_request(self) -> None:
+        resolve_result = GetPathForMacroResultSuccess(
+            result_details="OK",
+            resolved_path=Path("outputs/image.png"),
+            absolute_path=Path("/workspace/outputs/image.png"),
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=resolve_result):
+            result = File("{outputs}/image.png").resolve()
+
+        assert Path(result) == Path("/workspace/outputs/image.png")
+
+    def test_resolve_macro_path_failure_raises_file_load_error(self) -> None:
+        resolve_failure = GetPathForMacroResultFailure(
+            result_details="Missing variables: outputs",
+            failure_reason=PathResolutionFailureReason.MISSING_REQUIRED_VARIABLES,
+            missing_variables={"outputs"},
+        )
+        with patch(HANDLE_REQUEST_PATH, return_value=resolve_failure), pytest.raises(FileLoadError) as exc_info:
+            File("{outputs}/image.png").resolve()
+
+        assert exc_info.value.failure_reason == FileIOFailureReason.MISSING_MACRO_VARIABLES
