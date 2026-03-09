@@ -71,7 +71,7 @@ lint: ## Lint project.
 .PHONY: format
 format: ## Format project.
 	@uv run ruff format
-	@uv run mdformat .github docs libraries src tests *.md
+	@uv run mdformat .github docs src tests *.md
 
 .PHONY: fix
 fix: ## Fix project.
@@ -84,7 +84,7 @@ check: check/format check/lint check/types check/spell ## Run all checks.
 .PHONY: check/format
 check/format:
 	@uv run ruff format --check
-	@uv run mdformat --check .github docs libraries src tests *.md
+	@uv run mdformat --check .github docs src tests *.md
 
 .PHONY: check/lint
 check/lint:
@@ -103,20 +103,19 @@ test: test/unit test/integration test/workflows
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
-	@uv run pytest -n auto tests/unit libraries/griptape_nodes_library/tests/unit
+	@uv run pytest -n auto tests/unit
 
 .PHONY: test/unit/coverage
 test/unit/coverage: ## Run unit tests with coverage.
-	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit libraries/griptape_nodes_library/tests/unit
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit 
 
 .PHONY: test/coverage
 test/coverage: ## Run all tests with coverage.
-	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit libraries/griptape_nodes_library/tests/unit tests/integration
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit
 
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
-	@uv run pytest -n auto libraries/griptape_nodes_library/tests/integration
 
 .PHONY: test/workflows
 test/workflows: ## Run workflow tests.
