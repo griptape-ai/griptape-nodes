@@ -543,7 +543,7 @@ class GriptapeCloudStorageDriver(BaseStorageDriver):
 
         # Parse URL to extract path component
         parsed = urlparse(url_str)
-        path = parsed.path if parsed.path else url_str
+        path = parsed.path or url_str
 
         # Check for required patterns
         if "/buckets/" not in path or "/assets/" not in path:

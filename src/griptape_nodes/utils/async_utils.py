@@ -108,8 +108,8 @@ async def subprocess_run(
         stdout = stdout_bytes.decode() if stdout_bytes else ""
         stderr = stderr_bytes.decode() if stderr_bytes else ""
     else:
-        stdout = stdout_bytes if stdout_bytes else b""
-        stderr = stderr_bytes if stderr_bytes else b""
+        stdout = stdout_bytes or b""
+        stderr = stderr_bytes or b""
 
     completed_process = subprocess.CompletedProcess(
         args=list(args),

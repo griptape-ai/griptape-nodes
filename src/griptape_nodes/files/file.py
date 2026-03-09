@@ -814,7 +814,7 @@ def _to_text(fc: FileContent) -> str:
 
 def _to_data_uri(fc: FileContent, fallback_mime: str) -> str:
     """Convert FileContent to a data URI string."""
-    mime = fc.mime_type if fc.mime_type else fallback_mime
+    mime = fc.mime_type or fallback_mime
     raw_bytes = _to_bytes(fc)
     b64 = base64.b64encode(raw_bytes).decode("utf-8")
     return f"data:{mime};base64,{b64}"

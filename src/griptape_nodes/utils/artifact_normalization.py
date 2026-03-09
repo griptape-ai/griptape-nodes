@@ -33,7 +33,7 @@ def _resolve_localhost_url_to_path(url: str) -> str:
 
     # Strip query parameters (cachebuster ?t=...)
     if "?" in url:
-        url = url.split("?")[0]
+        url = url.split("?", maxsplit=1)[0]
 
     # Check if it's a localhost URL (any port)
     if url.startswith(("http://localhost:", "https://localhost:")):

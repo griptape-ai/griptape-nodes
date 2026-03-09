@@ -64,7 +64,7 @@ class SubprocessWebSocketSenderMixin(SubprocessWebSocketBaseMixin):
                     logger.warning("WebSocket client not available, message dropped")
                     continue
 
-                topic = message.topic if message.topic else f"sessions/{self._session_id}/response"
+                topic = message.topic or f"sessions/{self._session_id}/response"
                 payload_dict = json.loads(message.payload)
                 await self._ws_client.publish(message.event_type, payload_dict, topic)
                 logger.debug("DELIVERED: %s event", message.event_type)

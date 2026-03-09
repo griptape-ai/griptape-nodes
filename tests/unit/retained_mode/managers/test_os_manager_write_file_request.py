@@ -447,9 +447,9 @@ class TestMetadataInjection:
             patch.object(
                 griptape_nodes.ConfigManager(),
                 "get_config_value",
-                side_effect=lambda key, **kwargs: False
-                if key == "auto_inject_workflow_metadata"
-                else kwargs.get("default"),
+                side_effect=lambda key, **kwargs: (
+                    False if key == "auto_inject_workflow_metadata" else kwargs.get("default")
+                ),
             ),
             patch.object(griptape_nodes.ArtifactManager(), "prepare_content_for_write") as mock_prepare,
         ):

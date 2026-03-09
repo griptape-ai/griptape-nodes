@@ -59,7 +59,7 @@ class DeprecatedNodeInWorkflowProblem(WorkflowProblem):
             # Group nodes within this library by deprecation_message
             by_message = defaultdict(list)
             for node in nodes:
-                message_key = node.deprecation_message if node.deprecation_message else ""
+                message_key = node.deprecation_message or ""
                 by_message[message_key].append(node)
 
             # Sort messages alphabetically (empty string first)

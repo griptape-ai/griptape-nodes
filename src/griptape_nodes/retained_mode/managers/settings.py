@@ -263,7 +263,9 @@ class Settings(BaseModel):
     )
     static_server_base_url: str = Field(
         category=STATIC_SERVER,
-        default_factory=lambda: f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}",
+        default_factory=lambda: (
+            f"http://{os.getenv('STATIC_SERVER_HOST', 'localhost')}:{os.getenv('STATIC_SERVER_PORT', '8124')}"
+        ),
         description="Base URL for the static server. Defaults to http://localhost:8124 (or values from STATIC_SERVER_HOST/PORT env vars). Override this when using tunnels (ngrok, cloudflare) or reverse proxies.",
     )
     artifacts: dict[str, Any] = Field(
