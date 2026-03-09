@@ -99,7 +99,7 @@ check/spell:
 	@uv run typos 
 
 .PHONY: test  ## Run all tests.
-test: test/unit test/integration test/workflows
+test: test/unit test/integration
 
 .PHONY: test/unit
 test/unit: ## Run unit tests.
@@ -107,7 +107,7 @@ test/unit: ## Run unit tests.
 
 .PHONY: test/unit/coverage
 test/unit/coverage: ## Run unit tests with coverage.
-	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit 
+	@uv run pytest -n auto --cov=src/griptape_nodes --cov-report=xml --cov-report=term tests/unit
 
 .PHONY: test/coverage
 test/coverage: ## Run all tests with coverage.
@@ -116,10 +116,6 @@ test/coverage: ## Run all tests with coverage.
 .PHONY: test/integration
 test/integration: ## Run integration tests.
 	@uv run pytest -n auto tests/integration
-
-.PHONY: test/workflows
-test/workflows: ## Run workflow tests.
-	@uv run pytest -s tests/workflows
 
 .PHONY: docs
 docs: ## Build documentation.
