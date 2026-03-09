@@ -61,6 +61,7 @@ class ParameterVideo(Parameter):
         element_type: str | None = None,
         parent_container_name: str | None = None,
         badge: BadgeData | None = None,
+        list_config: dict | None = None,
     ) -> None:
         """Initialize a video parameter with enhanced UI options.
 
@@ -98,6 +99,11 @@ class ParameterVideo(Parameter):
             element_type: Element type
             parent_container_name: Name of parent container
             badge: Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
+            list_config: Optional dict configuring list/scalar fungibility.
+                Shape: {"mode": "single"|"list"|"any", "min_items": int, "max_items": int|None}.
+                accept_any and list_config are compatible: normalize_artifact_input returns
+                non-string/non-artifact values (including lists) unchanged. Set accept_any=False
+                when string/path normalization for individual items is not needed.
         """
         # Build ui_options dictionary from the provided UI-specific parameters
         if ui_options is None:
@@ -169,6 +175,7 @@ class ParameterVideo(Parameter):
             element_type=element_type,
             parent_container_name=parent_container_name,
             badge=badge,
+            list_config=list_config,
         )
 
     @property

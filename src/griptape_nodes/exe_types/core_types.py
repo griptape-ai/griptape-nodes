@@ -1457,6 +1457,8 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
         parent_element_name: str | None = None,
         badge: BadgeData
         | None = None,  # Optional BadgeData for initial badge (title, message, variant, and whether to show a clear button).
+        list_config: dict
+        | None = None,  # Optional config for list/scalar fungibility. Shape: {"mode": "single"|"list"|"any", "min_items": int, "max_items": int|None}
     ):
         if not element_id:
             element_id = str(uuid.uuid4().hex)
@@ -1548,6 +1550,44 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
             self._ui_options["hide_label"] = hide_label
         if hide_property is not None and "hide_property" not in self._ui_options:
             self._ui_options["hide_property"] = hide_property
+
+        if list_config is not None:
+            self._ui_options["list_config"] = list_config
+
+            _mode = list_config.get("mode", "single")
+
+            # For "any" mode: auto-normalize single-item lists to scalars at value-set time.
+            # This runs before any user-provided converters so authors always see a consistent type.
+            if _mode == "any":
+
+                def _auto_normalize_list(value: Any) -> Any:
+                    if isinstance(value, list) and len(value) == 1:
+                        return value[0]
+                    return value
+
+                self._converters.insert(0, _auto_normalize_list)
+
+            # Cardinality validators
+            _max_items = list_config.get("max_items")
+            if _max_items is not None:
+
+                def _validate_max_items(param: Parameter, value: Any, _max: int = _max_items) -> None:
+                    if isinstance(value, list) and len(value) > _max:
+                        msg = f"{param.name} accepts at most {_max} items, got {len(value)}"
+                        raise ValueError(msg)
+
+                self._validators.append(_validate_max_items)
+
+            _min_items = list_config.get("min_items", 0)
+            if _min_items > 0:
+
+                def _validate_min_items(param: Parameter, value: Any, _min: int = _min_items) -> None:
+                    if isinstance(value, list) and len(value) < _min:
+                        msg = f"{param.name} requires at least {_min} items, got {len(value)}"
+                        raise ValueError(msg)
+
+                self._validators.append(_validate_min_items)
+
         if traits:
             for trait in traits:
                 if not isinstance(trait, Trait):
@@ -1901,12 +1941,31 @@ class Parameter(BaseNodeElement, UIOptionsMixin):
     def _custom_getter_for_property_input_types(self) -> list[str]:
         """Derived classes may override this. Overriding property getter/setters is fraught with peril."""
         if self._input_types:
-            return self._input_types
-        if self._type:
-            return [self._type]
-        if self._output_type:
-            return [self._output_type]
-        return [ParameterTypeBuiltin.STR.value]
+            base_types = self._input_types
+        elif self._type:
+            base_types = [self._type]
+        elif self._output_type:
+            base_types = [self._output_type]
+        else:
+            base_types = [ParameterTypeBuiltin.STR.value]
+
+        list_config = self._ui_options.get("list_config")
+        if list_config is None:
+            return base_types
+
+        mode = list_config.get("mode", "single")
+        if mode == "single":
+            return base_types
+        if mode == "list":
+            # Only accept list[T], not scalar T
+            return [f"list[{t}]" for t in base_types]
+        # "any"
+        result = list(base_types)
+        for t in base_types:
+            list_variant = f"list[{t}]"
+            if list_variant not in result:
+                result.append(list_variant)
+        return result
 
     @input_types.setter
     @BaseNodeElement.emits_update_on_write

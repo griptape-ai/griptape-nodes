@@ -242,4 +242,20 @@ def normalize_artifact_list(
     return normalized_list
 
 
-__all__ = ["normalize_artifact_input", "normalize_artifact_list"]
+def as_list(value: Any) -> list[Any]:
+    """Normalize a scalar-or-list value to always return a list.
+
+    Used in process() for parameters with list_config: the value may arrive as a
+    scalar (single connection, or auto-normalized 1-item list) or as a list
+    (multi-item connection). Wrapping with as_list() unifies both cases so node
+    authors can iterate uniformly without branching.
+
+    Examples:
+        as_list("hello")    -> ["hello"]
+        as_list([1, 2, 3])  -> [1, 2, 3]
+        as_list(None)       -> [None]
+    """
+    return value if isinstance(value, list) else [value]
+
+
+__all__ = ["as_list", "normalize_artifact_input", "normalize_artifact_list"]
