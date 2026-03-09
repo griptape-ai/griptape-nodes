@@ -1,1 +1,0 @@
-"""Spandrel Nodes Library package."""

@@ -1,1 +1,0 @@
-"""Griptape Cloud Nodes."""

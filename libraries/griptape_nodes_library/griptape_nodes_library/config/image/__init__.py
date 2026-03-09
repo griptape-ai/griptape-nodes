@@ -1,1 +1,0 @@
-"""Image Driver nodes package."""
