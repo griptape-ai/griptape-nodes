@@ -399,13 +399,16 @@ class StaticFilesManager:
             # Resolve both sides to ensure drive letters match on Windows (drive-relative vs absolute paths).
             workspace_relative_path = macro_result.absolute_path.resolve().relative_to(workspace_dir)
         except ValueError:
+            static_files_dir = self.config_manager.get_config_value("static_files_directory", default="staticfiles")
+            workspace_relative_path = Path(static_files_dir) / file_name
             logger.warning(
-                "Failed to resolve %s situation path: resolved path %s is outside workspace %s",
+                "Resolved %s situation path %s is outside workspace %s. "
+                "Falling back to workspace staticfiles directory: %s",
                 SAVE_STATIC_FILE_SITUATION,
                 macro_result.absolute_path,
                 workspace_dir,
+                workspace_relative_path,
             )
-            return None
 
         policy = self._map_situation_policy(situation.policy.on_collision)
         return ResolvedStaticFilePath(path=workspace_relative_path, policy=policy)

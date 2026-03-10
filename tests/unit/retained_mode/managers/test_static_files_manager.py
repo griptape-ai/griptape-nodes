@@ -759,3 +759,64 @@ class TestStaticFilesManagerResolveStaticFilePath:
 
         assert result is None
         assert "save_static_file" in caplog.text
+
+    def test_resolve_falls_back_to_workspace_staticfiles_when_path_is_outside_workspace(
+        self, mock_static_files_manager: StaticFilesManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Falls back to workspace staticfiles directory when resolved path is outside workspace."""
+        import logging
+
+        from griptape_nodes.common.project_templates.situation import (
+            SituationFilePolicy,
+            SituationPolicy,
+            SituationTemplate,
+        )
+        from griptape_nodes.retained_mode.events.project_events import (
+            GetPathForMacroResultSuccess,
+            GetSituationResultSuccess,
+        )
+        from griptape_nodes.retained_mode.griptape_nodes import GriptapeNodes
+
+        situation = SituationTemplate(
+            name="save_static_file",
+            macro="{workflow_dir?:/}staticfiles/{file_name_base}.{file_extension}",
+            policy=SituationPolicy(on_collision=SituationFilePolicy.OVERWRITE, create_dirs=True),
+        )
+        workspace_dir = Path("/mock/workspace")
+        # Workflow is outside the workspace (e.g., saved in Downloads)
+        outside_path = Path("/Users/user/Downloads/staticfiles/output.png")
+
+        def handle_request(request: object) -> object:
+            from griptape_nodes.retained_mode.events.project_events import (
+                GetPathForMacroRequest,
+                GetSituationRequest,
+            )
+
+            if isinstance(request, GetSituationRequest):
+                return GetSituationResultSuccess(situation=situation, result_details="ok")
+            if isinstance(request, GetPathForMacroRequest):
+                return GetPathForMacroResultSuccess(
+                    resolved_path=outside_path,
+                    absolute_path=outside_path,
+                    result_details="ok",
+                )
+            msg = f"Unexpected request: {request}"
+            raise AssertionError(msg)
+
+        mock_config_manager = Mock()
+        mock_config_manager.get_config_value.side_effect = lambda key, **kwargs: (
+            str(workspace_dir) if key == "workspace_directory" else kwargs.get("default", "staticfiles")
+        )
+        mock_static_files_manager.config_manager = mock_config_manager
+
+        with (
+            patch.object(GriptapeNodes, "handle_request", side_effect=handle_request),
+            patch.object(GriptapeNodes, "ConfigManager", return_value=mock_config_manager),
+            caplog.at_level(logging.WARNING, logger="griptape_nodes"),
+        ):
+            result = mock_static_files_manager._resolve_static_file_path("output.png")
+
+        assert result is not None
+        assert result.path == Path("staticfiles/output.png")
+        assert result.policy == ExistingFilePolicy.OVERWRITE
+        assert "outside workspace" in caplog.text
