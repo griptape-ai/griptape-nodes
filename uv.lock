@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "griptape-nodes"
-version = "0.77.0"
+version = "0.77.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
