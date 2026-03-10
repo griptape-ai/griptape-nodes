@@ -38,7 +38,7 @@ version/publish: ## Create and push git tags.
 	
 .PHONY: run
 run: ## Run the project.
-	uv run griptape-nodes --no-update
+	uv run griptape-nodes
 	
 .PHONY: run/watch
 run/watch: ## Run the project in watch mode.

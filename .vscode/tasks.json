@@ -12,8 +12,7 @@
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_cpu.mojo",
                 ".venv/bin/python",
-                "-m", "src.griptape_nodes.__init__",
-                "--no-update"
+                "-m", "src.griptape_nodes.__init__"
             ],
             "group": "build",
             "presentation": {
@@ -38,8 +37,7 @@
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_memory.mojo",
                 ".venv/bin/python",
-                "-m", "src.griptape_nodes.__init__",
-                "--no-update"
+                "-m", "src.griptape_nodes.__init__"
             ],
             "group": "build",
             "presentation": {
@@ -62,8 +60,7 @@
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_cpu.mojo",
                 ".venv/bin/python",
-                "-m", "src.griptape_nodes.__init__",
-                "--no-update"
+                "-m", "src.griptape_nodes.__init__"
             ],
             "group": "build",
             "presentation": {
@@ -87,8 +84,7 @@
                 "-b",
                 "-o", "profiles/profile_griptape_nodes_memory.mojo",
                 ".venv/bin/python",
-                "-m", "src.griptape_nodes.__init__",
-                "--no-update"
+                "-m", "src.griptape_nodes.__init__"
             ],
             "group": "build",
             "presentation": {
