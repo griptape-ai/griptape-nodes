@@ -17,6 +17,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, cast
 
+import anyio
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import ValidationError
 from rich.align import Align
@@ -1448,7 +1449,7 @@ class LibraryManager:
                         # Add venv site-packages to sys.path if library has dependencies
                         if library_data.metadata.dependencies and library_data.metadata.dependencies.pip_dependencies:
                             venv_path = self._get_library_venv_path(library_data.name, file_path)
-                            if venv_path.exists():
+                            if await anyio.Path(venv_path).exists():
                                 site_packages = str(
                                     Path(
                                         sysconfig.get_path(
@@ -1603,7 +1604,7 @@ class LibraryManager:
             venv_path = self._get_library_venv_path(package_name, None)
 
             # Check if venv already exists before initialization
-            venv_already_exists = venv_path.exists()
+            venv_already_exists = await anyio.Path(venv_path).exists()
 
             # Only install dependencies if conditions are met
             try:
@@ -1686,7 +1687,7 @@ class LibraryManager:
         # Create a virtual environment for the library
         python_version = platform.python_version()
 
-        if library_venv_path.exists():
+        if await anyio.Path(library_venv_path).exists():
             logger.debug("Virtual environment already exists at %s", library_venv_path)
         else:
             # Check disk space before creating virtual environment
@@ -3831,7 +3832,7 @@ class LibraryManager:
             libraries_path = config_mgr.workspace_path / libraries_dir_setting
 
         # Ensure parent directory exists
-        libraries_path.mkdir(parents=True, exist_ok=True)
+        await anyio.Path(libraries_path).mkdir(parents=True, exist_ok=True)
 
         # Determine target directory name
         if target_directory_name is None:
@@ -3844,7 +3845,7 @@ class LibraryManager:
 
         # Check if target directory already exists
         skip_clone = False
-        if target_path.exists():
+        if await anyio.Path(target_path).exists():
             if request.overwrite_existing:
                 # Delete existing directory before cloning
                 delete_request = DeleteFileRequest(path=str(target_path), workspace_only=False)
@@ -3886,8 +3887,8 @@ class LibraryManager:
             return DownloadLibraryResultFailure(result_details=details)
 
         try:
-            with library_json_path.open() as f:
-                library_data = json.load(f)
+            content = await anyio.Path(library_json_path).read_text()
+            library_data = json.loads(content)
         except json.JSONDecodeError as e:
             details = f"Failed to parse griptape_nodes_library.json from downloaded library: {e}"
             return DownloadLibraryResultFailure(result_details=details)

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
-import aioshutil
+import anyio
 import portalocker
 import send2trash
 from rich.console import Console
@@ -2692,17 +2692,17 @@ class OSManager:
             return DeleteFileResultFailure(failure_reason=FileIOFailureReason.INVALID_PATH, result_details=msg)
 
         # Check if path exists
-        if not resolved_path.exists():
+        if not await anyio.Path(resolved_path).exists():
             msg = f"Attempted to delete file at path {path_to_delete}. Failed due to path not found"
             return DeleteFileResultFailure(failure_reason=FileIOFailureReason.FILE_NOT_FOUND, result_details=msg)
 
         # Determine if this is a directory
-        is_directory = resolved_path.is_dir()
+        is_directory = await anyio.Path(resolved_path).is_dir()
 
         # Collect all paths that will be deleted (for reporting)
         if is_directory:
             # Collect all file and directory paths before deletion
-            deleted_paths = [str(item) for item in resolved_path.rglob("*")]
+            deleted_paths = [str(item) async for item in anyio.Path(resolved_path).rglob("*")]
             deleted_paths.append(str(resolved_path))
         else:
             deleted_paths = [str(resolved_path)]
@@ -2712,9 +2712,9 @@ class OSManager:
             """Permanently delete the file/directory. Returns failure result or None on success."""
             try:
                 if is_directory:
-                    await aioshutil.rmtree(resolved_path, onexc=OSManager.remove_readonly)
+                    await asyncio.to_thread(shutil.rmtree, resolved_path, onexc=OSManager.remove_readonly)
                 else:
-                    resolved_path.unlink()
+                    await anyio.Path(resolved_path).unlink()
             except PermissionError as e:
                 msg = f"Attempted to delete {'directory' if is_directory else 'file'} at path {path_to_delete}. Failed due to permission denied: {e}"
                 return DeleteFileResultFailure(failure_reason=FileIOFailureReason.PERMISSION_DENIED, result_details=msg)

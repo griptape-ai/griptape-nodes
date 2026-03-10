@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import anyio
+
 from griptape_nodes.files.base_file_driver import BaseFileDriver
 from griptape_nodes.files.path_utils import (
     expand_path,
@@ -85,7 +87,6 @@ class LocalFileDriver(BaseFileDriver):
         # Normalize for platform (Windows long paths, etc.)
         return Path(normalize_path_for_platform(path))
 
-    # TODO: Replace pathlib.Path with anyio.Path for async compatibility https://github.com/griptape-ai/griptape-nodes/issues/3959
     async def read(self, location: str, timeout: float) -> bytes:  # noqa: ARG002, ASYNC109
         """Read file from local filesystem with validation.
 
@@ -102,17 +103,17 @@ class LocalFileDriver(BaseFileDriver):
             PermissionError: No read permission
             ValueError: Invalid file:// URI
         """
-        path = self._resolve_path(location)
+        path = anyio.Path(self._resolve_path(location))
 
-        if not path.exists():
+        if not await path.exists():
             msg = f"File not found: {location}"
             raise FileNotFoundError(msg)
 
-        if not path.is_file():
+        if not await path.is_file():
             msg = f"Path is a directory, not a file: {location}"
             raise IsADirectoryError(msg)
 
-        return path.read_bytes()
+        return await path.read_bytes()
 
     async def exists(self, location: str) -> bool:
         """Check if file exists on local filesystem.
@@ -124,11 +125,11 @@ class LocalFileDriver(BaseFileDriver):
             True if file exists and is a file (not directory)
         """
         try:
-            path = self._resolve_path(location)
+            path = anyio.Path(self._resolve_path(location))
         except ValueError:
             return False
 
-        return path.exists() and path.is_file()
+        return await path.exists() and await path.is_file()
 
     def get_size(self, location: str) -> int:
         """Get file size from local filesystem.
