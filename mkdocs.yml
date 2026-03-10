@@ -110,6 +110,15 @@ nav:
                   - Fetch: how_to/mcp/servers/fetch.md
                   - Filesystem: how_to/mcp/servers/filesystem.md
                   - Time: how_to/mcp/servers/time.md
+  - Projects:
+      - Overview: projects/index.md
+      - Workspace: projects/workspace.md
+      - Projects: projects/projects.md
+      - Macros: projects/macros.md
+      - Directories: projects/directories.md
+      - Situations: projects/situations.md
+      - Environment & Builtin Variables: projects/environment.md
+      - Customization Guide: projects/customization.md
   - FAQ: faq.md
   - Nodes Reference:
       - Overview: nodes/overview.md

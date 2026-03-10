@@ -1,0 +1,115 @@
+# Situations
+
+A situation is a named file-saving scenario. It defines:
+
+- **Where** the file goes (via a macro template)
+- **How** to handle the case when a file already exists there (via a collision policy)
+- **What to do** if saving fails (via an optional fallback situation)
+
+When a node needs to save a file, it names the situation it's in (for example, `save_node_output`) and the project system resolves the path using that situation's macro and applies the policy.
+
+## Collision policies
+
+| Policy       | Behavior                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `create_new` | Increment a counter in the filename until a non-colliding name is found. Requires `{_index?}` in the macro. |
+| `overwrite`  | Replace the existing file without asking.                                                                   |
+| `fail`       | Stop and report an error if the file already exists.                                                        |
+| `prompt`     | Ask the user what to do before proceeding.                                                                  |
+
+The `create_dirs` field controls whether missing parent directories are created automatically (`true`) or whether missing directories cause an error (`false`).
+
+## Fallbacks
+
+A situation can name a fallback situation. If the primary situation cannot resolve its macro (for example, because required variables are missing), the system tries the fallback. The default `save_file` situation is a minimal fallback used by most other situations.
+
+## Default situations
+
+### `save_file`
+
+```
+macro:  {file_name_base}{_index?:03}.{file_extension}
+policy: create_new, create_dirs: true
+```
+
+Generic file save at the project root (or wherever the caller's path context puts it). This is the fallback for most other situations. The `{_index?:03}` variable is zero-padded and optional — omitted on the first save, then incremented to avoid overwriting existing files.
+
+### `copy_external_file`
+
+```
+macro:    {inputs}/{node_name?:_}{parameter_name?:_}{file_name_base}{_index?:03}.{file_extension}
+policy:   create_new, create_dirs: true
+fallback: save_file
+```
+
+Used when a user copies or drags an external file into the project. The file is placed in the `inputs` directory. The node name and parameter name are prepended as optional prefixes to help identify the file's origin.
+
+**Example:**
+
+```
+node_name="LoadImage", parameter_name="source", file_name_base="photo", file_extension="jpg"
+→ inputs/LoadImage_source_photo.jpg
+
+node_name not provided, file_name_base="photo", file_extension="jpg"
+→ inputs/photo.jpg
+```
+
+### `download_url`
+
+```
+macro:    {inputs}/{sanitized_url}
+policy:   overwrite, create_dirs: true
+fallback: save_file
+```
+
+Used when a node downloads a file from a URL. The URL is sanitized into a safe filename. Files downloaded from the same URL are overwritten rather than duplicated.
+
+### `save_node_output`
+
+```
+macro:    {outputs}/{sub_dirs?:/}{node_name?:_}{file_name_base}{_index?:03}.{file_extension}
+policy:   create_new, create_dirs: true
+fallback: save_file
+```
+
+Used when a node generates and saves output. Files go into the `outputs` directory. Optional sub-directories (`{sub_dirs?:/}`) allow nesting within outputs. The node name is an optional prefix.
+
+**Example:**
+
+```
+outputs="outputs", node_name="ImageGen", file_name_base="render", _index=1, file_extension="png"
+→ outputs/ImageGen_render001.png
+
+sub_dirs="lighting/pass_a", node_name="ImageGen", file_name_base="render", file_extension="exr"
+→ outputs/lighting/pass_a/ImageGen_render.exr
+```
+
+### `save_preview`
+
+```
+macro:    {previews}/{drive_volume_mount?:/}{source_relative_path?:/}{source_file_name}.{preview_format}
+policy:   overwrite, create_dirs: true
+fallback: save_file
+```
+
+Used to generate preview thumbnails. Previews mirror the directory hierarchy of the source file so that each source file has exactly one preview. Previews are overwritten rather than versioned. The `previews` directory defaults to `.griptape-nodes-previews` (a hidden folder).
+
+### `save_static_file`
+
+```
+macro:    {workflow_dir?:/}{static_files_dir}/{file_name_base}.{file_extension}
+policy:   overwrite, create_dirs: true
+fallback: save_file
+```
+
+Used by the static files manager to save static assets. Files go into the `static_files_dir` subdirectory of the current workflow's directory. These files are overwritten when regenerated.
+
+## How nodes use situations
+
+Nodes that save files use a `ProjectFileParameter` to declare which situation they operate in. The node provides its situation-specific variables (like `file_name_base` and `file_extension`), and the project system supplies everything else (directory paths, builtin variables).
+
+To use a custom situation from your project file, configure the node's situation parameter to match the name of your custom situation.
+
+## Adding custom situations
+
+See [Customization Guide](customization.md) for examples.
